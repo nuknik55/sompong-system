@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   createIngredient,
+  deleteCategory,
   deleteIngredient,
   getIngredientHistory,
   updateIngredient,
@@ -244,17 +245,40 @@ export function IngredientManager({
               className="w-full rounded-md border border-neutral-300 py-2 pl-9 pr-3 text-sm"
             />
           </div>
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-48"
-          >
-            {filterOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-48"
+            >
+              {filterOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {filterCategory !== "ทั้งหมด" && filterCategory !== "ไม่มีหมวด" && (
+              <button
+                type="button"
+                onClick={() => {
+                  const count = rows.filter((r) => r.category === filterCategory).length;
+                  if (!confirm(`ลบหมวด "${filterCategory}" และเอา ${count} รายการออกจากหมวดนี้?\n(วัตถุดิบยังอยู่ในระบบ แค่ไม่มีหมวด)`)) return;
+                  startTransition(async () => {
+                    try {
+                      await deleteCategory(filterCategory);
+                      setRows((prev) => prev.map((r) => r.category === filterCategory ? { ...r, category: null } : r));
+                      setFilterCategory("ทั้งหมด");
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : "ลบหมวดไม่สำเร็จ");
+                    }
+                  });
+                }}
+                className="shrink-0 rounded-md border border-red-300 px-2.5 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                ลบหมวดนี้
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1">
           <button

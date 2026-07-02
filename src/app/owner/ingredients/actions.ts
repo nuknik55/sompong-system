@@ -89,6 +89,17 @@ export type PriceHistoryEntry = {
   changedAt: string;
 };
 
+export async function deleteCategory(category: string): Promise<void> {
+  await requireAdminOrEditor();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("ingredients")
+    .update({ category: null })
+    .eq("category", category);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/ingredients");
+}
+
 export async function getIngredientHistory(ingredientId: string): Promise<PriceHistoryEntry[]> {
   await requireAdminOrEditor();
   const supabase = await createClient();
