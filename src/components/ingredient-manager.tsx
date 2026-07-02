@@ -405,7 +405,17 @@ export function IngredientManager({
                       <CategorySelect
                         value={row.category ?? ""}
                         categories={knownCategories}
-                        onChange={(v) => patchRow(row.id, { category: v })}
+                        onChange={(v) => {
+                          patchRow(row.id, { category: v });
+                          startTransition(async () => {
+                            try {
+                              const result = await updateIngredient(row.id, row.name, { category: v });
+                              setRowStatus((prev) => ({ ...prev, [row.id]: result.status }));
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+                            }
+                          });
+                        }}
                       />
                     </td>
                     <td className="px-2 py-1.5">
@@ -517,7 +527,17 @@ export function IngredientManager({
                   <CategorySelect
                     value={row.category ?? ""}
                     categories={knownCategories}
-                    onChange={(v) => patchRow(row.id, { category: v })}
+                    onChange={(v) => {
+                      patchRow(row.id, { category: v });
+                      startTransition(async () => {
+                        try {
+                          const result = await updateIngredient(row.id, row.name, { category: v });
+                          setRowStatus((prev) => ({ ...prev, [row.id]: result.status }));
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+                        }
+                      });
+                    }}
                   />
                 </div>
               </div>
