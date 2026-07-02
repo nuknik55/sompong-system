@@ -1,0 +1,107 @@
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.188.147.248:3000
+- Environments: .env.local
+✓ Ready in 1802ms
+
+ GET /owner 200 in 4.1s (next.js: 480ms, proxy.ts: 743ms, application-code: 2.9s)
+ GET /owner 200 in 2.6s (next.js: 21ms, proxy.ts: 372ms, application-code: 2.2s)
+  Reload env: .env.local
+ GET /owner 200 in 2.4s (next.js: 375ms, proxy.ts: 1073ms, application-code: 981ms)
+✓ Compiled in 166ms
+ GET /owner 200 in 3.2s (next.js: 374ms, proxy.ts: 1101ms, application-code: 1677ms)
+ GET /owner 200 in 1236ms (next.js: 16ms, proxy.ts: 462ms, application-code: 758ms)
+ GET / 307 in 2.6s (next.js: 398ms, proxy.ts: 806ms, application-code: 1388ms)
+ GET /owner 200 in 2.6s (next.js: 26ms, proxy.ts: 113ms, application-code: 2.4s)
+ GET / 307 in 769ms (next.js: 37ms, proxy.ts: 265ms, application-code: 467ms)
+ GET /owner 200 in 2.2s (next.js: 17ms, proxy.ts: 101ms, application-code: 2.1s)
+ GET /login 200 in 381ms (next.js: 242ms, proxy.ts: 27ms, application-code: 112ms)
+ POST /owner 303 in 909ms (next.js: 20ms, proxy.ts: 259ms, application-code: 630ms)
+  └─ ƒ logout() in 120ms login/actions.ts
+ GET / 200 in 695ms (next.js: 17ms, proxy.ts: 142ms, application-code: 536ms)
+ POST /login 303 in 1637ms (next.js: 15ms, proxy.ts: 15ms, application-code: 1606ms)
+  └─ ƒ login(undefined, {}) in 825ms login/actions.ts
+ GET /owner 200 in 3.0s (next.js: 22ms, proxy.ts: 184ms, application-code: 2.8s)
+ GET /owner 200 in 2.6s (next.js: 13ms, proxy.ts: 222ms, application-code: 2.4s)
+ GET /login 200 in 148ms (next.js: 23ms, proxy.ts: 18ms, application-code: 107ms)
+ POST /owner 303 in 650ms (next.js: 17ms, proxy.ts: 325ms, application-code: 309ms)
+  └─ ƒ logout() in 94ms login/actions.ts
+ GET / 200 in 474ms (next.js: 16ms, proxy.ts: 113ms, application-code: 345ms)
+ POST /login 303 in 892ms (next.js: 26ms, proxy.ts: 20ms, application-code: 845ms)
+  └─ ƒ login(undefined, {}) in 312ms login/actions.ts
+ GET /owner 200 in 3.0s (next.js: 21ms, proxy.ts: 130ms, application-code: 2.8s)
+ GET /owner 200 in 2.7s (next.js: 97ms, proxy.ts: 391ms, application-code: 2.2s)
+✓ Compiled in 1152ms
+ GET /owner 200 in 2.8s (next.js: 467ms, proxy.ts: 1040ms, application-code: 1252ms)
+ GET /owner 200 in 1652ms (next.js: 15ms, proxy.ts: 849ms, application-code: 788ms)
+ GET /owner 200 in 1466ms (next.js: 16ms, proxy.ts: 487ms, application-code: 964ms)
+ GET /owner 200 in 1378ms (next.js: 16ms, proxy.ts: 596ms, application-code: 765ms)
+ GET /owner 200 in 1367ms (next.js: 17ms, proxy.ts: 435ms, application-code: 915ms)
+ GET /owner 200 in 1303ms (next.js: 16ms, proxy.ts: 526ms, application-code: 761ms)
+✓ Compiled in 400ms
+ GET /owner 200 in 6.8s (next.js: 305ms, proxy.ts: 1287ms, application-code: 5.2s)
+ GET /owner 200 in 5.0s (next.js: 11ms, proxy.ts: 318ms, application-code: 4.7s)
+ GET /owner 200 in 4.5s (next.js: 57ms, proxy.ts: 457ms, application-code: 4.0s)
+ GET /owner 200 in 4.5s (next.js: 211ms, proxy.ts: 492ms, application-code: 3.8s)
+ GET /owner 200 in 4.5s (next.js: 161ms, proxy.ts: 484ms, application-code: 3.9s)
+ GET /owner 200 in 4.5s (next.js: 399ms, proxy.ts: 501ms, application-code: 3.6s)
+✓ Compiled in 693ms
+✓ Compiled in 195ms
+ GET /owner 200 in 3.4s (next.js: 430ms, proxy.ts: 905ms, application-code: 2.1s)
+ GET /owner 200 in 1745ms (next.js: 14ms, proxy.ts: 180ms, application-code: 1551ms)
+✓ Compiled in 163ms
+✓ Compiled in 226ms
+✓ Compiled in 669ms
+ GET /owner 200 in 1945ms (next.js: 406ms, proxy.ts: 651ms, application-code: 888ms)
+✓ Compiled in 227ms
+ GET /owner 200 in 1720ms (next.js: 336ms, proxy.ts: 486ms, application-code: 898ms)
+ GET /owner 200 in 1237ms (next.js: 15ms, proxy.ts: 470ms, application-code: 753ms)
+ GET /owner 200 in 1153ms (next.js: 16ms, proxy.ts: 401ms, application-code: 735ms)
+ GET /owner 200 in 1954ms (next.js: 14ms, proxy.ts: 381ms, application-code: 1559ms)
+ GET /owner 200 in 5.0s (next.js: 17ms, proxy.ts: 364ms, application-code: 4.6s)
+ GET /owner 200 in 4.3s (next.js: 19ms, proxy.ts: 496ms, application-code: 3.8s)
+ GET /owner 200 in 4.4s (next.js: 316ms, proxy.ts: 885ms, application-code: 3.2s)
+ GET /owner 200 in 4.4s (next.js: 1095ms, proxy.ts: 903ms, application-code: 2.4s)
+ GET /owner 200 in 4.4s (next.js: 396ms, proxy.ts: 893ms, application-code: 3.1s)
+ GET /owner 200 in 4.0s (next.js: 1062ms, proxy.ts: 1547ms, application-code: 1414ms)
+ GET /owner 200 in 4.9s (next.js: 49ms, proxy.ts: 124ms, application-code: 4.7s)
+ GET /owner 200 in 4.9s (next.js: 348ms, proxy.ts: 508ms, application-code: 4.0s)
+ GET /owner 200 in 4.8s (next.js: 809ms, proxy.ts: 451ms, application-code: 3.5s)
+ GET /owner 200 in 4.8s (next.js: 839ms, proxy.ts: 1222ms, application-code: 2.7s)
+ GET /owner 200 in 4.8s (next.js: 773ms, proxy.ts: 1221ms, application-code: 2.8s)
+ GET /owner 200 in 4.4s (next.js: 1436ms, proxy.ts: 1272ms, application-code: 1663ms)
+ GET /owner 200 in 1685ms (next.js: 15ms, proxy.ts: 88ms, application-code: 1583ms)
+ GET /owner 200 in 1678ms (next.js: 18ms, proxy.ts: 768ms, application-code: 892ms)
+✓ Compiled in 135ms
+ GET /owner 200 in 2.7s (next.js: 357ms, proxy.ts: 370ms, application-code: 1988ms)
+ GET /owner 200 in 1763ms (next.js: 31ms, proxy.ts: 122ms, application-code: 1610ms)
+✓ Compiled in 260ms
+ GET /owner 200 in 1714ms (next.js: 370ms, proxy.ts: 417ms, application-code: 928ms)
+ GET /owner 200 in 1087ms (next.js: 17ms, proxy.ts: 379ms, application-code: 691ms)
+ GET /owner 200 in 1678ms (next.js: 319ms, proxy.ts: 443ms, application-code: 916ms)
+ GET /owner 200 in 1211ms (next.js: 14ms, proxy.ts: 428ms, application-code: 769ms)
+ GET /owner 200 in 1212ms (next.js: 16ms, proxy.ts: 430ms, application-code: 766ms)
+ GET /owner 200 in 2.2s (next.js: 13ms, proxy.ts: 439ms, application-code: 1733ms)
+ GET /owner 200 in 5.2s (next.js: 33ms, proxy.ts: 354ms, application-code: 4.8s)
+ GET /owner 200 in 4.4s (next.js: 25ms, proxy.ts: 453ms, application-code: 3.9s)
+ GET /owner 200 in 4.4s (next.js: 303ms, proxy.ts: 920ms, application-code: 3.2s)
+ GET /owner 200 in 4.4s (next.js: 372ms, proxy.ts: 917ms, application-code: 3.1s)
+ GET /owner 200 in 4.4s (next.js: 450ms, proxy.ts: 922ms, application-code: 3.1s)
+ GET /owner 200 in 4.0s (next.js: 1125ms, proxy.ts: 2.0s, application-code: 841ms)
+ GET /owner 200 in 4.8s (next.js: 40ms, proxy.ts: 111ms, application-code: 4.7s)
+ GET /owner 200 in 4.7s (next.js: 348ms, proxy.ts: 498ms, application-code: 3.9s)
+ GET /owner 200 in 4.8s (next.js: 283ms, proxy.ts: 526ms, application-code: 4.0s)
+ GET /owner 200 in 4.7s (next.js: 854ms, proxy.ts: 755ms, application-code: 3.1s)
+ GET /owner 200 in 4.7s (next.js: 924ms, proxy.ts: 753ms, application-code: 3.1s)
+ GET /owner 200 in 4.4s (next.js: 1424ms, proxy.ts: 1211ms, application-code: 1756ms)
+ GET /owner 200 in 3.0s (next.js: 18ms, proxy.ts: 90ms, application-code: 2.9s)
+ GET /owner 200 in 2.9s (next.js: 302ms, proxy.ts: 461ms, application-code: 2.2s)
+ GET /owner 200 in 3.0s (next.js: 416ms, proxy.ts: 787ms, application-code: 1780ms)
+ GET /owner 200 in 3.0s (next.js: 592ms, proxy.ts: 1605ms, application-code: 785ms)
+✓ Compiled in 138ms
+  Reload env: .env.local
+ GET /owner 200 in 1734ms (next.js: 348ms, proxy.ts: 456ms, application-code: 931ms)
+✓ Finished writing to filesystem cache in 35.1s
+✓ Compiled in 429ms
+✓ Compiled in 303ms
+✓ Compiled in 1819ms
