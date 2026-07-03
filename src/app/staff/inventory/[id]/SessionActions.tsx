@@ -12,7 +12,9 @@ import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
 
 type EditRow = {
   kitchenQty: string;
+  kitchenUnit: string;
   freezerQty: string;
+  freezerUnit: string;
   qty: string;
   unit: string;
 };
@@ -23,7 +25,9 @@ function initEditRows(items: OrderItem[]): Record<string, EditRow> {
       i.id,
       {
         kitchenQty: i.remainingKitchenQty !== null ? String(i.remainingKitchenQty) : "",
+        kitchenUnit: i.remainingKitchenUnit ?? "",
         freezerQty: i.remainingFreezerQty !== null ? String(i.remainingFreezerQty) : "",
+        freezerUnit: i.remainingFreezerUnit ?? "",
         qty: String(i.qtyOrdered),
         unit: i.orderUnit ?? "",
       },
@@ -98,9 +102,9 @@ export function SessionActions({
       return {
         itemId: item.id,
         remainingKitchenQty: row.kitchenQty.trim() !== "" ? parseFloat(row.kitchenQty) : null,
-        remainingKitchenUnit: item.remainingKitchenUnit,
+        remainingKitchenUnit: row.kitchenUnit.trim() || null,
         remainingFreezerQty: row.freezerQty.trim() !== "" ? parseFloat(row.freezerQty) : null,
-        remainingFreezerUnit: item.remainingFreezerUnit,
+        remainingFreezerUnit: row.freezerUnit.trim() || null,
         qtyOrdered: parseFloat(row.qty) || 0,
         orderUnit: row.unit.trim() || null,
       };
@@ -118,8 +122,8 @@ export function SessionActions({
     <div className="space-y-4 pb-8 no-print">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* ตีกลับ — returned status: creator sees edit form */}
-      {session.status === "returned" && isCreator && (
+      {/* ตีกลับ — returned status: creator or approver sees edit form */}
+      {session.status === "returned" && (isCreator || canApprove) && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
           <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
           {session.note && <p className="text-sm text-amber-700">{session.note}</p>}
@@ -131,9 +135,11 @@ export function SessionActions({
                 <tr className="border-b border-amber-100 bg-amber-50 text-neutral-500">
                   <th className="px-2 py-2 text-left">วัตถุดิบ</th>
                   <th className="px-2 py-2 text-right">เหลือ(ครัว)</th>
-                  <th className="px-2 py-2 text-right">เหลือ(ตู้แช่)</th>
-                  <th className="px-2 py-2 text-right">สั่ง</th>
                   <th className="px-2 py-2 text-left">หน่วย</th>
+                  <th className="px-2 py-2 text-right">เหลือ(ตู้แช่)</th>
+                  <th className="px-2 py-2 text-left">หน่วย</th>
+                  <th className="px-2 py-2 text-right">สั่ง</th>
+                  <th className="px-2 py-2 text-left">หน่วยสั่ง</th>
                 </tr>
               </thead>
               <tbody>
@@ -148,9 +154,19 @@ export function SessionActions({
                           className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-right text-xs" />
                       </td>
                       <td className="px-2 py-1.5">
+                        <input type="text" value={row.kitchenUnit}
+                          onChange={(e) => patchEdit(item.id, { kitchenUnit: e.target.value })}
+                          className="w-12 rounded border border-neutral-300 px-1.5 py-1 text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
                         <input type="number" min="0" step="any" value={row.freezerQty}
                           onChange={(e) => patchEdit(item.id, { freezerQty: e.target.value })}
                           className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" value={row.freezerUnit}
+                          onChange={(e) => patchEdit(item.id, { freezerUnit: e.target.value })}
+                          className="w-12 rounded border border-neutral-300 px-1.5 py-1 text-xs" />
                       </td>
                       <td className="px-2 py-1.5">
                         <input type="number" min="0" step="any" value={row.qty}

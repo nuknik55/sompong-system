@@ -167,15 +167,16 @@ export function OrderForm({ stations, ingredients }: Props) {
 
               {isOpen && (
                 <div className="border-t border-neutral-100">
-                  {items.map((ing) => {
+                  {items.map((ing, idx) => {
                     const row = rows[ing.id] ?? EMPTY_ROW;
                     const defaultOrderUnit = ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
                     const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
                     const usageUnit = ing.usageUnit ?? "";
                     const parHint = ing.parLevel !== null ? `≈${ing.parLevel}` : "";
+                    const isFilled = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
 
                     return (
-                      <div key={ing.id} className="border-b border-neutral-100 last:border-0 px-4 py-3 space-y-2">
+                      <div key={ing.id} className={`border-b border-neutral-100 last:border-0 px-4 py-4 space-y-2 ${idx % 2 === 1 ? "bg-neutral-50/60" : ""} ${isFilled ? "ring-1 ring-inset ring-green-200" : ""}`}>
                         {/* Name row */}
                         <div>
                           <span className="text-sm font-medium text-neutral-800">{ing.name}</span>

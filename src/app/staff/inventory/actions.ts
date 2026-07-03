@@ -147,7 +147,7 @@ export type OrderItemUpdate = {
   orderUnit: string | null;
 };
 
-/** Creator edits items in a returned session and resubmits in one action */
+/** Creator or editor+ edits items in a returned session and resubmits in one action */
 export async function updateItemsAndResubmit(
   sessionId: string,
   items: OrderItemUpdate[]
@@ -164,8 +164,10 @@ export async function updateItemsAndResubmit(
   if (!session || session.status !== "returned") {
     return { error: "ไม่สามารถแก้ไขได้ (สถานะไม่ใช่ 'ตีกลับ')" };
   }
-  if (session.created_by !== profile.id) {
-    return { error: "เฉพาะผู้กรอกเดิมเท่านั้นที่แก้ไขได้" };
+  const isCreator = session.created_by === profile.id;
+  const canEdit = isCreator || (profile.role !== "staff" && profile.role !== "accounting");
+  if (!canEdit) {
+    return { error: "เฉพาะผู้กรอกเดิมหรือผู้ดูแลระบบเท่านั้นที่แก้ไขได้" };
   }
 
   for (const item of items) {
