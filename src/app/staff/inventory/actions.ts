@@ -164,11 +164,6 @@ export async function updateItemsAndResubmit(
   if (!session || session.status !== "returned") {
     return { error: "ไม่สามารถแก้ไขได้ (สถานะไม่ใช่ 'ตีกลับ')" };
   }
-  const isCreator = session.created_by === profile.id;
-  const canEdit = isCreator || (profile.role !== "staff" && profile.role !== "accounting");
-  if (!canEdit) {
-    return { error: "เฉพาะผู้กรอกเดิมหรือผู้ดูแลระบบเท่านั้นที่แก้ไขได้" };
-  }
 
   for (const item of items) {
     const { error } = await supabase

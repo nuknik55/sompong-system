@@ -122,8 +122,8 @@ export function SessionActions({
     <div className="space-y-4 pb-8 no-print">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* ตีกลับ — returned status: creator or approver sees edit form */}
-      {session.status === "returned" && (isCreator || canApprove) && (
+      {/* ตีกลับ — returned status: any logged-in user can edit */}
+      {session.status === "returned" && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
           <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
           {session.note && <p className="text-sm text-amber-700">{session.note}</p>}

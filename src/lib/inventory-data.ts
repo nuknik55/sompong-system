@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type Station = { id: string; name: string; sortOrder: number };
 
@@ -123,7 +124,8 @@ export async function getOrderSessions(): Promise<OrderSessionSummary[]> {
   const allIds = [...new Set(
     sessions.flatMap((s) => [s.created_by, s.approved_by].filter(Boolean) as string[])
   )];
-  const { data: profiles } = await supabase
+  const adminClient = createAdminClient();
+  const { data: profiles } = await adminClient
     .from("profiles")
     .select("id, full_name")
     .in("id", allIds);
@@ -169,7 +171,8 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
   if (error || !session) return null;
 
   const allIds = [session.created_by, session.approved_by, session.sent_by].filter(Boolean) as string[];
-  const { data: profiles } = await supabase
+  const adminClient2 = createAdminClient();
+  const { data: profiles } = await adminClient2
     .from("profiles")
     .select("id, full_name")
     .in("id", allIds);
