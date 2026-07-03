@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderSession } from "../actions";
 import type { Station, IngredientForOrder, StationTemplateRow } from "@/lib/inventory-data";
@@ -9,6 +9,8 @@ type Props = {
   stations: Station[];
   allIngredients: IngredientForOrder[];
   stationTemplates: Record<string, StationTemplateRow[]>;
+  initialStationId?: string;
+  prefillFromTemplate?: boolean;
 };
 
 type RowState = {
@@ -26,15 +28,40 @@ const EMPTY_ROW: RowState = {
   packCount: "", qtyPerPack: "", usePack: false, orderUnit: "",
 };
 
-export function OrderForm({ stations, allIngredients, stationTemplates }: Props) {
+export function OrderForm({ stations, allIngredients, stationTemplates, initialStationId = "", prefillFromTemplate = false }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [stationId, setStationId] = useState("");
+  const [stationId, setStationId] = useState(initialStationId);
   const [note, setNote] = useState("");
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-fill rows from template when arriving via "สั่งของจาก Template"
+  const prefillDone = useRef(false);
+  useEffect(() => {
+    if (!prefillFromTemplate || !initialStationId || prefillDone.current) return;
+    prefillDone.current = true;
+    const template = stationTemplates[initialStationId];
+    if (!template?.length) return;
+    const baseById = new Map(allIngredients.map((i) => [i.id, i]));
+    const newRows: Record<string, RowState> = {};
+    const cats = new Set<string>();
+    for (const t of template) {
+      const base = baseById.get(t.ingredientId);
+      if (!base) continue;
+      const cat = t.customGroup ?? base.category ?? "ไม่ระบุหมวด";
+      cats.add(cat);
+      if (t.defaultQty !== null) {
+        const orderUnit = t.customUnit ?? base.purchaseUnitLabel ?? base.usageUnit ?? "";
+        newRows[t.ingredientId] = { ...EMPTY_ROW, qty: String(t.defaultQty), orderUnit };
+      }
+    }
+    if (Object.keys(newRows).length > 0) setRows(newRows);
+    setOpenCategories(cats);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Derive effective ingredient list: use station template if available
   const ingredients = useMemo<IngredientForOrder[]>(() => {
@@ -133,8 +160,16 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => router.push("/staff/inventory")}
           className="text-sm text-neutral-500 hover:text-neutral-900">← กลับ</button>
-        <h1 className="text-lg font-semibold text-neutral-900">เช็คของ + สั่งของ</h1>
+        <h1 className="text-lg font-semibold text-neutral-900">
+          {prefillFromTemplate ? "สั่งของจาก Template" : "เช็คของ + สั่งของ"}
+        </h1>
       </div>
+
+      {prefillFromTemplate && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800">
+          เติมปริมาณจาก Template แล้ว — ตรวจสอบและแก้ไขก่อนส่ง
+        </div>
+      )}
 
       {/* Session meta */}
       <div className="rounded-lg border border-neutral-200 bg-white p-4 space-y-3">

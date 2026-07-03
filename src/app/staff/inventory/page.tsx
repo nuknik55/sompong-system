@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
-import { getOrderSessions } from "@/lib/inventory-data";
+import { getOrderSessions, getStations, getAllStationTemplates } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
+import { FromTemplateButton } from "./FromTemplateButton";
 import type { OrderStatus } from "@/lib/inventory-data";
 
 function formatDate(iso: string) {
@@ -25,8 +26,16 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 };
 
 export default async function InventoryListPage() {
-  const [profile, sessions] = await Promise.all([requireProfile(), getOrderSessions()]);
+  const [profile, sessions, stations, allTemplates] = await Promise.all([
+    requireProfile(),
+    getOrderSessions(),
+    getStations(),
+    getAllStationTemplates().catch(() => ({} as Record<string, unknown[]>)),
+  ]);
+
   const canManageTemplate = ["owner", "admin", "editor"].includes(profile.role);
+  // Stations that have at least one ingredient in the template
+  const stationsWithTemplate = stations.filter((s) => (allTemplates[s.id]?.length ?? 0) > 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -37,14 +46,9 @@ export default async function InventoryListPage() {
           <h1 className="text-lg font-semibold text-neutral-900">รายการสั่งของ</h1>
           <p className="text-sm text-neutral-500">เช็คของ · สั่งของ · รับของ</p>
         </div>
-        <div className="flex gap-2">
-          {canManageTemplate && (
-            <Link
-              href="/staff/inventory/new"
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              สั่งของจาก Template
-            </Link>
+        <div className="flex gap-2 flex-wrap justify-end">
+          {stationsWithTemplate.length > 0 && (
+            <FromTemplateButton stations={stationsWithTemplate} />
           )}
           <Link
             href="/staff/inventory/new"
