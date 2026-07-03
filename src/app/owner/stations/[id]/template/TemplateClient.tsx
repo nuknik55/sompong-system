@@ -40,6 +40,7 @@ type UpdateFields = {
 
 function SortableRow({
   row,
+  index,
   checked,
   onCheck,
   onUpdate,
@@ -47,6 +48,7 @@ function SortableRow({
   isPending,
 }: {
   row: StationTemplateRow;
+  index: number;
   checked: boolean;
   onCheck: (checked: boolean) => void;
   onUpdate: (fields: UpdateFields) => void;
@@ -91,7 +93,13 @@ function SortableRow({
     <tr
       ref={setNodeRef}
       style={style}
-      className={`border-b border-neutral-100 last:border-0 ${checked ? "bg-blue-50" : "hover:bg-neutral-50"}`}
+      className={`border-b border-neutral-100 last:border-0 transition-colors ${
+        checked
+          ? "bg-blue-50"
+          : index % 2 === 0
+          ? "bg-white hover:bg-neutral-50"
+          : "bg-neutral-50 hover:bg-neutral-100"
+      }`}
     >
       {/* Drag handle */}
       <td
@@ -532,10 +540,11 @@ export function TemplateClient({
                         </tr>
                       </thead>
                       <tbody>
-                        {groupRows.map((row) => (
+                        {groupRows.map((row, idx) => (
                           <SortableRow
                             key={row.id}
                             row={row}
+                            index={idx}
                             checked={checked.has(row.id)}
                             onCheck={(v) => toggleCheck(row.id, v)}
                             onUpdate={(fields) => handleUpdateRow(row.id, fields)}
