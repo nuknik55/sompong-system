@@ -19,7 +19,6 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
     Object.fromEntries(session.items.map((i) => [i.id, String(i.editorQtyOrdered ?? i.qtyOrdered)]))
   );
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
   function handleSubmit() {
     setError(null);
@@ -31,7 +30,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
     startTransition(async () => {
       const result = await receiveOrderItems(session.id, payload);
       if (result.error) { setError(result.error); return; }
-      setDone(true);
+      router.push("/staff/inventory");
     });
   }
 
@@ -106,32 +105,16 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {done ? (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
-          <p className="text-sm font-medium text-green-800">บันทึกรับของสำเร็จ</p>
-          <div className="flex flex-wrap gap-3">
-            <a href="/staff/inventory"
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800">
-              ← กลับหน้าหลัก
-            </a>
-            <a href={`/staff/inventory/${session.id}`}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
-              ดูรายละเอียด
-            </a>
-          </div>
-        </div>
-      ) : (
-        <div className="flex justify-end gap-3 pb-8">
-          <a href={`/staff/inventory/${session.id}`}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
-            ยกเลิก
-          </a>
-          <button type="button" onClick={handleSubmit} disabled={isPending}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
-            {isPending ? "กำลังบันทึก..." : "ยืนยันรับของ"}
-          </button>
-        </div>
-      )}
+      <div className="flex justify-end gap-3 pb-8">
+        <a href={`/staff/inventory/${session.id}`}
+          className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
+          ยกเลิก
+        </a>
+        <button type="button" onClick={handleSubmit} disabled={isPending}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+          {isPending ? "กำลังบันทึก..." : "ยืนยันรับของ"}
+        </button>
+      </div>
     </>
   );
 }
