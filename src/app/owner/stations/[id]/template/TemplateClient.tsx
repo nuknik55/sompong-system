@@ -97,8 +97,8 @@ function SortableRow({
         checked
           ? "bg-blue-50"
           : index % 2 === 0
-          ? "bg-white hover:bg-neutral-50"
-          : "bg-neutral-50 hover:bg-neutral-100"
+          ? "bg-white hover:bg-neutral-100"
+          : "bg-neutral-100 hover:bg-neutral-200"
       }`}
     >
       {/* Drag handle */}
