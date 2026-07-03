@@ -4,7 +4,7 @@ import { getOrderSessions } from "@/lib/inventory-data";
 import type { OrderStatus } from "@/lib/inventory-data";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {

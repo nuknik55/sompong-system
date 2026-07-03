@@ -12,7 +12,7 @@ export default async function ReceivePage({
   const [, session] = await Promise.all([requireProfile(), getOrderSessionDetail(id)]);
 
   if (!session) notFound();
-  if (session.status !== "approved") redirect(`/staff/inventory/${id}`);
+  if (session.status !== "approved" && session.status !== "sent") redirect(`/staff/inventory/${id}`);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

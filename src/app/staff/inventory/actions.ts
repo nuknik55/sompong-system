@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireProfile, requireAdminOrEditor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type ActionResult = { error?: string; sessionId?: string };
 
@@ -136,6 +137,64 @@ export async function returnOrderSession(
   return {};
 }
 
+export type OrderItemUpdate = {
+  itemId: string;
+  remainingKitchenQty: number | null;
+  remainingKitchenUnit: string | null;
+  remainingFreezerQty: number | null;
+  remainingFreezerUnit: string | null;
+  qtyOrdered: number;
+  orderUnit: string | null;
+};
+
+/** Creator edits items in a returned session and resubmits in one action */
+export async function updateItemsAndResubmit(
+  sessionId: string,
+  items: OrderItemUpdate[]
+): Promise<ActionResult> {
+  const profile = await requireProfile();
+  const supabase = createAdminClient();
+
+  const { data: session } = await supabase
+    .from("order_sessions")
+    .select("created_by, status")
+    .eq("id", sessionId)
+    .single();
+
+  if (!session || session.status !== "returned") {
+    return { error: "ไม่สามารถแก้ไขได้ (สถานะไม่ใช่ 'ตีกลับ')" };
+  }
+  if (session.created_by !== profile.id) {
+    return { error: "เฉพาะผู้กรอกเดิมเท่านั้นที่แก้ไขได้" };
+  }
+
+  for (const item of items) {
+    const { error } = await supabase
+      .from("order_items")
+      .update({
+        remaining_kitchen_qty: item.remainingKitchenQty,
+        remaining_kitchen_unit: item.remainingKitchenUnit,
+        remaining_freezer_qty: item.remainingFreezerQty,
+        remaining_freezer_unit: item.remainingFreezerUnit,
+        qty_ordered: item.qtyOrdered,
+        order_unit: item.orderUnit,
+      })
+      .eq("id", item.itemId)
+      .eq("session_id", sessionId);
+    if (error) return { error: error.message };
+  }
+
+  const { error } = await supabase
+    .from("order_sessions")
+    .update({ status: "submitted", submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", sessionId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/staff/inventory");
+  revalidatePath(`/staff/inventory/${sessionId}`);
+  return {};
+}
+
 /** Staff resubmits a returned session after editing */
 export async function resubmitOrderSession(sessionId: string): Promise<ActionResult> {
   const profile = await requireProfile();
@@ -206,16 +265,23 @@ export async function receiveOrderItems(
     if (error) return { error: error.message };
   }
 
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({
-      status: "received",
-      received_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId)
-    .in("status", ["approved", "sent"]);
-  if (error) return { error: error.message };
+  // Only close session when ALL items have been received (none still null).
+  const { data: allItems } = await supabase
+    .from("order_items")
+    .select("qty_received")
+    .eq("session_id", sessionId);
+
+  const allReceived = (allItems ?? []).every((i) => i.qty_received !== null);
+
+  if (allReceived) {
+    const { error } = await supabase
+      .from("order_sessions")
+      .update({ status: "received", received_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .in("status", ["approved", "sent"]);
+    if (error) return { error: error.message };
+  }
+
   revalidatePath("/staff/inventory");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};

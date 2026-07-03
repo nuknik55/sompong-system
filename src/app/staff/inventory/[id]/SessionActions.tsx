@@ -5,10 +5,31 @@ import { useRouter } from "next/navigation";
 import {
   approveOrderSession,
   returnOrderSession,
-  resubmitOrderSession,
   markOrderSent,
+  updateItemsAndResubmit,
 } from "../actions";
 import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
+
+type EditRow = {
+  kitchenQty: string;
+  freezerQty: string;
+  qty: string;
+  unit: string;
+};
+
+function initEditRows(items: OrderItem[]): Record<string, EditRow> {
+  return Object.fromEntries(
+    items.map((i) => [
+      i.id,
+      {
+        kitchenQty: i.remainingKitchenQty !== null ? String(i.remainingKitchenQty) : "",
+        freezerQty: i.remainingFreezerQty !== null ? String(i.remainingFreezerQty) : "",
+        qty: String(i.qtyOrdered),
+        unit: i.orderUnit ?? "",
+      },
+    ])
+  );
+}
 
 export function SessionActions({
   session,
@@ -25,6 +46,15 @@ export function SessionActions({
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+
+  // Edit form state for returned sessions
+  const [editRows, setEditRows] = useState<Record<string, EditRow>>(() =>
+    initEditRows(session.items)
+  );
+
+  function patchEdit(id: string, patch: Partial<EditRow>) {
+    setEditRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  }
 
   function toggleCheck(itemId: string) {
     setCheckedItems((prev) => {
@@ -52,19 +82,31 @@ export function SessionActions({
     });
   }
 
-  function handleResubmit() {
+  function handleMarkSent() {
     setError(null);
     startTransition(async () => {
-      const result = await resubmitOrderSession(session.id);
+      const result = await markOrderSent(session.id);
       if (result.error) { setError(result.error); return; }
       router.refresh();
     });
   }
 
-  function handleMarkSent() {
+  function handleUpdateAndResubmit() {
     setError(null);
+    const items = session.items.map((item) => {
+      const row = editRows[item.id];
+      return {
+        itemId: item.id,
+        remainingKitchenQty: row.kitchenQty.trim() !== "" ? parseFloat(row.kitchenQty) : null,
+        remainingKitchenUnit: item.remainingKitchenUnit,
+        remainingFreezerQty: row.freezerQty.trim() !== "" ? parseFloat(row.freezerQty) : null,
+        remainingFreezerUnit: item.remainingFreezerUnit,
+        qtyOrdered: parseFloat(row.qty) || 0,
+        orderUnit: row.unit.trim() || null,
+      };
+    });
     startTransition(async () => {
-      const result = await markOrderSent(session.id);
+      const result = await updateItemsAndResubmit(session.id, items);
       if (result.error) { setError(result.error); return; }
       router.refresh();
     });
@@ -76,14 +118,60 @@ export function SessionActions({
     <div className="space-y-4 pb-8 no-print">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* ตีกลับ — returned status: creator can resubmit */}
+      {/* ตีกลับ — returned status: creator sees edit form */}
       {session.status === "returned" && isCreator && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
           <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
           {session.note && <p className="text-sm text-amber-700">{session.note}</p>}
-          <button type="button" disabled={isPending} onClick={handleResubmit}
+
+          {/* Inline edit table */}
+          <div className="rounded-lg border border-amber-200 bg-white overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-amber-100 bg-amber-50 text-neutral-500">
+                  <th className="px-2 py-2 text-left">วัตถุดิบ</th>
+                  <th className="px-2 py-2 text-right">เหลือ(ครัว)</th>
+                  <th className="px-2 py-2 text-right">เหลือ(ตู้แช่)</th>
+                  <th className="px-2 py-2 text-right">สั่ง</th>
+                  <th className="px-2 py-2 text-left">หน่วย</th>
+                </tr>
+              </thead>
+              <tbody>
+                {session.items.map((item) => {
+                  const row = editRows[item.id];
+                  return (
+                    <tr key={item.id} className="border-b border-neutral-100 last:border-0">
+                      <td className="px-2 py-1.5 text-neutral-800">{item.ingredientName}</td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" min="0" step="any" value={row.kitchenQty}
+                          onChange={(e) => patchEdit(item.id, { kitchenQty: e.target.value })}
+                          className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" min="0" step="any" value={row.freezerQty}
+                          onChange={(e) => patchEdit(item.id, { freezerQty: e.target.value })}
+                          className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" min="0" step="any" value={row.qty}
+                          onChange={(e) => patchEdit(item.id, { qty: e.target.value })}
+                          className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-right text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" value={row.unit}
+                          onChange={(e) => patchEdit(item.id, { unit: e.target.value })}
+                          className="w-14 rounded border border-neutral-300 px-1.5 py-1 text-xs" />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <button type="button" disabled={isPending} onClick={handleUpdateAndResubmit}
             className="rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
-            {isPending ? "กำลังส่ง..." : "ส่งใหม่อีกครั้ง"}
+            {isPending ? "กำลังส่ง..." : "บันทึกและส่งใหม่อีกครั้ง"}
           </button>
         </div>
       )}
@@ -146,11 +234,8 @@ export function SessionActions({
                     isChecked ? "bg-neutral-50" : "hover:bg-neutral-50"
                   }`}
                 >
-                  {/* Checkbox visual */}
                   <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-xs ${
-                    isChecked
-                      ? "border-green-600 bg-green-600 text-white"
-                      : "border-neutral-300"
+                    isChecked ? "border-green-600 bg-green-600 text-white" : "border-neutral-300"
                   }`}>
                     {isChecked ? "✓" : ""}
                   </span>
@@ -167,7 +252,6 @@ export function SessionActions({
               );
             })}
           </div>
-          {/* ส่งใบสั่งของ */}
           {session.status === "approved" && (
             <div className="border-t border-neutral-100 px-4 py-3">
               <button type="button" disabled={isPending} onClick={handleMarkSent}

@@ -14,11 +14,12 @@ type RowState = {
   packCount: string;
   qtyPerPack: string;
   usePack: boolean;
+  orderUnit: string;
 };
 
 const EMPTY_ROW: RowState = {
   kitchenQty: "", freezerQty: "", qty: "",
-  packCount: "", qtyPerPack: "", usePack: false,
+  packCount: "", qtyPerPack: "", usePack: false, orderUnit: "",
 };
 
 export function OrderForm({ stations, ingredients }: Props) {
@@ -88,7 +89,7 @@ export function OrderForm({ stations, ingredients }: Props) {
           packCount,
           qtyPerPack,
           qtyOrdered,
-          orderUnit: ing.purchaseUnitLabel ?? ing.usageUnit,
+          orderUnit: (row.orderUnit !== "" ? row.orderUnit : (ing.purchaseUnitLabel ?? ing.usageUnit)) || null,
           note: null,
         };
       })
@@ -168,7 +169,8 @@ export function OrderForm({ stations, ingredients }: Props) {
                 <div className="border-t border-neutral-100">
                   {items.map((ing) => {
                     const row = rows[ing.id] ?? EMPTY_ROW;
-                    const orderUnit = ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
+                    const defaultOrderUnit = ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
+                    const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
                     const usageUnit = ing.usageUnit ?? "";
                     const parHint = ing.parLevel !== null ? `≈${ing.parLevel}` : "";
 
@@ -214,17 +216,18 @@ export function OrderForm({ stations, ingredients }: Props) {
                             <label className="flex flex-col gap-0.5">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs text-neutral-400">สั่ง</span>
-                                {orderUnit !== usageUnit && (
-                                  <button type="button" onClick={() => setRow(ing.id, "usePack", true)}
-                                    className="text-xs text-blue-500 hover:underline">แพ็ค</button>
-                                )}
+                                <button type="button" onClick={() => setRow(ing.id, "usePack", true)}
+                                  className="text-xs text-blue-500 hover:underline">แพ็ค</button>
                               </div>
                               <div className="flex items-center gap-1">
                                 <input type="number" min="0" step="any" value={row.qty}
                                   onChange={(e) => setRow(ing.id, "qty", e.target.value)}
                                   placeholder={parHint || "0"}
                                   className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
-                                <span className="text-xs text-neutral-400">{orderUnit}</span>
+                                <input type="text" value={orderUnit}
+                                  onChange={(e) => setRow(ing.id, "orderUnit", e.target.value)}
+                                  placeholder="หน่วย"
+                                  className="w-14 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600" />
                               </div>
                             </label>
                           ) : (
@@ -244,7 +247,10 @@ export function OrderForm({ stations, ingredients }: Props) {
                                   onChange={(e) => setRow(ing.id, "qtyPerPack", e.target.value)}
                                   placeholder="ต่อแพ็ค"
                                   className="w-16 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
-                                <span className="text-xs text-neutral-400">{orderUnit}</span>
+                                <input type="text" value={orderUnit}
+                                  onChange={(e) => setRow(ing.id, "orderUnit", e.target.value)}
+                                  placeholder="หน่วย"
+                                  className="w-14 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600" />
                                 {row.packCount && row.qtyPerPack && (
                                   <span className="text-xs text-neutral-500">
                                     = {(parseFloat(row.packCount) * parseFloat(row.qtyPerPack)).toFixed(2)} {orderUnit}

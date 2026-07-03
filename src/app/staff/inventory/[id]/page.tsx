@@ -8,6 +8,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
     day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
+    timeZone: "Asia/Bangkok",
   });
 }
 
@@ -39,6 +40,7 @@ export default async function SessionDetailPage({
   const canApprove = profile.role !== "staff" && profile.role !== "accounting";
   const isCreator = profile.id === session.createdBy;
   const shortId = session.id.slice(0, 8).toUpperCase();
+  const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -108,7 +110,7 @@ export default async function SessionDetailPage({
                 <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
                 <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
                 <th className="px-3 py-2 text-right">สั่ง</th>
-                {session.status === "received" && (
+                {showReceived && (
                   <th className="px-3 py-2 text-right">รับจริง</th>
                 )}
               </tr>
@@ -136,7 +138,7 @@ export default async function SessionDetailPage({
                         <div className="text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</div>
                       )}
                     </td>
-                    {session.status === "received" && (
+                    {showReceived && (
                       <td className="px-3 py-2 text-right text-green-700">
                         {item.qtyReceived !== null
                           ? `${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()
