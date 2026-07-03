@@ -40,7 +40,10 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 function isActiveLink(href: string, exact: boolean, pathname: string): boolean {
-  return exact ? pathname === href : pathname.startsWith(href);
+  if (exact) return pathname === href;
+  // Prevent /staff from matching /staff/inventory (handled by its own nav item)
+  if (href === "/staff") return pathname.startsWith("/staff") && !pathname.startsWith("/staff/inventory");
+  return pathname.startsWith(href);
 }
 
 export function AppHeader({

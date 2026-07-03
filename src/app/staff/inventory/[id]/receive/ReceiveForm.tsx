@@ -32,7 +32,6 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
       const result = await receiveOrderItems(session.id, payload);
       if (result.error) { setError(result.error); return; }
       setDone(true);
-      router.refresh();
     });
   }
 
