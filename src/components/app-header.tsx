@@ -12,7 +12,6 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
-  { href: "/owner/stations", label: "Template สถานี", exact: false },
   { href: "/owner/team", label: "พนักงาน", exact: true },
   { href: "/sop", label: "SOP ครัว", exact: false },
   { href: "/owner/approve", label: "อนุมัติ", exact: true },
@@ -23,7 +22,6 @@ const EDITOR_NAV: NavItem[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
-  { href: "/owner/stations", label: "Template สถานี", exact: false },
   { href: "/sop", label: "SOP ครัว", exact: false },
 ];
 

@@ -74,6 +74,8 @@ export type IngredientForOrder = {
   customGroup: string | null;
   customUnit: string | null;
   defaultQty: number | null;
+  kitchenUnit: string | null;
+  freezerUnit: string | null;
 };
 
 export type StationTemplateRow = {
@@ -88,6 +90,8 @@ export type StationTemplateRow = {
   sortOrder: number;
   usageUnit: string | null;
   purchaseUnitLabel: string | null;
+  kitchenUnit: string | null;
+  freezerUnit: string | null;
 };
 
 export async function getStations(): Promise<Station[]> {
@@ -121,6 +125,8 @@ export async function getIngredientsForOrder(): Promise<IngredientForOrder[]> {
     customGroup: null,
     customUnit: null,
     defaultQty: null,
+    kitchenUnit: null,
+    freezerUnit: null,
   }));
 }
 
@@ -129,7 +135,7 @@ export async function getAllStationTemplates(): Promise<Record<string, StationTe
   const { data, error } = await supabase
     .from("station_ingredients")
     .select(`
-      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order,
+      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order, kitchen_unit, freezer_unit,
       ingredients(name, category, usage_unit, purchase_unit_label)
     `)
     .order("sort_order");
@@ -140,6 +146,7 @@ export async function getAllStationTemplates(): Promise<Record<string, StationTe
     id: string; station_id: string; ingredient_id: string;
     custom_group: string | null; custom_unit: string | null;
     default_qty: number | null; sort_order: number;
+    kitchen_unit: string | null; freezer_unit: string | null;
     ingredients: IngRef | IngRef[] | null;
   };
 
@@ -163,6 +170,8 @@ export async function getAllStationTemplates(): Promise<Record<string, StationTe
       sortOrder: r.sort_order,
       usageUnit: ing?.usage_unit ?? null,
       purchaseUnitLabel: ing?.purchase_unit_label ?? null,
+      kitchenUnit: r.kitchen_unit,
+      freezerUnit: r.freezer_unit,
     };
     if (!result[r.station_id]) result[r.station_id] = [];
     result[r.station_id].push(row);
@@ -175,7 +184,7 @@ export async function getStationTemplate(stationId: string): Promise<StationTemp
   const { data, error } = await supabase
     .from("station_ingredients")
     .select(`
-      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order,
+      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order, kitchen_unit, freezer_unit,
       ingredients(name, category, usage_unit, purchase_unit_label)
     `)
     .eq("station_id", stationId)
@@ -187,6 +196,7 @@ export async function getStationTemplate(stationId: string): Promise<StationTemp
     id: string; station_id: string; ingredient_id: string;
     custom_group: string | null; custom_unit: string | null;
     default_qty: number | null; sort_order: number;
+    kitchen_unit: string | null; freezer_unit: string | null;
     ingredients: IngRef2 | IngRef2[] | null;
   };
 
@@ -204,6 +214,8 @@ export async function getStationTemplate(stationId: string): Promise<StationTemp
       sortOrder: r.sort_order,
       usageUnit: ing?.usage_unit ?? null,
       purchaseUnitLabel: ing?.purchase_unit_label ?? null,
+      kitchenUnit: r.kitchen_unit,
+      freezerUnit: r.freezer_unit,
     };
   });
 }

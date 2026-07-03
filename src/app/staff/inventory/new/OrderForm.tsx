@@ -51,6 +51,8 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
           customGroup: t.customGroup,
           customUnit: t.customUnit,
           defaultQty: t.defaultQty,
+          kitchenUnit: t.kitchenUnit,
+          freezerUnit: t.freezerUnit,
         };
       })
       .filter((x): x is IngredientForOrder => x !== null);
@@ -107,9 +109,9 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
           ingredientId: ing.id,
           ingredientName: ing.name,
           remainingKitchenQty: kitchenQty !== null && !isNaN(kitchenQty) ? kitchenQty : null,
-          remainingKitchenUnit: ing.usageUnit,
+          remainingKitchenUnit: ing.kitchenUnit ?? ing.usageUnit,
           remainingFreezerQty: freezerQty !== null && !isNaN(freezerQty) ? freezerQty : null,
-          remainingFreezerUnit: ing.usageUnit,
+          remainingFreezerUnit: ing.freezerUnit ?? ing.usageUnit,
           packCount,
           qtyPerPack,
           qtyOrdered,
@@ -195,7 +197,8 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
                     const row = rows[ing.id] ?? EMPTY_ROW;
                     const defaultOrderUnit = ing.customUnit ?? ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
                     const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
-                    const usageUnit = ing.customUnit ?? ing.usageUnit ?? "";
+                    const kitchenUnit = ing.kitchenUnit ?? ing.usageUnit ?? "";
+                    const freezerUnit = ing.freezerUnit ?? ing.usageUnit ?? "";
                     // defaultQty from template takes priority over global par_level
                     const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : ing.parLevel !== null ? `≈${ing.parLevel}` : "";
                     const isFilled = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
@@ -221,7 +224,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
                                 onChange={(e) => setRow(ing.id, "kitchenQty", e.target.value)}
                                 placeholder="0"
                                 className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
-                              <span className="text-xs text-neutral-400">{usageUnit}</span>
+                              <span className="text-xs text-neutral-400">{kitchenUnit}</span>
                             </div>
                           </label>
 
@@ -233,7 +236,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates }: Props)
                                 onChange={(e) => setRow(ing.id, "freezerQty", e.target.value)}
                                 placeholder="0"
                                 className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
-                              <span className="text-xs text-neutral-400">{usageUnit}</span>
+                              <span className="text-xs text-neutral-400">{freezerUnit}</span>
                             </div>
                           </label>
 

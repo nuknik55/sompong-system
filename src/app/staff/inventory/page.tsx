@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
+import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderStatus } from "@/lib/inventory-data";
 
 function formatDate(iso: string) {
@@ -24,21 +25,34 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 };
 
 export default async function InventoryListPage() {
-  const [, sessions] = await Promise.all([requireProfile(), getOrderSessions()]);
+  const [profile, sessions] = await Promise.all([requireProfile(), getOrderSessions()]);
+  const canManageTemplate = ["owner", "admin", "editor"].includes(profile.role);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <InventorySubNav showTemplate={canManageTemplate} />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-neutral-900">รายการสั่งของ</h1>
           <p className="text-sm text-neutral-500">เช็คของ · สั่งของ · รับของ</p>
         </div>
-        <Link
-          href="/staff/inventory/new"
-          className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-        >
-          + สั่งของใหม่
-        </Link>
+        <div className="flex gap-2">
+          {canManageTemplate && (
+            <Link
+              href="/staff/inventory/new"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              สั่งของจาก Template
+            </Link>
+          )}
+          <Link
+            href="/staff/inventory/new"
+            className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            + สั่งของใหม่
+          </Link>
+        </div>
       </div>
 
       {sessions.length === 0 ? (
