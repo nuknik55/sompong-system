@@ -12,6 +12,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
+  { href: "/owner/stations", label: "Template สถานี", exact: false },
   { href: "/owner/team", label: "พนักงาน", exact: true },
   { href: "/sop", label: "SOP ครัว", exact: false },
   { href: "/owner/approve", label: "อนุมัติ", exact: true },
@@ -22,6 +23,7 @@ const EDITOR_NAV: NavItem[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
+  { href: "/owner/stations", label: "Template สถานี", exact: false },
   { href: "/sop", label: "SOP ครัว", exact: false },
 ];
 
@@ -43,6 +45,8 @@ function isActiveLink(href: string, exact: boolean, pathname: string): boolean {
   if (exact) return pathname === href;
   // Prevent /staff from matching /staff/inventory (handled by its own nav item)
   if (href === "/staff") return pathname.startsWith("/staff") && !pathname.startsWith("/staff/inventory");
+  // Prevent /owner from matching /owner/ingredients, /owner/stations, etc. (those have their own items)
+  if (href === "/owner") return pathname === "/owner";
   return pathname.startsWith(href);
 }
 

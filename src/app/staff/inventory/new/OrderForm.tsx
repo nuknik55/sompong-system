@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderSession } from "../actions";
-import type { Station, IngredientForOrder } from "@/lib/inventory-data";
+import type { Station, IngredientForOrder, StationTemplateRow } from "@/lib/inventory-data";
 
-type Props = { stations: Station[]; ingredients: IngredientForOrder[] };
+type Props = {
+  stations: Station[];
+  allIngredients: IngredientForOrder[];
+  stationTemplates: Record<string, StationTemplateRow[]>;
+};
 
 type RowState = {
   kitchenQty: string;
@@ -22,7 +26,7 @@ const EMPTY_ROW: RowState = {
   packCount: "", qtyPerPack: "", usePack: false, orderUnit: "",
 };
 
-export function OrderForm({ stations, ingredients }: Props) {
+export function OrderForm({ stations, allIngredients, stationTemplates }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -32,11 +36,31 @@ export function OrderForm({ stations, ingredients }: Props) {
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  // Group by category, preserving order from DB
+  // Derive effective ingredient list: use station template if available
+  const ingredients = useMemo<IngredientForOrder[]>(() => {
+    const template = stationId ? stationTemplates[stationId] : null;
+    if (!template || template.length === 0) return allIngredients;
+
+    const baseById = new Map(allIngredients.map((i) => [i.id, i]));
+    return template
+      .map((t) => {
+        const base = baseById.get(t.ingredientId);
+        if (!base) return null;
+        return {
+          ...base,
+          customGroup: t.customGroup,
+          customUnit: t.customUnit,
+          defaultQty: t.defaultQty,
+        };
+      })
+      .filter((x): x is IngredientForOrder => x !== null);
+  }, [stationId, stationTemplates, allIngredients]);
+
+  // Group by custom_group (template) or category (fallback)
   const categories: { label: string; items: IngredientForOrder[] }[] = [];
   const seen = new Map<string, IngredientForOrder[]>();
   for (const ing of ingredients) {
-    const cat = ing.category ?? "ไม่ระบุหมวด";
+    const cat = ing.customGroup ?? ing.category ?? "ไม่ระบุหมวด";
     if (!seen.has(cat)) seen.set(cat, []);
     seen.get(cat)!.push(ing);
   }
@@ -169,10 +193,11 @@ export function OrderForm({ stations, ingredients }: Props) {
                 <div className="border-t border-neutral-100">
                   {items.map((ing, idx) => {
                     const row = rows[ing.id] ?? EMPTY_ROW;
-                    const defaultOrderUnit = ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
+                    const defaultOrderUnit = ing.customUnit ?? ing.purchaseUnitLabel ?? ing.usageUnit ?? "";
                     const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
-                    const usageUnit = ing.usageUnit ?? "";
-                    const parHint = ing.parLevel !== null ? `≈${ing.parLevel}` : "";
+                    const usageUnit = ing.customUnit ?? ing.usageUnit ?? "";
+                    // defaultQty from template takes priority over global par_level
+                    const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : ing.parLevel !== null ? `≈${ing.parLevel}` : "";
                     const isFilled = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
 
                     return (

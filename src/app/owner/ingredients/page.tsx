@@ -62,6 +62,7 @@ export default async function OwnerIngredientsPage() {
                   receive_qty: i.receive_qty ?? 1,
                   yield_qty: i.yield_qty,
                   usage_unit: i.usage_unit,
+                  par_level: i.par_level ?? null,
                 }))}
                 unitCosts={Object.fromEntries(unitCosts)}
                 usageMap={usageMap}

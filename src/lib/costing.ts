@@ -14,6 +14,7 @@ export type IngredientRow = {
   yield_qty: number | null;
   usage_unit: string | null;
   prep_recipe_id: string | null;
+  par_level?: number | null;
 };
 
 export type PrepRecipeRow = {

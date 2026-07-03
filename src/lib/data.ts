@@ -38,7 +38,7 @@ export async function getIngredients(): Promise<IngredientRow[]> {
   return fetchAllRows<IngredientRow>(({ from, to }) =>
     supabase
       .from("ingredients")
-      .select("id, name, category, is_prep, purchase_unit_label, purchase_cost, receive_qty, yield_qty, usage_unit, prep_recipe_id")
+      .select("id, name, category, is_prep, purchase_unit_label, purchase_cost, receive_qty, yield_qty, usage_unit, prep_recipe_id, par_level")
       .order("name")
       .range(from, to)
   );

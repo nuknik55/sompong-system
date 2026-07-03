@@ -13,6 +13,7 @@ export type IngredientFields = {
   receive_qty: number;
   yield_qty: number | null;
   usage_unit: string | null;
+  par_level?: number | null;
 };
 
 export type IngredientSaveResult = { status: "saved" } | { status: "pending" };

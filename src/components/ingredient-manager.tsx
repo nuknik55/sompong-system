@@ -25,6 +25,7 @@ export type IngredientRow = {
   receive_qty: number;
   yield_qty: number | null;
   usage_unit: string | null;
+  par_level: number | null;
 };
 
 function formatBaht(n: number | null) {
@@ -150,6 +151,7 @@ export function IngredientManager({
           receive_qty: row.receive_qty,
           yield_qty: row.yield_qty,
           usage_unit: row.usage_unit,
+          par_level: row.par_level,
         });
         setRowStatus((prev) => ({ ...prev, [id]: result.status }));
       } catch (e) {
@@ -378,6 +380,7 @@ export function IngredientManager({
               <th className="px-2 py-2">จำนวนตัดแต่ง</th>
               <th className="px-2 py-2">หน่วยใช้จริง</th>
               <th className="px-2 py-2 text-right">ต้นทุน/หน่วยใช้จริง</th>
+              <th className="px-2 py-2 text-right">Par</th>
               <th className="px-2 py-2"></th>
               <th className="px-2 py-2"></th>
               <th className="px-2 py-2"></th>
@@ -456,6 +459,13 @@ export function IngredientManager({
                     <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">
                       {formatBaht(unitCosts[row.id] ?? null)}
                     </td>
+                    <td className="px-2 py-1.5">
+                      <NumberInput
+                        value={row.par_level}
+                        onChange={(v) => patchRow(row.id, { par_level: v })}
+                        className="w-16 text-right"
+                      />
+                    </td>
                     <td className="px-2 py-1.5 text-right">
                       <div className="flex flex-col items-end gap-0.5">
                         <button
@@ -493,7 +503,7 @@ export function IngredientManager({
                   </tr>
                   {expandedId === row.id && (
                     <tr className="border-b border-neutral-100 bg-neutral-50">
-                      <td colSpan={10} className="px-4 py-3">
+                      <td colSpan={11} className="px-4 py-3">
                         <IngredientDetail ingredientId={row.id} usage={usage} />
                       </td>
                     </tr>
