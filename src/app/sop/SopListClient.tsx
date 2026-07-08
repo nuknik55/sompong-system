@@ -100,81 +100,67 @@ export function SopListClient({
           // Compute which sections are missing (only relevant when SOP exists)
           const missing: string[] = [];
           if (item.sopId) {
-            if ((item.prepCount ?? 0) === 0) missing.push("ขั้นตอนเตรียม");
-            if ((item.cookCount ?? 0) === 0) missing.push("ขั้นตอนปรุง");
+            if ((item.prepCount ?? 0) === 0) missing.push("เตรียม");
+            if ((item.cookCount ?? 0) === 0) missing.push("ปรุง");
             if ((item.platingCount ?? 0) === 0) missing.push("จัดจาน");
             if ((item.checklistCount ?? 0) === 0) missing.push("checklist");
           }
           const sopComplete = item.sopId && missing.length === 0;
 
           return (
-            <li key={item.menuId} className="px-4 py-3 space-y-1.5">
-              {/* Main row */}
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`/sop/${item.menuId}`}
-                  className="min-w-0 flex-1 font-medium text-neutral-800 hover:text-brand-green"
-                >
-                  {item.menuName}
-                </Link>
+            <li key={item.menuId} className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <Link
+                href={`/sop/${item.menuId}`}
+                className="min-w-0 flex-1 font-medium text-neutral-800 hover:text-brand-green"
+              >
+                {item.menuName}
+              </Link>
 
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${catColor(cat)}`}>{cat}</span>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${catColor(cat)}`}>{cat}</span>
 
-                {item.sopId ? (
-                  <span className={`shrink-0 text-xs ${sopComplete ? "text-green-600" : "text-amber-600"}`}>
-                    {sopComplete ? "✓" : "⚠"} มี SOP — {item.updatedAt ?? ""}
-                    {item.authorName ? ` (${item.authorName})` : ""}
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-xs text-neutral-400">ยังไม่มี SOP</span>
-                )}
+              {item.sopId ? (
+                <span className={`shrink-0 text-xs ${sopComplete ? "text-green-600" : "text-amber-600"}`}>
+                  {sopComplete ? "✓" : "⚠"} มี SOP — {item.updatedAt ?? ""}
+                  {item.authorName ? ` (${item.authorName})` : ""}
+                  {missing.length > 0 && ` · ขาด: ${missing.join(", ")}`}
+                </span>
+              ) : (
+                <span className="shrink-0 text-xs text-neutral-400">ยังไม่มี SOP</span>
+              )}
 
-                {canEdit && (
-                  <div className="flex shrink-0 gap-1">
-                    {item.sopId ? (
-                      <>
-                        <Link
-                          href={`/sop/${item.menuId}/edit`}
-                          className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
-                        >
-                          แก้ไข
-                        </Link>
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            disabled={isPending && deletingId === item.menuId}
-                            onClick={() => handleDelete(item.menuId, item.menuName)}
-                            className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            ลบ
-                          </button>
-                        )}
-                      </>
-                    ) : (
+              {item.hasVideo && (
+                <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">🎬 VDO</span>
+              )}
+
+              {canEdit && (
+                <div className="flex shrink-0 gap-1">
+                  {item.sopId ? (
+                    <>
                       <Link
                         href={`/sop/${item.menuId}/edit`}
-                        className="rounded border border-brand-green px-2 py-0.5 text-xs text-brand-green hover:bg-brand-green/5"
+                        className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
                       >
-                        + สร้าง SOP
+                        แก้ไข
                       </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Completion status row — only for existing SOPs */}
-              {item.sopId && (
-                <div className="flex flex-wrap gap-1">
-                  {item.hasVideo && (
-                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
-                      🎬 มี VDO
-                    </span>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          disabled={isPending && deletingId === item.menuId}
+                          onClick={() => handleDelete(item.menuId, item.menuName)}
+                          className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          ลบ
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <Link
+                      href={`/sop/${item.menuId}/edit`}
+                      className="rounded border border-brand-green px-2 py-0.5 text-xs text-brand-green hover:bg-brand-green/5"
+                    >
+                      + สร้าง SOP
+                    </Link>
                   )}
-                  {missing.map((label) => (
-                    <span key={label} className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-xs text-amber-700">
-                      ยังไม่มี{label}
-                    </span>
-                  ))}
                 </div>
               )}
             </li>
