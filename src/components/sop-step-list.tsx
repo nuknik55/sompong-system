@@ -105,10 +105,18 @@ export function SopStepList({
             </div>
             <textarea
               value={step.text}
-              onChange={(e) => patchText(i, e.target.value)}
+              onChange={(e) => {
+                patchText(i, e.target.value);
+                const el = e.target;
+                el.style.height = "auto";
+                el.style.height = el.scrollHeight + "px";
+              }}
+              ref={(el) => {
+                if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+              }}
               placeholder={placeholder}
               rows={2}
-              className="w-full resize-none rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
             <div className="mt-2">
               <SopPhotoUpload

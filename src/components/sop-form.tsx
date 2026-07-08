@@ -22,7 +22,7 @@ function toChecklistItems(steps: SopFullData["checklist"]): ChecklistItem[] {
 
 function isValidVideoUrl(url: string): boolean {
   if (!url.trim()) return true;
-  return /youtube\.com|youtu\.be|drive\.google\.com/.test(url);
+  try { new URL(url); return true; } catch { return false; }
 }
 
 const SECTION_LABEL: Record<"prep" | "cook" | "plating", string> = {
@@ -101,7 +101,7 @@ export function SopForm({
 
   function handleSave() {
     if (!isValidVideoUrl(demoVideoUrl)) {
-      setError("URL วิดีโอไม่ถูกต้อง — กรอก YouTube หรือ Google Drive เท่านั้น");
+      setError("URL วิดีโอไม่ถูกต้อง — ต้องขึ้นต้นด้วย https://");
       return;
     }
     setError(null);
@@ -135,26 +135,49 @@ export function SopForm({
   const videoUrlInvalid = demoVideoUrl.trim() && !isValidVideoUrl(demoVideoUrl);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 pb-16">
-      {/* ── Header ── */}
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-kanit text-xl font-semibold text-neutral-900">{menuName}</h1>
-          {menuCategory && (
-            <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-              {menuCategory}
-            </span>
+    <div className="mx-auto max-w-3xl space-y-8 pb-24">
+      {/* ── Header + inline save ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-kanit text-xl font-semibold text-neutral-900">{menuName}</h1>
+            {menuCategory && (
+              <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+                {menuCategory}
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-neutral-500">
+            {existing ? "แก้ไข SOP" : "สร้าง SOP ใหม่"}
+          </p>
+          {hasUnsaved && !saveSuccess && (
+            <p className="mt-1 text-xs text-amber-600">● มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
           )}
+          {saveSuccess && <p className="mt-1 text-xs text-green-600">✓ บันทึกสำเร็จ</p>}
+          {savePending && <p className="mt-1 text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว</p>}
         </div>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          {existing ? "แก้ไข SOP" : "สร้าง SOP ใหม่"}
-        </p>
+        {/* Save button at top — always visible on desktop */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => router.push(`/sop/${menuId}`)}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
+          >
+            ดู SOP
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={handleSave}
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
+          </button>
+        </div>
       </div>
 
-      {/* ── Unsaved indicator ── */}
-      {hasUnsaved && !saveSuccess && (
-        <p className="text-xs text-amber-600">● มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
-      )}
+      {error && <p className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{error}</p>}
 
       {/* ── Ingredients (read-only names + notes) ── */}
       <section>
@@ -251,12 +274,10 @@ export function SopForm({
           }`}
         />
         {videoUrlInvalid && (
-          <p className="mt-1 text-xs text-red-500">
-            กรอกได้เฉพาะ YouTube หรือ Google Drive เท่านั้น
-          </p>
+          <p className="mt-1 text-xs text-red-500">URL ไม่ถูกต้อง — ต้องขึ้นต้นด้วย https://</p>
         )}
         <p className="mt-1 text-xs text-neutral-400">
-          รองรับ YouTube และ Google Drive — เว็บอื่นกรุณาแชร์ผ่านลิงก์สาธารณะ
+          รองรับทุก URL วิดีโอ เช่น YouTube, Google Drive, TikTok, Facebook
         </p>
       </section>
 
@@ -285,31 +306,26 @@ export function SopForm({
         </div>
       </section>
 
-      {/* ── Save bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-neutral-200 bg-white px-4 py-3 shadow-lg no-print">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {saveSuccess && <p className="text-sm text-green-600">✓ บันทึกสำเร็จ</p>}
-          {savePending && <p className="text-sm text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
-          {!error && !saveSuccess && !savePending && <div />}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => router.push(`/sop/${menuId}`)}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100"
-            >
-              ดู SOP
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={handleSave}
-              className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
-            </button>
+      {/* ── Fixed save bar (visible on mobile scroll / bottom of long page) ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-neutral-200 bg-white/95 backdrop-blur-sm px-4 py-3 shadow-lg no-print">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <div className="text-sm">
+            {error && <span className="text-red-600">{error}</span>}
+            {saveSuccess && <span className="text-green-600">✓ บันทึกสำเร็จ</span>}
+            {savePending && <span className="text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
+            {!error && !saveSuccess && !savePending && hasUnsaved && (
+              <span className="text-xs text-neutral-400">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
+            )}
           </div>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={handleSave}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
+          </button>
         </div>
       </div>
     </div>
