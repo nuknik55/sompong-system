@@ -6,8 +6,8 @@ import { SopListClient } from "@/app/sop/SopListClient";
 
 export default async function SopIndexPage() {
   const [profile, items] = await Promise.all([getCurrentProfile(), getSopList()]);
-  const isAdmin = profile?.role === "admin";
-  const canEdit = profile?.role === "admin" || profile?.role === "editor";
+  const isAdmin = profile?.role === "owner" || profile?.role === "admin";
+  const canEdit = profile?.role === "owner" || profile?.role === "admin" || profile?.role === "editor";
   const totalMenus = items.length;
   const hasSop = items.filter((i) => i.sopId !== null).length;
 

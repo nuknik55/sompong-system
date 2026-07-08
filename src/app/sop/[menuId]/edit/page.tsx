@@ -36,7 +36,7 @@ export default async function SopEditPage({
         menuCategory={menu.category}
         ingredients={ingredients}
         existing={existing}
-        submitMode={profile.role === "admin" ? "save" : "pending"}
+        submitMode={profile.role === "owner" || profile.role === "admin" ? "save" : "pending"}
       />
     </div>
   );
