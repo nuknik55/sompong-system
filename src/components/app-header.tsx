@@ -14,6 +14,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
   { href: "/owner/team", label: "พนักงาน", exact: true },
   { href: "/sop", label: "SOP ครัว", exact: false },
+  { href: "/maintenance", label: "แจ้งซ่อม", exact: false },
   { href: "/owner/approve", label: "อนุมัติ", exact: true },
 ];
 
@@ -23,12 +24,14 @@ const EDITOR_NAV: NavItem[] = [
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
   { href: "/sop", label: "SOP ครัว", exact: false },
+  { href: "/maintenance", label: "แจ้งซ่อม", exact: false },
 ];
 
 const STAFF_NAV: NavItem[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },
   { href: "/sop", label: "SOP ครัว", exact: false },
+  { href: "/maintenance", label: "แจ้งซ่อม", exact: false },
 ];
 
 const ROLE_LABEL: Record<string, string> = {

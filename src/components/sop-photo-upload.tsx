@@ -29,25 +29,29 @@ async function resizeAndCompress(file: File): Promise<Blob> {
   });
 }
 
-/** Upload blob to Supabase Storage sop-photos bucket. Returns public URL. */
-async function uploadToSupabase(blob: Blob): Promise<string> {
+/** Upload blob to a Supabase Storage bucket. Returns public URL. */
+async function uploadToSupabase(blob: Blob, bucket: string, prefix: string): Promise<string> {
   const supabase = createClient();
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.jpg`;
-  const { error } = await supabase.storage.from("sop-photos").upload(filename, blob, {
+  const filename = `${prefix}${Date.now()}-${Math.random().toString(36).slice(2, 9)}.jpg`;
+  const { error } = await supabase.storage.from(bucket).upload(filename, blob, {
     contentType: "image/jpeg",
     upsert: false,
   });
   if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from("sop-photos").getPublicUrl(filename);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(filename);
   return data.publicUrl;
 }
 
 export function SopPhotoUpload({
   photoUrl,
   onChange,
+  bucket = "sop-photos",
+  filenamePrefix = "",
 }: {
   photoUrl: string | null;
   onChange: (url: string | null) => void;
+  bucket?: string;
+  filenamePrefix?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -60,7 +64,7 @@ export function SopPhotoUpload({
     setUploading(true);
     try {
       const blob = await resizeAndCompress(file);
-      const url = await uploadToSupabase(blob);
+      const url = await uploadToSupabase(blob, bucket, filenamePrefix);
       onChange(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
