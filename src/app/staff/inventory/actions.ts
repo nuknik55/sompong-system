@@ -81,13 +81,13 @@ export async function createOrderSession(
   return { sessionId: session.id };
 }
 
-/** Editor saves edits to individual items before approving */
+/** Anyone logged in can edit ordered qty when status=sent (e.g. supplier has less stock) */
 export async function saveEditorItemEdit(
   itemId: string,
   editorQtyOrdered: number | null
 ): Promise<ActionResult> {
-  await requireAdminOrEditor();
-  const supabase = await createClient();
+  await requireProfile();
+  const supabase = createAdminClient();
   const { error } = await supabase
     .from("order_items")
     .update({ editor_qty_ordered: editorQtyOrdered })

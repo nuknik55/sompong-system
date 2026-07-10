@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { receiveOrderItems } from "../../actions";
 import type { OrderSessionDetail } from "@/lib/inventory-data";
 
-const VARIANCE_THRESHOLD = 0.3; // ±30%
+const VARIANCE_THRESHOLD = 0.3;
 
 function isHighVariance(ordered: number, received: number | null): boolean {
   if (received === null || ordered === 0) return false;
@@ -15,26 +15,38 @@ function isHighVariance(ordered: number, received: number | null): boolean {
 export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [received, setReceived] = useState<Record<string, string>>(
-    Object.fromEntries(session.items.map((i) => [i.id, String(i.editorQtyOrdered ?? i.qtyOrdered)]))
+  const [inputs, setInputs] = useState<Record<string, string>>(
+    Object.fromEntries(
+      session.items.map((i) => [i.id, i.qtyReceived !== null ? String(i.qtyReceived) : ""])
+    )
   );
   const [error, setError] = useState<string | null>(null);
 
+  const alreadyDone = session.items.filter((i) => i.qtyReceived !== null).length;
+  const shortId = session.id.slice(0, 8).toUpperCase();
+
   function handleSubmit() {
     setError(null);
-    const payload = session.items.map((item) => ({
-      itemId: item.id,
-      qtyReceived: received[item.id]?.trim() !== "" ? parseFloat(received[item.id]) : null,
-    }));
+    // Only submit items that have a value entered (never blank → avoid un-receiving)
+    const payload = session.items
+      .filter((item) => inputs[item.id]?.trim() !== "")
+      .map((item) => ({
+        itemId: item.id,
+        qtyReceived: parseFloat(inputs[item.id]) || 0,
+      }));
+
+    if (payload.length === 0) {
+      setError("กรุณาใส่จำนวนอย่างน้อย 1 รายการ");
+      return;
+    }
 
     startTransition(async () => {
       const result = await receiveOrderItems(session.id, payload);
       if (result.error) { setError(result.error); return; }
-      router.push("/staff/inventory");
+      // Let detail page decide if session closed — redirect there
+      router.push(`/staff/inventory/${session.id}`);
     });
   }
-
-  const shortId = session.id.slice(0, 8).toUpperCase();
 
   return (
     <>
@@ -45,6 +57,14 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
           {session.stationName && <p className="text-sm text-neutral-500">{session.stationName}</p>}
         </div>
       </div>
+
+      {/* Progress */}
+      {alreadyDone > 0 && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800">
+          รับแล้ว {alreadyDone} / {session.items.length} รายการ
+          {alreadyDone < session.items.length && " — กรอกรายการที่มาถึงแล้วกด บันทึก ได้เลย"}
+        </div>
+      )}
 
       <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
         {/* Column headers */}
@@ -58,41 +78,45 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
 
         {session.items.map((item) => {
           const orderedQty = item.editorQtyOrdered ?? item.qtyOrdered;
-          const receivedVal = received[item.id]?.trim();
-          const receivedNum = receivedVal !== "" ? parseFloat(receivedVal) : null;
+          const inputVal = inputs[item.id] ?? "";
+          const receivedNum = inputVal.trim() !== "" ? parseFloat(inputVal) : null;
           const variance = isHighVariance(orderedQty, receivedNum);
+          const alreadyReceived = item.qtyReceived !== null;
 
           return (
             <div
               key={item.id}
               className={`grid grid-cols-[1fr_auto_auto] gap-2 items-center px-3 py-2.5 border-b border-neutral-100 last:border-0 ${
-                variance ? "bg-amber-50" : ""
+                alreadyReceived && inputVal !== "" ? "bg-green-50" : variance ? "bg-amber-50" : ""
               }`}
             >
               <div>
                 <span className="text-sm text-neutral-800">{item.ingredientName}</span>
-                {variance && (
+                {alreadyReceived && (
+                  <div className="text-xs text-green-600">✓ รับแล้ว {item.qtyReceived} {item.orderUnit ?? ""} — แก้ได้ถ้าพิมพ์ผิด</div>
+                )}
+                {!alreadyReceived && variance && (
                   <div className="text-xs text-amber-600">ต่างจากที่สั่งเกิน 30%</div>
                 )}
               </div>
 
-              {/* Ordered (read-only) */}
               <span className="w-28 text-right text-sm text-neutral-400">
                 {orderedQty > 0 ? `${orderedQty} ${item.orderUnit ?? ""}`.trim() : "—"}
               </span>
 
-              {/* Received input */}
               <div className="flex items-center gap-1">
                 <input
                   type="number" min="0" step="any"
-                  value={received[item.id] ?? ""}
-                  onChange={(e) => setReceived((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                  value={inputVal}
+                  onChange={(e) => setInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
                   placeholder="เว้นว่าง = ยังไม่มา"
                   className={`w-24 rounded border px-2 py-1 text-right text-sm ${
-                    variance ? "border-amber-400" : "border-neutral-300"
+                    alreadyReceived && inputVal !== "" ? "border-green-400 bg-green-50"
+                    : variance ? "border-amber-400"
+                    : "border-neutral-300"
                   }`}
                 />
-                <span className="text-xs text-neutral-400 truncate w-6">{item.orderUnit ?? ""}</span>
+                <span className="text-xs text-neutral-400 w-6 truncate">{item.orderUnit ?? ""}</span>
               </div>
             </div>
           );
@@ -100,7 +124,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
       </div>
 
       <p className="text-xs text-neutral-400">
-        เว้นว่าง = "ยังไม่มา" (ค้างในระบบ) · สีเหลือง = ต่างจากที่สั่งเกิน 30%
+        เว้นว่าง = ยังไม่มา (ค้างไว้ รับเพิ่มได้ภายหลัง) · สีเหลือง = ต่างจากที่สั่งเกิน 30%
       </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -112,7 +136,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
         </a>
         <button type="button" onClick={handleSubmit} disabled={isPending}
           className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
-          {isPending ? "กำลังบันทึก..." : "ยืนยันรับของ"}
+          {isPending ? "กำลังบันทึก..." : "บันทึกรายการที่มาแล้ว"}
         </button>
       </div>
     </>
