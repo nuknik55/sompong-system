@@ -107,20 +107,12 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
     });
   }
 
-  const filledCount = ingredients.filter((ing) => {
-    const r = rows[ing.id];
-    if (!r) return false;
-    return r.kitchenQty.trim() || r.freezerQty.trim() || r.qty.trim() || r.packCount.trim();
-  }).length;
-
-  function resolveQtyOrdered(row: RowState): number {
-    if (row.usePack) {
-      const packs = parseFloat(row.packCount) || 0;
-      const perPack = parseFloat(row.qtyPerPack) || 0;
-      return packs * perPack;
-    }
-    return parseFloat(row.qty) || 0;
+  function resolveOrderQty(r: RowState): number {
+    if (r.usePack) return (parseFloat(r.packCount) || 0) * (parseFloat(r.qtyPerPack) || 0);
+    return parseFloat(r.qty) || 0;
   }
+
+  const filledCount = ingredients.filter((ing) => resolveOrderQty(rows[ing.id] ?? EMPTY_ROW) > 0).length;
 
   function handleSubmit() {
     setError(null);
@@ -129,7 +121,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
         const row = rows[ing.id] ?? EMPTY_ROW;
         const kitchenQty = row.kitchenQty.trim() !== "" ? parseFloat(row.kitchenQty) : null;
         const freezerQty = row.freezerQty.trim() !== "" ? parseFloat(row.freezerQty) : null;
-        const qtyOrdered = resolveQtyOrdered(row);
+        const qtyOrdered = resolveOrderQty(row);
         const packCount = row.usePack && row.packCount.trim() ? parseFloat(row.packCount) : null;
         const qtyPerPack = row.usePack && row.qtyPerPack.trim() ? parseFloat(row.qtyPerPack) : null;
         return {
@@ -209,10 +201,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
 
         {categories.map(({ label, items }) => {
           const isOpen = openCategories.has(label);
-          const catFilled = items.filter((i) => {
-            const r = rows[i.id];
-            return r && (r.kitchenQty.trim() || r.freezerQty.trim() || r.qty.trim() || r.packCount.trim());
-          }).length;
+          const catFilled = items.filter((i) => resolveOrderQty(rows[i.id] ?? EMPTY_ROW) > 0).length;
 
           return (
             <div key={label} className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
@@ -236,10 +225,17 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                     const freezerUnit = ing.freezerUnit ?? ing.usageUnit ?? "";
                     // defaultQty from template takes priority over global par_level
                     const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : ing.parLevel !== null ? `≈${ing.parLevel}` : "";
-                    const isFilled = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
+                    const hasOrder = resolveOrderQty(row) > 0;
+                    const hasAnyData = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
+
+                    const rowCls = hasOrder
+                      ? "bg-green-50 ring-1 ring-inset ring-green-200"
+                      : hasAnyData
+                      ? "bg-blue-50/50"
+                      : idx % 2 === 1 ? "bg-neutral-50/60" : "";
 
                     return (
-                      <div key={ing.id} className={`border-b border-neutral-100 last:border-0 px-4 py-4 space-y-2 ${idx % 2 === 1 ? "bg-neutral-50/60" : ""} ${isFilled ? "ring-1 ring-inset ring-green-200" : ""}`}>
+                      <div key={ing.id} className={`border-b border-neutral-100 last:border-0 px-4 py-4 space-y-2 ${rowCls}`}>
                         {/* Name row */}
                         <div>
                           <span className="text-sm font-medium text-neutral-800">{ing.name}</span>
@@ -279,7 +275,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                           {!row.usePack ? (
                             <label className="flex flex-col gap-0.5">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs text-neutral-400">สั่ง</span>
+                                <span className={`text-xs font-medium ${hasOrder ? "text-green-700" : "text-neutral-400"}`}>สั่ง</span>
                                 <button type="button" onClick={() => setRow(ing.id, "usePack", true)}
                                   className="text-xs text-blue-500 hover:underline">แพ็ค</button>
                               </div>
@@ -287,7 +283,11 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                                 <input type="number" min="0" step="any" value={row.qty}
                                   onChange={(e) => setRow(ing.id, "qty", e.target.value)}
                                   placeholder={parHint || "0"}
-                                  className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                  className={`w-20 rounded border px-2 py-1 text-right text-sm font-medium ${
+                                    hasOrder
+                                      ? "border-green-400 bg-green-100 text-green-800"
+                                      : "border-neutral-300"
+                                  }`} />
                                 <input type="text" value={orderUnit}
                                   onChange={(e) => setRow(ing.id, "orderUnit", e.target.value)}
                                   placeholder="หน่วย"
@@ -297,7 +297,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                           ) : (
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-neutral-400">สั่ง (แพ็ค)</span>
+                                <span className={`text-xs font-medium ${hasOrder ? "text-green-700" : "text-neutral-400"}`}>สั่ง (แพ็ค)</span>
                                 <button type="button" onClick={() => setRow(ing.id, "usePack", false)}
                                   className="text-xs text-neutral-400 hover:underline">ยกเลิก</button>
                               </div>
@@ -305,7 +305,11 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                                 <input type="number" min="0" step="any" value={row.packCount}
                                   onChange={(e) => setRow(ing.id, "packCount", e.target.value)}
                                   placeholder={parHint || "0"}
-                                  className="w-16 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                  className={`w-16 rounded border px-2 py-1 text-right text-sm font-medium ${
+                                    hasOrder
+                                      ? "border-green-400 bg-green-100 text-green-800"
+                                      : "border-neutral-300"
+                                  }`} />
                                 <span className="text-xs text-neutral-400">แพ็ค ×</span>
                                 <input type="number" min="0" step="any" value={row.qtyPerPack}
                                   onChange={(e) => setRow(ing.id, "qtyPerPack", e.target.value)}
