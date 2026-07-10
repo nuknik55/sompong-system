@@ -31,6 +31,42 @@ export async function createReport(data: {
   return {};
 }
 
+export async function editReport(
+  id: string,
+  data: { category: string; location: string; description: string; isUrgent: boolean; photoBefore: string | null }
+): Promise<{ error?: string }> {
+  const profile = await requireProfile();
+  const supabase = createAdminClient();
+
+  const { data: existing } = await supabase
+    .from("maintenance_reports")
+    .select("reporter_id, status")
+    .eq("id", id)
+    .single();
+
+  if (!existing) return { error: "ไม่พบรายการ" };
+  if (existing.reporter_id !== profile.id && !["owner", "admin", "editor"].includes(profile.role)) {
+    return { error: "ไม่มีสิทธิ์แก้ไข" };
+  }
+  if (existing.status !== "new") return { error: "ไม่สามารถแก้ไขได้ — อยู่ระหว่างดำเนินการแล้ว" };
+
+  const { error } = await supabase
+    .from("maintenance_reports")
+    .update({
+      category: data.category || "อื่นๆ",
+      location: data.location.trim(),
+      description: data.description.trim(),
+      is_urgent: data.isUrgent,
+      photo_before: data.photoBefore,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/maintenance");
+  return {};
+}
+
 export async function updateReportStatus(
   id: string,
   status: MaintenanceStatus,

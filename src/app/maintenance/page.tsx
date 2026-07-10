@@ -25,7 +25,7 @@ export default async function MaintenancePage() {
           + แจ้งซ่อม
         </a>
       </div>
-      <MaintenanceListClient reports={reports} canManage={canManage} />
+      <MaintenanceListClient reports={reports} canManage={canManage} currentUserId={profile.id} />
     </div>
   );
 }
