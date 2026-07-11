@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  approveOrderSession,
+  reviewOrderSession,
   returnOrderSession,
   markOrderSent,
   updateItemsAndResubmit,
+  saveReviewerItemEdit,
   saveEditorItemEdit,
 } from "../actions";
 import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
@@ -38,11 +39,11 @@ function initEditRows(items: OrderItem[]): Record<string, EditRow> {
 
 export function SessionActions({
   session,
-  canApprove,
+  canReview,
   isCreator,
 }: {
   session: OrderSessionDetail;
-  canApprove: boolean;
+  canReview: boolean;
   isCreator: boolean;
 }) {
   const router = useRouter();
@@ -52,7 +53,6 @@ export function SessionActions({
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [editRows, setEditRows] = useState<Record<string, EditRow>>(() => initEditRows(session.items));
-  // Inline qty edit when sent
   const [editingQty, setEditingQty] = useState<string | null>(null);
   const [editQtyVal, setEditQtyVal] = useState("");
 
@@ -68,10 +68,10 @@ export function SessionActions({
     });
   }
 
-  function handleApprove() {
+  function handleReview() {
     setError(null);
     startTransition(async () => {
-      const result = await approveOrderSession(session.id);
+      const result = await reviewOrderSession(session.id);
       if (result.error) { setError(result.error); return; }
       router.refresh();
     });
@@ -123,23 +123,36 @@ export function SessionActions({
 
   function saveQtyEdit(itemId: string) {
     const val = parseFloat(editQtyVal);
+    const isReviewStage = session.status === "reviewed";
     startTransition(async () => {
-      const result = await saveEditorItemEdit(itemId, isNaN(val) ? null : val);
+      const result = isReviewStage
+        ? await saveReviewerItemEdit(itemId, isNaN(val) ? null : val)
+        : await saveEditorItemEdit(itemId, isNaN(val) ? null : val);
       if (result.error) { setError(result.error); return; }
       setEditingQty(null);
       router.refresh();
     });
   }
 
-  const orderableItems = session.items.filter((i) => (i.editorQtyOrdered ?? i.qtyOrdered) > 0);
+  // effective qty: purchaser edit > reviewer edit > original
+  function effectiveQty(item: OrderItem) {
+    return item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
+  }
+
+  const orderableItems = session.items.filter((i) => effectiveQty(i) > 0);
   const receivedCount = session.items.filter((i) => i.qtyReceived !== null).length;
   const totalItems = session.items.length;
+
+  // Show order checklist when reviewed or sent
+  const showChecklist = (session.status === "reviewed" || session.status === "sent") && orderableItems.length > 0;
+  // Allow inline qty edit: reviewer edits during "reviewed", purchaser edits during "sent"
+  const canEditQty = (session.status === "reviewed" && canReview) || session.status === "sent";
 
   return (
     <div className="space-y-4 pb-8 no-print">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* ตีกลับ */}
+      {/* ตีกลับ — edit form */}
       {session.status === "returned" && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
           <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
@@ -208,45 +221,50 @@ export function SessionActions({
         </div>
       )}
 
-      {/* Approve / Return */}
-      {session.status === "submitted" && canApprove && (
-        <div className="flex flex-wrap gap-3">
-          <button type="button" disabled={isPending} onClick={handleApprove}
-            className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
-            อนุมัติ
-          </button>
-          <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
-            className="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
-            ตีกลับ
-          </button>
-        </div>
-      )}
-
-      {showReturnForm && (
-        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <input type="text" placeholder="เหตุผล / ข้อความถึง staff (ไม่จำเป็น)"
-            value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
-            className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm" />
-          <div className="flex gap-2">
-            <button type="button" disabled={isPending} onClick={handleReturn}
-              className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
-              ยืนยันตีกลับ
+      {/* ขั้นที่ 1: ตรวจสอบ (submitted → reviewed) */}
+      {session.status === "submitted" && canReview && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <button type="button" disabled={isPending} onClick={handleReview}
+              className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
+              {isPending ? "กำลังบันทึก..." : "✓ ตรวจสอบแล้ว"}
             </button>
-            <button type="button" onClick={() => setShowReturnForm(false)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white">
-              ยกเลิก
+            <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
+              className="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
+              ตีกลับ
             </button>
           </div>
+          {showReturnForm && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <input type="text" placeholder="เหตุผล / ข้อความถึง staff (ไม่จำเป็น)"
+                value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
+                className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm" />
+              <div className="flex gap-2">
+                <button type="button" disabled={isPending} onClick={handleReturn}
+                  className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
+                  ยืนยันตีกลับ
+                </button>
+                <button type="button" onClick={() => setShowReturnForm(false)}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white">
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Order checklist (approved / sent) */}
-      {(session.status === "approved" || session.status === "sent") && orderableItems.length > 0 && (
+      {/* Order checklist (reviewed / sent) */}
+      {showChecklist && (
         <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
             <div>
               <h3 className="text-sm font-medium text-neutral-800">ใบสั่งของ</h3>
-              <p className="text-xs text-neutral-400">อนุมัติโดย {session.approvedByName}</p>
+              <p className="text-xs text-neutral-400">
+                {session.status === "reviewed"
+                  ? "ตรวจสอบโดย " + (session.reviewedByName ?? "")
+                  : "ส่งสั่งแล้ว"}
+              </p>
             </div>
             {checkedItems.size > 0 && (
               <button type="button" onClick={() => setCheckedItems(new Set())}
@@ -257,15 +275,13 @@ export function SessionActions({
           <div className="divide-y divide-neutral-100">
             {orderableItems.map((item: OrderItem) => {
               const isChecked = checkedItems.has(item.id);
-              const effectiveQty = item.editorQtyOrdered ?? item.qtyOrdered;
-              const wasEdited = item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered;
+              const qty = effectiveQty(item);
+              const wasEdited = item.reviewerQtyOrdered !== null || item.editorQtyOrdered !== null;
               const isEditingThis = editingQty === item.id;
 
               return (
                 <div key={item.id}
-                  className={`flex items-center gap-3 px-4 py-3 ${isChecked ? "bg-neutral-50" : ""}`}
-                >
-                  {/* Checkbox tap area */}
+                  className={`flex items-center gap-3 px-4 py-3 ${isChecked ? "bg-neutral-50" : ""}`}>
                   <button type="button" onClick={() => toggleCheck(item.id)}
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-xs transition-colors ${
                       isChecked ? "border-green-600 bg-green-600 text-white" : "border-neutral-300 hover:border-green-400"
@@ -273,12 +289,10 @@ export function SessionActions({
                     {isChecked ? "✓" : ""}
                   </button>
 
-                  {/* Name */}
                   <span className={`flex-1 text-sm ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
                     {item.ingredientName}
                   </span>
 
-                  {/* Qty — editable when sent */}
                   {isEditingThis ? (
                     <div className="flex items-center gap-1">
                       <input autoFocus type="number" min="0" step="any"
@@ -295,15 +309,14 @@ export function SessionActions({
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className={`text-sm font-medium ${isChecked ? "line-through text-neutral-400" : "text-neutral-700"}`}>
-                        {effectiveQty} {item.orderUnit ?? ""}
+                        {qty} {item.orderUnit ?? ""}
                         {wasEdited && (
                           <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
                         )}
                       </span>
-                      {/* Edit qty button — available when sent (calling supplier) */}
-                      {session.status === "sent" && !isChecked && (
+                      {canEditQty && !isChecked && (
                         <button type="button"
-                          onClick={() => startEditQty(item.id, effectiveQty)}
+                          onClick={() => startEditQty(item.id, qty)}
                           className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
                       )}
                     </div>
@@ -313,18 +326,40 @@ export function SessionActions({
             })}
           </div>
 
-          {/* Mark sent button — only when approved */}
-          {session.status === "approved" && (
-            <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50">
+          {/* ขั้นที่ 2: สั่งซื้อ (reviewed → sent) */}
+          {session.status === "reviewed" && canReview && (
+            <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
               <button type="button" disabled={isPending} onClick={handleMarkSent}
                 className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
                 {isPending ? "กำลังบันทึก..." : "✓ บันทึกว่าส่งสั่งของแล้ว"}
               </button>
-              <p className="mt-1 text-center text-xs text-neutral-400">กดหลังโทรสั่งของเรียบร้อยแล้ว</p>
+              <p className="text-center text-xs text-neutral-400">กดหลังโทรสั่งของเรียบร้อยแล้ว</p>
+              <div className="flex justify-center">
+                <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
+                  className="text-xs text-amber-600 hover:underline">
+                  ตีกลับ (พบปัญหา)
+                </button>
+              </div>
+              {showReturnForm && (
+                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <input type="text" placeholder="เหตุผล (ไม่จำเป็น)"
+                    value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
+                    className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm" />
+                  <div className="flex gap-2">
+                    <button type="button" disabled={isPending} onClick={handleReturn}
+                      className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
+                      ยืนยันตีกลับ
+                    </button>
+                    <button type="button" onClick={() => setShowReturnForm(false)}
+                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white">
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Sent status info */}
           {session.status === "sent" && (
             <div className="border-t border-neutral-100 px-4 py-2 bg-purple-50">
               <p className="text-xs text-purple-600">✓ ส่งสั่งของแล้ว — กด "แก้" หน้าตัวเลขถ้าซัพไม่มีของครบ</p>
@@ -333,8 +368,8 @@ export function SessionActions({
         </div>
       )}
 
-      {/* Receive progress + buttons */}
-      {(session.status === "approved" || session.status === "sent") && (
+      {/* Receive section (sent) */}
+      {session.status === "sent" && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4 space-y-3">
           {receivedCount > 0 && (
             <div className="flex items-center gap-2">
@@ -345,7 +380,6 @@ export function SessionActions({
               <span className="text-xs text-neutral-500 shrink-0">รับแล้ว {receivedCount}/{totalItems}</span>
             </div>
           )}
-
           <div className="flex flex-wrap gap-3">
             <button type="button" onClick={() => window.print()}
               className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">

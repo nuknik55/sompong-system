@@ -29,7 +29,7 @@ export default async function InventoryTemplateStationPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate />
+      <InventorySubNav showTemplate canReview={true} />
       <TemplateClient
         station={station}
         allStations={stations}

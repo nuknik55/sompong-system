@@ -3,31 +3,47 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export function InventorySubNav({ showTemplate }: { showTemplate: boolean }) {
-  const pathname = usePathname();
-  const isTemplate = pathname.startsWith("/staff/inventory/template");
+type NavItem = { href: string; label: string; exact?: boolean };
 
-  const activeCls = "border-b-2 pb-2 text-sm font-medium";
-  const inactiveCls = "pb-2 text-sm font-medium text-neutral-500 hover:text-neutral-800";
+export function InventorySubNav({
+  showTemplate,
+  canReview,
+}: {
+  showTemplate: boolean;
+  canReview: boolean;
+}) {
+  const pathname = usePathname();
+
+  function isActive(href: string, exact?: boolean) {
+    return exact ? pathname === href : pathname.startsWith(href);
+  }
+
+  const activeCls = "border-b-2 pb-2 text-sm font-medium whitespace-nowrap";
+  const inactiveCls = "pb-2 text-sm font-medium text-neutral-500 hover:text-neutral-800 whitespace-nowrap";
+
+  const navItems: NavItem[] = [
+    { href: "/staff/inventory", label: "งานของฉัน", exact: true },
+    ...(canReview ? [
+      { href: "/staff/inventory/review", label: "รอตรวจสอบ" },
+      { href: "/staff/inventory/purchase", label: "รอสั่งซื้อ" },
+    ] : []),
+    { href: "/staff/inventory/receive-queue", label: "รอรับของ" },
+    { href: "/staff/inventory/history", label: "ประวัติ" },
+    ...(showTemplate ? [{ href: "/staff/inventory/template", label: "Template" }] : []),
+  ];
 
   return (
-    <div className="flex gap-4 border-b border-neutral-200 mb-4">
-      <Link
-        href="/staff/inventory"
-        className={!isTemplate ? activeCls : inactiveCls}
-        style={!isTemplate ? { borderColor: "#2F5A16", color: "#2F5A16" } : undefined}
-      >
-        รายการสั่งของ
-      </Link>
-      {showTemplate && (
+    <div className="flex gap-4 border-b border-neutral-200 mb-4 overflow-x-auto">
+      {navItems.map(({ href, label, exact }) => (
         <Link
-          href="/staff/inventory/template"
-          className={isTemplate ? activeCls : inactiveCls}
-          style={isTemplate ? { borderColor: "#2F5A16", color: "#2F5A16" } : undefined}
+          key={href}
+          href={href}
+          className={isActive(href, exact) ? activeCls : inactiveCls}
+          style={isActive(href, exact) ? { borderColor: "#2F5A16", color: "#2F5A16" } : undefined}
         >
-          Template สั่งของ
+          {label}
         </Link>
-      )}
+      ))}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type Station = { id: string; name: string; sortOrder: number };
 
-export type OrderStatus = "submitted" | "returned" | "approved" | "sent" | "received";
+export type OrderStatus = "submitted" | "returned" | "reviewed" | "sent" | "received";
 
 export type OrderSessionSummary = {
   id: string;
@@ -15,6 +15,8 @@ export type OrderSessionSummary = {
   createdBy: string;
   createdByName: string;
   submittedAt: string;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
   approvedByName: string | null;
   approvedAt: string | null;
   sentAt: string | null;
@@ -35,6 +37,7 @@ export type OrderItem = {
   packCount: number | null;
   qtyPerPack: number | null;
   qtyOrdered: number;
+  reviewerQtyOrdered: number | null;
   editorQtyOrdered: number | null;
   orderUnit: string | null;
   qtyReceived: number | null;
@@ -51,6 +54,9 @@ export type OrderSessionDetail = {
   createdBy: string;
   createdByName: string;
   submittedAt: string;
+  reviewedBy: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
   approvedBy: string | null;
   approvedByName: string | null;
   approvedAt: string | null;
@@ -70,7 +76,6 @@ export type IngredientForOrder = {
   safetyNote: string | null;
   purchaseUnitLabel: string | null;
   usageUnit: string | null;
-  // set when loaded via station template
   customGroup: string | null;
   customUnit: string | null;
   defaultQty: number | null;
@@ -220,13 +225,26 @@ export async function getStationTemplate(stationId: string): Promise<StationTemp
   });
 }
 
-export async function getOrderSessions(): Promise<OrderSessionSummary[]> {
+export async function getOrderSessions(opts?: {
+  status?: OrderStatus | OrderStatus[];
+  mineOrSent?: string;
+}): Promise<OrderSessionSummary[]> {
   const supabase = await createClient();
+
+  let query = supabase
+    .from("order_sessions")
+    .select("id, station_id, status, note, created_by, submitted_at, reviewed_by, reviewed_at, approved_by, approved_at, sent_at, received_at, created_at, stations(name)")
+    .order("created_at", { ascending: false });
+
+  if (opts?.mineOrSent) {
+    query = query.or(`created_by.eq.${opts.mineOrSent},status.eq.sent`);
+  } else if (opts?.status) {
+    const statuses = Array.isArray(opts.status) ? opts.status : [opts.status];
+    query = query.in("status", statuses);
+  }
+
   const [{ data: sessions, error }, { data: itemCounts }] = await Promise.all([
-    supabase
-      .from("order_sessions")
-      .select("id, station_id, status, note, created_by, submitted_at, approved_by, approved_at, sent_at, received_at, created_at, stations(name)")
-      .order("created_at", { ascending: false }),
+    query,
     supabase.from("order_items").select("session_id"),
   ]);
 
@@ -239,7 +257,7 @@ export async function getOrderSessions(): Promise<OrderSessionSummary[]> {
   }
 
   const allIds = [...new Set(
-    sessions.flatMap((s) => [s.created_by, s.approved_by].filter(Boolean) as string[])
+    sessions.flatMap((s) => [s.created_by, s.approved_by, s.reviewed_by].filter(Boolean) as string[])
   )];
   const adminClient = createAdminClient();
   const { data: profiles } = await adminClient
@@ -257,6 +275,8 @@ export async function getOrderSessions(): Promise<OrderSessionSummary[]> {
     createdBy: s.created_by,
     createdByName: nameById.get(s.created_by) ?? "ไม่ทราบ",
     submittedAt: s.submitted_at,
+    reviewedByName: s.reviewed_by ? (nameById.get(s.reviewed_by) ?? "ไม่ทราบ") : null,
+    reviewedAt: s.reviewed_at,
     approvedByName: s.approved_by ? (nameById.get(s.approved_by) ?? "ไม่ทราบ") : null,
     approvedAt: s.approved_at,
     sentAt: s.sent_at,
@@ -272,14 +292,16 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
     .from("order_sessions")
     .select(`
       id, station_id, status, note, created_by, submitted_at,
+      reviewed_by, reviewed_at,
       approved_by, approved_at, sent_at, sent_by, received_at, created_at,
       stations(name),
       order_items(
         id, session_id, ingredient_id, ingredient_name,
         remaining_kitchen_qty, remaining_kitchen_unit,
         remaining_freezer_qty, remaining_freezer_unit,
-        pack_count, qty_per_pack, qty_ordered, editor_qty_ordered, order_unit,
-        qty_received, note, sort_order
+        pack_count, qty_per_pack, qty_ordered,
+        reviewer_qty_ordered, editor_qty_ordered,
+        order_unit, qty_received, note, sort_order
       )
     `)
     .eq("id", id)
@@ -287,7 +309,7 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
 
   if (error || !session) return null;
 
-  const allIds = [session.created_by, session.approved_by, session.sent_by].filter(Boolean) as string[];
+  const allIds = [session.created_by, session.reviewed_by, session.approved_by, session.sent_by].filter(Boolean) as string[];
   const adminClient2 = createAdminClient();
   const { data: profiles } = await adminClient2
     .from("profiles")
@@ -301,7 +323,7 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
     remaining_kitchen_qty: number | null; remaining_kitchen_unit: string | null;
     remaining_freezer_qty: number | null; remaining_freezer_unit: string | null;
     pack_count: number | null; qty_per_pack: number | null;
-    qty_ordered: number; editor_qty_ordered: number | null;
+    qty_ordered: number; reviewer_qty_ordered: number | null; editor_qty_ordered: number | null;
     order_unit: string | null; qty_received: number | null;
     note: string | null; sort_order: number;
   };
@@ -316,6 +338,9 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
     createdBy: session.created_by,
     createdByName: nameById.get(session.created_by) ?? "ไม่ทราบ",
     submittedAt: session.submitted_at,
+    reviewedBy: session.reviewed_by,
+    reviewedByName: session.reviewed_by ? (nameById.get(session.reviewed_by) ?? "ไม่ทราบ") : null,
+    reviewedAt: session.reviewed_at,
     approvedBy: session.approved_by,
     approvedByName: session.approved_by ? (nameById.get(session.approved_by) ?? "ไม่ทราบ") : null,
     approvedAt: session.approved_at,
@@ -337,6 +362,7 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
         packCount: item.pack_count,
         qtyPerPack: item.qty_per_pack,
         qtyOrdered: item.qty_ordered,
+        reviewerQtyOrdered: item.reviewer_qty_ordered,
         editorQtyOrdered: item.editor_qty_ordered,
         orderUnit: item.order_unit,
         qtyReceived: item.qty_received,
@@ -346,7 +372,6 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
   };
 }
 
-/** Last used qty_per_pack for an ingredient (for pack ordering default) */
 export async function getLastQtyPerPack(ingredientId: string): Promise<number | null> {
   const supabase = await createClient();
   const { data } = await supabase

@@ -10,9 +10,9 @@ function formatDate(iso: string) {
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
-  submitted: "รออนุมัติ",
+  submitted: "รอตรวจสอบ",
   returned:  "ตีกลับ",
-  approved:  "อนุมัติแล้ว",
+  reviewed:  "รอสั่งซื้อ",
   sent:      "สั่งแล้ว",
   received:  "รับของแล้ว",
 };
@@ -20,7 +20,7 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 const STATUS_CLASS: Record<OrderStatus, string> = {
   submitted: "bg-amber-100 text-amber-800",
   returned:  "bg-orange-100 text-orange-800",
-  approved:  "bg-blue-100 text-blue-800",
+  reviewed:  "bg-blue-100 text-blue-800",
   sent:      "bg-purple-100 text-purple-800",
   received:  "bg-green-100 text-green-800",
 };
@@ -63,40 +63,30 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
   );
 }
 
-function SectionHeader({ title, count, hint, color }: { title: string; count: number; hint: string; color: string }) {
-  return (
-    <div className="flex items-baseline gap-2 mt-2">
-      <h2 className={`text-sm font-semibold ${color}`}>{title}</h2>
-      <span className="text-xs text-neutral-400">{count} รายการ · {hint}</span>
-    </div>
-  );
-}
-
 export default async function InventoryListPage() {
-  const [profile, sessions, stations, allTemplates] = await Promise.all([
+  const [profile, stations, allTemplates] = await Promise.all([
     requireProfile(),
-    getOrderSessions(),
     getStations(),
     getAllStationTemplates().catch(() => ({} as Record<string, unknown[]>)),
   ]);
 
-  const canManageTemplate = ["owner", "admin", "editor"].includes(profile.role);
+  const mySessions = await getOrderSessions({ mineOrSent: profile.id });
+
+  const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canManageTemplate = canReview;
   const stationsWithTemplate = stations.filter((s) => (allTemplates[s.id]?.length ?? 0) > 0);
 
-  // Group by workflow stage
-  const needsAction   = sessions.filter((s) => s.status === "submitted" || s.status === "returned");
-  const inProgress    = sessions.filter((s) => s.status === "approved" || s.status === "sent");
-  const done          = sessions.filter((s) => s.status === "received");
+  const active   = mySessions.filter((s) => s.status !== "received");
+  const done     = mySessions.filter((s) => s.status === "received");
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={canManageTemplate} />
+      <InventorySubNav showTemplate={canManageTemplate} canReview={canReview} />
 
-      {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">สั่งของ</h1>
-          <p className="text-xs text-neutral-400 mt-0.5">เช็คของ → สั่งซื้อ → รับของ</p>
+          <h1 className="text-lg font-semibold text-neutral-900">งานของฉัน</h1>
+          <p className="text-xs text-neutral-400 mt-0.5">ใบสั่งของที่ฉันสร้าง + รายการรอรับของ</p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           {stationsWithTemplate.length > 0 && (
@@ -112,40 +102,14 @@ export default async function InventoryListPage() {
         </div>
       </div>
 
-      {/* ① ต้องดำเนินการ */}
-      {needsAction.length > 0 && (
-        <div className="space-y-2">
-          <SectionHeader
-            title="⚠ รอดำเนินการ"
-            count={needsAction.length}
-            hint="รออนุมัติ หรือ ถูกตีกลับ"
-            color="text-amber-700"
-          />
-          <SessionTable sessions={needsAction} />
-        </div>
-      )}
-
-      {/* ② กำลังสั่ง / รับของ */}
-      {inProgress.length > 0 && (
-        <div className="space-y-2">
-          <SectionHeader
-            title="📦 กำลังดำเนินการ"
-            count={inProgress.length}
-            hint="อนุมัติแล้ว หรือ ส่งสั่งแล้ว — รอรับของ"
-            color="text-blue-700"
-          />
-          <SessionTable sessions={inProgress} />
-        </div>
-      )}
-
-      {/* Empty state */}
-      {needsAction.length === 0 && inProgress.length === 0 && (
+      {active.length > 0 ? (
+        <SessionTable sessions={active} />
+      ) : (
         <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
-          ไม่มีรายการที่ต้องดำเนินการ
+          ไม่มีรายการที่กำลังดำเนินการ
         </div>
       )}
 
-      {/* ③ เสร็จแล้ว (collapsed) */}
       {done.length > 0 && (
         <details className="group">
           <summary className="flex cursor-pointer items-baseline gap-2 text-sm text-neutral-400 hover:text-neutral-600 list-none">

@@ -81,30 +81,16 @@ export async function createOrderSession(
   return { sessionId: session.id };
 }
 
-/** Anyone logged in can edit ordered qty when status=sent (e.g. supplier has less stock) */
-export async function saveEditorItemEdit(
-  itemId: string,
-  editorQtyOrdered: number | null
-): Promise<ActionResult> {
-  await requireProfile();
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("order_items")
-    .update({ editor_qty_ordered: editorQtyOrdered })
-    .eq("id", itemId);
-  if (error) return { error: error.message };
-  return {};
-}
-
-export async function approveOrderSession(sessionId: string): Promise<ActionResult> {
+/** Editor+ ตรวจสอบใบสั่งของ: submitted → reviewed */
+export async function reviewOrderSession(sessionId: string): Promise<ActionResult> {
   const profile = await requireAdminOrEditor();
   const supabase = await createClient();
   const { error } = await supabase
     .from("order_sessions")
     .update({
-      status: "approved",
-      approved_by: profile.id,
-      approved_at: new Date().toISOString(),
+      status: "reviewed",
+      reviewed_by: profile.id,
+      reviewed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", sessionId)
@@ -115,7 +101,7 @@ export async function approveOrderSession(sessionId: string): Promise<ActionResu
   return {};
 }
 
-/** ตีกลับ — ส่งกลับ staff แก้ใหม่ (status = returned, staff resubmit ได้) */
+/** Editor+ ตีกลับ — ใช้ได้จากทั้ง submitted และ reviewed */
 export async function returnOrderSession(
   sessionId: string,
   note?: string
@@ -130,7 +116,7 @@ export async function returnOrderSession(
       updated_at: new Date().toISOString(),
     })
     .eq("id", sessionId)
-    .eq("status", "submitted");
+    .in("status", ["submitted", "reviewed"]);
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
   revalidatePath(`/staff/inventory/${sessionId}`);
@@ -147,12 +133,12 @@ export type OrderItemUpdate = {
   orderUnit: string | null;
 };
 
-/** Creator or editor+ edits items in a returned session and resubmits in one action */
+/** Creator or editor+ edits items in a returned session and resubmits */
 export async function updateItemsAndResubmit(
   sessionId: string,
   items: OrderItemUpdate[]
 ): Promise<ActionResult> {
-  const profile = await requireProfile();
+  await requireProfile();
   const supabase = createAdminClient();
 
   const { data: session } = await supabase
@@ -197,7 +183,6 @@ export async function resubmitOrderSession(sessionId: string): Promise<ActionRes
   const profile = await requireProfile();
   const supabase = await createClient();
 
-  // Only the original creator can resubmit
   const { data: session } = await supabase
     .from("order_sessions")
     .select("created_by, status")
@@ -225,9 +210,9 @@ export async function resubmitOrderSession(sessionId: string): Promise<ActionRes
   return {};
 }
 
-/** Log "ส่งใบสั่งของ" — บันทึก timestamp + ผู้กด */
+/** Editor+ บันทึกว่าส่งสั่งของแล้ว: reviewed → sent */
 export async function markOrderSent(sessionId: string): Promise<ActionResult> {
-  const profile = await requireProfile();
+  const profile = await requireAdminOrEditor();
   const supabase = await createClient();
   const { error } = await supabase
     .from("order_sessions")
@@ -238,10 +223,40 @@ export async function markOrderSent(sessionId: string): Promise<ActionResult> {
       updated_at: new Date().toISOString(),
     })
     .eq("id", sessionId)
-    .eq("status", "approved");
+    .eq("status", "reviewed");
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
   revalidatePath(`/staff/inventory/${sessionId}`);
+  return {};
+}
+
+/** Reviewer แก้จำนวนตอน review (reviewer_qty_ordered) */
+export async function saveReviewerItemEdit(
+  itemId: string,
+  reviewerQtyOrdered: number | null
+): Promise<ActionResult> {
+  await requireAdminOrEditor();
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("order_items")
+    .update({ reviewer_qty_ordered: reviewerQtyOrdered })
+    .eq("id", itemId);
+  if (error) return { error: error.message };
+  return {};
+}
+
+/** Purchaser แก้จำนวนตอนโทรซัพ (editor_qty_ordered) — any authenticated */
+export async function saveEditorItemEdit(
+  itemId: string,
+  editorQtyOrdered: number | null
+): Promise<ActionResult> {
+  await requireProfile();
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("order_items")
+    .update({ editor_qty_ordered: editorQtyOrdered })
+    .eq("id", itemId);
+  if (error) return { error: error.message };
   return {};
 }
 
@@ -252,8 +267,6 @@ export async function receiveOrderItems(
   await requireProfile();
   const supabase = await createClient();
 
-  // Use SECURITY DEFINER RPC so only qty_received is writable by staff.
-  // The function validates session status (approved/sent) internally.
   for (const { itemId, qtyReceived } of received) {
     const { error } = await supabase.rpc("receive_order_item", {
       item_id: itemId,
@@ -262,7 +275,6 @@ export async function receiveOrderItems(
     if (error) return { error: error.message };
   }
 
-  // Only close session when ALL items have been received (none still null).
   const { data: allItems } = await supabase
     .from("order_items")
     .select("qty_received")
@@ -275,7 +287,7 @@ export async function receiveOrderItems(
       .from("order_sessions")
       .update({ status: "received", received_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("id", sessionId)
-      .in("status", ["approved", "sent"]);
+      .eq("status", "sent");
     if (error) return { error: error.message };
   }
 

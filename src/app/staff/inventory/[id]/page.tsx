@@ -13,9 +13,9 @@ function formatDate(iso: string) {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  submitted: "รออนุมัติ",
+  submitted: "รอตรวจสอบ",
   returned:  "ตีกลับ",
-  approved:  "อนุมัติแล้ว",
+  reviewed:  "รอสั่งซื้อ",
   sent:      "ส่งแล้ว",
   received:  "รับของแล้ว",
 };
@@ -23,7 +23,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_CLASS: Record<string, string> = {
   submitted: "bg-amber-100 text-amber-800",
   returned:  "bg-orange-100 text-orange-800",
-  approved:  "bg-blue-100 text-blue-800",
+  reviewed:  "bg-blue-100 text-blue-800",
   sent:      "bg-purple-100 text-purple-800",
   received:  "bg-green-100 text-green-800",
 };
@@ -37,14 +37,13 @@ export default async function SessionDetailPage({
   const [profile, session] = await Promise.all([requireProfile(), getOrderSessionDetail(id)]);
   if (!session) notFound();
 
-  const canApprove = profile.role !== "staff" && profile.role !== "accounting";
+  const canReview = ["owner", "admin", "editor"].includes(profile.role);
   const isCreator = profile.id === session.createdBy;
   const shortId = session.id.slice(0, 8).toUpperCase();
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/staff/inventory" className="text-sm text-neutral-500 hover:text-neutral-900">← กลับ</Link>
         <div className="flex items-center gap-2 flex-1">
@@ -55,7 +54,6 @@ export default async function SessionDetailPage({
         </div>
       </div>
 
-      {/* Meta */}
       <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
         {session.stationName && (
           <div className="flex gap-2">
@@ -71,10 +69,10 @@ export default async function SessionDetailPage({
           <span className="w-24 shrink-0 text-neutral-500">ส่งเมื่อ</span>
           <span>{formatDate(session.submittedAt)}</span>
         </div>
-        {session.approvedAt && (
+        {session.reviewedAt && (
           <div className="flex gap-2">
-            <span className="w-24 shrink-0 text-neutral-500">อนุมัติโดย</span>
-            <span>{session.approvedByName} · {formatDate(session.approvedAt)}</span>
+            <span className="w-24 shrink-0 text-neutral-500">ตรวจโดย</span>
+            <span>{session.reviewedByName} · {formatDate(session.reviewedAt)}</span>
           </div>
         )}
         {session.sentAt && (
@@ -97,7 +95,6 @@ export default async function SessionDetailPage({
         )}
       </div>
 
-      {/* Items table */}
       <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
         <div className="px-4 py-3 border-b border-neutral-100">
           <h2 className="text-sm font-medium text-neutral-800">รายการ ({session.items.length})</h2>
@@ -110,27 +107,22 @@ export default async function SessionDetailPage({
                 <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
                 <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
                 <th className="px-3 py-2 text-right">สั่ง</th>
-                {showReceived && (
-                  <th className="px-3 py-2 text-right">รับจริง</th>
-                )}
+                {showReceived && <th className="px-3 py-2 text-right">รับจริง</th>}
               </tr>
             </thead>
             <tbody>
               {session.items.map((item) => {
-                const effectiveQty = item.editorQtyOrdered ?? item.qtyOrdered;
-                const wasEdited = item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered;
+                const effectiveQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
+                const wasEdited = (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered)
+                               || (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
                 return (
                   <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
                     <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
                     <td className="px-3 py-2 text-right text-neutral-500">
-                      {item.remainingKitchenQty !== null
-                        ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim()
-                        : "—"}
+                      {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
                     </td>
                     <td className="px-3 py-2 text-right text-neutral-500">
-                      {item.remainingFreezerQty !== null
-                        ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim()
-                        : "—"}
+                      {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
                     </td>
                     <td className="px-3 py-2 text-right font-medium text-neutral-800">
                       {effectiveQty > 0 ? `${effectiveQty} ${item.orderUnit ?? ""}`.trim() : "—"}
@@ -153,7 +145,7 @@ export default async function SessionDetailPage({
         </div>
       </div>
 
-      {/* Print section (hidden on screen, visible when printing) */}
+      {/* Print layout */}
       <div className="hidden print:block space-y-2">
         <h2 className="font-semibold">ใบสั่งของ #{shortId} — {session.stationName ?? ""}</h2>
         <p className="text-sm text-gray-500">{formatDate(session.submittedAt)}</p>
@@ -166,20 +158,22 @@ export default async function SessionDetailPage({
             </tr>
           </thead>
           <tbody>
-            {session.items.filter((i) => (i.editorQtyOrdered ?? i.qtyOrdered) > 0).map((item) => (
-              <tr key={item.id}>
-                <td className="border border-gray-400 px-2 py-1">□</td>
-                <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
-                <td className="border border-gray-400 px-2 py-1 text-right font-medium">
-                  {item.editorQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
-                </td>
-              </tr>
-            ))}
+            {session.items
+              .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
+              .map((item) => (
+                <tr key={item.id}>
+                  <td className="border border-gray-400 px-2 py-1">□</td>
+                  <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
+                  <td className="border border-gray-400 px-2 py-1 text-right font-medium">
+                    {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
 
-      <SessionActions session={session} canApprove={canApprove} isCreator={isCreator} />
+      <SessionActions session={session} canReview={canReview} isCreator={isCreator} />
     </div>
   );
 }
