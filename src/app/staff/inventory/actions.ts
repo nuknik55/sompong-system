@@ -78,6 +78,11 @@ export async function createOrderSession(
   }
 
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
+  revalidatePath(`/staff/inventory/${session.id}`);
   return { sessionId: session.id };
 }
 
@@ -97,6 +102,10 @@ export async function reviewOrderSession(sessionId: string): Promise<ActionResul
     .eq("status", "submitted");
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
@@ -119,6 +128,10 @@ export async function returnOrderSession(
     .in("status", ["submitted", "reviewed"]);
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
@@ -174,6 +187,10 @@ export async function updateItemsAndResubmit(
   if (error) return { error: error.message };
 
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
@@ -206,6 +223,10 @@ export async function resubmitOrderSession(sessionId: string): Promise<ActionRes
     .eq("id", sessionId);
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
@@ -226,6 +247,10 @@ export async function markOrderSent(sessionId: string): Promise<ActionResult> {
     .eq("status", "reviewed");
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
@@ -298,6 +323,10 @@ export async function receiveOrderItems(
   }
 
   revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
   revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
