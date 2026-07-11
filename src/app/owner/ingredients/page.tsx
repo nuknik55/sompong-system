@@ -34,7 +34,7 @@ export default async function OwnerIngredientsPage() {
   }
 
   const submitMode = profile.role === "admin" ? "save" : "pending";
-  const isAdmin = profile.role === "admin";
+  const isAdmin = profile.role === "admin" || profile.role === "owner";
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
