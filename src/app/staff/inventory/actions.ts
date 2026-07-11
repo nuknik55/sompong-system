@@ -233,7 +233,8 @@ export async function markOrderSent(sessionId: string): Promise<ActionResult> {
 /** Reviewer แก้จำนวนตอน review (reviewer_qty_ordered) */
 export async function saveReviewerItemEdit(
   itemId: string,
-  reviewerQtyOrdered: number | null
+  reviewerQtyOrdered: number | null,
+  sessionId: string
 ): Promise<ActionResult> {
   await requireAdminOrEditor();
   const supabase = createAdminClient();
@@ -242,13 +243,16 @@ export async function saveReviewerItemEdit(
     .update({ reviewer_qty_ordered: reviewerQtyOrdered })
     .eq("id", itemId);
   if (error) return { error: error.message };
+  revalidatePath("/staff/inventory");
+  revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
 
 /** Purchaser แก้จำนวนตอนโทรซัพ (editor_qty_ordered) — any authenticated */
 export async function saveEditorItemEdit(
   itemId: string,
-  editorQtyOrdered: number | null
+  editorQtyOrdered: number | null,
+  sessionId: string
 ): Promise<ActionResult> {
   await requireProfile();
   const supabase = createAdminClient();
@@ -257,6 +261,8 @@ export async function saveEditorItemEdit(
     .update({ editor_qty_ordered: editorQtyOrdered })
     .eq("id", itemId);
   if (error) return { error: error.message };
+  revalidatePath("/staff/inventory");
+  revalidatePath(`/staff/inventory/${sessionId}`);
   return {};
 }
 

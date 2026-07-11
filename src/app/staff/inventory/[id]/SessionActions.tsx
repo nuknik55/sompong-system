@@ -126,8 +126,8 @@ export function SessionActions({
     const isReviewStage = session.status === "reviewed";
     startTransition(async () => {
       const result = isReviewStage
-        ? await saveReviewerItemEdit(itemId, isNaN(val) ? null : val)
-        : await saveEditorItemEdit(itemId, isNaN(val) ? null : val);
+        ? await saveReviewerItemEdit(itemId, isNaN(val) ? null : val, session.id)
+        : await saveEditorItemEdit(itemId, isNaN(val) ? null : val, session.id);
       if (result.error) { setError(result.error); return; }
       setEditingQty(null);
       router.refresh();
