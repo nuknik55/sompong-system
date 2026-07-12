@@ -95,55 +95,57 @@ export default async function SessionDetailPage({
         )}
       </div>
 
-      <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b border-neutral-100">
-          <h2 className="text-sm font-medium text-neutral-800">รายการ ({session.items.length})</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-400">
-                <th className="px-3 py-2 text-left">วัตถุดิบ</th>
-                <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
-                <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
-                <th className="px-3 py-2 text-right">สั่ง</th>
-                {showReceived && <th className="px-3 py-2 text-right">รับจริง</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {session.items.map((item) => {
-                const effectiveQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
-                const wasEdited = (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered)
-                               || (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
-                return (
-                  <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
-                    <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
-                    <td className="px-3 py-2 text-right text-neutral-500">
-                      {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right text-neutral-500">
-                      {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium text-neutral-800">
-                      {effectiveQty > 0 ? `${effectiveQty} ${item.orderUnit ?? ""}`.trim() : "—"}
-                      {wasEdited && (
-                        <div className="text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</div>
-                      )}
-                    </td>
-                    {showReceived && (
-                      <td className="px-3 py-2 text-right text-green-700">
-                        {item.qtyReceived !== null
-                          ? `${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()
-                          : <span className="text-neutral-400">ยังไม่มา</span>}
+      {session.status !== "sent" && (
+        <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h2 className="text-sm font-medium text-neutral-800">รายการ ({session.items.length})</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-400">
+                  <th className="px-3 py-2 text-left">วัตถุดิบ</th>
+                  <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
+                  <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
+                  <th className="px-3 py-2 text-right">สั่ง</th>
+                  {showReceived && <th className="px-3 py-2 text-right">รับจริง</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {session.items.map((item) => {
+                  const effectiveQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
+                  const wasEdited = (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered)
+                                 || (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
+                  return (
+                    <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
+                      <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
+                      <td className="px-3 py-2 text-right text-neutral-500">
+                        {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td className="px-3 py-2 text-right text-neutral-500">
+                        {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-neutral-800">
+                        {effectiveQty > 0 ? `${effectiveQty} ${item.orderUnit ?? ""}`.trim() : "—"}
+                        {wasEdited && (
+                          <div className="text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</div>
+                        )}
+                      </td>
+                      {showReceived && (
+                        <td className="px-3 py-2 text-right text-green-700">
+                          {item.qtyReceived !== null
+                            ? `${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()
+                            : <span className="text-neutral-400">ยังไม่มา</span>}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Print layout */}
       <div className="hidden print:block space-y-2">
