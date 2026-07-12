@@ -264,7 +264,7 @@ export function SessionActions({
               <h3 className="text-sm font-medium text-neutral-800">
                 {session.status === "reviewed"
                   ? `รายการ (${session.items.length})`
-                  : "ใบสั่งของ"}
+                  : "สรุปการสั่งซื้อ"}
               </h3>
               <p className="text-xs text-neutral-400">
                 {session.status === "reviewed"
@@ -367,7 +367,7 @@ export function SessionActions({
             </div>
           )}
 
-          {/* sent: no checkbox, no stock columns — name + qty + แก้ only */}
+          {/* sent: read-only list — name + qty + wasEdited badge */}
           {session.status === "sent" && (
             <div className="divide-y divide-neutral-100">
               {orderableItems.map((item: OrderItem) => {
@@ -375,40 +375,15 @@ export function SessionActions({
                 const wasEdited =
                   (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered) ||
                   (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
-                const isEditingThis = editingQty === item.id;
                 return (
-                  <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="flex-1 text-sm text-neutral-800">{item.ingredientName}</span>
-                    {isEditingThis ? (
-                      <div className="flex items-center gap-1">
-                        <input autoFocus type="number" min="0" step="any"
-                          value={editQtyVal}
-                          onChange={(e) => setEditQtyVal(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveQtyEdit(item.id);
-                            if (e.key === "Escape") setEditingQty(null);
-                          }}
-                          className="w-20 rounded border border-blue-400 bg-blue-50 px-2 py-1 text-right text-sm" />
-                        <span className="text-xs text-neutral-400">{item.orderUnit ?? ""}</span>
-                        <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
-                          className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
-                        <button type="button" onClick={() => setEditingQty(null)}
-                          className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">✕</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-neutral-700">
-                          {qty} {item.orderUnit ?? ""}
-                          {wasEdited && (
-                            <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
-                          )}
-                        </span>
-                        {canEditQty && (
-                          <button type="button" onClick={() => startEditQty(item.id, qty)}
-                            className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
-                        )}
-                      </div>
-                    )}
+                  <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="text-sm text-neutral-800">{item.ingredientName}</span>
+                    <span className="text-sm font-medium text-neutral-700">
+                      {qty} {item.orderUnit ?? ""}
+                      {wasEdited && (
+                        <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
+                      )}
+                    </span>
                   </div>
                 );
               })}
@@ -420,7 +395,7 @@ export function SessionActions({
             <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
               <button type="button" disabled={isPending} onClick={handleMarkSent}
                 className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
-                {isPending ? "กำลังบันทึก..." : "✓ บันทึกว่าส่งสั่งของแล้ว"}
+                {isPending ? "กำลังบันทึก..." : "✓ บันทึกว่าสั่งของแล้ว"}
               </button>
               <p className="text-center text-xs text-neutral-400">กดหลังโทรสั่งของเรียบร้อยแล้ว</p>
               <div className="flex justify-center">
@@ -452,7 +427,7 @@ export function SessionActions({
           {/* sent footer: purple note */}
           {session.status === "sent" && (
             <div className="border-t border-neutral-100 px-4 py-2 bg-purple-50">
-              <p className="text-xs text-purple-600">✓ ส่งสั่งของแล้ว — กด "แก้" หน้าตัวเลขถ้าซัพไม่มีของครบ</p>
+              <p className="text-xs text-purple-600">✓ ส่งสั่งของแล้ว — ถ้าของมาไม่ครบ บันทึกจำนวนจริงตอนรับของได้เลย</p>
             </div>
           )}
         </div>
