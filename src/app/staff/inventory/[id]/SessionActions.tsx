@@ -254,79 +254,168 @@ export function SessionActions({
         </div>
       )}
 
-      {/* Order checklist (reviewed / sent) */}
+      {/* Merged item table (reviewed) + simplified list (sent) */}
       {showChecklist && (
         <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
+
+          {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
             <div>
-              <h3 className="text-sm font-medium text-neutral-800">ใบสั่งของ</h3>
+              <h3 className="text-sm font-medium text-neutral-800">
+                {session.status === "reviewed"
+                  ? `รายการ (${session.items.length})`
+                  : "ใบสั่งของ"}
+              </h3>
               <p className="text-xs text-neutral-400">
                 {session.status === "reviewed"
                   ? "ตรวจสอบโดย " + (session.reviewedByName ?? "")
                   : "ส่งสั่งแล้ว"}
               </p>
             </div>
-            {checkedItems.size > 0 && (
+            {session.status === "reviewed" && checkedItems.size > 0 && (
               <button type="button" onClick={() => setCheckedItems(new Set())}
                 className="text-xs text-neutral-400 hover:text-neutral-700 underline">ล้าง</button>
             )}
           </div>
 
-          <div className="divide-y divide-neutral-100">
-            {orderableItems.map((item: OrderItem) => {
-              const isChecked = checkedItems.has(item.id);
-              const qty = effectiveQty(item);
-              const wasEdited = item.reviewerQtyOrdered !== null || item.editorQtyOrdered !== null;
-              const isEditingThis = editingQty === item.id;
+          {/* reviewed: full table — all items, checkbox only when qty > 0 */}
+          {session.status === "reviewed" && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-400">
+                    <th className="px-3 py-2 w-8" />
+                    <th className="px-3 py-2 text-left">วัตถุดิบ</th>
+                    <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
+                    <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
+                    <th className="px-3 py-2 text-right">สั่ง</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {session.items.map((item) => {
+                    const eqty = effectiveQty(item);
+                    const isOrderable = eqty > 0;
+                    const isChecked = checkedItems.has(item.id);
+                    const wasEdited =
+                      (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered) ||
+                      (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
+                    const isEditingThis = editingQty === item.id;
+                    return (
+                      <tr key={item.id}
+                        className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
+                        <td className="px-3 py-2">
+                          {isOrderable && (
+                            <button type="button" onClick={() => toggleCheck(item.id)}
+                              className={`flex h-5 w-5 items-center justify-center rounded border-2 text-xs transition-colors ${
+                                isChecked
+                                  ? "border-green-600 bg-green-600 text-white"
+                                  : "border-neutral-300 hover:border-green-400"
+                              }`}>
+                              {isChecked ? "✓" : ""}
+                            </button>
+                          )}
+                        </td>
+                        <td className={`px-3 py-2 ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
+                          {item.ingredientName}
+                        </td>
+                        <td className="px-3 py-2 text-right text-neutral-500">
+                          {item.remainingKitchenQty !== null
+                            ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim()
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-neutral-500">
+                          {item.remainingFreezerQty !== null
+                            ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim()
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {isEditingThis ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input autoFocus type="number" min="0" step="any"
+                                value={editQtyVal}
+                                onChange={(e) => setEditQtyVal(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveQtyEdit(item.id);
+                                  if (e.key === "Escape") setEditingQty(null);
+                                }}
+                                className="w-20 rounded border border-blue-400 bg-blue-50 px-2 py-1 text-right text-sm" />
+                              <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
+                                className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
+                              <button type="button" onClick={() => setEditingQty(null)}
+                                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className={`font-medium ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
+                                {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
+                                {wasEdited && (
+                                  <span className="block text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</span>
+                                )}
+                              </span>
+                              {canEditQty && isOrderable && !isChecked && (
+                                <button type="button" onClick={() => startEditQty(item.id, eqty)}
+                                  className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-              return (
-                <div key={item.id}
-                  className={`flex items-center gap-3 px-4 py-3 ${isChecked ? "bg-neutral-50" : ""}`}>
-                  <button type="button" onClick={() => toggleCheck(item.id)}
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-xs transition-colors ${
-                      isChecked ? "border-green-600 bg-green-600 text-white" : "border-neutral-300 hover:border-green-400"
-                    }`}>
-                    {isChecked ? "✓" : ""}
-                  </button>
-
-                  <span className={`flex-1 text-sm ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
-                    {item.ingredientName}
-                  </span>
-
-                  {isEditingThis ? (
-                    <div className="flex items-center gap-1">
-                      <input autoFocus type="number" min="0" step="any"
-                        value={editQtyVal}
-                        onChange={(e) => setEditQtyVal(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") saveQtyEdit(item.id); if (e.key === "Escape") setEditingQty(null); }}
-                        className="w-20 rounded border border-blue-400 bg-blue-50 px-2 py-1 text-right text-sm" />
-                      <span className="text-xs text-neutral-400">{item.orderUnit ?? ""}</span>
-                      <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
-                        className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
-                      <button type="button" onClick={() => setEditingQty(null)}
-                        className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">✕</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-medium ${isChecked ? "line-through text-neutral-400" : "text-neutral-700"}`}>
-                        {qty} {item.orderUnit ?? ""}
-                        {wasEdited && (
-                          <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
+          {/* sent: no checkbox, no stock columns — name + qty + แก้ only */}
+          {session.status === "sent" && (
+            <div className="divide-y divide-neutral-100">
+              {orderableItems.map((item: OrderItem) => {
+                const qty = effectiveQty(item);
+                const wasEdited =
+                  (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered) ||
+                  (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
+                const isEditingThis = editingQty === item.id;
+                return (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex-1 text-sm text-neutral-800">{item.ingredientName}</span>
+                    {isEditingThis ? (
+                      <div className="flex items-center gap-1">
+                        <input autoFocus type="number" min="0" step="any"
+                          value={editQtyVal}
+                          onChange={(e) => setEditQtyVal(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveQtyEdit(item.id);
+                            if (e.key === "Escape") setEditingQty(null);
+                          }}
+                          className="w-20 rounded border border-blue-400 bg-blue-50 px-2 py-1 text-right text-sm" />
+                        <span className="text-xs text-neutral-400">{item.orderUnit ?? ""}</span>
+                        <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
+                          className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
+                        <button type="button" onClick={() => setEditingQty(null)}
+                          className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">✕</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-neutral-700">
+                          {qty} {item.orderUnit ?? ""}
+                          {wasEdited && (
+                            <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
+                          )}
+                        </span>
+                        {canEditQty && (
+                          <button type="button" onClick={() => startEditQty(item.id, qty)}
+                            className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
                         )}
-                      </span>
-                      {canEditQty && !isChecked && (
-                        <button type="button"
-                          onClick={() => startEditQty(item.id, qty)}
-                          className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-          {/* ขั้นที่ 2: สั่งซื้อ (reviewed → sent) */}
+          {/* reviewed footer: mark sent + return */}
           {session.status === "reviewed" && canReview && (
             <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
               <button type="button" disabled={isPending} onClick={handleMarkSent}
@@ -360,6 +449,7 @@ export function SessionActions({
             </div>
           )}
 
+          {/* sent footer: purple note */}
           {session.status === "sent" && (
             <div className="border-t border-neutral-100 px-4 py-2 bg-purple-50">
               <p className="text-xs text-purple-600">✓ ส่งสั่งของแล้ว — กด "แก้" หน้าตัวเลขถ้าซัพไม่มีของครบ</p>

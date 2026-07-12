@@ -95,7 +95,7 @@ export default async function SessionDetailPage({
         )}
       </div>
 
-      {session.status !== "sent" && (
+      {session.status !== "sent" && session.status !== "reviewed" && (
         <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b border-neutral-100">
             <h2 className="text-sm font-medium text-neutral-800">รายการ ({session.items.length})</h2>
