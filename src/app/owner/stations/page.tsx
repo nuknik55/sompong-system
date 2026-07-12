@@ -9,7 +9,7 @@ export default async function StationsPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-8 text-center text-sm text-neutral-400">
-      ยังไม่มีสถานี — กรุณาเพิ่มสถานีใน Supabase ก่อน
+      ยังไม่มีแผนก — กรุณาเพิ่มแผนกใน Supabase ก่อน
     </div>
   );
 }

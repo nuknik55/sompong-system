@@ -48,7 +48,7 @@ export default async function HistoryPage() {
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
                 <th className="px-3 py-2">วันที่</th>
-                <th className="px-3 py-2">สถานี</th>
+                <th className="px-3 py-2">แผนก</th>
                 <th className="px-3 py-2">สถานะ</th>
                 <th className="px-3 py-2 text-right">รายการ</th>
                 <th className="px-3 py-2">โดย</th>

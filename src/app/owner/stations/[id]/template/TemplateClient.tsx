@@ -437,7 +437,7 @@ export function TemplateClient({
   function handleCopy() {
     if (!copyFrom) return;
     const srcName = allStations.find((s) => s.id === copyFrom)?.name ?? "";
-    if (!confirm(`คัดลอก template จากสถานี "${srcName}"?\n(จะเพิ่มรายการที่ยังไม่มีใน template ปัจจุบัน)`)) return;
+    if (!confirm(`คัดลอก template จากแผนก "${srcName}"?\n(จะเพิ่มรายการที่ยังไม่มีใน template ปัจจุบัน)`)) return;
     setError(null);
     setShowCopy(false);
     setCopyFrom("");
@@ -469,7 +469,7 @@ export function TemplateClient({
             onClick={() => setShowCopy(true)}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
           >
-            คัดลอกจากสถานีอื่น
+            คัดลอกจากแผนกอื่น
           </button>
           <button
             type="button"
@@ -502,7 +502,7 @@ export function TemplateClient({
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-400">
-          ยังไม่มีวัตถุดิบใน template — กด &ldquo;+ สร้าง Template&rdquo; หรือ &ldquo;คัดลอกจากสถานีอื่น&rdquo;
+          ยังไม่มีวัตถุดิบใน template — กด &ldquo;+ สร้าง Template&rdquo; หรือ &ldquo;คัดลอกจากแผนกอื่น&rdquo;
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -702,16 +702,16 @@ export function TemplateClient({
       {showCopy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-4">
-            <h2 className="font-semibold text-neutral-800">คัดลอกจากสถานีอื่น</h2>
+            <h2 className="font-semibold text-neutral-800">คัดลอกจากแผนกอื่น</h2>
             <p className="text-sm text-neutral-500">
-              เลือกสถานีต้นทาง — รายการที่ยังไม่มีใน template นี้จะถูกเพิ่มเข้ามา
+              เลือกแผนกต้นทาง — รายการที่ยังไม่มีใน template นี้จะถูกเพิ่มเข้ามา
             </p>
             <select
               value={copyFrom}
               onChange={(e) => setCopyFrom(e.target.value)}
               className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
             >
-              <option value="">— เลือกสถานี —</option>
+              <option value="">— เลือกแผนก —</option>
               {allStations
                 .filter((s) => s.id !== station.id)
                 .map((s) => (

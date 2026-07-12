@@ -57,7 +57,7 @@ export default async function SessionDetailPage({
       <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
         {session.stationName && (
           <div className="flex gap-2">
-            <span className="w-24 shrink-0 text-neutral-500">สถานี</span>
+            <span className="w-24 shrink-0 text-neutral-500">แผนก</span>
             <span>{session.stationName}</span>
           </div>
         )}

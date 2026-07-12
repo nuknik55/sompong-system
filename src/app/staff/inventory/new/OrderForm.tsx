@@ -167,7 +167,7 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
       <div className="rounded-lg border border-neutral-200 bg-white p-4 space-y-3">
         <div className="flex gap-3 flex-wrap">
           <div className="flex-1 min-w-32">
-            <label className="mb-1 block text-xs font-medium text-neutral-500">สถานี</label>
+            <label className="mb-1 block text-xs font-medium text-neutral-500">แผนก</label>
             <select value={stationId} onChange={(e) => setStationId(e.target.value)}
               className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm">
               <option value="">— ไม่ระบุ —</option>

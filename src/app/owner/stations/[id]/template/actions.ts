@@ -174,7 +174,7 @@ export async function copyFromStation(
     .eq("station_id", fromStationId)
     .order("sort_order");
   if (fetchErr) return { error: fetchErr.message };
-  if (!sourceRows?.length) return { error: "สถานีต้นทางไม่มีรายการ" };
+  if (!sourceRows?.length) return { error: "แผนกต้นทางไม่มีรายการ" };
 
   const rows = sourceRows.map((r) => ({
     station_id: toStationId,

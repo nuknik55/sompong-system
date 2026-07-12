@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { OrderStatus, OrderSessionSummary } from "@/lib/inventory-data";
+import { FromTemplateButton } from "./FromTemplateButton";
+import type { OrderStatus, OrderSessionSummary, Station } from "@/lib/inventory-data";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
@@ -34,7 +35,7 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
         <thead>
           <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
             <th className="px-3 py-2">วันที่</th>
-            <th className="px-3 py-2">สถานี</th>
+            <th className="px-3 py-2">แผนก</th>
             <th className="px-3 py-2">สถานะ</th>
             <th className="px-3 py-2 text-right">รายการ</th>
             <th className="px-3 py-2">โดย</th>
@@ -64,45 +65,67 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
   );
 }
 
-type Tab = "mine" | "all";
-
 export function InventoryListClient({
   sessions,
   currentUserId,
+  stationsWithTemplate,
 }: {
   sessions: OrderSessionSummary[];
   currentUserId: string;
+  stationsWithTemplate: Station[];
 }) {
-  const [tab, setTab] = useState<Tab>("mine");
+  const [showAll, setShowAll] = useState(false);
 
   const mineSessions = sessions.filter(
     (s) => s.createdBy === currentUserId || s.status === "sent"
   );
-  const displayed = tab === "mine" ? mineSessions : sessions;
-  const active    = displayed.filter((s) => s.status !== "received");
-  const done      = displayed.filter((s) => s.status === "received");
+  const active = (showAll ? sessions : mineSessions).filter(
+    (s) => s.status !== "received"
+  );
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1.5">
-        {(["mine", "all"] as Tab[]).map((key) => {
-          const count   = key === "mine" ? mineSessions.length : sessions.length;
-          const label   = key === "mine" ? "ของฉัน" : "ทั้งหมด";
-          const isActive = tab === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={`rounded-full px-3 py-1 text-sm transition-colors ${
-                isActive ? "font-medium text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+      {/* header: h1+subtitle LEFT, toggle RIGHT */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-neutral-900">งานของฉัน</h1>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            {showAll ? "ใบสั่งของทั้งหมดทุกแผนก" : "ใบสั่งของที่ฉันสร้าง + รอรับของ"}
+          </p>
+        </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 pt-1">
+          <span className="text-xs text-neutral-500">ทุกแผนก</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showAll}
+            onClick={() => setShowAll(!showAll)}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              showAll ? "" : "bg-neutral-200"
+            }`}
+            style={showAll ? { backgroundColor: "#2F5A16" } : undefined}
+          >
+            <span
+              className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                showAll ? "translate-x-4" : "translate-x-0"
               }`}
-              style={isActive ? { backgroundColor: "#2F5A16" } : undefined}
-            >
-              {label} ({count})
-            </button>
-          );
-        })}
+            />
+          </button>
+        </label>
+      </div>
+
+      {/* action buttons */}
+      <div className="flex gap-2 flex-wrap">
+        {stationsWithTemplate.length > 0 && (
+          <FromTemplateButton stations={stationsWithTemplate} />
+        )}
+        <Link
+          href="/staff/inventory/new"
+          className="rounded-md px-3 py-2 text-sm font-medium text-white"
+          style={{ backgroundColor: "#2F5A16" }}
+        >
+          + เช็คของ / สั่งของ
+        </Link>
       </div>
 
       {active.length > 0 ? (
@@ -111,19 +134,6 @@ export function InventoryListClient({
         <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
           ไม่มีรายการที่กำลังดำเนินการ
         </div>
-      )}
-
-      {done.length > 0 && (
-        <details className="group">
-          <summary className="flex cursor-pointer items-baseline gap-2 text-sm text-neutral-400 hover:text-neutral-600 list-none">
-            <span className="text-neutral-300 group-open:hidden">▶</span>
-            <span className="hidden group-open:inline text-neutral-300">▼</span>
-            รับของแล้ว ({done.length} รายการ)
-          </summary>
-          <div className="mt-2">
-            <SessionTable sessions={done} />
-          </div>
-        </details>
       )}
     </div>
   );

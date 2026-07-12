@@ -34,8 +34,8 @@ export function FromTemplateButton({ stations }: { stations: Station[] }) {
       {show && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-3">
-            <h2 className="font-semibold text-neutral-800">เลือกสถานี</h2>
-            <p className="text-sm text-neutral-500">เลือกสถานีที่ต้องการสั่งของ</p>
+            <h2 className="font-semibold text-neutral-800">เลือกแผนก</h2>
+            <p className="text-sm text-neutral-500">เลือกแผนกที่ต้องการสั่งของ</p>
             <div className="space-y-2">
               {stations.map((s) => (
                 <button
