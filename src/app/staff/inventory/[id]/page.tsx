@@ -147,33 +147,67 @@ export default async function SessionDetailPage({
         </div>
       )}
 
-      {/* Print layout */}
-      <div className="hidden print:block space-y-2">
-        <h2 className="font-semibold">ใบสั่งของ #{shortId} — {session.stationName ?? ""}</h2>
-        <p className="text-sm text-gray-500">{formatDate(session.submittedAt)}</p>
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr>
-              <th className="border border-gray-400 px-2 py-1 w-6">✓</th>
-              <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
-              <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
-            </tr>
-          </thead>
-          <tbody>
-            {session.items
-              .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
-              .map((item) => (
-                <tr key={item.id}>
-                  <td className="border border-gray-400 px-2 py-1">□</td>
-                  <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
-                  <td className="border border-gray-400 px-2 py-1 text-right font-medium">
-                    {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Print layout: order form (non-received) */}
+      {session.status !== "received" && (
+        <div className="hidden print:block space-y-2">
+          <h2 className="font-semibold">ใบสั่งของ #{shortId} — {session.stationName ?? ""}</h2>
+          <p className="text-sm text-gray-500">{formatDate(session.submittedAt)}</p>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="border border-gray-400 px-2 py-1 w-6">✓</th>
+                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
+              </tr>
+            </thead>
+            <tbody>
+              {session.items
+                .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
+                .map((item) => (
+                  <tr key={item.id}>
+                    <td className="border border-gray-400 px-2 py-1">□</td>
+                    <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
+                    <td className="border border-gray-400 px-2 py-1 text-right font-medium">
+                      {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Print layout: receive record (received only) */}
+      {session.status === "received" && (
+        <div className="hidden print:block space-y-2">
+          <h2 className="font-semibold">ใบรับของ #{shortId} — {session.stationName ?? ""}</h2>
+          <p className="text-sm text-gray-500">รับของเมื่อ {formatDate(session.receivedAt!)}</p>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">รับจริง</th>
+              </tr>
+            </thead>
+            <tbody>
+              {session.items
+                .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
+                .map((item) => (
+                  <tr key={item.id}>
+                    <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
+                    <td className="border border-gray-400 px-2 py-1 text-right">
+                      {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
+                    </td>
+                    <td className="border border-gray-400 px-2 py-1 text-right font-medium">
+                      {item.qtyReceived !== null ? `${item.qtyReceived} ${item.orderUnit ?? ""}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <SessionActions session={session} canReview={canReview} isCreator={isCreator} />
     </div>
