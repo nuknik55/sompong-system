@@ -41,7 +41,7 @@ function TemplateRow({
   return (
     <tr className={rowCls}>
       {editMode && (
-        <td className="px-2 py-2 w-8">
+        <td className="px-2 py-2 w-10">
           <div className="flex flex-col gap-0.5 items-center">
             <button type="button" onClick={() => onMove("up")}
               disabled={index === 0 || isPending}
@@ -49,6 +49,8 @@ function TemplateRow({
             <button type="button" onClick={() => onMove("down")}
               disabled={index === totalCount - 1 || isPending}
               className="text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-25 leading-none">▼</button>
+            <button type="button" onClick={onRemove} disabled={isPending}
+              className="text-xs text-red-400 hover:text-red-700 disabled:opacity-40 leading-none">✕</button>
           </div>
         </td>
       )}
@@ -85,12 +87,6 @@ function TemplateRow({
               placeholder={row.usageUnit ?? "หน่วย"} className={inputCls} />
           : <span className="text-sm text-neutral-500">{row.freezerUnit ?? "—"}</span>}
       </td>
-      {editMode && (
-        <td className="px-2 py-2">
-          <button type="button" onClick={onRemove} disabled={isPending}
-            className="text-xs text-red-400 hover:text-red-700 disabled:opacity-40">✕</button>
-        </td>
-      )}
     </tr>
   );
 }
@@ -127,7 +123,7 @@ export function TemplateClient({
   const [nameVal, setNameVal] = useState(currentTemplate?.name ?? "");
 
   const allCategories = [
-    ...new Set(available.map((i) => i.category).filter((c): c is string => c !== null)),
+    ...new Set(available.map((i) => i.category).filter((c): c is string => c !== null && c.trim() !== "")),
   ].sort();
 
   const filteredAvailable = available.filter((i) => {
@@ -367,7 +363,6 @@ export function TemplateClient({
                       <th className="px-2 py-2 text-right">สั่งปกติ</th>
                       <th className="px-2 py-2 text-left">หน่วยครัว</th>
                       <th className="px-2 py-2 text-left">หน่วยตู้แช่</th>
-                      {editMode && <th className="w-8 px-2 py-2" />}
                     </tr>
                   </thead>
                   <tbody>
