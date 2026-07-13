@@ -1,27 +1,27 @@
 import { requireProfile } from "@/lib/auth";
-import { getStations, getIngredientsForOrder, getAllStationTemplates } from "@/lib/inventory-data";
+import { getStations, getIngredientsForOrder, getTemplateItems } from "@/lib/inventory-data";
 import { OrderForm } from "./OrderForm";
 
 export default async function NewOrderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ station?: string; prefill?: string }>;
+  searchParams: Promise<{ template?: string; prefill?: string }>;
 }) {
   await requireProfile();
-  const { station: initialStation, prefill } = await searchParams;
+  const { template: templateId, prefill } = await searchParams;
 
-  const [stations, allIngredients, stationTemplates] = await Promise.all([
+  const [stations, allIngredients] = await Promise.all([
     getStations(),
     getIngredientsForOrder(),
-    getAllStationTemplates(),
   ]);
+
+  const templateItems = templateId ? await getTemplateItems(templateId) : [];
 
   return (
     <OrderForm
       stations={stations}
       allIngredients={allIngredients}
-      stationTemplates={stationTemplates}
-      initialStationId={initialStation ?? ""}
+      templateItems={templateItems}
       prefillFromTemplate={prefill === "1"}
     />
   );

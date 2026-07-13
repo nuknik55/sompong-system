@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { FromTemplateButton } from "./FromTemplateButton";
-import type { OrderStatus, OrderSessionSummary, Station } from "@/lib/inventory-data";
+import type { OrderStatus, OrderSessionSummary, Template } from "@/lib/inventory-data";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
@@ -68,11 +68,11 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
 export function InventoryListClient({
   sessions,
   currentUserId,
-  stationsWithTemplate,
+  templates,
 }: {
   sessions: OrderSessionSummary[];
   currentUserId: string;
-  stationsWithTemplate: Station[];
+  templates: Template[];
 }) {
   const [showAll, setShowAll] = useState(false);
 
@@ -116,8 +116,8 @@ export function InventoryListClient({
 
       {/* action buttons */}
       <div className="flex gap-2 flex-wrap">
-        {stationsWithTemplate.length > 0 && (
-          <FromTemplateButton stations={stationsWithTemplate} />
+        {templates.length > 0 && (
+          <FromTemplateButton templates={templates} />
         )}
         <Link
           href="/staff/inventory/new"

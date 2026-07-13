@@ -3,13 +3,12 @@
 import { useMemo, useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderSession } from "../actions";
-import type { Station, IngredientForOrder, StationTemplateRow } from "@/lib/inventory-data";
+import type { Station, IngredientForOrder, TemplateItem } from "@/lib/inventory-data";
 
 type Props = {
   stations: Station[];
   allIngredients: IngredientForOrder[];
-  stationTemplates: Record<string, StationTemplateRow[]>;
-  initialStationId?: string;
+  templateItems: TemplateItem[];
   prefillFromTemplate?: boolean;
 };
 
@@ -28,11 +27,11 @@ const EMPTY_ROW: RowState = {
   packCount: "", qtyPerPack: "", usePack: false, orderUnit: "",
 };
 
-export function OrderForm({ stations, allIngredients, stationTemplates, initialStationId = "", prefillFromTemplate = false }: Props) {
+export function OrderForm({ stations, allIngredients, templateItems, prefillFromTemplate = false }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [stationId, setStationId] = useState(initialStationId);
+  const [stationId, setStationId] = useState("");
   const [note, setNote] = useState("");
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
@@ -41,20 +40,17 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
   // Auto-fill rows from template when arriving via "สั่งของจาก Template"
   const prefillDone = useRef(false);
   useEffect(() => {
-    if (!prefillFromTemplate || !initialStationId || prefillDone.current) return;
+    if (!prefillFromTemplate || !templateItems.length || prefillDone.current) return;
     prefillDone.current = true;
-    const template = stationTemplates[initialStationId];
-    if (!template?.length) return;
     const baseById = new Map(allIngredients.map((i) => [i.id, i]));
     const newRows: Record<string, RowState> = {};
     const cats = new Set<string>();
-    for (const t of template) {
+    for (const t of templateItems) {
       const base = baseById.get(t.ingredientId);
-      if (!base) continue;
-      const cat = t.customGroup ?? base.category ?? "ไม่ระบุหมวด";
+      const cat = t.customGroup ?? base?.category ?? "ไม่ระบุหมวด";
       cats.add(cat);
       if (t.defaultQty !== null) {
-        const orderUnit = t.customUnit ?? base.purchaseUnitLabel ?? base.usageUnit ?? "";
+        const orderUnit = t.orderUnit ?? base?.purchaseUnitLabel ?? base?.usageUnit ?? "";
         newRows[t.ingredientId] = { ...EMPTY_ROW, qty: String(t.defaultQty), orderUnit };
       }
     }
@@ -63,27 +59,25 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Derive effective ingredient list: use station template if available
+  // Derive effective ingredient list: use template order if provided, else all ingredients
   const ingredients = useMemo<IngredientForOrder[]>(() => {
-    const template = stationId ? stationTemplates[stationId] : null;
-    if (!template || template.length === 0) return allIngredients;
-
+    if (!templateItems.length) return allIngredients;
     const baseById = new Map(allIngredients.map((i) => [i.id, i]));
-    return template
+    return templateItems
       .map((t) => {
         const base = baseById.get(t.ingredientId);
         if (!base) return null;
         return {
           ...base,
           customGroup: t.customGroup,
-          customUnit: t.customUnit,
+          customUnit: t.orderUnit,
           defaultQty: t.defaultQty,
           kitchenUnit: t.kitchenUnit,
           freezerUnit: t.freezerUnit,
         };
       })
       .filter((x): x is IngredientForOrder => x !== null);
-  }, [stationId, stationTemplates, allIngredients]);
+  }, [templateItems, allIngredients]);
 
   // Group by custom_group (template) or category (fallback)
   const categories: { label: string; items: IngredientForOrder[] }[] = [];
@@ -223,8 +217,8 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                     const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
                     const kitchenUnit = ing.kitchenUnit ?? ing.usageUnit ?? "";
                     const freezerUnit = ing.freezerUnit ?? ing.usageUnit ?? "";
-                    // defaultQty from template takes priority over global par_level
                     const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : ing.parLevel !== null ? `≈${ing.parLevel}` : "";
+                    const parLabel = ing.parLevel !== null ? ing.parLevel : null;
                     const hasOrder = resolveOrderQty(row) > 0;
                     const hasAnyData = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());
 
@@ -293,6 +287,9 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                                   placeholder="หน่วย"
                                   className="w-14 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600" />
                               </div>
+                              {parLabel !== null && (
+                                <span className="text-xs text-neutral-400">par {parLabel}</span>
+                              )}
                             </label>
                           ) : (
                             <div className="flex flex-col gap-0.5">
@@ -325,6 +322,9 @@ export function OrderForm({ stations, allIngredients, stationTemplates, initialS
                                   </span>
                                 )}
                               </div>
+                              {parLabel !== null && (
+                                <span className="text-xs text-neutral-400">par {parLabel}</span>
+                              )}
                             </div>
                           )}
                         </div>

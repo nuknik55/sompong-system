@@ -2,20 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Station } from "@/lib/inventory-data";
+import type { Template } from "@/lib/inventory-data";
 
-export function FromTemplateButton({ stations }: { stations: Station[] }) {
+export function FromTemplateButton({ templates }: { templates: Template[] }) {
   const router = useRouter();
   const [show, setShow] = useState(false);
 
-  function pick(stationId: string) {
+  function pick(templateId: string) {
     setShow(false);
-    router.push(`/staff/inventory/new?station=${stationId}&prefill=1`);
+    router.push(`/staff/inventory/new?template=${templateId}&prefill=1`);
   }
 
   function handleClick() {
-    if (stations.length === 1) {
-      pick(stations[0].id);
+    if (templates.length === 1) {
+      pick(templates[0].id);
     } else {
       setShow(true);
     }
@@ -34,17 +34,17 @@ export function FromTemplateButton({ stations }: { stations: Station[] }) {
       {show && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-3">
-            <h2 className="font-semibold text-neutral-800">เลือกแผนก</h2>
-            <p className="text-sm text-neutral-500">เลือกแผนกที่ต้องการสั่งของ</p>
+            <h2 className="font-semibold text-neutral-800">เลือก Template</h2>
+            <p className="text-sm text-neutral-500">เลือก template ที่ต้องการสั่งของ</p>
             <div className="space-y-2">
-              {stations.map((s) => (
+              {templates.map((t) => (
                 <button
-                  key={s.id}
+                  key={t.id}
                   type="button"
-                  onClick={() => pick(s.id)}
+                  onClick={() => pick(t.id)}
                   className="w-full text-left rounded-lg border border-neutral-200 px-4 py-3 text-sm font-medium text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400 transition-colors"
                 >
-                  {s.name}
+                  {t.name}
                 </button>
               ))}
             </div>
