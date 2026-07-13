@@ -1,10 +1,36 @@
-import { redirect } from "next/navigation";
 import { requireAdminOrEditor } from "@/lib/auth";
-import { getStations } from "@/lib/inventory-data";
+import { getTemplates, getTemplateItems, getIngredientsForOrder } from "@/lib/inventory-data";
+import { InventorySubNav } from "@/components/inventory-sub-nav";
+import { TemplateClient } from "./TemplateClient";
 
-export default async function InventoryTemplateIndexPage() {
+export default async function TemplatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ t?: string }>;
+}) {
+  const { t: templateId } = await searchParams;
   await requireAdminOrEditor();
-  const stations = await getStations();
-  if (stations.length === 0) redirect("/staff/inventory");
-  redirect(`/staff/inventory/template/${stations[0].id}`);
+
+  const [templates, allIngredients] = await Promise.all([
+    getTemplates(),
+    getIngredientsForOrder(),
+  ]);
+
+  const selectedId = templateId ?? templates[0]?.id ?? null;
+  const items = selectedId ? await getTemplateItems(selectedId) : [];
+  const itemIngIds = new Set(items.map((i) => i.ingredientId));
+  const availableIngredients = allIngredients.filter((i) => !itemIngIds.has(i.id));
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <InventorySubNav showTemplate canReview={true} />
+      <TemplateClient
+        key={selectedId ?? "none"}
+        templates={templates}
+        selectedTemplateId={selectedId}
+        initialItems={items}
+        availableIngredients={availableIngredients}
+      />
+    </div>
+  );
 }

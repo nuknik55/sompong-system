@@ -83,6 +83,28 @@ export type IngredientForOrder = {
   freezerUnit: string | null;
 };
 
+export type Template = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+export type TemplateItem = {
+  id: string;
+  templateId: string;
+  ingredientId: string;
+  ingredientName: string;
+  ingredientCategory: string | null;
+  customGroup: string | null;
+  orderUnit: string | null;
+  defaultQty: number | null;
+  kitchenUnit: string | null;
+  freezerUnit: string | null;
+  sortOrder: number;
+  usageUnit: string | null;
+  purchaseUnitLabel: string | null;
+};
+
 export type StationTemplateRow = {
   id: string;
   stationId: string;
@@ -383,4 +405,58 @@ export async function getLastQtyPerPack(ingredientId: string): Promise<number | 
     .limit(1)
     .maybeSingle();
   return data?.qty_per_pack ?? null;
+}
+
+export async function getTemplates(): Promise<Template[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("templates")
+    .select("id, name, created_at")
+    .order("created_at");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }));
+}
+
+export async function getTemplateItems(templateId: string): Promise<TemplateItem[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("template_items")
+    .select(`
+      id, template_id, ingredient_id, order_unit, default_qty,
+      kitchen_unit, freezer_unit, custom_group, sort_order,
+      ingredients(name, category, usage_unit, purchase_unit_label)
+    `)
+    .eq("template_id", templateId)
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+
+  type IngRef = { name: string; category: string | null; usage_unit: string | null; purchase_unit_label: string | null };
+  type RawItem = {
+    id: string; template_id: string; ingredient_id: string;
+    order_unit: string | null; default_qty: number | null;
+    kitchen_unit: string | null; freezer_unit: string | null;
+    custom_group: string | null; sort_order: number;
+    ingredients: IngRef | IngRef[] | null;
+  };
+
+  return ((data ?? []) as unknown as RawItem[]).map((r) => {
+    const ing = r.ingredients
+      ? Array.isArray(r.ingredients) ? r.ingredients[0] ?? null : r.ingredients
+      : null;
+    return {
+      id: r.id,
+      templateId: r.template_id,
+      ingredientId: r.ingredient_id,
+      ingredientName: ing?.name ?? "",
+      ingredientCategory: ing?.category ?? null,
+      customGroup: r.custom_group,
+      orderUnit: r.order_unit,
+      defaultQty: r.default_qty,
+      kitchenUnit: r.kitchen_unit,
+      freezerUnit: r.freezer_unit,
+      sortOrder: r.sort_order,
+      usageUnit: ing?.usage_unit ?? null,
+      purchaseUnitLabel: ing?.purchase_unit_label ?? null,
+    };
+  });
 }
