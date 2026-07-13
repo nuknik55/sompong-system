@@ -217,7 +217,7 @@ export function OrderForm({ stations, allIngredients, templateItems, prefillFrom
                     const orderUnit = row.orderUnit !== "" ? row.orderUnit : defaultOrderUnit;
                     const kitchenUnit = ing.kitchenUnit ?? ing.usageUnit ?? "";
                     const freezerUnit = ing.freezerUnit ?? ing.usageUnit ?? "";
-                    const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : ing.parLevel !== null ? `≈${ing.parLevel}` : "";
+                    const parHint = ing.defaultQty !== null ? `≈${ing.defaultQty}` : "";
                     const parLabel = ing.parLevel !== null ? ing.parLevel : null;
                     const hasOrder = resolveOrderQty(row) > 0;
                     const hasAnyData = !!(row.kitchenQty.trim() || row.freezerQty.trim() || row.qty.trim() || row.packCount.trim());

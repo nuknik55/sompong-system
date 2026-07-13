@@ -36,7 +36,7 @@ export function FromTemplateButton({ templates }: { templates: Template[] }) {
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl space-y-3">
             <h2 className="font-semibold text-neutral-800">เลือก Template</h2>
             <p className="text-sm text-neutral-500">เลือก template ที่ต้องการสั่งของ</p>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
               {templates.map((t) => (
                 <button
                   key={t.id}
