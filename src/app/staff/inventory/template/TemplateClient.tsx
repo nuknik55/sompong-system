@@ -32,8 +32,8 @@ function TemplateRow({
 }) {
   const [unitVal, setUnitVal] = useState(row.orderUnit ?? row.usageUnit ?? "");
   const [qtyVal, setQtyVal] = useState(row.defaultQty !== null ? String(row.defaultQty) : "");
-  const [kitchenVal, setKitchenVal] = useState(row.kitchenUnit ?? "");
-  const [freezerVal, setFreezerVal] = useState(row.freezerUnit ?? "");
+  const [kitchenVal, setKitchenVal] = useState(row.kitchenUnit ?? row.usageUnit ?? "");
+  const [freezerVal, setFreezerVal] = useState(row.freezerUnit ?? row.usageUnit ?? "");
 
   const inputCls = "rounded border border-neutral-200 px-1.5 py-1 text-xs w-16";
   const rowCls = `border-b border-neutral-100 last:border-0${index % 2 === 1 ? " bg-neutral-50" : ""}`;
@@ -78,14 +78,14 @@ function TemplateRow({
           ? <input type="text" value={kitchenVal} onChange={(e) => setKitchenVal(e.target.value)}
               onBlur={() => { const v = kitchenVal.trim() || null; if (v !== row.kitchenUnit) onUpdate({ kitchen_unit: v }); }}
               placeholder={row.usageUnit ?? "หน่วย"} className={inputCls} />
-          : <span className="text-sm text-neutral-500">{row.kitchenUnit ?? "—"}</span>}
+          : <span className="text-sm text-neutral-500">{row.kitchenUnit ?? row.usageUnit ?? "—"}</span>}
       </td>
       <td className="px-2 py-2">
         {editMode
           ? <input type="text" value={freezerVal} onChange={(e) => setFreezerVal(e.target.value)}
               onBlur={() => { const v = freezerVal.trim() || null; if (v !== row.freezerUnit) onUpdate({ freezer_unit: v }); }}
               placeholder={row.usageUnit ?? "หน่วย"} className={inputCls} />
-          : <span className="text-sm text-neutral-500">{row.freezerUnit ?? "—"}</span>}
+          : <span className="text-sm text-neutral-500">{row.freezerUnit ?? row.usageUnit ?? "—"}</span>}
       </td>
     </tr>
   );
