@@ -77,7 +77,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
         </div>
 
         {session.items.map((item) => {
-          const orderedQty = item.editorQtyOrdered ?? item.qtyOrdered;
+          const orderedQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
           const inputVal = inputs[item.id] ?? "";
           const receivedNum = inputVal.trim() !== "" ? parseFloat(inputVal) : null;
           const variance = isHighVariance(orderedQty, receivedNum);
