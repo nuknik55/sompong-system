@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireProfile, requireAdminOrEditor } from "@/lib/auth";
+import { requireProfile, requireAdminOrEditor, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -231,9 +231,9 @@ export async function resubmitOrderSession(sessionId: string): Promise<ActionRes
   return {};
 }
 
-/** Editor+ บันทึกว่าส่งสั่งของแล้ว: reviewed → sent */
+/** Admin+ บันทึกว่าส่งสั่งของแล้ว: reviewed → sent */
 export async function markOrderSent(sessionId: string): Promise<ActionResult> {
-  const profile = await requireAdminOrEditor();
+  const profile = await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase
     .from("order_sessions")

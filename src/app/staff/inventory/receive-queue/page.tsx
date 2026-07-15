@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
@@ -7,11 +7,12 @@ import type { OrderSessionSummary } from "@/lib/inventory-data";
 export default async function ReceiveQueuePage() {
   const profile = await requireProfile();
   const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canSend = isAdminOrAbove(profile.role);
   const sessions = await getOrderSessions({ status: "sent" });
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={canReview} canReview={canReview} />
+      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} />
 
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">รอรับของ</h1>

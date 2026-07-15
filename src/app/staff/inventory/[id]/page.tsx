@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessionDetail } from "@/lib/inventory-data";
 import { SessionActions } from "./SessionActions";
 
@@ -38,6 +38,7 @@ export default async function SessionDetailPage({
   if (!session) notFound();
 
   const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canSend = isAdminOrAbove(profile.role);
   const isCreator = profile.id === session.createdBy;
   const shortId = session.id.slice(0, 8).toUpperCase();
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
@@ -209,7 +210,7 @@ export default async function SessionDetailPage({
         </div>
       )}
 
-      <SessionActions session={session} canReview={canReview} isCreator={isCreator} />
+      <SessionActions session={session} canReview={canReview} canSend={canSend} isCreator={isCreator} />
     </div>
   );
 }

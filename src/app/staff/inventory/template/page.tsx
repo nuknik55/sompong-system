@@ -1,4 +1,4 @@
-import { requireAdminOrEditor } from "@/lib/auth";
+import { requireAdminOrEditor, isAdminOrAbove } from "@/lib/auth";
 import { getTemplates, getTemplateItems, getIngredientsForOrder } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { TemplateClient } from "./TemplateClient";
@@ -9,7 +9,7 @@ export default async function TemplatePage({
   searchParams: Promise<{ t?: string }>;
 }) {
   const { t: templateId } = await searchParams;
-  await requireAdminOrEditor();
+  const profile = await requireAdminOrEditor();
 
   const [templates, allIngredients] = await Promise.all([
     getTemplates(),
@@ -23,7 +23,7 @@ export default async function TemplatePage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate canReview={true} />
+      <InventorySubNav showTemplate canReview={true} canSend={isAdminOrAbove(profile.role)} />
       <TemplateClient
         key={selectedId ?? "none"}
         templates={templates}

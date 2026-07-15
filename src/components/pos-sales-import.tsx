@@ -7,6 +7,7 @@ import {
   upsertPosSalesAlias,
   type SalesImportPreview,
 } from "@/app/owner/sales-import-actions";
+import { unstable_rethrow } from "next/navigation";
 
 function formatNum(n: number) {
   return n.toLocaleString("th-TH");
@@ -43,6 +44,7 @@ export function PosSalesImport() {
         setQtyDivisor({});
         setRowDivisorInput({});
       } catch (err) {
+        unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
         setPreview(null);
       }
@@ -62,6 +64,7 @@ export function PosSalesImport() {
         setQtyBump((prev) => ({ ...prev, [targetMenuId]: (prev[targetMenuId] ?? 0) + qtySold / divisor }));
         setMergedNames((prev) => new Set(prev).add(productName));
       } catch (err) {
+        unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "ผูกเข้าเมนูไม่สำเร็จ");
       }
     });
@@ -78,6 +81,7 @@ export function PosSalesImport() {
         await upsertPosSalesAlias(menuName, menuId, divisor);
         setQtyDivisor((prev) => ({ ...prev, [menuId]: divisor }));
       } catch (err) {
+        unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
       }
     });
@@ -102,6 +106,7 @@ export function PosSalesImport() {
         setPreview(null);
         window.location.reload();
       } catch (err) {
+        unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "อัปเดตยอดขายไม่สำเร็จ");
       }
     });

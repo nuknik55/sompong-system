@@ -40,10 +40,12 @@ function initEditRows(items: OrderItem[]): Record<string, EditRow> {
 export function SessionActions({
   session,
   canReview,
+  canSend,
   isCreator,
 }: {
   session: OrderSessionDetail;
   canReview: boolean;
+  canSend: boolean;
   isCreator: boolean;
 }) {
   const router = useRouter();
@@ -391,7 +393,7 @@ export function SessionActions({
           )}
 
           {/* reviewed footer: mark sent + return */}
-          {session.status === "reviewed" && canReview && (
+          {session.status === "reviewed" && canSend && (
             <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
               <button type="button" disabled={isPending} onClick={handleMarkSent}
                 className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderStatus, OrderSessionSummary } from "@/lib/inventory-data";
@@ -27,11 +27,12 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 export default async function HistoryPage() {
   const profile = await requireProfile();
   const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canSend = isAdminOrAbove(profile.role);
   const sessions = await getOrderSessions({ status: "received" });
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={canReview} canReview={canReview} />
+      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} />
 
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">ประวัติ</h1>

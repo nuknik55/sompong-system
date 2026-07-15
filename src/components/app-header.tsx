@@ -19,7 +19,6 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 const EDITOR_NAV: NavItem[] = [
-  { href: "/owner", label: "ภาพรวมต้นทุน", exact: true },
   { href: "/staff", label: "สูตรอาหาร", exact: false },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true },
   { href: "/staff/inventory", label: "สั่งของ", exact: false },

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
@@ -12,12 +12,13 @@ function formatDate(iso: string) {
 export default async function ReviewQueuePage() {
   const profile = await requireProfile();
   if (!["owner", "admin", "editor"].includes(profile.role)) redirect("/staff/inventory");
+  const canSend = isAdminOrAbove(profile.role);
 
   const sessions = await getOrderSessions({ status: "submitted" });
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={true} canReview={true} />
+      <InventorySubNav showTemplate={true} canReview={true} canSend={canSend} />
 
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">รอตรวจสอบ</h1>

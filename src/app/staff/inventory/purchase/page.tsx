@@ -1,19 +1,19 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 
 export default async function PurchaseQueuePage() {
   const profile = await requireProfile();
-  if (!["owner", "admin", "editor"].includes(profile.role)) redirect("/staff/inventory");
+  if (!isAdminOrAbove(profile.role)) redirect("/staff/inventory");
 
   const sessions = await getOrderSessions({ status: "reviewed" });
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={true} canReview={true} />
+      <InventorySubNav showTemplate={true} canReview={true} canSend={true} />
 
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">รอสั่งซื้อ</h1>

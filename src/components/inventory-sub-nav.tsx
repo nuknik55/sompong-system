@@ -8,9 +8,11 @@ type NavItem = { href: string; label: string; exact?: boolean };
 export function InventorySubNav({
   showTemplate,
   canReview,
+  canSend,
 }: {
   showTemplate: boolean;
   canReview: boolean;
+  canSend: boolean;
 }) {
   const pathname = usePathname();
 
@@ -23,11 +25,9 @@ export function InventorySubNav({
 
   const navItems: NavItem[] = [
     { href: "/staff/inventory", label: "งานของฉัน", exact: true },
-    ...(canReview ? [
-      { href: "/staff/inventory/review", label: "รอตรวจสอบ" },
-      { href: "/staff/inventory/purchase", label: "รอสั่งซื้อ" },
-    ] : []),
-    { href: "/staff/inventory/receive-queue", label: "รอรับของ" },
+    ...(canReview ? [{ href: "/staff/inventory/review", label: "ตรวจสอบ" }] : []),
+    ...(canSend ? [{ href: "/staff/inventory/purchase", label: "สั่งซื้อ" }] : []),
+    { href: "/staff/inventory/receive-queue", label: "รับของ" },
     { href: "/staff/inventory/history", label: "ประวัติ" },
     ...(showTemplate ? [{ href: "/staff/inventory/template", label: "Template" }] : []),
   ];

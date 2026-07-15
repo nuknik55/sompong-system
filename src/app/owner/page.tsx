@@ -1,4 +1,6 @@
 import { getCostingContext } from "@/lib/data";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { computeMenuCost, classifyMenuEngineering, type MenuEngineeringClass } from "@/lib/costing";
 import { MenuEngineeringChart } from "@/components/menu-engineering-chart";
 import { MenuEngineeringSection } from "@/components/menu-engineering-section";
@@ -24,6 +26,9 @@ export default async function OwnerDashboardPage({
 }: {
   searchParams: Promise<{ category?: string }>;
 }) {
+  const profile = await requireProfile();
+  if (!isAdminOrAbove(profile.role)) redirect("/owner/menus");
+
   const { category: rawCategory } = await searchParams;
   const selectedCategory = rawCategory?.trim() || "all";
 

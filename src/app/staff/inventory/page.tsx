@@ -1,4 +1,4 @@
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions, getStations, getTemplates } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { InventoryListClient } from "./InventoryListClient";
@@ -12,10 +12,11 @@ export default async function InventoryListPage() {
   ]);
 
   const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canSend = isAdminOrAbove(profile.role);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <InventorySubNav showTemplate={canReview} canReview={canReview} />
+      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} />
       <InventoryListClient
         sessions={allSessions}
         currentUserId={profile.id}
