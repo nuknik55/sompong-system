@@ -7,13 +7,14 @@ import {
   upsertPosSalesAlias,
   type SalesImportPreview,
 } from "@/app/owner/sales-import-actions";
-import { unstable_rethrow } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 
 function formatNum(n: number) {
   return n.toLocaleString("th-TH");
 }
 
 export function PosSalesImport() {
+  const router = useRouter();
   const [preview, setPreview] = useState<SalesImportPreview | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
@@ -104,7 +105,7 @@ export function PosSalesImport() {
         const n = await applyPosSalesImport(updates);
         setDoneCount(n);
         setPreview(null);
-        window.location.reload();
+        router.refresh();
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "อัปเดตยอดขายไม่สำเร็จ");
