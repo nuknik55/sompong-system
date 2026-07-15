@@ -16,6 +16,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/sop", label: "SOP ครัว", exact: false },
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false },
   { href: "/owner/approve", label: "อนุมัติ", exact: true },
+  { href: "/owner/accounting", label: "บัญชี", exact: false },
 ];
 
 const EDITOR_NAV: NavItem[] = [
