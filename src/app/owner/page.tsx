@@ -27,7 +27,7 @@ export default async function OwnerDashboardPage({
   searchParams: Promise<{ category?: string }>;
 }) {
   const profile = await requireProfile();
-  if (!isAdminOrAbove(profile.role)) redirect("/owner/menus");
+  if (!isAdminOrAbove(profile.role)) redirect("/staff");
 
   const { category: rawCategory } = await searchParams;
   const selectedCategory = rawCategory?.trim() || "all";
