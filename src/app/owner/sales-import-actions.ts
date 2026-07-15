@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOwner } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parsePosSalesReport } from "@/lib/pos-import";
 
@@ -19,7 +19,7 @@ export type SalesImportPreview = {
 };
 
 export async function previewPosSalesImport(formData: FormData): Promise<SalesImportPreview> {
-  await requireOwner();
+  await requireAdmin();
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
 
@@ -84,7 +84,7 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
 }
 
 export async function applyPosSalesImport(updates: { menuId: string; newQty: number }[]): Promise<number> {
-  await requireOwner();
+  await requireAdmin();
   if (updates.length === 0) return 0;
   const supabase = await createClient();
 
@@ -106,7 +106,7 @@ export type PosSalesAlias = {
 };
 
 export async function listPosSalesAliases(): Promise<PosSalesAlias[]> {
-  await requireOwner();
+  await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("pos_sales_aliases")
@@ -123,7 +123,7 @@ export async function listPosSalesAliases(): Promise<PosSalesAlias[]> {
 }
 
 export async function upsertPosSalesAlias(posProductName: string, menuId: string, divisor: number) {
-  await requireOwner();
+  await requireAdmin();
   if (!posProductName.trim() || !menuId) throw new Error("กรุณากรอกชื่อสินค้า POS และเลือกเมนู");
   const supabase = await createClient();
   const { error } = await supabase
@@ -134,7 +134,7 @@ export async function upsertPosSalesAlias(posProductName: string, menuId: string
 }
 
 export async function deletePosSalesAlias(id: string) {
-  await requireOwner();
+  await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("pos_sales_aliases").delete().eq("id", id);
   if (error) throw new Error(error.message);
