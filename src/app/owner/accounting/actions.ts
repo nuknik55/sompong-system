@@ -72,7 +72,8 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
   const { data, error } = await supabase
     .from("expense_entries")
     .select("id,entry_date,coa_code,amount,note,payment_method,created_at,coa(name,group_name,is_sensitive)")
-    .eq("to_char(entry_date,'YYYY-MM')" as never, yearMonth)
+    .gte("entry_date", `${yearMonth}-01`)
+    .lte("entry_date", `${yearMonth}-31`)
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(500);

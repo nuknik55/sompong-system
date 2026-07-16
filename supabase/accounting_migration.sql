@@ -57,9 +57,8 @@ CREATE TABLE IF NOT EXISTS public.expense_entries (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_expense_entries_month ON public.expense_entries (to_char(entry_date,'YYYY-MM'));
-CREATE INDEX IF NOT EXISTS idx_expense_entries_coa   ON public.expense_entries (coa_code);
-CREATE INDEX IF NOT EXISTS idx_expense_entries_date  ON public.expense_entries (entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_expense_entries_coa  ON public.expense_entries (coa_code);
+CREATE INDEX IF NOT EXISTS idx_expense_entries_date ON public.expense_entries (entry_date DESC);
 
 ALTER TABLE public.expense_entries ENABLE ROW LEVEL SECURITY;
 
