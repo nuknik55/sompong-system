@@ -47,6 +47,13 @@ export default async function AccountingPage({
           >
             นำเข้าข้อมูล
           </a>
+          <a
+            href="/owner/accounting/coa"
+            className="rounded-lg px-4 py-1.5 text-neutral-500 hover:text-neutral-800"
+            title="เพิ่ม/ลบ/แก้ไขหมวดบัญชี"
+          >
+            จัดการหมวด
+          </a>
         </nav>
       </div>
 

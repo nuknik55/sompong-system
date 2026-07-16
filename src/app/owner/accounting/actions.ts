@@ -47,6 +47,91 @@ export type MonthlySummaryGroup = {
 
 // ── COA ─────────────────────────────────────────────
 
+export async function getAllCoa(): Promise<CoaAccount[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("coa")
+    .select("code,name,group_code,group_name,target_pct,sort_order,is_sensitive")
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function addCoaGroup(data: {
+  code: string;
+  name: string;
+  target_pct: number | null;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("coa").select("sort_order").order("sort_order", { ascending: false }).limit(1).single();
+  const nextSort = ((existing?.sort_order ?? 0) + 100);
+  const { error } = await supabase.from("coa").insert({
+    code: data.code,
+    name: data.name,
+    group_code: null,
+    group_name: null,
+    target_pct: data.target_pct,
+    sort_order: nextSort,
+    is_sensitive: false,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/coa");
+}
+
+export async function addCoaAccount(data: {
+  code: string;
+  name: string;
+  group_code: string;
+  group_name: string;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data: siblings } = await supabase
+    .from("coa").select("sort_order").eq("group_code", data.group_code).order("sort_order", { ascending: false }).limit(1).single();
+  const nextSort = ((siblings?.sort_order ?? 0) + 1);
+  const { error } = await supabase.from("coa").insert({
+    code: data.code,
+    name: data.name,
+    group_code: data.group_code,
+    group_name: data.group_name,
+    target_pct: null,
+    sort_order: nextSort,
+    is_sensitive: false,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/coa");
+  revalidatePath("/owner/accounting/daily");
+}
+
+export async function updateCoaAccount(
+  code: string,
+  data: { name: string; target_pct: number | null }
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("coa").update({ name: data.name, target_pct: data.target_pct }).eq("code", code);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/coa");
+  revalidatePath("/owner/accounting/daily");
+  revalidatePath("/owner/accounting");
+}
+
+export async function deleteCoaAccount(code: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("expense_entries").select("id", { count: "exact", head: true }).eq("coa_code", code);
+  if ((count ?? 0) > 0) throw new Error(`ไม่สามารถลบได้ มีรายการบันทึกอยู่ ${count} รายการ`);
+  const { error } = await supabase.from("coa").delete().eq("code", code);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/coa");
+  revalidatePath("/owner/accounting/daily");
+}
+
 export async function getCoa(): Promise<CoaAccount[]> {
   const profile = await requireAdmin();
   const supabase = await createClient();
