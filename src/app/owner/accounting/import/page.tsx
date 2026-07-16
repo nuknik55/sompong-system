@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { requireAdmin } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ImportClient } from "./ImportClient";

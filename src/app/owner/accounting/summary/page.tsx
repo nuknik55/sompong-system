@@ -1,6 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { requireAdmin } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getMonthlySummary, getMonthlyRevenue, setMonthlyRevenue } from "../actions";
+import { getMonthlySummary, getMonthlyRevenue } from "../actions";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 
 function formatBaht(n: number) {
