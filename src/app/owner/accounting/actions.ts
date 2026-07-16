@@ -155,6 +155,32 @@ export async function addExpenseEntry(data: {
   revalidatePath("/owner/accounting");
 }
 
+export async function updateExpenseEntry(
+  id: string,
+  data: {
+    coa_code: string;
+    amount: number;
+    note: string | null;
+    payment_method: "cash" | "transfer";
+  }
+): Promise<void> {
+  const profile = await requireAdmin();
+  const supabase = await createClient();
+
+  if (profile.role !== "owner") {
+    const { data: coa } = await supabase.from("coa").select("is_sensitive").eq("code", data.coa_code).single();
+    if (coa?.is_sensitive) throw new Error("ไม่มีสิทธิ์แก้ไขรายการนี้");
+  }
+
+  const { error } = await supabase
+    .from("expense_entries")
+    .update({ coa_code: data.coa_code, amount: data.amount, note: data.note, payment_method: data.payment_method })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting");
+  revalidatePath("/owner/accounting/daily");
+}
+
 export async function deleteExpenseEntry(id: string): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();

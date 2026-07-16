@@ -21,21 +21,24 @@ export default async function DailyEntryPage({
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 no-print">
+      {/* Nav */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">บันทึกรายจ่ายรายวัน</h1>
-        <nav className="flex gap-2 text-sm">
-          <a
-            href="/owner/accounting"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-600 hover:bg-neutral-50"
-          >
-            บัญชีรายจ่าย
-          </a>
-          <span className="rounded-md bg-neutral-900 px-3 py-1.5 font-medium text-white">
+        <nav className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 text-sm">
+          <span className="rounded-lg bg-white px-4 py-1.5 font-medium text-neutral-900 shadow-sm">
             บันทึกรายวัน
           </span>
           <a
+            href={`/owner/accounting?month=${yearMonth}`}
+            className="rounded-lg px-4 py-1.5 text-neutral-500 hover:text-neutral-800"
+            title="ดูรายการทั้งหมดของเดือน"
+          >
+            ดูทั้งเดือน
+          </a>
+          <a
             href={`/owner/accounting/summary?month=${yearMonth}`}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-600 hover:bg-neutral-50"
+            className="rounded-lg px-4 py-1.5 text-neutral-500 hover:text-neutral-800"
+            title="สรุปต้นทุนเทียบงบประมาณ"
           >
             สรุปรายเดือน
           </a>
