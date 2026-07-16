@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
-import { addExpenseEntry, deleteExpenseEntry, type CoaAccount, type ExpenseEntry } from "./actions";
+import { deleteExpenseEntry, type ExpenseEntry } from "./actions";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16,54 +15,34 @@ function getThaiMonth(yearMonth: string) {
   return `${MONTHS[(m ?? 1) - 1]} ${(y ?? 2568) + 543}`;
 }
 
+function highlight(text: string, query: string) {
+  if (!query || !text.toLowerCase().includes(query.toLowerCase())) {
+    return <span>{text}</span>;
+  }
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-200 text-yellow-900 rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 export function AccountingEntryClient({
-  coa,
   initialEntries,
   yearMonth,
   isOwner,
 }: {
-  coa: CoaAccount[];
   initialEntries: ExpenseEntry[];
   yearMonth: string;
   isOwner: boolean;
 }) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [entries, setEntries] = useState<ExpenseEntry[]>(initialEntries);
+  const [search, setSearch] = useState("");
+  const [filterGroup, setFilterGroup] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  // Form state
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
-  const [coaCode, setCoaCode] = useState("");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [payMethod, setPayMethod] = useState<"cash" | "transfer">("cash");
-
-  // Filter to only leaf accounts (has group_code)
-  const leafCoa = coa.filter((c) => c.group_code !== null);
-  const groups = coa.filter((c) => c.group_code === null);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const amountNum = parseFloat(amount.replace(/,/g, ""));
-    if (!coaCode || isNaN(amountNum) || amountNum <= 0) {
-      setError("กรุณาเลือกหมวดบัญชีและกรอกจำนวนเงิน");
-      return;
-    }
-    setError(null);
-    startTransition(async () => {
-      try {
-        await addExpenseEntry({ entry_date: date, coa_code: coaCode, amount: amountNum, note, payment_method: payMethod });
-        setAmount("");
-        setNote("");
-        router.refresh();
-      } catch (err) {
-        unstable_rethrow(err);
-        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
-      }
-    });
-  }
 
   function handleDelete(id: string) {
     startTransition(async () => {
@@ -77,27 +56,42 @@ export function AccountingEntryClient({
     });
   }
 
-  // Group entries by date for display
+  // Unique groups for filter dropdown
+  const allGroups = [...new Set(entries.map((e) => e.group_name).filter(Boolean))] as string[];
+
+  // Filter entries
+  const q = search.toLowerCase();
+  const filtered = entries.filter((e) => {
+    const matchSearch = !q ||
+      (e.note ?? "").toLowerCase().includes(q) ||
+      e.coa_name.toLowerCase().includes(q);
+    const matchGroup = !filterGroup || e.group_name === filterGroup;
+    return matchSearch && matchGroup;
+  });
+
+  // Group by date
   const byDate = new Map<string, ExpenseEntry[]>();
-  for (const e of entries) {
+  for (const e of filtered) {
     const arr = byDate.get(e.entry_date) ?? [];
     arr.push(e);
     byDate.set(e.entry_date, arr);
   }
   const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
 
+  const filteredTotal = filtered.reduce((s, e) => s + e.amount, 0);
   const monthTotal = entries.reduce((s, e) => s + e.amount, 0);
+  const isFiltering = !!(search || filterGroup);
 
-  // Month navigation
+  const today = new Date().toISOString().slice(0, 10);
   const [y, m] = yearMonth.split("-").map(Number);
   const prevMonth = new Date(y!, m! - 2, 1).toISOString().slice(0, 7);
   const nextMonth = new Date(y!, m!, 1).toISOString().slice(0, 7);
   const isCurrentMonth = yearMonth === today.slice(0, 7);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Month navigator */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <a href={`/owner/accounting?month=${prevMonth}`}
           className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
         <span className="font-medium text-neutral-800">{getThaiMonth(yearMonth)}</span>
@@ -105,132 +99,116 @@ export function AccountingEntryClient({
           <a href={`/owner/accounting?month=${nextMonth}`}
             className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
         )}
-        <span className="ml-auto text-sm text-neutral-500">ยอดรวมเดือน:</span>
-        <span className="font-semibold text-neutral-900">{formatBaht(monthTotal)} บาท</span>
+        <div className="ml-auto flex items-center gap-2 text-sm">
+          {isFiltering ? (
+            <>
+              <span className="text-neutral-500">ผลค้นหา:</span>
+              <span className="font-semibold text-neutral-900">{formatBaht(filteredTotal)} บาท</span>
+              <span className="text-neutral-400 text-xs">/ เดือน {formatBaht(monthTotal)}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-neutral-500">ยอดรวมเดือน:</span>
+              <span className="font-semibold text-neutral-900">{formatBaht(monthTotal)} บาท</span>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Entry form */}
-      <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
-        <p className="text-sm font-medium text-neutral-700">บันทึกรายจ่าย</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="col-span-2 sm:col-span-1">
-            <label className="mb-1 block text-xs text-neutral-500">วันที่</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="col-span-2 sm:col-span-1">
-            <label className="mb-1 block text-xs text-neutral-500">ช่องทางชำระ</label>
-            <select
-              value={payMethod}
-              onChange={(e) => setPayMethod(e.target.value as "cash" | "transfer")}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            >
-              <option value="cash">เงินสด</option>
-              <option value="transfer">โอน</option>
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs text-neutral-500">หมวดบัญชี</label>
-            <select
-              value={coaCode}
-              onChange={(e) => setCoaCode(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              required
-            >
-              <option value="">เลือกหมวดบัญชี...</option>
-              {groups.map((g) => {
-                const children = leafCoa.filter((c) => c.group_code === g.code);
-                if (children.length === 0) return null;
-                return (
-                  <optgroup key={g.code} label={g.name}>
-                    {children.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="col-span-1">
-            <label className="mb-1 block text-xs text-neutral-500">จำนวนเงิน (บาท)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm tabular-nums"
-              required
-            />
-          </div>
-          <div className="col-span-1 sm:col-span-2">
-            <label className="mb-1 block text-xs text-neutral-500">หมายเหตุ (ถ้ามี)</label>
-            <input
-              type="text"
-              placeholder="รายละเอียดเพิ่มเติม..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="col-span-2 sm:col-span-1 flex items-end">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="w-full rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
-            >
-              {isPending ? "กำลังบันทึก..." : "บันทึก"}
-            </button>
-          </div>
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </form>
+      {/* Search + filter bar */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          placeholder="ค้นหารายละเอียด เช่น จาน กุ้ง ไม้กวาด..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 min-w-48 rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+        />
+        <select
+          value={filterGroup}
+          onChange={(e) => setFilterGroup(e.target.value)}
+          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none text-neutral-700"
+        >
+          <option value="">ทุกหมวด</option>
+          {allGroups.map((g) => (
+            <option key={g} value={g}>{g.replace(/\s*\(.*\)/, "")}</option>
+          ))}
+        </select>
+        {isFiltering && (
+          <button
+            onClick={() => { setSearch(""); setFilterGroup(""); }}
+            className="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50"
+          >
+            ล้างตัวกรอง
+          </button>
+        )}
+        <a
+          href={`/owner/accounting/daily?date=${today}`}
+          className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
+        >
+          + บันทึกวันนี้
+        </a>
+      </div>
 
-      {/* Entries list grouped by date */}
+      {/* Result count when filtering */}
+      {isFiltering && (
+        <p className="text-xs text-neutral-500">
+          พบ <span className="font-medium text-neutral-700">{filtered.length} รายการ</span> จากทั้งหมด {entries.length} รายการ
+          {search && <> ที่มีคำว่า &ldquo;<span className="font-medium">{search}</span>&rdquo;</>}
+        </p>
+      )}
+
+      {/* Entries */}
       {sortedDates.length === 0 ? (
-        <p className="text-center text-sm text-neutral-400 py-8">ยังไม่มีรายการในเดือนนี้</p>
+        <p className="py-10 text-center text-sm text-neutral-400">
+          {isFiltering ? `ไม่พบรายการที่ค้นหา` : "ยังไม่มีรายการในเดือนนี้"}
+        </p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {sortedDates.map((d) => {
             const dayEntries = byDate.get(d) ?? [];
             const dayTotal = dayEntries.reduce((s, e) => s + e.amount, 0);
             const [dy, dm, dd] = d.split("-");
             const dateLabel = `${parseInt(dd!)} / ${parseInt(dm!)} / ${parseInt(dy!) + 543}`;
             return (
-              <div key={d} className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
+              <div key={d} className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
                 <div className="flex items-center justify-between bg-neutral-50 px-3 py-2">
-                  <span className="text-sm font-medium text-neutral-700">{dateLabel}</span>
-                  <span className="text-sm tabular-nums text-neutral-500">{formatBaht(dayTotal)} บาท</span>
+                  <a
+                    href={`/owner/accounting/daily?date=${d}`}
+                    className="text-sm font-medium text-neutral-700 hover:text-blue-600 hover:underline"
+                    title="คลิกเพื่อแก้ไขรายการของวันนี้"
+                  >
+                    {dateLabel}
+                  </a>
+                  <span className="tabular-nums text-sm text-neutral-500">{formatBaht(dayTotal)} บาท</span>
                 </div>
                 <table className="w-full text-sm">
                   <tbody>
                     {dayEntries.map((e) => (
-                      <tr key={e.id} className="border-t border-neutral-100 last:border-0">
-                        <td className="px-3 py-2 text-neutral-500 text-xs w-16">
-                          {e.payment_method === "cash" ? "💵" : "🏦"}
+                      <tr key={e.id} className="group border-t border-neutral-100 last:border-0 hover:bg-neutral-50/50">
+                        <td className="w-12 px-3 py-2 text-xs text-neutral-400">
+                          {e.payment_method === "cash" ? "สด" : "โอน"}
                         </td>
                         <td className="px-3 py-2">
-                          <span className="text-neutral-400 text-xs mr-1">{e.group_name?.replace(/\s*\(.*\)/,"")}</span>
+                          <span className="mr-1 text-xs text-neutral-400">
+                            {e.group_name?.replace(/\s*\(.*\)/, "")} ›{" "}
+                          </span>
                           <span className="text-neutral-800">{e.coa_name}</span>
-                          {e.note && <span className="ml-2 text-xs text-neutral-400">{e.note}</span>}
+                          {e.note && (
+                            <span className="ml-2 text-xs text-neutral-500">
+                              {highlight(e.note, search)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-neutral-800">
                           {formatBaht(e.amount)}
                         </td>
-                        <td className="px-3 py-2 w-10">
+                        <td className="w-10 px-3 py-2">
                           <button
                             type="button"
                             onClick={() => handleDelete(e.id)}
                             disabled={isPending}
-                            className="text-neutral-300 hover:text-red-500 disabled:opacity-30 text-xs"
+                            className="text-xs text-neutral-300 opacity-0 hover:text-red-500 disabled:opacity-30 group-hover:opacity-100"
                           >
                             ✕
                           </button>
@@ -244,6 +222,8 @@ export function AccountingEntryClient({
           })}
         </div>
       )}
+
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }

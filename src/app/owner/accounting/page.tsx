@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
-import { getCoa, getRecentEntries } from "./actions";
+import { getRecentEntries } from "./actions";
 import { AccountingEntryClient } from "./AccountingEntryClient";
 
 export default async function AccountingPage({
@@ -16,15 +16,12 @@ export default async function AccountingPage({
   const yearMonth =
     rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today.toISOString().slice(0, 7);
 
-  const [coa, entries] = await Promise.all([
-    getCoa(),
-    getRecentEntries(yearMonth),
-  ]);
+  const entries = await getRecentEntries(yearMonth);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">บัญชีรายจ่าย</h1>
+        <h1 className="font-kanit text-xl font-semibold text-neutral-900">ดูทั้งเดือน</h1>
         <nav className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 text-sm">
           <a
             href="/owner/accounting/daily"
@@ -54,7 +51,6 @@ export default async function AccountingPage({
       </div>
 
       <AccountingEntryClient
-        coa={coa}
         initialEntries={entries}
         yearMonth={yearMonth}
         isOwner={profile.role === "owner"}
