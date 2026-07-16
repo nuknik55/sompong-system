@@ -6,5 +6,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // Temporarily exclude /owner/accounting to test if proxy is causing 404
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|owner/accounting|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
