@@ -544,7 +544,7 @@ export function DailyEntryClient({
                     </tr>
                   ) : (
                     // Normal row
-                    <tr key={e.id} className={`border-t border-neutral-100 group hover:bg-neutral-50/50 ${selectedIds.has(e.id) ? "bg-blue-50/40" : ""}`}>
+                    <tr key={e.id} className={`border-t border-neutral-100 group ${selectedIds.has(e.id) ? "bg-blue-50/60" : i % 2 === 0 ? "bg-white hover:bg-neutral-50" : "bg-neutral-50/60 hover:bg-neutral-100/60"}`}>
                       <td className="px-2 py-2">
                         <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
                       </td>
