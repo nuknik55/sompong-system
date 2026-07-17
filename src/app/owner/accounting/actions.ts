@@ -22,6 +22,7 @@ export type ExpenseEntry = {
   group_name: string | null;
   amount: number;
   note: string | null;
+  bill_ref: string | null;
   payment_method: "cash" | "transfer";
   created_at: string;
 };
@@ -155,7 +156,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
 
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
     .eq("entry_date", date)
     .order("created_at", { ascending: true });
 
@@ -173,6 +174,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
         group_name: coa?.group_name ?? null,
         amount: r.amount,
         note: r.note,
+        bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
       };
@@ -185,7 +187,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
 
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
     .gte("entry_date", `${yearMonth}-01`)
     .lte("entry_date", `${yearMonth}-31`)
     .order("entry_date", { ascending: false })
@@ -206,6 +208,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
         group_name: coa?.group_name ?? null,
         amount: r.amount,
         note: r.note,
+        bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
       };
@@ -246,6 +249,7 @@ export async function updateExpenseEntry(
     coa_code: string;
     amount: number;
     note: string | null;
+    bill_ref: string | null;
     payment_method: "cash" | "transfer";
   }
 ): Promise<void> {
@@ -259,7 +263,7 @@ export async function updateExpenseEntry(
 
   const { error } = await supabase
     .from("expense_entries")
-    .update({ coa_code: data.coa_code, amount: data.amount, note: data.note, payment_method: data.payment_method })
+    .update({ coa_code: data.coa_code, amount: data.amount, note: data.note, bill_ref: data.bill_ref, payment_method: data.payment_method })
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");
@@ -280,12 +284,13 @@ export async function bulkInsertEntries(
     coa_code: string;
     amount: number;
     note?: string;
+    bill_ref?: string;
     payment_method: "cash" | "transfer";
   }[]
 ): Promise<number> {
   const profile = await requireAdmin();
   const supabase = await createClient();
-  const rows = entries.map((e) => ({ ...e, note: e.note || null, created_by: profile.id }));
+  const rows = entries.map((e) => ({ ...e, note: e.note || null, bill_ref: e.bill_ref || null, created_by: profile.id }));
   const { error } = await supabase.from("expense_entries").insert(rows);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");

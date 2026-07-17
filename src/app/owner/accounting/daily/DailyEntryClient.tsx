@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
 import {
@@ -118,10 +118,67 @@ function SearchableSelect({
   );
 }
 
+// ── BillRefInput ──────────────────────────────────────────────────────
+
+function BillRefInput({
+  value,
+  onChange,
+  allRefs,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  allRefs: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const q = value.trim().toLowerCase();
+  const suggestions = q
+    ? allRefs.filter((r) => r.toLowerCase().includes(q) && r.toLowerCase() !== q)
+    : [];
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        type="text"
+        placeholder="ชื่อบิล / ร้านค้า..."
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute left-0 top-full z-50 mt-0.5 min-w-full w-max max-w-sm rounded-lg border border-neutral-200 bg-white shadow-lg">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onMouseDown={() => { onChange(s); setOpen(false); }}
+              className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-blue-50 truncate max-w-sm"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────────────
 
 type PendingRow = {
   id: number;
+  billRef: string;
   note: string;
   coaCode: string;
   amountCash: string;
@@ -130,6 +187,7 @@ type PendingRow = {
 
 type EditState = {
   id: string;
+  billRef: string;
   note: string;
   coaCode: string;
   amountCash: string;
@@ -164,12 +222,32 @@ export function DailyEntryClient({
   const leafCoa = coa.filter((c) => c.group_code !== null);
   const groups = coa.filter((c) => c.group_code === null);
 
+  // All unique bill_ref values across saved entries + pending rows (for autocomplete)
+  const allBillRefs = useMemo(() => [
+    ...new Set([
+      ...(entries.map((e) => e.bill_ref).filter(Boolean) as string[]),
+      ...pending.map((r) => r.billRef).filter(Boolean),
+    ]),
+  ], [entries, pending]);
+
+  // Print-grouped rows: group saved entries by bill_ref (or note/coa_name as fallback)
+  const printGroups = useMemo(() => {
+    const map = new Map<string, { cash: number; transfer: number }>();
+    for (const e of entries) {
+      const key = e.bill_ref?.trim() || e.note?.trim() || e.coa_name;
+      const prev = map.get(key) ?? { cash: 0, transfer: 0 };
+      if (e.payment_method === "cash") map.set(key, { ...prev, cash: prev.cash + e.amount });
+      else map.set(key, { ...prev, transfer: prev.transfer + e.amount });
+    }
+    return [...map.entries()].map(([label, t]) => ({ label, ...t }));
+  }, [entries]);
+
   // ── Pending rows ─────────────────────────────────────────────────
 
   function addRow() {
     setPending((prev) => [
       ...prev,
-      { id: counter.current++, note: "", coaCode: "", amountCash: "", amountTransfer: "" },
+      { id: counter.current++, billRef: "", note: "", coaCode: "", amountCash: "", amountTransfer: "" },
     ]);
   }
 
@@ -187,8 +265,8 @@ export function DailyEntryClient({
       const cash = parseFloat(r.amountCash) || 0;
       const transfer = parseFloat(r.amountTransfer) || 0;
       const result = [];
-      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const });
-      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const });
+      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, bill_ref: r.billRef || undefined, payment_method: "cash" as const });
+      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, bill_ref: r.billRef || undefined, payment_method: "transfer" as const });
       return result;
     });
     if (!rows.length) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }
@@ -212,6 +290,7 @@ export function DailyEntryClient({
   function startEdit(e: ExpenseEntry) {
     setEditing({
       id: e.id,
+      billRef: e.bill_ref ?? "",
       note: e.note ?? "",
       coaCode: e.coa_code,
       amountCash: e.payment_method === "cash" ? String(e.amount) : "",
@@ -229,7 +308,13 @@ export function DailyEntryClient({
     setError(null);
     startTransition(async () => {
       try {
-        await updateExpenseEntry(editing.id, { coa_code: editing.coaCode, amount, note: editing.note || null, payment_method: payMethod });
+        await updateExpenseEntry(editing.id, {
+          coa_code: editing.coaCode,
+          amount,
+          note: editing.note || null,
+          bill_ref: editing.billRef || null,
+          payment_method: payMethod,
+        });
         setEditing(null);
         router.refresh();
       } catch (err) {
@@ -258,18 +343,19 @@ export function DailyEntryClient({
   function exportCsv() {
     const title = `รายการค่าใช้จ่าย ${toThaiDate(date)}`;
     const csvRows = [
-      [title, "", "", "", ""],
-      ["", "", "", "", ""],
-      ["#", "รายละเอียด", "หมวดบัญชี", "เงินสด", "โอน"],
+      [title, "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["#", "ชื่อบิล", "รายละเอียด", "หมวดบัญชี", "เงินสด", "โอน"],
       ...entries.map((e, i) => [
         String(i + 1),
+        e.bill_ref ?? "",
         e.note ?? "",
         e.coa_name,
         e.payment_method === "cash" ? String(e.amount) : "",
         e.payment_method === "transfer" ? String(e.amount) : "",
       ]),
-      ["", "", "", "", ""],
-      ["", "", "รวมทั้งสิ้น", String(savedCash), String(savedTransfer)],
+      ["", "", "", "", "", ""],
+      ["", "", "", "รวมทั้งสิ้น", String(savedCash), String(savedTransfer)],
     ];
     const csv = csvRows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
@@ -313,7 +399,6 @@ export function DailyEntryClient({
             ← วันก่อน
           </a>
 
-          {/* Thai date label triggers hidden date input */}
           <button
             type="button"
             onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
@@ -370,23 +455,57 @@ export function DailyEntryClient({
           </div>
         </div>
 
-        {/* Print header */}
-        <div className="print-show font-semibold text-lg">
-          รายการค่าใช้จ่ายประจำวัน — {toThaiDate(date)}
+        {/* ── Print-only section ──────────────────────────────────── */}
+        <div className="print-show">
+          <div className="mb-4 text-lg font-semibold">
+            รายการค่าใช้จ่ายประจำวัน — {toThaiDate(date)}
+          </div>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b-2 border-neutral-400">
+                <th className="text-left pb-1.5 pr-6 font-semibold">รายการ</th>
+                <th className="text-right pb-1.5 px-4 font-semibold">เงินสด</th>
+                <th className="text-right pb-1.5 pl-4 font-semibold">โอน</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printGroups.map((g, i) => (
+                <tr key={i} className="border-b border-neutral-200">
+                  <td className="py-1.5 pr-6">{g.label}</td>
+                  <td className="py-1.5 px-4 text-right tabular-nums">{fmt(g.cash) || "–"}</td>
+                  <td className="py-1.5 pl-4 text-right tabular-nums">{fmt(g.transfer) || "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-neutral-400 font-semibold">
+                <td className="pt-2 pr-6">รวมทั้งสิ้น</td>
+                <td className="pt-2 px-4 text-right tabular-nums">{fmt(savedCash) || "–"}</td>
+                <td className="pt-2 pl-4 text-right tabular-nums">{fmt(savedTransfer) || "–"}</td>
+              </tr>
+              <tr className="text-neutral-500 text-xs">
+                <td className="pt-1 pr-6">รวมเงินสด + โอน</td>
+                <td colSpan={2} className="pt-1 text-right tabular-nums font-semibold text-neutral-700">
+                  {fmt(savedCash + savedTransfer)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
 
-        {/* Table */}
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+        {/* ── Regular table (hidden in print) ─────────────────────── */}
+        <div className="no-print rounded-xl border border-neutral-200 bg-white overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-neutral-50 border-b border-neutral-200 text-xs text-neutral-500">
                   <th className="px-3 py-2.5 text-left w-8">#</th>
+                  <th className="px-3 py-2.5 text-left w-44">ชื่อบิล</th>
                   <th className="px-3 py-2.5 text-left">รายละเอียด</th>
-                  <th className="px-3 py-2.5 text-left w-48">หมวดบัญชี</th>
-                  <th className="px-3 py-2.5 text-right w-32">เงินสด</th>
-                  <th className="px-3 py-2.5 text-right w-32">โอน</th>
-                  <th className="px-3 py-2.5 w-20 no-print"></th>
+                  <th className="px-3 py-2.5 text-left w-44">หมวดบัญชี</th>
+                  <th className="px-3 py-2.5 text-right w-28">เงินสด</th>
+                  <th className="px-3 py-2.5 text-right w-28">โอน</th>
+                  <th className="px-3 py-2.5 w-20"></th>
                 </tr>
               </thead>
               <tbody>
@@ -395,6 +514,13 @@ export function DailyEntryClient({
                     // Edit row
                     <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
                       <td className="px-3 py-2 text-neutral-400 text-xs">{i + 1}</td>
+                      <td className="px-2 py-1.5">
+                        <BillRefInput
+                          value={editing.billRef}
+                          onChange={(v) => setEditing({ ...editing, billRef: v })}
+                          allRefs={allBillRefs}
+                        />
+                      </td>
                       <td className="px-2 py-1.5">
                         <input
                           type="text"
@@ -431,7 +557,7 @@ export function DailyEntryClient({
                           className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none"
                         />
                       </td>
-                      <td className="px-2 py-1.5 no-print">
+                      <td className="px-2 py-1.5">
                         <div className="flex gap-1">
                           <button
                             onClick={handleUpdate}
@@ -453,7 +579,10 @@ export function DailyEntryClient({
                     // Normal row
                     <tr key={e.id} className="border-t border-neutral-100 group hover:bg-neutral-50/50">
                       <td className="px-3 py-2 text-neutral-400 text-xs">{i + 1}</td>
-                      <td className="px-3 py-2 text-neutral-700">{e.note || "–"}</td>
+                      <td className="px-3 py-2 text-neutral-700 text-sm font-medium">
+                        {e.bill_ref || <span className="text-neutral-300">–</span>}
+                      </td>
+                      <td className="px-3 py-2 text-neutral-600 text-sm">{e.note || "–"}</td>
                       <td className="px-3 py-2 text-xs">
                         <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
                         <span className="text-neutral-600">{e.coa_name}</span>
@@ -464,7 +593,7 @@ export function DailyEntryClient({
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-800">
                         {e.payment_method === "transfer" ? fmt(e.amount) : ""}
                       </td>
-                      <td className="px-3 py-2 no-print">
+                      <td className="px-3 py-2">
                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => startEdit(e)}
@@ -490,9 +619,16 @@ export function DailyEntryClient({
                   <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                     <td className="px-3 py-2 text-neutral-400 text-xs">{entries.length + i + 1}</td>
                     <td className="px-2 py-1.5">
+                      <BillRefInput
+                        value={r.billRef}
+                        onChange={(v) => updateRow(r.id, "billRef", v)}
+                        allRefs={allBillRefs}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
                       <input
                         type="text"
-                        placeholder="รายละเอียด / ชื่อร้าน..."
+                        placeholder="รายละเอียด..."
                         value={r.note}
                         onChange={(e) => updateRow(r.id, "note", e.target.value)}
                         className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
@@ -526,7 +662,7 @@ export function DailyEntryClient({
                         className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none"
                       />
                     </td>
-                    <td className="px-2 py-1.5 no-print">
+                    <td className="px-2 py-1.5">
                       <button
                         onClick={() => removeRow(r.id)}
                         className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500"
@@ -537,9 +673,9 @@ export function DailyEntryClient({
                   </tr>
                 ))}
 
-                {/* Add row button */}
-                <tr className="border-t border-neutral-100 no-print">
-                  <td colSpan={6} className="px-3 py-2.5">
+                {/* Add row */}
+                <tr className="border-t border-neutral-100">
+                  <td colSpan={7} className="px-3 py-2.5">
                     <button
                       onClick={addRow}
                       className="text-sm font-medium text-green-700 hover:text-green-800"
@@ -553,17 +689,17 @@ export function DailyEntryClient({
                 {!isEmpty && (
                   <>
                     <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold text-sm">
-                      <td colSpan={3} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
+                      <td colSpan={4} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedCash + pendCash) || "–"}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedTransfer + pendTransfer) || "–"}</td>
-                      <td className="no-print"></td>
+                      <td></td>
                     </tr>
                     <tr className="border-t border-neutral-200 bg-neutral-100 text-xs text-neutral-500">
-                      <td colSpan={3} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
+                      <td colSpan={4} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
                       <td colSpan={2} className="px-3 py-2 text-right tabular-nums font-semibold text-neutral-700">
                         {fmt(savedCash + pendCash + savedTransfer + pendTransfer)}
                       </td>
-                      <td className="no-print"></td>
+                      <td></td>
                     </tr>
                   </>
                 )}
