@@ -57,14 +57,15 @@ export default async function AccountingSummaryPage({
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">สรุปรายเดือน</h1>
-        <nav className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 text-sm">
-          <a href={`/owner/accounting/daily`} className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">บันทึกรายวัน</a>
-          <a href={`/owner/accounting?month=${yearMonth}`} className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">ดูทั้งเดือน</a>
-          <span className="rounded-lg bg-white px-3 py-1.5 font-medium text-neutral-900 shadow-sm">สรุปรายเดือน</span>
-          <a href="/owner/accounting/import" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">นำเข้าข้อมูล</a>
-          <a href="/owner/accounting/coa" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">จัดการหมวด</a>
-        </nav>
+        <div className="flex items-center gap-3">
+          <a href={`/owner/accounting?month=${yearMonth}`} className="text-sm text-neutral-400 hover:text-neutral-700">← ดูทั้งเดือน</a>
+          <span className="text-neutral-300 text-sm">/</span>
+          <h1 className="font-kanit text-lg font-semibold text-neutral-900">สรุปรายเดือน</h1>
+        </div>
+        <div className="flex items-center gap-4 text-sm text-neutral-400">
+          <a href={`/owner/accounting/daily`} className="hover:text-neutral-700">บันทึกรายวัน</a>
+          <a href="/owner/accounting/coa" className="hover:text-neutral-700">จัดการหมวด</a>
+        </div>
       </div>
 
       {/* Month navigator */}

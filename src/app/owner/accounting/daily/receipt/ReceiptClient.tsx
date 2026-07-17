@@ -100,7 +100,7 @@ export function ReceiptClient({
   // Group entries by bill_ref (or individual if no bill_ref)
   const groupMap = new Map<string, { entries: ExpenseEntry[] }>();
   for (const e of entries) {
-    const key = e.bill_ref?.trim() || e.id;
+    const key = e.bill_ref?.trim() || e.note?.trim() || e.id;
     if (!groupMap.has(key)) groupMap.set(key, { entries: [] });
     groupMap.get(key)!.entries.push(e);
   }
