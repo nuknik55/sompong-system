@@ -214,6 +214,7 @@ export function DailyEntryClient({
   const [editing, setEditing] = useState<EditState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const counter = useRef(0);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -241,6 +242,26 @@ export function DailyEntryClient({
     }
     return [...map.entries()].map(([label, t]) => ({ label, ...t }));
   }, [entries]);
+
+  // ── Checkbox helpers ─────────────────────────────────────────────
+
+  function toggleEntry(entry: ExpenseEntry) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const group = entry.bill_ref
+        ? entries.filter((e) => e.bill_ref === entry.bill_ref)
+        : [entry];
+      const allSelected = group.every((e) => next.has(e.id));
+      group.forEach((e) => (allSelected ? next.delete(e.id) : next.add(e.id)));
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelectedIds((prev) =>
+      prev.size === entries.length ? new Set() : new Set(entries.map((e) => e.id))
+    );
+  }
 
   // ── Pending rows ─────────────────────────────────────────────────
 
@@ -430,6 +451,14 @@ export function DailyEntryClient({
           )}
 
           <div className="ml-auto flex gap-2">
+            {selectedIds.size > 0 && (
+              <a
+                href={`/owner/accounting/daily/receipt?date=${date}&ids=${[...selectedIds].join(",")}`}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                สร้างใบรับรอง ({selectedIds.size})
+              </a>
+            )}
             <button
               onClick={exportCsv}
               disabled={entries.length === 0}
@@ -499,6 +528,16 @@ export function DailyEntryClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-neutral-50 border-b border-neutral-200 text-xs text-neutral-500">
+                  <th className="px-2 py-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      checked={entries.length > 0 && selectedIds.size === entries.length}
+                      ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < entries.length; }}
+                      onChange={toggleAll}
+                      className="cursor-pointer"
+                      title="เลือกทั้งหมด"
+                    />
+                  </th>
                   <th className="px-3 py-2.5 text-left w-8">#</th>
                   <th className="px-3 py-2.5 text-left w-44">ชื่อบิล</th>
                   <th className="px-3 py-2.5 text-left">รายละเอียด</th>
@@ -513,6 +552,9 @@ export function DailyEntryClient({
                   editing?.id === e.id ? (
                     // Edit row
                     <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
+                      <td className="px-2 py-2">
+                        <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
+                      </td>
                       <td className="px-3 py-2 text-neutral-400 text-xs">{i + 1}</td>
                       <td className="px-2 py-1.5">
                         <BillRefInput
@@ -577,7 +619,10 @@ export function DailyEntryClient({
                     </tr>
                   ) : (
                     // Normal row
-                    <tr key={e.id} className="border-t border-neutral-100 group hover:bg-neutral-50/50">
+                    <tr key={e.id} className={`border-t border-neutral-100 group hover:bg-neutral-50/50 ${selectedIds.has(e.id) ? "bg-blue-50/40" : ""}`}>
+                      <td className="px-2 py-2">
+                        <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
+                      </td>
                       <td className="px-3 py-2 text-neutral-400 text-xs">{i + 1}</td>
                       <td className="px-3 py-2 text-neutral-700 text-sm font-medium">
                         {e.bill_ref || <span className="text-neutral-300">–</span>}
@@ -617,6 +662,7 @@ export function DailyEntryClient({
                 {/* Pending rows */}
                 {pending.map((r, i) => (
                   <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
+                    <td className="px-2 py-2"></td>
                     <td className="px-3 py-2 text-neutral-400 text-xs">{entries.length + i + 1}</td>
                     <td className="px-2 py-1.5">
                       <BillRefInput
@@ -675,7 +721,7 @@ export function DailyEntryClient({
 
                 {/* Add row */}
                 <tr className="border-t border-neutral-100">
-                  <td colSpan={7} className="px-3 py-2.5">
+                  <td colSpan={8} className="px-3 py-2.5">
                     <button
                       onClick={addRow}
                       className="text-sm font-medium text-green-700 hover:text-green-800"
@@ -689,13 +735,13 @@ export function DailyEntryClient({
                 {!isEmpty && (
                   <>
                     <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold text-sm">
-                      <td colSpan={4} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
+                      <td colSpan={5} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedCash + pendCash) || "–"}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedTransfer + pendTransfer) || "–"}</td>
                       <td></td>
                     </tr>
                     <tr className="border-t border-neutral-200 bg-neutral-100 text-xs text-neutral-500">
-                      <td colSpan={4} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
+                      <td colSpan={5} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
                       <td colSpan={2} className="px-3 py-2 text-right tabular-nums font-semibold text-neutral-700">
                         {fmt(savedCash + pendCash + savedTransfer + pendTransfer)}
                       </td>

@@ -278,6 +278,35 @@ export async function deleteExpenseEntry(id: string): Promise<void> {
   revalidatePath("/owner/accounting");
 }
 
+export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
+  const profile = await requireAdmin();
+  if (!ids.length) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("expense_entries")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .in("id", ids)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
+    .map((r) => {
+      const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
+      return {
+        id: r.id,
+        entry_date: r.entry_date,
+        coa_code: r.coa_code,
+        coa_name: coa?.name ?? r.coa_code,
+        group_name: coa?.group_name ?? null,
+        amount: r.amount,
+        note: r.note,
+        bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
+        payment_method: r.payment_method as "cash" | "transfer",
+        created_at: r.created_at,
+      };
+    });
+}
+
 export async function bulkInsertEntries(
   entries: {
     entry_date: string;
