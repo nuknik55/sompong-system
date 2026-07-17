@@ -98,20 +98,27 @@ export function ReceiptClient({
   }
 
   // Group entries by bill_ref (or individual if no bill_ref)
-  const groupMap = new Map<string, { label: string; entries: ExpenseEntry[] }>();
+  const groupMap = new Map<string, { entries: ExpenseEntry[] }>();
   for (const e of entries) {
     const key = e.bill_ref?.trim() || e.id;
-    const label = e.bill_ref?.trim() || e.note?.trim() || e.coa_name;
-    if (!groupMap.has(key)) groupMap.set(key, { label, entries: [] });
+    if (!groupMap.has(key)) groupMap.set(key, { entries: [] });
     groupMap.get(key)!.entries.push(e);
   }
 
-  const receiptRows: ReceiptRow[] = [...groupMap.entries()].map(([key, g]) => ({
-    key,
-    date: g.entries[0]!.entry_date,
-    label: g.label,
-    amount: g.entries.reduce((s, e) => s + e.amount, 0),
-  }));
+  const receiptRows: ReceiptRow[] = [...groupMap.entries()].map(([, g]) => {
+    // Combine all non-empty notes from entries in this group
+    const notes = g.entries.map((e) => e.note?.trim()).filter(Boolean) as string[];
+    const uniqueNotes = [...new Set(notes)];
+    const label = uniqueNotes.length > 0
+      ? uniqueNotes.join(", ")
+      : (g.entries[0]!.bill_ref?.trim() || g.entries[0]!.coa_name);
+    return {
+      key: g.entries[0]!.id,
+      date: g.entries[0]!.entry_date,
+      label,
+      amount: g.entries.reduce((s, e) => s + e.amount, 0),
+    };
+  });
 
   const total = receiptRows.reduce((s, r) => s + r.amount, 0);
   const MIN_ROWS = 8;

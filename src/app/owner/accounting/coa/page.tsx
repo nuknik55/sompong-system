@@ -16,27 +16,11 @@ export default async function CoaPage() {
           <p className="mt-0.5 text-sm text-neutral-500">เพิ่ม แก้ไข หรือลบหมวดบัญชี (COA)</p>
         </div>
         <nav className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 text-sm">
-          <a
-            href="/owner/accounting/daily"
-            className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800"
-          >
-            บันทึกรายวัน
-          </a>
-          <a
-            href="/owner/accounting"
-            className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800"
-          >
-            ดูทั้งเดือน
-          </a>
-          <a
-            href="/owner/accounting/summary"
-            className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800"
-          >
-            สรุปรายเดือน
-          </a>
-          <span className="rounded-lg bg-white px-3 py-1.5 font-medium text-neutral-900 shadow-sm">
-            จัดการหมวด
-          </span>
+          <a href="/owner/accounting/daily" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">บันทึกรายวัน</a>
+          <a href="/owner/accounting" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">ดูทั้งเดือน</a>
+          <a href="/owner/accounting/summary" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">สรุปรายเดือน</a>
+          <a href="/owner/accounting/import" className="rounded-lg px-3 py-1.5 text-neutral-500 hover:text-neutral-800">นำเข้าข้อมูล</a>
+          <span className="rounded-lg bg-white px-3 py-1.5 font-medium text-neutral-900 shadow-sm">จัดการหมวด</span>
         </nav>
       </div>
 
