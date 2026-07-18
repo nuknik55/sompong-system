@@ -223,13 +223,33 @@ export function DailyEntryClient({
   }
 
   function handleSave() {
-    const rows = pending.flatMap((r) => {
+    // For rows inserted between existing entries, compute a created_at that falls between
+    // the surrounding entries so the fetch order (created_at ASC) is preserved.
+    const posCounters = new Map<number, number>();
+    const pendingWithTs = pending.map((r) => {
+      let created_at: string | undefined;
+      if (r.insertAfter !== undefined) {
+        const prev = entries[r.insertAfter];
+        const next = entries[r.insertAfter + 1];
+        if (prev) {
+          const t1 = new Date(prev.created_at).getTime();
+          const t2 = next ? new Date(next.created_at).getTime() : t1 + 60_000;
+          const siblings = pending.filter((p) => p.insertAfter === r.insertAfter).length;
+          const myIdx = posCounters.get(r.insertAfter) ?? 0;
+          posCounters.set(r.insertAfter, myIdx + 1);
+          created_at = new Date(t1 + (t2 - t1) * (myIdx + 1) / (siblings + 1)).toISOString();
+        }
+      }
+      return { ...r, created_at };
+    });
+
+    const rows = pendingWithTs.flatMap((r) => {
       if (!r.coaCode) return [];
       const cash = parseFloat(r.amountCash) || 0;
       const transfer = parseFloat(r.amountTransfer) || 0;
       const result = [];
-      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const });
-      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const });
+      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const, created_at: r.created_at });
+      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const, created_at: r.created_at });
       return result;
     });
     if (!rows.length) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }

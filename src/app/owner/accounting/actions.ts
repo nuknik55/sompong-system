@@ -315,11 +315,15 @@ export async function bulkInsertEntries(
     note?: string;
     bill_ref?: string;
     payment_method: "cash" | "transfer";
+    created_at?: string;
   }[]
 ): Promise<number> {
   const profile = await requireAdmin();
   const supabase = await createClient();
-  const rows = entries.map((e) => ({ ...e, note: e.note || null, bill_ref: e.bill_ref || null, created_by: profile.id }));
+  const rows = entries.map((e) => {
+    const { created_at, ...rest } = e;
+    return { ...rest, note: e.note || null, bill_ref: e.bill_ref || null, created_by: profile.id, ...(created_at ? { created_at } : {}) };
+  });
   const { error } = await supabase.from("expense_entries").insert(rows);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");
