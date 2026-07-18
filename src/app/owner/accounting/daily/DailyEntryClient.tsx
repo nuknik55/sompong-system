@@ -126,6 +126,7 @@ type PendingRow = {
   coaCode: string;
   amountCash: string;
   amountTransfer: string;
+  insertAfter?: number; // insert after saved entry at this index; undefined = append at bottom
 };
 
 type EditState = {
@@ -203,6 +204,13 @@ export function DailyEntryClient({
     setPending((prev) => [
       ...prev,
       { id: counter.current++, note: "", coaCode: "", amountCash: "", amountTransfer: "" },
+    ]);
+  }
+
+  function insertRowAfter(afterIndex: number) {
+    setPending((prev) => [
+      ...prev,
+      { id: counter.current++, note: "", coaCode: "", amountCash: "", amountTransfer: "", insertAfter: afterIndex },
     ]);
   }
 
@@ -480,8 +488,11 @@ export function DailyEntryClient({
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e, i) =>
-                  editing?.id === e.id ? (
+                {entries.flatMap((e, i) => {
+                  const pendingHere = pending.filter((r) => r.insertAfter === i);
+                  const isLast = i === entries.length - 1;
+
+                  const entryRow = editing?.id === e.id ? (
                     // Edit row
                     <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
                       <td className="px-2 py-2">
@@ -526,17 +537,12 @@ export function DailyEntryClient({
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex gap-1">
-                          <button
-                            onClick={handleUpdate}
-                            disabled={isPending}
-                            className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                          >
+                          <button onClick={handleUpdate} disabled={isPending}
+                            className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">
                             บันทึก
                           </button>
-                          <button
-                            onClick={() => setEditing(null)}
-                            className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200"
-                          >
+                          <button onClick={() => setEditing(null)}
+                            className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200">
                             ยกเลิก
                           </button>
                         </div>
@@ -561,71 +567,105 @@ export function DailyEntryClient({
                         {e.payment_method === "transfer" ? fmt(e.amount) : ""}
                       </td>
                       <td className="px-2 py-2 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => startEdit(e)}
-                          className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50"
-                        >
+                        <button onClick={() => startEdit(e)}
+                          className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50">
                           แก้ไข
                         </button>
-                        <button
-                          onClick={() => handleDelete(e.id)}
-                          disabled={isPending}
-                          className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30"
-                        >
+                        <button onClick={() => handleDelete(e.id)} disabled={isPending}
+                          className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30">
                           ลบ
                         </button>
                       </td>
                     </tr>
-                  )
-                )}
+                  );
 
-                {/* Pending rows */}
-                {pending.map((r, i) => (
+                  // Pending rows inserted at this position
+                  const pendingRows = pendingHere.map((r, pi) => (
+                    <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
+                      <td className="px-2 py-2"></td>
+                      <td className="px-3 py-2 text-neutral-300 text-xs">{i + 1}.{pi + 1}</td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" placeholder="รายละเอียด..." value={r.note}
+                          onChange={(ev) => updateRow(r.id, "note", ev.target.value)}
+                          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
+                          onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
+                          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
+                          onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
+                          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <button onClick={() => removeRow(r.id)}
+                          className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">
+                          ลบ
+                        </button>
+                      </td>
+                    </tr>
+                  ));
+
+                  // Insert strip — show between rows (not after the last saved entry)
+                  const insertStrip = !isLast ? (
+                    <tr key={`ins-${i}`} className="group/ins">
+                      <td colSpan={7} className="p-0" style={{ height: "10px" }}>
+                        <div className="flex h-full items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => insertRowAfter(i)}
+                            title="แทรกรายการ"
+                            className={[
+                              "flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none",
+                              "border-neutral-200 bg-white text-neutral-300",
+                              "hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500",
+                              "active:bg-blue-100",
+                              // Desktop: hidden until hover on the strip row; mobile: always faintly visible
+                              "opacity-20 group-hover/ins:opacity-100 sm:opacity-0 sm:group-hover/ins:opacity-100",
+                              "transition-opacity",
+                            ].join(" ")}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null;
+
+                  return [entryRow, ...pendingRows, insertStrip].filter(Boolean);
+                })}
+
+                {/* Pending rows appended at the bottom (no insertAfter) */}
+                {pending.filter((r) => r.insertAfter === undefined).map((r, i) => (
                   <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                     <td className="px-2 py-2"></td>
                     <td className="px-3 py-2 text-neutral-400 text-xs">{entries.length + i + 1}</td>
                     <td className="px-2 py-1.5">
-                      <input
-                        type="text"
-                        placeholder="รายละเอียด..."
-                        value={r.note}
+                      <input type="text" placeholder="รายละเอียด..." value={r.note}
                         onChange={(e) => updateRow(r.id, "note", e.target.value)}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
-                      />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <SearchableSelect
-                        value={r.coaCode}
-                        onChange={(code) => updateRow(r.id, "coaCode", code)}
-                        leafCoa={leafCoa}
-                        groups={groups}
-                      />
+                      <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
                     </td>
                     <td className="px-2 py-1.5">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0"
-                        value={r.amountCash}
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
                         onChange={(e) => updateRow(r.id, "amountCash", e.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none"
-                      />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0"
-                        value={r.amountTransfer}
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
                         onChange={(e) => updateRow(r.id, "amountTransfer", e.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none"
-                      />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <button
-                        onClick={() => removeRow(r.id)}
-                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500"
-                      >
+                      <button onClick={() => removeRow(r.id)}
+                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">
                         ลบ
                       </button>
                     </td>
