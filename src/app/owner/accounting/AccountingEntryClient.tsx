@@ -224,10 +224,10 @@ export function AccountingEntryClient({
                             type="button"
                             onClick={() => handleDelete(e.id)}
                             disabled={isPending}
-                            className="text-xs text-neutral-300 opacity-0 hover:text-red-500 disabled:opacity-30 group-hover:opacity-100"
+                            className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-400 hover:bg-red-100 active:bg-red-200 disabled:opacity-30"
                             title="ลบรายการ"
                           >
-                            ✕
+                            ลบ
                           </button>
                         </td>
                       </tr>

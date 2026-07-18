@@ -560,22 +560,20 @@ export function DailyEntryClient({
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-800">
                         {e.payment_method === "transfer" ? fmt(e.amount) : ""}
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => startEdit(e)}
-                            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600"
-                          >
-                            แก้ไข
-                          </button>
-                          <button
-                            onClick={() => handleDelete(e.id)}
-                            disabled={isPending}
-                            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-500 hover:border-red-300 hover:text-red-500 disabled:opacity-30"
-                          >
-                            ลบ
-                          </button>
-                        </div>
+                      <td className="px-2 py-2 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => startEdit(e)}
+                          className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50"
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          onClick={() => handleDelete(e.id)}
+                          disabled={isPending}
+                          className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30"
+                        >
+                          ลบ
+                        </button>
                       </td>
                     </tr>
                   )
