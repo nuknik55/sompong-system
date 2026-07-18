@@ -25,6 +25,7 @@ export type ExpenseEntry = {
   bill_ref: string | null;
   payment_method: "cash" | "transfer";
   created_at: string;
+  display_order: number | null;
 };
 
 export type RevenueRow = {
@@ -156,8 +157,9 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
 
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
     .eq("entry_date", date)
+    .order("display_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -166,6 +168,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
     .map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
+      const row = r as unknown as { bill_ref: string | null; display_order: number | null };
       return {
         id: r.id,
         entry_date: r.entry_date,
@@ -174,9 +177,10 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
         group_name: coa?.group_name ?? null,
         amount: r.amount,
         note: r.note,
-        bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
+        bill_ref: row.bill_ref ?? null,
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
+        display_order: row.display_order ?? null,
       };
     });
 }
@@ -315,19 +319,37 @@ export async function bulkInsertEntries(
     note?: string;
     bill_ref?: string;
     payment_method: "cash" | "transfer";
-    created_at?: string;
+    display_order?: number;
   }[]
 ): Promise<number> {
   const profile = await requireAdmin();
   const supabase = await createClient();
-  const rows = entries.map((e) => {
-    const { created_at, ...rest } = e;
-    return { ...rest, note: e.note || null, bill_ref: e.bill_ref || null, created_by: profile.id, ...(created_at ? { created_at } : {}) };
-  });
+  const rows = entries.map((e) => ({
+    entry_date: e.entry_date,
+    coa_code: e.coa_code,
+    amount: e.amount,
+    note: e.note || null,
+    bill_ref: e.bill_ref || null,
+    payment_method: e.payment_method,
+    created_by: profile.id,
+    ...(e.display_order != null ? { display_order: e.display_order } : {}),
+  }));
   const { error } = await supabase.from("expense_entries").insert(rows);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");
   return rows.length;
+}
+
+export async function updateEntriesDisplayOrder(
+  updates: { id: string; display_order: number }[]
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  await Promise.all(
+    updates.map(({ id, display_order }) =>
+      supabase.from("expense_entries").update({ display_order }).eq("id", id)
+    )
+  );
 }
 
 // ── Monthly Revenue ──────────────────────────────────

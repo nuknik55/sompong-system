@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
 import {
   bulkInsertEntries,
+  updateEntriesDisplayOrder,
   deleteExpenseEntry,
   updateExpenseEntry,
   type CoaAccount,
@@ -223,40 +224,54 @@ export function DailyEntryClient({
   }
 
   function handleSave() {
-    // For rows inserted between existing entries, compute a created_at that falls between
-    // the surrounding entries so the fetch order (created_at ASC) is preserved.
-    const posCounters = new Map<number, number>();
-    const pendingWithTs = pending.map((r) => {
-      let created_at: string | undefined;
-      if (r.insertAfter !== undefined) {
-        const prev = entries[r.insertAfter];
-        const next = entries[r.insertAfter + 1];
-        if (prev) {
-          const t1 = new Date(prev.created_at).getTime();
-          const t2 = next ? new Date(next.created_at).getTime() : t1 + 60_000;
-          const siblings = pending.filter((p) => p.insertAfter === r.insertAfter).length;
-          const myIdx = posCounters.get(r.insertAfter) ?? 0;
-          posCounters.set(r.insertAfter, myIdx + 1);
-          created_at = new Date(t1 + (t2 - t1) * (myIdx + 1) / (siblings + 1)).toISOString();
-        }
+    // Build complete visual order: existing entries interleaved with pending rows
+    type VisualItem = { kind: "saved"; id: string } | { kind: "pending"; row: PendingRow };
+    const visual: VisualItem[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      visual.push({ kind: "saved", id: entries[i]!.id });
+      for (const r of pending.filter((p) => p.insertAfter === i)) {
+        visual.push({ kind: "pending", row: r });
       }
-      return { ...r, created_at };
+    }
+    for (const r of pending.filter((p) => p.insertAfter === undefined)) {
+      visual.push({ kind: "pending", row: r });
+    }
+
+    // Assign sequential display_order to each item (1, 2, 3, ...)
+    const savedOrderMap = new Map<string, number>(); // existing entry id → display_order
+    const pendingOrderMap = new Map<number, number>(); // pending row id → display_order
+    visual.forEach((item, idx) => {
+      const order = idx + 1;
+      if (item.kind === "saved") savedOrderMap.set(item.id, order);
+      else pendingOrderMap.set(item.row.id, order);
     });
 
-    const rows = pendingWithTs.flatMap((r) => {
+    // Build rows to insert
+    const rows = pending.flatMap((r) => {
       if (!r.coaCode) return [];
       const cash = parseFloat(r.amountCash) || 0;
       const transfer = parseFloat(r.amountTransfer) || 0;
+      const display_order = pendingOrderMap.get(r.id);
       const result = [];
-      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const, created_at: r.created_at });
-      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const, created_at: r.created_at });
+      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const, display_order });
+      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const, display_order });
       return result;
     });
     if (!rows.length) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }
+
+    // Build display_order updates for existing entries
+    const displayOrderUpdates = entries.map((e) => ({
+      id: e.id,
+      display_order: savedOrderMap.get(e.id)!,
+    }));
+
     setError(null);
     startTransition(async () => {
       try {
-        await bulkInsertEntries(rows);
+        await Promise.all([
+          bulkInsertEntries(rows),
+          updateEntriesDisplayOrder(displayOrderUpdates),
+        ]);
         setPending([]);
         setSaveMsg(`บันทึกสำเร็จ ${rows.length} รายการ`);
         setTimeout(() => setSaveMsg(null), 3000);
