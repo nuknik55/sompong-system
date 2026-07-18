@@ -489,17 +489,81 @@ export function DailyEntryClient({
               </thead>
               <tbody>
                 {(() => {
-                  const rows: React.ReactNode[] = [];
+                  // Pre-compute sequential row numbers for all rows (saved + pending interleaved)
+                  const savedNums: number[] = [];
                   let seq = 0;
-
-                  // Reusable pending row renderer
-                  const renderPendingRow = (r: PendingRow) => {
+                  for (let i = 0; i < entries.length; i++) {
                     seq++;
-                    const num = seq;
-                    return (
+                    savedNums.push(seq);
+                    seq += pending.filter((r) => r.insertAfter === i).length;
+                  }
+                  const bottomStart = seq + 1;
+
+                  return entries.flatMap((e, i) => {
+                    const pendingHere = pending.filter((r) => r.insertAfter === i);
+                    const isLast = i === entries.length - 1;
+                    const entryNum = savedNums[i]!;
+                    const isEven = entryNum % 2 === 0;
+
+                    const entryRow = editing?.id === e.id ? (
+                      <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
+                        <td className="px-2 py-2">
+                          <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
+                        </td>
+                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={editing.note}
+                            onChange={(ev) => setEditing({ ...editing, note: ev.target.value })}
+                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <SearchableSelect value={editing.coaCode} onChange={(code) => setEditing({ ...editing, coaCode: code })} leafCoa={leafCoa} groups={groups} />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" inputMode="decimal" placeholder="0" value={editing.amountCash}
+                            onChange={(ev) => setEditing({ ...editing, amountCash: ev.target.value.replace(/[^0-9.]/g, "") })}
+                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" inputMode="decimal" placeholder="0" value={editing.amountTransfer}
+                            onChange={(ev) => setEditing({ ...editing, amountTransfer: ev.target.value.replace(/[^0-9.]/g, "") })}
+                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex gap-1">
+                            <button onClick={handleUpdate} disabled={isPending}
+                              className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">บันทึก</button>
+                            <button onClick={() => setEditing(null)}
+                              className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200">ยกเลิก</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={e.id} className={`border-t border-neutral-100 group ${selectedIds.has(e.id) ? "bg-blue-50/60" : isEven ? "bg-neutral-50/60 hover:bg-neutral-100/60" : "bg-white hover:bg-neutral-50"}`}>
+                        <td className="px-2 py-2">
+                          <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
+                        </td>
+                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
+                        <td className="px-3 py-2 text-neutral-700 text-sm">{e.note || "–"}</td>
+                        <td className="px-3 py-2 text-xs">
+                          <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
+                          <span className="text-neutral-600">{e.coa_name}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "cash" ? fmt(e.amount) : ""}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "transfer" ? fmt(e.amount) : ""}</td>
+                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                          <button onClick={() => startEdit(e)}
+                            className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50">แก้ไข</button>
+                          <button onClick={() => handleDelete(e.id)} disabled={isPending}
+                            className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30">ลบ</button>
+                        </td>
+                      </tr>
+                    );
+
+                    const pendingRows = pendingHere.map((r, pi) => (
                       <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                         <td className="px-2 py-2" />
-                        <td className="px-3 py-2 text-neutral-400 text-xs">{num}</td>
+                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum + 1 + pi}</td>
                         <td className="px-2 py-1.5">
                           <input type="text" placeholder="รายละเอียด..." value={r.note}
                             onChange={(ev) => updateRow(r.id, "note", ev.target.value)}
@@ -525,108 +589,66 @@ export function DailyEntryClient({
                           </button>
                         </td>
                       </tr>
-                    );
-                  };
+                    ));
 
-                  // Insert strip helper
-                  const renderStrip = (afterSavedIndex: number) => (
-                    <tr key={`ins-${afterSavedIndex}`} className="group/ins">
-                      <td colSpan={7} className="px-0 py-0">
-                        <div className="relative flex items-center justify-center" style={{ height: "20px" }}>
-                          <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-blue-300 transition-colors" />
-                          <button type="button" onClick={() => insertRowAfter(afterSavedIndex)} title="แทรกรายการ"
-                            className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-xs font-bold text-neutral-400 shadow-sm opacity-50 group-hover/ins:opacity-100 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500 active:bg-blue-100 transition-all">
-                            +
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                    const insertStrip = !isLast ? (
+                      <tr key={`ins-${i}`} className="group/ins">
+                        <td colSpan={7} className="px-0 py-0">
+                          <div className="relative flex items-center justify-center" style={{ height: "20px" }}>
+                            <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-blue-300 transition-colors" />
+                            <button type="button" onClick={() => insertRowAfter(i)} title="แทรกรายการ"
+                              className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-xs font-bold text-neutral-400 shadow-sm opacity-50 group-hover/ins:opacity-100 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500 active:bg-blue-100 transition-all">
+                              +
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null;
 
-                  // Main loop: for each saved entry
-                  for (let si = 0; si < entries.length; si++) {
-                    const e = entries[si]!;
-
-                    // Strip BEFORE this saved entry (except first)
-                    if (si > 0) rows.push(renderStrip(si - 1));
-
-                    // Saved entry row
-                    seq++;
-                    const num = seq;
-                    const isEven = num % 2 === 0;
-
-                    if (editing?.id === e.id) {
-                      rows.push(
-                        <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
-                          <td className="px-2 py-2">
-                            <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
-                          </td>
-                          <td className="px-3 py-2 text-neutral-400 text-xs">{num}</td>
-                          <td className="px-2 py-1.5">
-                            <input type="text" value={editing.note}
-                              onChange={(ev) => setEditing({ ...editing, note: ev.target.value })}
-                              className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <SearchableSelect value={editing.coaCode} onChange={(code) => setEditing({ ...editing, coaCode: code })} leafCoa={leafCoa} groups={groups} />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input type="text" inputMode="decimal" placeholder="0" value={editing.amountCash}
-                              onChange={(ev) => setEditing({ ...editing, amountCash: ev.target.value.replace(/[^0-9.]/g, "") })}
-                              className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input type="text" inputMode="decimal" placeholder="0" value={editing.amountTransfer}
-                              onChange={(ev) => setEditing({ ...editing, amountTransfer: ev.target.value.replace(/[^0-9.]/g, "") })}
-                              className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <div className="flex gap-1">
-                              <button onClick={handleUpdate} disabled={isPending}
-                                className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">บันทึก</button>
-                              <button onClick={() => setEditing(null)}
-                                className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200">ยกเลิก</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    } else {
-                      rows.push(
-                        <tr key={e.id} className={`border-t border-neutral-100 group ${selectedIds.has(e.id) ? "bg-blue-50/60" : isEven ? "bg-neutral-50/60 hover:bg-neutral-100/60" : "bg-white hover:bg-neutral-50"}`}>
-                          <td className="px-2 py-2">
-                            <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
-                          </td>
-                          <td className="px-3 py-2 text-neutral-400 text-xs">{num}</td>
-                          <td className="px-3 py-2 text-neutral-700 text-sm">{e.note || "–"}</td>
-                          <td className="px-3 py-2 text-xs">
-                            <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
-                            <span className="text-neutral-600">{e.coa_name}</span>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "cash" ? fmt(e.amount) : ""}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "transfer" ? fmt(e.amount) : ""}</td>
-                          <td className="px-2 py-2 text-right whitespace-nowrap">
-                            <button onClick={() => startEdit(e)}
-                              className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50">แก้ไข</button>
-                            <button onClick={() => handleDelete(e.id)} disabled={isPending}
-                              className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30">ลบ</button>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    // Pending rows inserted after this saved entry
-                    for (const r of pending.filter((pr) => pr.insertAfter === si)) {
-                      rows.push(renderPendingRow(r));
-                    }
-                  }
-
-                  // Bottom pending rows (no insertAfter)
-                  for (const r of pending.filter((pr) => pr.insertAfter === undefined)) {
-                    rows.push(renderPendingRow(r));
-                  }
-
-                  return rows;
+                    return [entryRow, ...pendingRows, insertStrip].filter(Boolean);
+                  });
                 })()}
+
+                {/* Bottom pending rows (no insertAfter) */}
+                {pending.filter((r) => r.insertAfter === undefined).map((r, i) => (
+                  <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
+                    <td className="px-2 py-2" />
+                    <td className="px-3 py-2 text-neutral-400 text-xs">{
+                      (() => {
+                        let s = 0;
+                        for (let ei = 0; ei < entries.length; ei++) {
+                          s++;
+                          s += pending.filter((pr) => pr.insertAfter === ei).length;
+                        }
+                        return s + 1 + i;
+                      })()
+                    }</td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" placeholder="รายละเอียด..." value={r.note}
+                        onChange={(ev) => updateRow(r.id, "note", ev.target.value)}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
+                        onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
+                        onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <button onClick={() => removeRow(r.id)}
+                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">
+                        ลบ
+                      </button>
+                    </td>
+                  </tr>
+                ))}
 
                 {/* Add row */}
                 <tr className="border-t border-neutral-100">
