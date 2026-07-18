@@ -611,24 +611,19 @@ export function DailyEntryClient({
                     </tr>
                   ));
 
-                  // Insert strip — show between rows (not after the last saved entry)
+                  // Insert strip — show between consecutive saved entries
                   const insertStrip = !isLast ? (
                     <tr key={`ins-${i}`} className="group/ins">
-                      <td colSpan={7} className="p-0" style={{ height: "10px" }}>
-                        <div className="flex h-full items-center justify-center">
+                      <td colSpan={7} className="px-0 py-0">
+                        <div className="relative flex items-center justify-center" style={{ height: "20px" }}>
+                          {/* Faint divider line */}
+                          <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-blue-300 transition-colors" />
+                          {/* + button */}
                           <button
                             type="button"
                             onClick={() => insertRowAfter(i)}
                             title="แทรกรายการ"
-                            className={[
-                              "flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none",
-                              "border-neutral-200 bg-white text-neutral-300",
-                              "hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500",
-                              "active:bg-blue-100",
-                              // Desktop: hidden until hover on the strip row; mobile: always faintly visible
-                              "opacity-20 group-hover/ins:opacity-100 sm:opacity-0 sm:group-hover/ins:opacity-100",
-                              "transition-opacity",
-                            ].join(" ")}
+                            className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-xs font-bold text-neutral-400 shadow-sm opacity-50 group-hover/ins:opacity-100 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500 active:bg-blue-100 transition-all"
                           >
                             +
                           </button>
