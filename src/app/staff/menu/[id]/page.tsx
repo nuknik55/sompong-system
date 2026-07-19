@@ -23,6 +23,7 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
   const { data: menu } = menuResult;
   if (!menu) notFound();
 
+  const isOwner = profile?.role === "owner";
   const isAdmin = profile?.role === "admin" || profile?.role === "owner";
   const isEditor = profile?.role === "editor";
   const isStaff = profile?.role === "staff";
@@ -56,7 +57,7 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
             )}
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && (
+            {isOwner && (
               <form action={toggleMenuStaffVisible.bind(null, menu.id, !staffVisible)}>
                 <button
                   type="submit"

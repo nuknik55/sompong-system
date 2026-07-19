@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
+import { requireAdmin, requireAdminOrEditor, requireOwner } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
 
 export async function toggleMenuStaffVisible(menuId: string, visible: boolean) {
-  await requireAdmin();
+  await requireOwner();
   const supabase = await createClient();
   const { error } = await supabase.from("menus").update({ staff_visible: visible }).eq("id", menuId);
   if (error) throw new Error(error.message);

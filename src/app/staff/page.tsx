@@ -11,6 +11,7 @@ export default async function StaffHomePage() {
     getCurrentProfile(),
   ]);
 
+  const isOwner = profile?.role === "owner";
   const isStaffOnly = profile?.role === "staff" || profile?.role === "editor";
   const visibleMenus = isStaffOnly ? menus.filter((m) => m.staff_visible) : menus;
 
@@ -53,6 +54,7 @@ export default async function StaffHomePage() {
           name: m.name,
           category: m.category,
           meClass: meClassById.get(m.id),
+          hiddenFromStaff: isOwner && !m.staff_visible ? true : undefined,
         }))}
         hrefPrefix="/staff/menu"
         placeholder="พิมพ์ค้นหาชื่อเมนู..."

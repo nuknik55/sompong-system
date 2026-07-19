@@ -10,6 +10,7 @@ export type FilterableItem = {
   category: string | null;
   subtitle?: string;
   meClass?: string; // Menu Engineering class for sort — "Star" | "Horse" | "Puzzle" | "Dog" | "Unranked"
+  hiddenFromStaff?: boolean;
 };
 
 // Soft palette for category badges — color is picked by hashing the category name
@@ -145,6 +146,9 @@ export function CategoryFilterList({
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate">{item.name}</span>
                   <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${badgeColor}`}>{cat}</span>
+                  {item.hiddenFromStaff && (
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700">🔒 ซ่อน</span>
+                  )}
                 </div>
                 {item.subtitle && (
                   <span className="shrink-0 text-sm text-neutral-400">{item.subtitle}</span>
