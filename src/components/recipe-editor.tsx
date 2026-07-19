@@ -228,11 +228,15 @@ export function RecipeEditor({
                   </td>
                   <td className="px-3 py-2">
                     <input
-                      type="number"
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       className="w-24 rounded-md border border-neutral-300 px-2 py-1.5"
-                      value={item.quantity}
-                      onChange={(e) => patchLocal(item.id, { quantity: Number(e.target.value) || 0 })}
+                      value={item.quantity === 0 ? "" : String(item.quantity)}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9.]/g, "");
+                        patchLocal(item.id, { quantity: Number(raw) || 0 });
+                      }}
+                      placeholder="0"
                     />
                   </td>
                   <td className="px-3 py-2 text-neutral-500">{ing?.usage_unit ?? item.unit ?? "-"}</td>
