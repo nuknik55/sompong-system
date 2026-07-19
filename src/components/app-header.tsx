@@ -45,6 +45,7 @@ const ADMIN_NAV: Omit<NavItem, "badge">[] = [
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true, icon: <ShoppingBasket size={16} /> },
   { href: "/staff/inventory", label: "สั่งของ", exact: false, icon: <ShoppingCart size={16} /> },
   { href: "/owner/team", label: "พนักงาน", exact: true, icon: <Users size={16} /> },
+  { href: "/sop", label: "SOP ครัว", exact: false, icon: <BookOpen size={16} /> },
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
   { href: "/owner/approve", label: "อนุมัติ", exact: true, icon: <CheckSquare size={16} /> },
   { href: "/owner/accounting", label: "บัญชี", exact: false, icon: <BookText size={16} /> },
