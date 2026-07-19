@@ -191,7 +191,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
 
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
     .gte("entry_date", `${yearMonth}-01`)
     .lte("entry_date", `${yearMonth}-31`)
     .order("entry_date", { ascending: false })
@@ -215,6 +215,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
         bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
+        display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
       };
     });
 }
@@ -288,7 +289,7 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
     .in("id", ids)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
@@ -307,6 +308,7 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
         bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
+        display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
       };
     });
 }
