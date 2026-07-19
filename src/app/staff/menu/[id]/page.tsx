@@ -57,7 +57,7 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
             )}
           </div>
           <div className="flex items-center gap-2">
-            {isOwner && (
+            {isAdmin && (
               <form action={toggleMenuStaffVisible.bind(null, menu.id, !staffVisible)}>
                 <button
                   type="submit"
