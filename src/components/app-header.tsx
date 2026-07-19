@@ -55,12 +55,14 @@ const EDITOR_NAV: Omit<NavItem, "badge">[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false, icon: <UtensilsCrossed size={16} /> },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true, icon: <ShoppingBasket size={16} /> },
   { href: "/staff/inventory", label: "สั่งของ", exact: false, icon: <ShoppingCart size={16} /> },
+  { href: "/sop", label: "SOP ครัว", exact: false, icon: <BookOpen size={16} /> },
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
 ];
 
 const STAFF_NAV: Omit<NavItem, "badge">[] = [
   { href: "/staff", label: "สูตรอาหาร", exact: false, icon: <UtensilsCrossed size={16} /> },
   { href: "/staff/inventory", label: "สั่งของ", exact: false, icon: <ShoppingCart size={16} /> },
+  { href: "/sop", label: "SOP ครัว", exact: false, icon: <BookOpen size={16} /> },
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
 ];
 
