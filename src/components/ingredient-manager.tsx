@@ -235,8 +235,8 @@ export function IngredientManager({
   return (
     <div className="space-y-4">
       {/* Filter bar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-1">
           <div className="relative sm:w-64">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
             <input
@@ -281,17 +281,15 @@ export function IngredientManager({
               </button>
             )}
           </div>
-        </div>
-        <div className="flex flex-col items-end gap-1">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
             onClick={() => { setShowNewForm((v) => !v); setNewFormPending(false); }}
           >
             {showNewForm ? "ยกเลิก" : <><Plus className="h-4 w-4" />เพิ่มวัตถุดิบใหม่</>}
           </button>
-          {newFormPending && <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
         </div>
+        {newFormPending && <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

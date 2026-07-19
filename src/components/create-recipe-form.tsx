@@ -60,7 +60,7 @@ export function CreateRecipeForm(props: Props) {
 
   if (!open) {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col items-start gap-1.5">
         <button
           type="button"
           onClick={() => { setOpen(true); setShowPendingSuccess(false); }}

@@ -25,7 +25,7 @@ export default async function StaffHomePage() {
     a.localeCompare(b, "th"),
   );
 
-  const canCreate = profile?.role === "admin" || profile?.role === "editor";
+  const canCreate = profile?.role === "admin" || profile?.role === "owner" || profile?.role === "editor";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">

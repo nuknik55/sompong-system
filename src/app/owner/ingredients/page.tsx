@@ -33,7 +33,7 @@ export default async function OwnerIngredientsPage() {
     if (name) ensure(item.ingredient_id).preps.push({ id: item.prep_recipe_id, name });
   }
 
-  const submitMode = profile.role === "admin" ? "save" : "pending";
+  const submitMode = profile.role === "admin" || profile.role === "owner" ? "save" : "pending";
   const isAdmin = profile.role === "admin" || profile.role === "owner";
 
   return (
