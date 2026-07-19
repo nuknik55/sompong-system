@@ -31,7 +31,7 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
     a.localeCompare(b, "th")
   );
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "owner";
   const isEditor = profile?.role === "editor";
   const isStaff = profile?.role === "staff";
   const canEdit = isAdmin || isEditor;

@@ -22,6 +22,18 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   }
 
   const supabase = await createClient();
+
+  // Check for existing ingredient with same name before creating prep
+  const { data: existingIngredient } = await supabase
+    .from("ingredients")
+    .select("id, is_prep")
+    .eq("name", name.trim())
+    .maybeSingle();
+
+  if (existingIngredient && !existingIngredient.is_prep) {
+    throw new Error(`ชื่อ "${name.trim()}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น`);
+  }
+
   const { data: newPrep, error: insertError } = await supabase
     .from("prep_recipes")
     .insert({ name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
@@ -29,14 +41,23 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
     .single();
   if (insertError || !newPrep) throw new Error(insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ");
 
-  const { error: ingredientError } = await supabase.from("ingredients").insert({
-    name: name.trim(),
-    category: category.trim() || "prep",
-    is_prep: true,
-    usage_unit: batchYieldUnit.trim() || "กรัม",
-    prep_recipe_id: newPrep.id,
-  });
-  if (ingredientError) throw new Error(ingredientError.message);
+  if (existingIngredient?.is_prep) {
+    // Orphaned prep ingredient — relink it to the new prep recipe
+    const { error: updateError } = await supabase
+      .from("ingredients")
+      .update({ category: category.trim() || "prep", usage_unit: batchYieldUnit.trim() || "กรัม", prep_recipe_id: newPrep.id })
+      .eq("id", existingIngredient.id);
+    if (updateError) throw new Error(updateError.message);
+  } else {
+    const { error: ingredientError } = await supabase.from("ingredients").insert({
+      name: name.trim(),
+      category: category.trim() || "prep",
+      is_prep: true,
+      usage_unit: batchYieldUnit.trim() || "กรัม",
+      prep_recipe_id: newPrep.id,
+    });
+    if (ingredientError) throw new Error(ingredientError.message);
+  }
 
   return newPrep.id;
 }
