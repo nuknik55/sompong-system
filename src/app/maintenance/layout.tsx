@@ -4,9 +4,9 @@ import { AppHeader } from "@/components/app-header";
 export default async function MaintenanceLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col lg:flex-row">
       <AppHeader profile={profile} />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 p-4 sm:p-6">{children}</main>
     </div>
   );
 }

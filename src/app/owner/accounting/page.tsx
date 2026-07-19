@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getRecentEntries } from "./actions";
 import { AccountingEntryClient } from "./AccountingEntryClient";
@@ -23,13 +24,13 @@ export default async function AccountingPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">ดูทั้งเดือน</h1>
         <div className="flex items-center gap-4 text-sm text-neutral-500">
-          <a href="/owner/accounting/daily" className="hover:text-neutral-800">บันทึกรายวัน</a>
+          <Link href="/owner/accounting/daily" className="hover:text-neutral-800">บันทึกรายวัน</Link>
           <span className="text-neutral-200">|</span>
-          <a href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-800">สรุปรายเดือน</a>
+          <Link href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-800">สรุปรายเดือน</Link>
           <span className="text-neutral-200">|</span>
-          <a href="/owner/accounting/import" className="hover:text-neutral-800">นำเข้าข้อมูล</a>
+          <Link href="/owner/accounting/import" className="hover:text-neutral-800">นำเข้าข้อมูล</Link>
           <span className="text-neutral-200">|</span>
-          <a href="/owner/accounting/coa" className="hover:text-neutral-800">จัดการหมวด</a>
+          <Link href="/owner/accounting/coa" className="hover:text-neutral-800">จัดการหมวด</Link>
         </div>
       </div>
 

@@ -79,7 +79,7 @@ export default async function OwnerDashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">ภาพรวมต้นทุนและ Menu Engineering</h1>
         <div className="no-print flex flex-wrap items-center gap-2">
-          <QFactorSetting initial={qFactorPct} />
+          <QFactorSetting initial={qFactorPct} isOwner={profile.role === "owner"} />
         </div>
       </div>
 

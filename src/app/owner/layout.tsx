@@ -7,7 +7,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // Fetch pending badge count only for admin (editor/staff don't see the approve nav item)
   const pendingCount = profile.role === "admin" ? await getPendingCount() : 0;
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col lg:flex-row">
       <AppHeader profile={profile} pendingCount={pendingCount} />
       <main className="flex-1 p-4 sm:p-6">{children}</main>
     </div>

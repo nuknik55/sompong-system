@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { updateQFactor } from "@/app/owner/settings/actions";
 
-export function QFactorSetting({ initial }: { initial: number }) {
+export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner: boolean }) {
   const [value, setValue] = useState(String(initial));
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(true);
@@ -15,14 +15,15 @@ export function QFactorSetting({ initial }: { initial: number }) {
         type="text"
         inputMode="decimal"
         value={value}
-        onChange={(e) => {
+        readOnly={!isOwner}
+        onChange={isOwner ? (e) => {
           setValue(e.target.value.replace(/[^0-9.]/g, ""));
           setSaved(false);
-        }}
-        className="w-16 rounded border border-neutral-300 px-2 py-1 text-right"
+        } : undefined}
+        className={`w-16 rounded border border-neutral-300 px-2 py-1 text-right ${!isOwner ? "bg-neutral-50 text-neutral-400 cursor-default" : ""}`}
       />
       <span className="text-neutral-500">%</span>
-      {!saved && (
+      {isOwner && !saved && (
         <button
           type="button"
           disabled={isPending}
