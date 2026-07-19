@@ -5,6 +5,15 @@ import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
 
+export async function toggleMenuStaffVisible(menuId: string, visible: boolean) {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("menus").update({ staff_visible: visible }).eq("id", menuId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/staff/menu/${menuId}`);
+  revalidatePath("/staff");
+}
+
 // Selling price changes are admin-only — too financially sensitive for pending flow
 export async function updateMenuSellingPrice(menuId: string, sellingPrice: number) {
   await requireAdmin();

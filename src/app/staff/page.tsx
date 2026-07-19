@@ -11,13 +11,16 @@ export default async function StaffHomePage() {
     getCurrentProfile(),
   ]);
 
-  const menuCosts = menus.map((menu) =>
+  const isStaffOnly = profile?.role === "staff" || profile?.role === "editor";
+  const visibleMenus = isStaffOnly ? menus.filter((m) => m.staff_visible) : menus;
+
+  const menuCosts = visibleMenus.map((menu) =>
     computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct),
   );
   const ranked = classifyMenuEngineering(menuCosts);
   const meClassById = new Map(ranked.map((r) => [r.menu.id, r.menuClass]));
 
-  const categories = [...new Set(menus.map((m) => m.category).filter((c): c is string => !!c))].sort((a, b) =>
+  const categories = [...new Set(visibleMenus.map((m) => m.category).filter((c): c is string => !!c))].sort((a, b) =>
     a.localeCompare(b, "th"),
   );
 
@@ -45,7 +48,7 @@ export default async function StaffHomePage() {
         )}
       </div>
       <CategoryFilterList
-        items={menus.map((m) => ({
+        items={visibleMenus.map((m) => ({
           id: m.id,
           name: m.name,
           category: m.category,

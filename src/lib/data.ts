@@ -68,7 +68,7 @@ export async function getMenus(): Promise<MenuRow[]> {
   return fetchAllRows<MenuRow>(({ from, to }) =>
     supabase
       .from("menus")
-      .select("id, name, category, selling_price, fuel_cost, last_period_qty_sold")
+      .select("id, name, category, selling_price, fuel_cost, last_period_qty_sold, staff_visible")
       .order("name")
       .range(from, to)
   );

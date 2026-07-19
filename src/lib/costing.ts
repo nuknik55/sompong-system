@@ -39,6 +39,7 @@ export type MenuRow = {
   selling_price: number;
   fuel_cost: number;
   last_period_qty_sold: number;
+  staff_visible: boolean;
 };
 
 export type MenuRecipeItemRow = {
