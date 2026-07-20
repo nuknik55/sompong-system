@@ -44,7 +44,7 @@ export async function createMenu(name: string, category: string, sellingPrice: n
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "สร้างเมนูไม่สำเร็จ");
-  revalidatePath("/staff");
+  revalidatePath("/staff", "layout");
   return data.id;
 }
 
