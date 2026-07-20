@@ -23,29 +23,40 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
 
   const supabase = await createClient();
 
-  // Check for existing ingredient with same name before creating prep
-  const { data: existingIngredient } = await supabase
-    .from("ingredients")
-    .select("id, is_prep")
-    .eq("name", name.trim())
-    .maybeSingle();
+  // Check for existing ingredient or prep_recipe with same name (orphans from partial deletes)
+  const [{ data: existingIngredient }, { data: existingPrepRecipe }] = await Promise.all([
+    supabase.from("ingredients").select("id, is_prep").eq("name", name.trim()).maybeSingle(),
+    supabase.from("prep_recipes").select("id").eq("name", name.trim()).maybeSingle(),
+  ]);
 
   if (existingIngredient && !existingIngredient.is_prep) {
     throw new Error(`ชื่อ "${name.trim()}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น`);
   }
 
-  const { data: newPrep, error: insertError } = await supabase
-    .from("prep_recipes")
-    .insert({ name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
-    .select("id")
-    .single();
-  if (insertError || !newPrep) throw new Error(insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ");
+  let prepId: string;
+  if (existingPrepRecipe) {
+    // Reuse orphan prep_recipe (its ingredient was deleted) — update fields to match new request
+    const { error: updatePrepError } = await supabase
+      .from("prep_recipes")
+      .update({ category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
+      .eq("id", existingPrepRecipe.id);
+    if (updatePrepError) throw new Error(updatePrepError.message);
+    prepId = existingPrepRecipe.id;
+  } else {
+    const { data: newPrep, error: insertError } = await supabase
+      .from("prep_recipes")
+      .insert({ name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
+      .select("id")
+      .single();
+    if (insertError || !newPrep) throw new Error(insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ");
+    prepId = newPrep.id;
+  }
 
   if (existingIngredient?.is_prep) {
-    // Orphaned prep ingredient — relink it to the new prep recipe
+    // Orphan prep ingredient — relink to the (new or reused) prep_recipe
     const { error: updateError } = await supabase
       .from("ingredients")
-      .update({ category: category.trim() || "prep", usage_unit: batchYieldUnit.trim() || "กรัม", prep_recipe_id: newPrep.id })
+      .update({ category: category.trim() || "prep", usage_unit: batchYieldUnit.trim() || "กรัม", prep_recipe_id: prepId })
       .eq("id", existingIngredient.id);
     if (updateError) throw new Error(updateError.message);
   } else {
@@ -54,7 +65,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       category: category.trim() || "prep",
       is_prep: true,
       usage_unit: batchYieldUnit.trim() || "กรัม",
-      prep_recipe_id: newPrep.id,
+      prep_recipe_id: prepId,
     });
     if (ingredientError) throw new Error(ingredientError.message);
   }
