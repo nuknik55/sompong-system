@@ -67,7 +67,7 @@ export function CreateRecipeForm(props: Props) {
           className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
         >
           <Plus className="h-4 w-4" />
-          {props.kind === "menu" ? "สร้างเมนูใหม่" : "สร้างของเตรียมใหม่"}
+          {props.kind === "menu" ? "สร้างเมนูใหม่" : "สร้างของ prep ใหม่"}
         </button>
         {showPendingSuccess && (
           <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>
@@ -79,7 +79,7 @@ export function CreateRecipeForm(props: Props) {
   return (
     <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
       <input
-        placeholder={props.kind === "menu" ? "ชื่อเมนู *" : "ชื่อของเตรียม *"}
+        placeholder={props.kind === "menu" ? "ชื่อเมนู *" : "ชื่อของ prep *"}
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"

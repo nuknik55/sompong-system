@@ -41,7 +41,7 @@ export default async function OwnerIngredientsPage() {
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">จัดการวัตถุดิบ</h1>
         <p className="text-sm text-neutral-500">
-          แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบดิบ — ของเตรียม (Prep) คำนวณต้นทุนจากสูตรอัตโนมัติ
+          แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบ — ของ prep คำนวณต้นทุนจากสูตรอัตโนมัติ
           {submitMode === "pending" && (
             <span className="ml-1 text-amber-600">· การเปลี่ยนแปลงต้องรอ Admin อนุมัติ</span>
           )}
@@ -50,7 +50,7 @@ export default async function OwnerIngredientsPage() {
       <Tabs
         tabs={[
           {
-            label: `วัตถุดิบดิบ (${raw.length})`,
+            label: `วัตถุดิบ (${raw.length})`,
             content: (
               <IngredientManager
                 ingredients={raw.map((i) => ({
@@ -71,7 +71,7 @@ export default async function OwnerIngredientsPage() {
             ),
           },
           {
-            label: `ของเตรียม (${prepRecipes.length})`,
+            label: `ของ prep (${prepRecipes.length})`,
             content: (
               <div className="space-y-3">
                 <CreateRecipeForm kind="prep" createAction={createPrep} hrefPrefix="/staff/prep" categories={prepCategories} pendingMode={!isAdmin} />
@@ -83,7 +83,7 @@ export default async function OwnerIngredientsPage() {
                     subtitle: `ผลผลิต ${p.batch_yield_qty} ${p.batch_yield_unit}`,
                   }))}
                   hrefPrefix="/staff/prep"
-                  placeholder="พิมพ์ค้นหาชื่อของเตรียม..."
+                  placeholder="พิมพ์ค้นหาชื่อของ prep..."
                 />
               </div>
             ),
