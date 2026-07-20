@@ -89,7 +89,10 @@ export default async function OwnerIngredientsPage() {
             ),
           },
           ...(isAdmin
-            ? [{ label: "นำเข้าราคาจาก POS", content: <PosPriceImport /> }]
+            ? [{
+                label: "นำเข้าราคาจาก POS",
+                content: <PosPriceImport ingredientOptions={ingredients.filter((i) => !i.is_prep).map((i) => ({ id: i.id, name: i.name }))} />,
+              }]
             : []),
         ]}
       />
