@@ -59,6 +59,9 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
     if (ingredientError) throw new Error(ingredientError.message);
   }
 
+  revalidatePath("/staff");
+  revalidatePath("/owner/ingredients");
+
   return newPrep.id;
 }
 
