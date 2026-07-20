@@ -8,13 +8,15 @@ import {
   deleteIngredient,
   getIngredientHistory,
   updateIngredient,
+  updateMenuItemQty,
+  updatePrepItemQty,
   type IngredientFields,
   type PriceHistoryEntry,
 } from "@/app/owner/ingredients/actions";
 import { CategorySelect } from "@/components/category-select";
 import { Plus, Save, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
-export type UsageMap = Record<string, { menus: { id: string; name: string }[]; preps: { id: string; name: string }[] }>;
+export type UsageMap = Record<string, { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] }>;
 
 export type IngredientRow = {
   id: string;
@@ -502,7 +504,7 @@ export function IngredientManager({
                   {expandedId === row.id && (
                     <tr className="border-b border-neutral-100 bg-neutral-50">
                       <td colSpan={11} className="px-4 py-3">
-                        <IngredientDetail ingredientId={row.id} usage={usage} />
+                        <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} />
                       </td>
                     </tr>
                   )}
@@ -639,7 +641,7 @@ export function IngredientManager({
               {/* Expandable detail */}
               {expandedId === row.id && (
                 <div className="mt-3 rounded-md bg-neutral-50 p-3">
-                  <IngredientDetail ingredientId={row.id} usage={usage} />
+                  <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} />
                 </div>
               )}
             </div>
@@ -656,12 +658,72 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function UsageItem({
+  name,
+  href,
+  itemId,
+  quantity,
+  unit,
+  onSave,
+}: {
+  name: string;
+  href: string;
+  itemId: string;
+  quantity: number;
+  unit: string | null;
+  onSave: (itemId: string, qty: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(quantity));
+  const [localQty, setLocalQty] = useState(quantity);
+  const [isPending, startTransition] = useTransition();
+
+  function save() {
+    const n = Number(val) || 0;
+    setEditing(false);
+    if (n === localQty) return;
+    startTransition(async () => {
+      await onSave(itemId, n);
+      setLocalQty(n);
+    });
+  }
+
+  return (
+    <li className="flex items-center gap-2 text-sm">
+      <Link href={href} className="min-w-0 flex-1 truncate text-blue-600 hover:underline">{name}</Link>
+      {editing ? (
+        <input
+          type="text"
+          inputMode="decimal"
+          value={val}
+          onChange={(e) => setVal(e.target.value.replace(/[^0-9.]/g, ""))}
+          onBlur={save}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          className="w-16 rounded border border-neutral-300 px-1 py-0.5 text-right text-xs"
+          autoFocus
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => { setVal(String(localQty)); setEditing(true); }}
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs tabular-nums text-neutral-600 hover:bg-neutral-200"
+          title="คลิกเพื่อแก้ปริมาณ"
+        >
+          {isPending ? "..." : `${localQty} ${unit ?? ""}`}
+        </button>
+      )}
+    </li>
+  );
+}
+
 function IngredientDetail({
   ingredientId,
   usage,
+  unit,
 }: {
   ingredientId: string;
-  usage?: { menus: { id: string; name: string }[]; preps: { id: string; name: string }[] };
+  usage?: { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] };
+  unit: string | null;
 }) {
   const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
 
@@ -672,27 +734,35 @@ function IngredientDetail({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div>
-        <p className="mb-1 text-xs font-medium text-neutral-500">ใช้ในเมนู ({usage?.menus.length ?? 0})</p>
-        <ul className="space-y-0.5 text-sm">
+        <p className="mb-1 text-xs font-medium text-neutral-500">ใช้ในเมนู ({usage?.menus.length ?? 0}) <span className="font-normal text-neutral-400">— คลิกตัวเลขเพื่อแก้</span></p>
+        <ul className="space-y-0.5">
           {(usage?.menus ?? []).map((m) => (
-            <li key={m.id}>
-              <Link href={`/staff/menu/${m.id}`} className="text-blue-600 hover:underline">
-                {m.name}
-              </Link>
-            </li>
+            <UsageItem
+              key={m.itemId}
+              name={m.name}
+              href={`/staff/menu/${m.id}`}
+              itemId={m.itemId}
+              quantity={m.quantity}
+              unit={unit}
+              onSave={updateMenuItemQty}
+            />
           ))}
-          {!usage?.menus.length && <li className="text-neutral-400">ไม่มี</li>}
+          {!usage?.menus.length && <li className="text-sm text-neutral-400">ไม่มี</li>}
         </ul>
-        <p className="mt-3 mb-1 text-xs font-medium text-neutral-500">ใช้ในของเตรียม ({usage?.preps.length ?? 0})</p>
-        <ul className="space-y-0.5 text-sm">
+        <p className="mt-3 mb-1 text-xs font-medium text-neutral-500">ใช้ในของ prep ({usage?.preps.length ?? 0})</p>
+        <ul className="space-y-0.5">
           {(usage?.preps ?? []).map((p) => (
-            <li key={p.id}>
-              <Link href={`/staff/prep/${p.id}`} className="text-blue-600 hover:underline">
-                {p.name}
-              </Link>
-            </li>
+            <UsageItem
+              key={p.itemId}
+              name={p.name}
+              href={`/staff/prep/${p.id}`}
+              itemId={p.itemId}
+              quantity={p.quantity}
+              unit={unit}
+              onSave={updatePrepItemQty}
+            />
           ))}
-          {!usage?.preps.length && <li className="text-neutral-400">ไม่มี</li>}
+          {!usage?.preps.length && <li className="text-sm text-neutral-400">ไม่มี</li>}
         </ul>
       </div>
       <div>

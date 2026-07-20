@@ -19,18 +19,18 @@ export default async function OwnerIngredientsPage() {
     a.localeCompare(b, "th")
   );
 
-  const usageMap: Record<string, { menus: { id: string; name: string }[]; preps: { id: string; name: string }[] }> = {};
+  const usageMap: Record<string, { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] }> = {};
   function ensure(id: string) {
     if (!usageMap[id]) usageMap[id] = { menus: [], preps: [] };
     return usageMap[id];
   }
   for (const item of menuItems) {
     const name = menuById.get(item.menu_id);
-    if (name) ensure(item.ingredient_id).menus.push({ id: item.menu_id, name });
+    if (name) ensure(item.ingredient_id).menus.push({ id: item.menu_id, name, itemId: item.id, quantity: item.quantity });
   }
   for (const item of prepItems) {
     const name = prepById.get(item.prep_recipe_id);
-    if (name) ensure(item.ingredient_id).preps.push({ id: item.prep_recipe_id, name });
+    if (name) ensure(item.ingredient_id).preps.push({ id: item.prep_recipe_id, name, itemId: item.id, quantity: item.quantity });
   }
 
   const submitMode = profile.role === "admin" || profile.role === "owner" ? "save" : "pending";

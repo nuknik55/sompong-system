@@ -73,7 +73,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
 
-  return newPrep.id;
+  return prepId;
 }
 
 export async function updatePrepYield(

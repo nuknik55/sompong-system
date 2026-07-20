@@ -2,8 +2,26 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdminOrEditor } from "@/lib/auth";
+import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
+
+export async function updateMenuItemQty(itemId: string, quantity: number) {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("menu_recipe_items").update({ quantity }).eq("id", itemId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/staff", "layout");
+  revalidatePath("/owner", "layout");
+}
+
+export async function updatePrepItemQty(itemId: string, quantity: number) {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("prep_recipe_items").update({ quantity }).eq("id", itemId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/staff", "layout");
+  revalidatePath("/owner", "layout");
+}
 
 export type IngredientFields = {
   name: string;
