@@ -170,16 +170,25 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
 
   const adminClient = createAdminClient();
 
-  // Delete auth user first; ignore "not found" errors (profile may exist without auth record)
+  // Step 1: delete auth user (may fail for accounts created outside the app)
   const { error: authErr } = await adminClient.auth.admin.deleteUser(userId);
-  if (authErr && !authErr.message.includes("not found") && !authErr.message.toLowerCase().includes("user not allowed")) {
-    return { error: authErr.message };
+
+  // Step 2: delete profile row; use count to verify it actually happened
+  const { error: profileErr, count } = await adminClient
+    .from("profiles")
+    .delete({ count: "exact" })
+    .eq("id", userId);
+
+  if (profileErr) return { error: `ลบโปรไฟล์ไม่สำเร็จ: ${profileErr.message}` };
+
+  if ((count ?? 0) === 0) {
+    // Nothing was deleted — surface the real reason
+    if (authErr) return { error: `ลบไม่สำเร็จ: ${authErr.message}` };
+    return { error: "ไม่พบบัญชีนี้ในระบบ" };
   }
 
-  // Always clean up profiles row regardless of auth result
-  const { error: profileErr } = await adminClient.from("profiles").delete().eq("id", userId);
-  if (profileErr) return { error: profileErr.message };
-
+  // Profile removed. Even if auth user still exists, they can no longer log in
+  // (profile is required for the app to load).
   revalidatePath("/owner/team");
   return {};
 }
