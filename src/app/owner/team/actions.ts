@@ -168,27 +168,23 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
     return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถลบ Admin คนสุดท้ายได้" };
   }
 
+  // Best-effort: remove auth.users entry (needs SUPABASE_SERVICE_ROLE_KEY in Vercel)
   const adminClient = createAdminClient();
+  await adminClient.auth.admin.deleteUser(userId);
 
-  // Step 1: delete auth user (may fail for accounts created outside the app)
-  const { error: authErr } = await adminClient.auth.admin.deleteUser(userId);
-
-  // Step 2: delete profile row; use count to verify it actually happened
-  const { error: profileErr, count } = await adminClient
+  // Authoritative step: delete profile row using the session client.
+  // Works as long as Supabase has the DELETE policy for owner/admin roles:
+  //   CREATE POLICY owner_admin_delete_profiles ON profiles FOR DELETE TO authenticated
+  //   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('owner','admin')));
+  const { error: profileErr, count } = await supabase
     .from("profiles")
     .delete({ count: "exact" })
     .eq("id", userId);
 
   if (profileErr) return { error: `ลบโปรไฟล์ไม่สำเร็จ: ${profileErr.message}` };
+  if ((count ?? 0) === 0) return { error: "ลบไม่สำเร็จ: กรุณารัน SQL policy ใน Supabase ก่อน (ดูใน actions.ts)" };
 
-  if ((count ?? 0) === 0) {
-    // Nothing was deleted — surface the real reason
-    if (authErr) return { error: `ลบไม่สำเร็จ: ${authErr.message}` };
-    return { error: "ไม่พบบัญชีนี้ในระบบ" };
-  }
-
-  // Profile removed. Even if auth user still exists, they can no longer log in
-  // (profile is required for the app to load).
+  // Profile deleted — user is locked out even if auth.users entry remains.
   revalidatePath("/owner/team");
   return {};
 }
