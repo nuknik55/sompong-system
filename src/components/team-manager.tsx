@@ -212,11 +212,11 @@ export function TeamManager({
               const isSelf = u.id === currentUserId;
               const isAdmin = currentUserRole === "admin";
               const targetIsLower = u.role === "staff" || u.role === "editor";
-              // Owner can act on all non-owner rows; admin can act on staff/editor rows (or self)
-              const canActOnRow = isOwner ? u.role !== "owner" : (targetIsLower || isSelf);
-              // Owner can change any password (incl. own); admin can change staff/editor only (excl. self)
-              const canChangePwd = isOwner || (!isSelf && isAdmin && targetIsLower);
-              // Owner can delete any non-self; admin can delete staff/editor only
+              // owner: any non-owner row + own row; admin: staff/editor rows + own row
+              const canActOnRow = isOwner ? (u.role !== "owner" || isSelf) : (targetIsLower || isSelf);
+              // owner: everyone incl. self; admin: self + staff/editor (not other admin/owner)
+              const canChangePwd = isOwner || (isAdmin && (isSelf || targetIsLower));
+              // cannot self-delete; owner: all others; admin: staff/editor only
               const canDelete = !isSelf && (isOwner || (isAdmin && targetIsLower));
 
               return (

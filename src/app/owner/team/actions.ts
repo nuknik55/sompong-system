@@ -131,11 +131,11 @@ export async function changePassword(userId: string, newPassword: string): Promi
   const me = await requireAdmin();
   if (newPassword.length < 6) return { error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" };
 
-  if (me.role !== "owner") {
+  if (me.role !== "owner" && userId !== me.id) {
     const supabase = await createClient();
     const { data: target } = await supabase.from("profiles").select("role").eq("id", userId).single();
     if (target?.role === "owner" || target?.role === "admin") {
-      return { error: "Admin สามารถเปลี่ยนรหัสผ่านได้เฉพาะ Staff และ Editor เท่านั้น" };
+      return { error: "Admin สามารถเปลี่ยนรหัสผ่านได้เฉพาะ Staff, Editor และตัวเองเท่านั้น" };
     }
   }
 
