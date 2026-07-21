@@ -281,8 +281,7 @@ export async function getOrderSessions(opts?: {
   const allIds = [...new Set(
     sessions.flatMap((s) => [s.created_by, s.approved_by, s.reviewed_by].filter(Boolean) as string[])
   )];
-  const adminClient = createAdminClient();
-  const { data: profiles } = await adminClient
+  const { data: profiles } = await supabase
     .from("profiles")
     .select("id, full_name")
     .in("id", allIds);
@@ -332,8 +331,7 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
   if (error || !session) return null;
 
   const allIds = [session.created_by, session.reviewed_by, session.approved_by, session.sent_by].filter(Boolean) as string[];
-  const adminClient2 = createAdminClient();
-  const { data: profiles } = await adminClient2
+  const { data: profiles } = await supabase
     .from("profiles")
     .select("id, full_name")
     .in("id", allIds);
@@ -408,7 +406,7 @@ export async function getLastQtyPerPack(ingredientId: string): Promise<number | 
 }
 
 export async function getTemplates(): Promise<Template[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("templates")
     .select("id, name, created_at")
@@ -418,7 +416,7 @@ export async function getTemplates(): Promise<Template[]> {
 }
 
 export async function getTemplateItems(templateId: string): Promise<TemplateItem[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("template_items")
     .select(`
