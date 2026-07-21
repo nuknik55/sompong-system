@@ -65,6 +65,12 @@ export default async function AccountingSummaryPage({
         <div className="flex items-center gap-4 text-sm text-neutral-400">
           <a href={`/owner/accounting/daily`} className="hover:text-neutral-700">บันทึกรายวัน</a>
           <a href="/owner/accounting/coa" className="hover:text-neutral-700">จัดการหมวด</a>
+          <a
+            href={`/owner/accounting/summary/print?month=${yearMonth}`}
+            className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50"
+          >
+            พิมพ์ / Export P&amp;L
+          </a>
         </div>
       </div>
 
