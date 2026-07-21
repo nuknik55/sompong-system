@@ -126,10 +126,18 @@ export async function updateUserDetails(
   return {};
 }
 
-/** Owner-only: change any account's password using the service-role Admin API. */
+/** Owner can change any password; Admin can only change staff/editor passwords. */
 export async function changePassword(userId: string, newPassword: string): Promise<ActionResult> {
-  await requireOwner();
+  const me = await requireAdmin();
   if (newPassword.length < 6) return { error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" };
+
+  if (me.role !== "owner") {
+    const supabase = await createClient();
+    const { data: target } = await supabase.from("profiles").select("role").eq("id", userId).single();
+    if (target?.role === "owner" || target?.role === "admin") {
+      return { error: "Admin สามารถเปลี่ยนรหัสผ่านได้เฉพาะ Staff และ Editor เท่านั้น" };
+    }
+  }
 
   const admin = createAdminClient();
   const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
@@ -146,6 +154,10 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   // Deleting owner: owner-only action
   if (current?.role === "owner" && me.role !== "owner") {
     return { error: "ไม่สามารถลบบัญชี Owner ได้" };
+  }
+  // Deleting admin: owner-only action
+  if (current?.role === "admin" && me.role !== "owner") {
+    return { error: "เฉพาะ Owner เท่านั้นที่ลบบัญชี Admin ได้" };
   }
   // Last-owner guard
   if (current?.role === "owner" && (await countOwners(supabase)) <= 1) {

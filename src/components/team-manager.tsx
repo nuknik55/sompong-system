@@ -210,8 +210,14 @@ export function TeamManager({
               const isEditing = editingId === u.id;
               const isChangingPwd = pwdRowId === u.id;
               const isSelf = u.id === currentUserId;
-              // Owner can act on owner rows; admin can only act on non-owner rows
-              const canActOnRow = u.role !== "owner" || isOwner;
+              const isAdmin = currentUserRole === "admin";
+              const targetIsLower = u.role === "staff" || u.role === "editor";
+              // Owner can act on all non-owner rows; admin can act on staff/editor rows (or self)
+              const canActOnRow = isOwner ? u.role !== "owner" : (targetIsLower || isSelf);
+              // Owner can change any password (incl. own); admin can change staff/editor only (excl. self)
+              const canChangePwd = isOwner || (!isSelf && isAdmin && targetIsLower);
+              // Owner can delete any non-self; admin can delete staff/editor only
+              const canDelete = !isSelf && (isOwner || (isAdmin && targetIsLower));
 
               return (
                 <tr key={u.id} className="border-b border-neutral-100 last:border-0 align-top">
@@ -309,8 +315,7 @@ export function TeamManager({
                               แก้ไข
                             </button>
 
-                            {/* Change password: owner-only, not for self */}
-                            {isOwner && !isSelf && (
+                            {canChangePwd && (
                               <button
                                 type="button"
                                 className="text-blue-500 hover:text-blue-700"
@@ -324,7 +329,7 @@ export function TeamManager({
                               </button>
                             )}
 
-                            {!isSelf && (
+                            {canDelete && (
                               <button
                                 type="button"
                                 className="text-red-500 hover:text-red-700"

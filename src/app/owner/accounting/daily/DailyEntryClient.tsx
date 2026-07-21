@@ -159,10 +159,16 @@ export function DailyEntryClient({
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [fixCost, setFixCost] = useState("40000");
   const counter = useRef(0);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setEntries(initialEntries); }, [initialEntries]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("daily-fix-cost");
+    if (stored !== null) setFixCost(stored);
+  }, []);
 
   const leafCoa = coa.filter((c) => c.group_code !== null);
   const groups = coa.filter((c) => c.group_code === null);
@@ -367,6 +373,7 @@ export function DailyEntryClient({
 
   const savedCash = entries.filter((e) => e.payment_method === "cash").reduce((s, e) => s + e.amount, 0);
   const savedTransfer = entries.filter((e) => e.payment_method === "transfer").reduce((s, e) => s + e.amount, 0);
+  const fixCostNum = parseInt(fixCost.replace(/[^0-9]/g, ""), 10) || 0;
   const pendCash = pending.reduce((s, r) => s + (parseFloat(r.amountCash) || 0), 0);
   const pendTransfer = pending.reduce((s, r) => s + (parseFloat(r.amountTransfer) || 0), 0);
 
@@ -382,6 +389,7 @@ export function DailyEntryClient({
         @media print {
           .no-print { display: none !important; }
           .print-show { display: block !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         .print-show { display: none; }
       `}</style>
@@ -483,16 +491,27 @@ export function DailyEntryClient({
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-neutral-400 font-semibold">
-                <td className="pt-2 pr-6">รวมทั้งสิ้น</td>
-                <td className="pt-2 px-4 text-right tabular-nums">{fmt(savedCash) || "–"}</td>
-                <td className="pt-2 pl-4 text-right tabular-nums">{fmt(savedTransfer) || "–"}</td>
+              <tr className="border-t-2 border-neutral-300">
+                <td className="pt-2 pb-1 pr-6 text-sm">รวมเงินสด</td>
+                <td className="pt-2 pb-1 px-4 text-right tabular-nums text-sm">{fmt(savedCash) || "–"}</td>
+                <td className="pt-2 pb-1 pl-4"></td>
               </tr>
-              <tr className="text-neutral-500 text-xs">
-                <td className="pt-1 pr-6">รวมเงินสด + โอน</td>
-                <td colSpan={2} className="pt-1 text-right tabular-nums font-semibold text-neutral-700">
-                  {fmt(savedCash + savedTransfer)}
-                </td>
+              <tr className="border-t border-neutral-200">
+                <td className="py-1 pr-6 text-sm">รวมเครดิต</td>
+                <td className="py-1 px-4"></td>
+                <td className="py-1 pl-4 text-right tabular-nums text-sm">{fmt(savedTransfer) || "–"}</td>
+              </tr>
+              <tr className="border-t-2 border-neutral-400 font-semibold" style={{ backgroundColor: "#fef9c3" }}>
+                <td className="py-2 pr-6">รวม</td>
+                <td colSpan={2} className="py-2 pl-4 text-right tabular-nums">{fmt(savedCash + savedTransfer)}</td>
+              </tr>
+              <tr className="border-t border-neutral-200">
+                <td className="py-1.5 pr-6 text-sm">Fix cost</td>
+                <td colSpan={2} className="py-1.5 pl-4 text-right tabular-nums text-sm">{fmt(fixCostNum) || "–"}</td>
+              </tr>
+              <tr className="border-t-2 border-neutral-800 font-bold">
+                <td className="pt-2 pr-6">รวมสุทธิ</td>
+                <td colSpan={2} className="pt-2 pl-4 text-right tabular-nums">{fmt(savedCash + savedTransfer + fixCostNum)}</td>
               </tr>
             </tfoot>
           </table>
@@ -719,6 +738,29 @@ export function DailyEntryClient({
             </table>
           </div>
         </div>
+
+        {/* Fix cost input - screen only */}
+        {!isEmpty && (
+          <div className="no-print flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+            <span className="font-medium text-neutral-700">Fix cost</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={fixCost}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^0-9]/g, "");
+                setFixCost(raw);
+                localStorage.setItem("daily-fix-cost", raw);
+              }}
+              className="w-32 rounded border border-neutral-300 bg-white px-3 py-1.5 text-right tabular-nums focus:border-blue-400 focus:outline-none"
+            />
+            <span className="text-neutral-400">บาท</span>
+            <span className="ml-auto text-neutral-500">
+              รวมสุทธิ:{" "}
+              <span className="font-semibold tabular-nums text-neutral-900">{fmt(savedCash + savedTransfer + fixCostNum)}</span>
+            </span>
+          </div>
+        )}
 
         {/* Messages */}
         {error && <p className="text-sm text-red-600 no-print">{error}</p>}
