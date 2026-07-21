@@ -168,9 +168,18 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
     return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถลบ Admin คนสุดท้ายได้" };
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.auth.admin.deleteUser(userId);
-  if (error) return { error: error.message };
+  const adminClient = createAdminClient();
+
+  // Delete auth user first; ignore "not found" errors (profile may exist without auth record)
+  const { error: authErr } = await adminClient.auth.admin.deleteUser(userId);
+  if (authErr && !authErr.message.includes("not found") && !authErr.message.toLowerCase().includes("user not allowed")) {
+    return { error: authErr.message };
+  }
+
+  // Always clean up profiles row regardless of auth result
+  const { error: profileErr } = await adminClient.from("profiles").delete().eq("id", userId);
+  if (profileErr) return { error: profileErr.message };
+
   revalidatePath("/owner/team");
   return {};
 }
