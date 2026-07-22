@@ -8,6 +8,7 @@ import {
   addCoaAccount,
   updateCoaAccount,
   deleteCoaAccount,
+  reorderCoaAccount,
   type CoaAccount,
 } from "../actions";
 
@@ -47,6 +48,21 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "แก้ไขไม่สำเร็จ");
+      }
+    });
+  }
+
+  // ── Reorder account ─────────────────────────────────
+  function handleReorder(code: string, groupCode: string, direction: "up" | "down") {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await reorderCoaAccount(code, groupCode, direction);
+        if (result.error) { setError(result.error); return; }
+        router.refresh();
+      } catch (err) {
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "เรียงลำดับไม่สำเร็จ");
       }
     });
   }
@@ -189,7 +205,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
 
               {/* Child accounts */}
               <div>
-                {children.map((c) => {
+                {children.map((c, idx) => {
                   const isEditingThis = editing?.code === c.code;
                   return (
                     <div key={c.code} className="group flex items-center gap-3 border-b border-neutral-50 px-4 py-2 last:border-0 hover:bg-neutral-50/50">
@@ -214,7 +230,24 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                       ) : (
                         <>
                           <span className="flex-1 text-sm text-neutral-700">{c.name}</span>
-                          <div className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              onClick={() => handleReorder(c.code, g.code, "up")}
+                              disabled={isPending || idx === 0}
+                              className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
+                              title="เลื่อนขึ้น"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              onClick={() => handleReorder(c.code, g.code, "down")}
+                              disabled={isPending || idx === children.length - 1}
+                              className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
+                              title="เลื่อนลง"
+                            >
+                              ▼
+                            </button>
+                            <span className="mx-1 text-neutral-200">|</span>
                             <button
                               onClick={() => setEditing({ code: c.code, name: c.name, target_pct: "" })}
                               className="text-xs text-neutral-400 hover:text-neutral-700"

@@ -122,6 +122,31 @@ export async function updateCoaAccount(
   revalidatePath("/owner/accounting");
 }
 
+export async function reorderCoaAccount(code: string, groupCode: string, direction: "up" | "down"): Promise<{ error?: string }> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  // Get all sibling accounts in this group ordered by sort_order
+  const { data: siblings } = await supabase
+    .from("coa").select("code,sort_order").eq("group_code", groupCode).order("sort_order");
+  if (!siblings) return { error: "ไม่พบข้อมูล" };
+
+  const idx = siblings.findIndex((s) => s.code === code);
+  if (idx < 0) return { error: "ไม่พบหมวด" };
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return {};
+
+  // Swap sort_orders between the two items
+  const current = siblings[idx];
+  const swap = siblings[swapIdx];
+  await supabase.from("coa").update({ sort_order: swap.sort_order }).eq("code", current.code);
+  await supabase.from("coa").update({ sort_order: current.sort_order }).eq("code", swap.code);
+
+  revalidatePath("/owner/accounting/coa");
+  revalidatePath("/owner/accounting/daily");
+  return {};
+}
+
 export async function deleteCoaAccount(code: string): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
