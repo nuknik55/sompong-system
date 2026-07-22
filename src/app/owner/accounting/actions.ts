@@ -115,6 +115,14 @@ export async function upsertSupplier(s: {
   revalidatePath("/owner/accounting/suppliers");
 }
 
+export async function deleteSupplier(id: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("suppliers").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/suppliers");
+}
+
 export async function reorderSupplier(id: string, direction: "up" | "down", allIds: string[]): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();

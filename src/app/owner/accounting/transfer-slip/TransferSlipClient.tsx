@@ -123,34 +123,40 @@ export function TransferSlipClient({
   function SupplierRows({ section }: { section: WeeklySupplierRow[] }) {
     return (
       <>
-        {section.map((r) => (
-          <tr key={r.supplier.id} className="border-t border-neutral-100 hover:bg-neutral-50">
-            <td className="px-3 py-2 text-sm text-neutral-800">{r.supplier.name}</td>
-            <td className="px-2 py-2 text-xs text-neutral-400">{r.supplier.description ?? ""}</td>
-            {r.days.map((v, di) => (
-              <td key={di} className="px-2 py-2 text-right tabular-nums text-sm text-neutral-700">
-                {fmt(v) || ""}
+        {section.map((r, i) => {
+          const isEven = i % 2 === 0;
+          const bg = isEven ? "bg-white" : "bg-neutral-100";
+          return (
+            <tr key={r.supplier.id} className={`border-t border-neutral-200 ${bg} hover:brightness-95`}>
+              <td className="px-3 py-2 text-sm font-medium text-neutral-800">
+                {r.supplier.name}
               </td>
-            ))}
-            <td className="px-3 py-2 text-right tabular-nums text-sm font-semibold text-neutral-900">
-              {fmt(r.total)}
-            </td>
-            <td className="px-2 py-2 text-xs text-neutral-500">
-              {r.supplier.bank && `${r.supplier.bank} ${r.supplier.account_number ?? ""}`}
-              {r.supplier.internal_account && <span className="font-medium text-blue-600">{r.supplier.internal_account}</span>}
-            </td>
-          </tr>
-        ))}
+              <td className="px-2 py-2 text-xs text-neutral-400">{r.supplier.description ?? ""}</td>
+              {r.days.map((v, di) => (
+                <td key={di} className={`px-2 py-2 text-right tabular-nums text-sm ${v ? "text-neutral-800 font-medium" : "text-neutral-300"}`}>
+                  {fmt(v) || "–"}
+                </td>
+              ))}
+              <td className="px-3 py-2 text-right tabular-nums text-sm font-bold text-neutral-900 border-l border-neutral-200">
+                {fmt(r.total)}
+              </td>
+              <td className="px-2 py-2 text-xs text-neutral-500">
+                {r.supplier.bank && `${r.supplier.bank} ${r.supplier.account_number ?? ""}`}
+                {r.supplier.internal_account && <span className="font-medium text-blue-600">{r.supplier.internal_account}</span>}
+              </td>
+            </tr>
+          );
+        })}
       </>
     );
   }
 
   function TotalRow({ label, total }: { label: string; total: number }) {
     return (
-      <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold text-sm">
-        <td colSpan={2} className="px-3 py-2 text-right text-neutral-600">{label}</td>
+      <tr className="border-t-2 border-neutral-400 bg-neutral-200 font-bold text-sm">
+        <td colSpan={2} className="px-3 py-2 text-right text-neutral-700">{label}</td>
         {Array(7).fill(null).map((_, i) => <td key={i} />)}
-        <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmt(total)}</td>
+        <td className="px-3 py-2 text-right tabular-nums text-neutral-900 border-l border-neutral-300">{fmt(total)}</td>
         <td />
       </tr>
     );
@@ -159,24 +165,24 @@ export function TransferSlipClient({
   function SectionTable({ title, section, total, note }: { title: string; section: WeeklySupplierRow[]; total: number; note?: string }) {
     if (section.length === 0) return null;
     return (
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 flex items-center justify-between">
-          <span className="text-sm font-semibold text-neutral-700">{title}</span>
+      <div className="rounded-xl border border-neutral-300 bg-white overflow-hidden">
+        <div className="border-b-2 border-neutral-300 bg-neutral-800 px-4 py-2.5 flex items-center justify-between">
+          <span className="text-sm font-semibold text-white">{title}</span>
           {note && <span className="text-xs text-neutral-400">{note}</span>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-neutral-400 border-b border-neutral-100">
+              <tr className="text-xs text-neutral-500 border-b-2 border-neutral-200 bg-neutral-50">
                 <th className="px-3 py-2 text-left w-44">ซัพพลายเออร์</th>
                 <th className="px-2 py-2 text-left">รายละเอียด</th>
                 {DAY_LABELS.map((l, i) => (
                   <th key={i} className="px-2 py-2 text-right w-20">
-                    <div>{l}</div>
-                    <div className="text-neutral-300 font-normal text-xs">{days[i]?.slice(5).replace("-", "/")}</div>
+                    <div className="font-semibold text-neutral-700">{l}</div>
+                    <div className="text-neutral-400 font-normal">{days[i]?.slice(5).replace("-", "/")}</div>
                   </th>
                 ))}
-                <th className="px-3 py-2 text-right w-24">รวม</th>
+                <th className="px-3 py-2 text-right w-24 border-l border-neutral-200 text-neutral-700 font-semibold">รวม</th>
                 <th className="px-2 py-2 text-left w-32">บัญชี</th>
               </tr>
             </thead>
@@ -217,30 +223,31 @@ export function TransferSlipClient({
             </tr>
           </thead>
           <tbody>
-            {section.map((r) => {
+            {section.map((r, ri) => {
               const bankInfo = r.supplier.bank
                 ? `${r.supplier.bank} ${r.supplier.account_number ?? ""}`
                 : r.supplier.internal_account ?? "";
+              const zebra = ri % 2 === 0 ? "#ffffff" : "#efefef";
               return (
-                <tr key={r.supplier.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={r.supplier.id} style={{ borderBottom: "1px solid #ddd", backgroundColor: zebra }}>
                   <td style={{ padding: "2px 3px 2px 0", lineHeight: 1.3 }}>
-                    <div>{r.supplier.name}</div>
+                    <div style={{ fontWeight: 600 }}>{r.supplier.name}</div>
                     {bankInfo && <div style={{ fontSize: "7.5px", color: "#888" }}>{bankInfo}</div>}
                   </td>
                   {r.days.map((v, di) => (
-                    <td key={di} style={{ textAlign: "right", padding: "2px", fontVariantNumeric: "tabular-nums" }}>
-                      {fmt(v) || ""}
+                    <td key={di} style={{ textAlign: "right", padding: "2px", fontVariantNumeric: "tabular-nums", color: v ? "#111" : "#ccc" }}>
+                      {fmt(v) || "–"}
                     </td>
                   ))}
-                  <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontWeight: 700, fontVariantNumeric: "tabular-nums", borderLeft: "1px solid #bbb" }}>
                     {fmt(r.total)}
                   </td>
                 </tr>
               );
             })}
-            <tr style={{ borderTop: "1.5px solid #bbb", fontWeight: 700, backgroundColor: "#f5f5f5" }}>
+            <tr style={{ borderTop: "2px solid #888", fontWeight: 700, backgroundColor: "#d4d4d4" }}>
               <td colSpan={8} style={{ textAlign: "right", padding: "2px 2px" }}>รวม</td>
-              <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</td>
+              <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontVariantNumeric: "tabular-nums", borderLeft: "1px solid #999" }}>{fmt(total)}</td>
             </tr>
           </tbody>
         </table>
