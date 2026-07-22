@@ -83,6 +83,60 @@ export async function getSuppliers(): Promise<Supplier[]> {
   return (data ?? []) as Supplier[];
 }
 
+export async function getAllSuppliers(): Promise<Supplier[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("suppliers")
+    .select("id,name,bank,account_number,description,credit,payment_mode,internal_account,sort_order,is_active")
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Supplier[];
+}
+
+export async function upsertSupplier(s: {
+  id?: string;
+  name: string;
+  bank: string | null;
+  account_number: string | null;
+  description: string | null;
+  credit: boolean;
+  payment_mode: "transfer" | "cash";
+  internal_account: string | null;
+  sort_order: number;
+  is_active: boolean;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = s.id
+    ? await supabase.from("suppliers").update({ ...s, id: undefined }).eq("id", s.id)
+    : await supabase.from("suppliers").insert(s);
+  if (error) throw new Error(error.message);
+  revalidatePath("/owner/accounting/suppliers");
+}
+
+export async function reorderSupplier(id: string, direction: "up" | "down", allIds: string[]): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const idx = allIds.indexOf(id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= allIds.length) return;
+  const [idA, idB] = [allIds[idx]!, allIds[swapIdx]!];
+  const { data, error: fetchErr } = await supabase
+    .from("suppliers").select("id,sort_order").in("id", [idA, idB]);
+  if (fetchErr) throw new Error(fetchErr.message);
+  const [rowA, rowB] = [data!.find((r) => r.id === idA)!, data!.find((r) => r.id === idB)!];
+  const { error } = await supabase.rpc("swap_supplier_order", {
+    id_a: idA, sort_a: rowB.sort_order, id_b: idB, sort_b: rowA.sort_order,
+  });
+  if (error) {
+    // fallback: update individually
+    await supabase.from("suppliers").update({ sort_order: rowB.sort_order }).eq("id", idA);
+    await supabase.from("suppliers").update({ sort_order: rowA.sort_order }).eq("id", idB);
+  }
+  revalidatePath("/owner/accounting/suppliers");
+}
+
 export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
   rows: WeeklySupplierRow[];
   days: string[];

@@ -31,6 +31,7 @@ export default async function DailyEntryPage({
         <div className="flex items-center gap-4 text-sm text-neutral-400">
           <a href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-700">สรุปรายเดือน</a>
           <a href="/owner/accounting/transfer-slip" className="hover:text-neutral-700">ใบโอนเงิน</a>
+          <a href="/owner/accounting/suppliers" className="hover:text-neutral-700">ซัพพลายเออร์</a>
           <a href="/owner/accounting/coa" className="hover:text-neutral-700">จัดการหมวด</a>
         </div>
       </div>
