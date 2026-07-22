@@ -474,44 +474,6 @@ export function DailyEntryClient({
   const isToday = date === today;
   const isEmpty = entries.length === 0 && pending.length === 0;
 
-  // ── Shared row inputs ─────────────────────────────────────────────
-
-  function PendingRowCells({ r }: { r: PendingRow }) {
-    return (
-      <>
-        <td className="px-1.5 py-1.5 w-40">
-          <SupplierAutocomplete
-            value={r.supplierId}
-            onChange={(id) => updateRow(r.id, "supplierId", id)}
-            suppliers={suppliers}
-          />
-        </td>
-        <td className="px-1.5 py-1.5">
-          <input type="text" placeholder="รายละเอียด..." value={r.detail}
-            onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-1.5 w-36">
-          <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
-        </td>
-        <td className="px-1.5 py-1.5 w-24">
-          <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
-            onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-1.5 w-24">
-          <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
-            onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-1.5">
-          <button onClick={() => removeRow(r.id)}
-            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
-        </td>
-      </>
-    );
-  }
-
   // ── Render ───────────────────────────────────────────────────────
 
   return (
@@ -733,7 +695,31 @@ export function DailyEntryClient({
                       <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                         <td className="px-2 py-2" />
                         <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum + 1 + pi}</td>
-                        <PendingRowCells r={r} />
+                        <td className="px-1.5 py-1.5 w-40">
+                          <SupplierAutocomplete value={r.supplierId} onChange={(id) => updateRow(r.id, "supplierId", id)} suppliers={suppliers} />
+                        </td>
+                        <td className="px-1.5 py-1.5">
+                          <input type="text" placeholder="รายละเอียด..." value={r.detail}
+                            onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                        </td>
+                        <td className="px-1.5 py-1.5 w-36">
+                          <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
+                        </td>
+                        <td className="px-1.5 py-1.5 w-24">
+                          <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
+                            onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                        </td>
+                        <td className="px-1.5 py-1.5 w-24">
+                          <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
+                            onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                        </td>
+                        <td className="px-1.5 py-1.5">
+                          <button onClick={() => removeRow(r.id)}
+                            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
+                        </td>
                       </tr>
                     ));
 
@@ -769,7 +755,31 @@ export function DailyEntryClient({
                         return s + 1 + i;
                       })()
                     }</td>
-                    <PendingRowCells r={r} />
+                    <td className="px-1.5 py-1.5 w-40">
+                      <SupplierAutocomplete value={r.supplierId} onChange={(id) => updateRow(r.id, "supplierId", id)} suppliers={suppliers} />
+                    </td>
+                    <td className="px-1.5 py-1.5">
+                      <input type="text" placeholder="รายละเอียด..." value={r.detail}
+                        onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-1.5 py-1.5 w-36">
+                      <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
+                    </td>
+                    <td className="px-1.5 py-1.5 w-24">
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
+                        onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-1.5 py-1.5 w-24">
+                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
+                        onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                    </td>
+                    <td className="px-1.5 py-1.5">
+                      <button onClick={() => removeRow(r.id)}
+                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
+                    </td>
                   </tr>
                 ))}
 
