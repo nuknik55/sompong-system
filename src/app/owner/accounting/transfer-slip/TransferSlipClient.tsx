@@ -47,7 +47,7 @@ export function TransferSlipClient({
 }) {
   const router = useRouter();
   const weekInputRef = useRef<HTMLInputElement>(null);
-  const [sourceAccount, setSourceAccount] = useState("SCB สมพงษ์");
+  const [sourceAccount, setSourceAccount] = useState("SCB สมพงศ์");
 
   // ── Sections ────────────────────────────────────────────────────
 
