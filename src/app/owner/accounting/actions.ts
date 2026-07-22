@@ -122,51 +122,6 @@ export async function updateCoaAccount(
   revalidatePath("/owner/accounting");
 }
 
-export async function reorderCoaGroup(code: string, direction: "up" | "down"): Promise<{ error?: string }> {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  // Get all group headers in current order
-  const { data: groups } = await supabase
-    .from("coa").select("code,sort_order").is("group_code", null).order("sort_order");
-  if (!groups) return { error: "ไม่พบข้อมูล" };
-
-  const idx = groups.findIndex((g) => g.code === code);
-  if (idx < 0) return { error: "ไม่พบหมวด" };
-  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= groups.length) return {};
-
-  // Swap in array
-  const newOrder = [...groups];
-  [newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
-
-  // Get all accounts (children) in current order
-  const { data: accounts } = await supabase
-    .from("coa").select("code,group_code,sort_order").not("group_code", "is", null).order("sort_order");
-
-  // Renumber everything: group 100, 200, 300… children 110, 120, 130…
-  const updates: { code: string; sort_order: number }[] = [];
-  let base = 100;
-  for (const g of newOrder) {
-    updates.push({ code: g.code, sort_order: base });
-    const children = (accounts ?? [])
-      .filter((a) => a.group_code === g.code)
-      .sort((a, b) => a.sort_order - b.sort_order);
-    children.forEach((c, i) => updates.push({ code: c.code, sort_order: base + 10 + i * 10 }));
-    base += 100;
-  }
-
-  for (const u of updates) {
-    const { error } = await supabase.from("coa").update({ sort_order: u.sort_order }).eq("code", u.code);
-    if (error) return { error: error.message };
-  }
-
-  revalidatePath("/owner/accounting/coa");
-  revalidatePath("/owner/accounting");
-  revalidatePath("/owner/accounting/daily");
-  return {};
-}
-
 export async function deleteCoaAccount(code: string): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
