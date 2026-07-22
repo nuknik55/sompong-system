@@ -228,6 +228,14 @@ export function DailyEntryClient({
   const [fixCost, setFixCost] = useState("40000");
   const counter = useRef(0);
   const dateInputRef = useRef<HTMLInputElement>(null);
+  const savedScrollRef = useRef(0);
+
+  // Restore scroll position after server refresh completes
+  useEffect(() => {
+    if (!isPending && savedScrollRef.current > 0) {
+      window.scrollTo({ top: savedScrollRef.current, behavior: "instant" });
+    }
+  }, [isPending]);
 
   useEffect(() => { setEntries(initialEntries); }, [initialEntries]);
   useEffect(() => {
@@ -352,6 +360,7 @@ export function DailyEntryClient({
     }));
 
     setError(null);
+    savedScrollRef.current = window.scrollY;
     startTransition(async () => {
       try {
         await Promise.all([
@@ -390,6 +399,7 @@ export function DailyEntryClient({
     const payMethod: "cash" | "transfer" = cash > 0 ? "cash" : "transfer";
     if (!editing.coaCode || amount <= 0) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }
     setError(null);
+    savedScrollRef.current = window.scrollY;
     startTransition(async () => {
       try {
         await updateExpenseEntry(editing.id, {
