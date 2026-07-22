@@ -194,41 +194,53 @@ export function TransferSlipClient({
 
   function PrintTable({ title, section, total }: { title: string; section: WeeklySupplierRow[]; total: number }) {
     if (!section.length) return null;
+    // Portrait A4 usable ≈ 186mm: name 52mm + 7×18mm(126mm) + total 20mm = 198mm → use 9px font + tight padding
     return (
-      <div style={{ marginBottom: "16px" }}>
-        <div style={{ fontWeight: 700, fontSize: "12px", marginBottom: "4px", borderBottom: "1px solid #999", paddingBottom: "2px" }}>{title}</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+      <div style={{ marginBottom: "10px" }}>
+        <div style={{ fontWeight: 700, fontSize: "10px", marginBottom: "2px", borderBottom: "1px solid #aaa", paddingBottom: "2px", letterSpacing: "0.02em" }}>{title}</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "9px" }}>
+          <colgroup>
+            <col style={{ width: "27%" }} />
+            {DAY_LABELS.map((_, i) => <col key={i} style={{ width: "9%" }} />)}
+            <col style={{ width: "10%" }} />
+          </colgroup>
           <thead>
-            <tr style={{ borderBottom: "1px solid #ddd", color: "#666" }}>
-              <th style={{ textAlign: "left", paddingBottom: "4px", width: "140px" }}>ชื่อซัพ</th>
+            <tr style={{ borderBottom: "1px solid #ccc", color: "#666" }}>
+              <th style={{ textAlign: "left", padding: "1px 3px 2px 0" }}>ซัพพลายเออร์</th>
               {DAY_LABELS.map((l, i) => (
-                <th key={i} style={{ textAlign: "right", paddingBottom: "4px", width: "60px" }}>
-                  {l}<br /><span style={{ fontSize: "9px", color: "#aaa" }}>{days[i]?.slice(5).replace("-", "/")}</span>
+                <th key={i} style={{ textAlign: "right", padding: "1px 2px 2px" }}>
+                  {l}<br />
+                  <span style={{ fontSize: "7.5px", color: "#bbb" }}>{days[i]?.slice(5).replace("-", "/")}</span>
                 </th>
               ))}
-              <th style={{ textAlign: "right", paddingBottom: "4px", width: "70px" }}>รวม</th>
-              <th style={{ textAlign: "left", paddingBottom: "4px", paddingLeft: "8px" }}>บัญชี</th>
+              <th style={{ textAlign: "right", padding: "1px 0 2px 2px" }}>รวม</th>
             </tr>
           </thead>
           <tbody>
-            {section.map((r) => (
-              <tr key={r.supplier.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                <td style={{ padding: "2px 4px 2px 0" }}>{r.supplier.name}</td>
-                {r.days.map((v, di) => (
-                  <td key={di} style={{ textAlign: "right", padding: "2px 4px", fontVariantNumeric: "tabular-nums" }}>
-                    {fmt(v) || ""}
+            {section.map((r) => {
+              const bankInfo = r.supplier.bank
+                ? `${r.supplier.bank} ${r.supplier.account_number ?? ""}`
+                : r.supplier.internal_account ?? "";
+              return (
+                <tr key={r.supplier.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <td style={{ padding: "2px 3px 2px 0", lineHeight: 1.3 }}>
+                    <div>{r.supplier.name}</div>
+                    {bankInfo && <div style={{ fontSize: "7.5px", color: "#888" }}>{bankInfo}</div>}
                   </td>
-                ))}
-                <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(r.total)}</td>
-                <td style={{ paddingLeft: "8px", fontSize: "10px", color: "#555" }}>
-                  {r.supplier.bank ? `${r.supplier.bank} ${r.supplier.account_number ?? ""}` : (r.supplier.internal_account ?? "")}
-                </td>
-              </tr>
-            ))}
-            <tr style={{ borderTop: "2px solid #ccc", fontWeight: 700 }}>
-              <td colSpan={8} style={{ textAlign: "right", padding: "3px 4px" }}>รวม</td>
-              <td style={{ textAlign: "right", padding: "3px 4px", fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</td>
-              <td />
+                  {r.days.map((v, di) => (
+                    <td key={di} style={{ textAlign: "right", padding: "2px", fontVariantNumeric: "tabular-nums" }}>
+                      {fmt(v) || ""}
+                    </td>
+                  ))}
+                  <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {fmt(r.total)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr style={{ borderTop: "1.5px solid #bbb", fontWeight: 700, backgroundColor: "#f5f5f5" }}>
+              <td colSpan={8} style={{ textAlign: "right", padding: "2px 2px" }}>รวม</td>
+              <td style={{ textAlign: "right", padding: "2px 0 2px 2px", fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</td>
             </tr>
           </tbody>
         </table>
@@ -243,27 +255,28 @@ export function TransferSlipClient({
           .no-print { display: none !important; }
           .print-only { display: block !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          @page { size: A4 landscape; margin: 10mm 12mm; }
+          @page { size: A4 portrait; margin: 10mm 12mm; }
         }
         .print-only { display: none; }
       `}</style>
 
       {/* ── Print layout ─────────────────────────────── */}
-      <div className="print-only" style={{ fontFamily: "Sarabun, TH SarabunNew, Arial, sans-serif" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px", borderBottom: "2px solid #333", paddingBottom: "6px" }}>
+      <div className="print-only" style={{ fontFamily: "Sarabun, TH SarabunNew, Arial, sans-serif", fontSize: "9.5px" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", borderBottom: "2px solid #333", paddingBottom: "5px" }}>
           <div>
-            <div style={{ fontSize: "16px", fontWeight: 700 }}>ใบโอนเงิน</div>
-            <div style={{ fontSize: "11px", color: "#555" }}>สัปดาห์ {weekLabel}</div>
+            <div style={{ fontSize: "15px", fontWeight: 700 }}>ใบโอนเงิน</div>
+            <div style={{ fontSize: "9.5px", color: "#555" }}>สัปดาห์ {weekLabel}</div>
           </div>
-          <div style={{ textAlign: "right", fontSize: "11px", color: "#555" }}>
-            <div>โอนวันอังคาร: {nextTuesday}</div>
+          <div style={{ textAlign: "right", fontSize: "9.5px", color: "#555" }}>
+            <div>โอนวันอังคาร: <strong>{nextTuesday}</strong></div>
             <div>บัญชีต้นทาง: {sourceAccount}</div>
           </div>
         </div>
         <PrintTable title="เครดิต (โอน)" section={sectionA} total={totalA} />
         <PrintTable title="เครดิต (จ่ายสด)" section={sectionB} total={totalB} />
         <PrintTable title="โอนทันที (ออกจากบัญชีร้าน)" section={sectionC} total={totalC} />
-        <div style={{ borderTop: "3px double #333", paddingTop: "6px", display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "14px" }}>
+        <div style={{ borderTop: "2px solid #333", paddingTop: "5px", display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "12px", marginTop: "4px" }}>
           <span>รวมทั้งสิ้น</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(grandTotal)} บาท</span>
         </div>
