@@ -10,6 +10,7 @@ import {
   updateExpenseEntry,
   type CoaAccount,
   type ExpenseEntry,
+  type Supplier,
 } from "../actions";
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ function shiftDate(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ── SearchableSelect ──────────────────────────────────────────────────
+// ── SearchableSelect (COA) ────────────────────────────────────────────
 
 function SearchableSelect({
   value,
@@ -51,9 +52,7 @@ function SearchableSelect({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-
   const selected = leafCoa.find((c) => c.code === value);
-
   const filtered = query.trim()
     ? leafCoa.filter(
         (c) =>
@@ -65,8 +64,7 @@ function SearchableSelect({
   useEffect(() => {
     const fn = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
+        setOpen(false); setQuery("");
       }
     };
     document.addEventListener("mousedown", fn);
@@ -77,7 +75,7 @@ function SearchableSelect({
     <div ref={wrapRef} className="relative">
       <input
         type="text"
-        placeholder="พิมพ์ค้นหาหมวด..."
+        placeholder="หมวด..."
         value={open ? query : (selected?.name ?? "")}
         onClick={() => { setOpen(true); setQuery(""); }}
         onFocus={() => { setOpen(true); setQuery(""); }}
@@ -85,27 +83,20 @@ function SearchableSelect({
         className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
       />
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-0.5 w-64 max-h-60 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl">
+        <div className="absolute left-0 top-full z-50 mt-0.5 w-56 max-h-60 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl">
           {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบ &ldquo;{query}&rdquo;</p>
+            <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบ</p>
           ) : (
             groups.map((g) => {
               const kids = filtered.filter((c) => c.group_code === g.code);
               if (!kids.length) return null;
               return (
                 <div key={g.code}>
-                  <div className="sticky top-0 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-500">
-                    {g.name}
-                  </div>
+                  <div className="sticky top-0 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-500">{g.name}</div>
                   {kids.map((c) => (
-                    <button
-                      key={c.code}
-                      type="button"
+                    <button key={c.code} type="button"
                       onMouseDown={() => { onChange(c.code); setOpen(false); setQuery(""); }}
-                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-blue-50 ${
-                        value === c.code ? "bg-blue-50 font-medium text-blue-700" : "text-neutral-700"
-                      }`}
-                    >
+                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-blue-50 ${value === c.code ? "bg-blue-50 font-medium text-blue-700" : "text-neutral-700"}`}>
                       {c.name}
                     </button>
                   ))}
@@ -119,20 +110,93 @@ function SearchableSelect({
   );
 }
 
+// ── SupplierAutocomplete ──────────────────────────────────────────────
+
+function SupplierAutocomplete({
+  value,
+  onChange,
+  suppliers,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  suppliers: Supplier[];
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = suppliers.find((s) => s.id === value);
+
+  const filtered = query.trim()
+    ? suppliers.filter(
+        (s) =>
+          s.name.toLowerCase().includes(query.toLowerCase()) ||
+          (s.description ?? "").toLowerCase().includes(query.toLowerCase())
+      )
+    : suppliers;
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false); setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          placeholder="ซัพ..."
+          value={open ? query : (selected?.name ?? "")}
+          onClick={() => { setOpen(true); setQuery(""); }}
+          onFocus={() => { setOpen(true); setQuery(""); }}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
+        />
+        {value && (
+          <button type="button" onMouseDown={() => { onChange(""); setQuery(""); }}
+            className="shrink-0 text-neutral-400 hover:text-neutral-700 text-xs px-1">✕</button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-0.5 w-64 max-h-56 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบ</p>
+          ) : (
+            filtered.map((s) => (
+              <button key={s.id} type="button"
+                onMouseDown={() => { onChange(s.id); setOpen(false); setQuery(""); }}
+                className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-blue-50 ${value === s.id ? "bg-blue-50 font-medium text-blue-700" : "text-neutral-700"}`}>
+                <span className="font-medium">{s.name}</span>
+                {s.description && <span className="ml-1 text-xs text-neutral-400">— {s.description}</span>}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────────────
 
 type PendingRow = {
   id: number;
-  note: string;
+  supplierId: string;
+  detail: string;
   coaCode: string;
   amountCash: string;
   amountTransfer: string;
-  insertAfter?: number; // insert after saved entry at this index; undefined = append at bottom
+  insertAfter?: number;
 };
 
 type EditState = {
   id: string;
-  note: string;
+  supplierId: string;
+  detail: string;
   coaCode: string;
   amountCash: string;
   amountTransfer: string;
@@ -145,11 +209,13 @@ export function DailyEntryClient({
   initialEntries,
   date,
   isOwner,
+  suppliers,
 }: {
   coa: CoaAccount[];
   initialEntries: ExpenseEntry[];
   date: string;
   isOwner: boolean;
+  suppliers: Supplier[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -164,7 +230,6 @@ export function DailyEntryClient({
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setEntries(initialEntries); }, [initialEntries]);
-
   useEffect(() => {
     const stored = localStorage.getItem("daily-fix-cost");
     if (stored !== null) setFixCost(stored);
@@ -173,11 +238,16 @@ export function DailyEntryClient({
   const leafCoa = coa.filter((c) => c.group_code !== null);
   const groups = coa.filter((c) => c.group_code === null);
 
-  // Print-grouped rows: group saved entries by note/coa_name
+  // Label for display/print: supplier name + detail
+  function entryLabel(e: ExpenseEntry): string {
+    const parts = [e.supplier_name, e.detail || e.note].filter(Boolean);
+    return parts.join(" — ") || "–";
+  }
+
   const printGroups = useMemo(() => {
     const map = new Map<string, { cash: number; transfer: number }>();
     for (const e of entries) {
-      const key = e.bill_ref?.trim() || e.note?.trim() || e.coa_name;
+      const key = e.bill_ref?.trim() || entryLabel(e);
       const prev = map.get(key) ?? { cash: 0, transfer: 0 };
       if (e.payment_method === "cash") map.set(key, { ...prev, cash: prev.cash + e.amount });
       else map.set(key, { ...prev, transfer: prev.transfer + e.amount });
@@ -210,14 +280,14 @@ export function DailyEntryClient({
   function addRow() {
     setPending((prev) => [
       ...prev,
-      { id: counter.current++, note: "", coaCode: "", amountCash: "", amountTransfer: "" },
+      { id: counter.current++, supplierId: "", detail: "", coaCode: "", amountCash: "", amountTransfer: "" },
     ]);
   }
 
   function insertRowAfter(afterIndex: number) {
     setPending((prev) => [
       ...prev,
-      { id: counter.current++, note: "", coaCode: "", amountCash: "", amountTransfer: "", insertAfter: afterIndex },
+      { id: counter.current++, supplierId: "", detail: "", coaCode: "", amountCash: "", amountTransfer: "", insertAfter: afterIndex },
     ]);
   }
 
@@ -230,7 +300,6 @@ export function DailyEntryClient({
   }
 
   function handleSave() {
-    // Build complete visual order: existing entries interleaved with pending rows
     type VisualItem = { kind: "saved"; id: string } | { kind: "pending"; row: PendingRow };
     const visual: VisualItem[] = [];
     for (let i = 0; i < entries.length; i++) {
@@ -243,29 +312,40 @@ export function DailyEntryClient({
       visual.push({ kind: "pending", row: r });
     }
 
-    // Assign sequential display_order to each item (1, 2, 3, ...)
-    const savedOrderMap = new Map<string, number>(); // existing entry id → display_order
-    const pendingOrderMap = new Map<number, number>(); // pending row id → display_order
+    const savedOrderMap = new Map<string, number>();
+    const pendingOrderMap = new Map<number, number>();
     visual.forEach((item, idx) => {
       const order = idx + 1;
       if (item.kind === "saved") savedOrderMap.set(item.id, order);
       else pendingOrderMap.set(item.row.id, order);
     });
 
-    // Build rows to insert
     const rows = pending.flatMap((r) => {
       if (!r.coaCode) return [];
       const cash = parseFloat(r.amountCash) || 0;
       const transfer = parseFloat(r.amountTransfer) || 0;
       const display_order = pendingOrderMap.get(r.id);
       const result = [];
-      if (cash > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: cash, note: r.note || undefined, payment_method: "cash" as const, display_order });
-      if (transfer > 0) result.push({ entry_date: date, coa_code: r.coaCode, amount: transfer, note: r.note || undefined, payment_method: "transfer" as const, display_order });
+      if (cash > 0) result.push({
+        entry_date: date, coa_code: r.coaCode, amount: cash,
+        note: r.detail || undefined,
+        payment_method: "cash" as const,
+        display_order,
+        supplier_id: r.supplierId || undefined,
+        detail: r.detail || undefined,
+      });
+      if (transfer > 0) result.push({
+        entry_date: date, coa_code: r.coaCode, amount: transfer,
+        note: r.detail || undefined,
+        payment_method: "transfer" as const,
+        display_order,
+        supplier_id: r.supplierId || undefined,
+        detail: r.detail || undefined,
+      });
       return result;
     });
     if (!rows.length) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }
 
-    // Build display_order updates for existing entries
     const displayOrderUpdates = entries.map((e) => ({
       id: e.id,
       display_order: savedOrderMap.get(e.id)!,
@@ -294,7 +374,8 @@ export function DailyEntryClient({
   function startEdit(e: ExpenseEntry) {
     setEditing({
       id: e.id,
-      note: e.note ?? "",
+      supplierId: e.supplier_id ?? "",
+      detail: e.detail ?? e.note ?? "",
       coaCode: e.coa_code,
       amountCash: e.payment_method === "cash" ? String(e.amount) : "",
       amountTransfer: e.payment_method === "transfer" ? String(e.amount) : "",
@@ -314,9 +395,11 @@ export function DailyEntryClient({
         await updateExpenseEntry(editing.id, {
           coa_code: editing.coaCode,
           amount,
-          note: editing.note || null,
+          note: editing.detail || null,
           bill_ref: null,
           payment_method: payMethod,
+          supplier_id: editing.supplierId || null,
+          detail: editing.detail || null,
         });
         setEditing(null);
         router.refresh();
@@ -352,7 +435,7 @@ export function DailyEntryClient({
       ["#", "รายละเอียด", "หมวดบัญชี", "เงินสด", "โอน"],
       ...entries.map((e, i) => [
         String(i + 1),
-        e.note ?? "",
+        entryLabel(e),
         e.coa_name,
         e.payment_method === "cash" ? String(e.amount) : "",
         e.payment_method === "transfer" ? String(e.amount) : "",
@@ -381,6 +464,44 @@ export function DailyEntryClient({
   const isToday = date === today;
   const isEmpty = entries.length === 0 && pending.length === 0;
 
+  // ── Shared row inputs ─────────────────────────────────────────────
+
+  function PendingRowCells({ r }: { r: PendingRow }) {
+    return (
+      <>
+        <td className="px-1.5 py-1.5 w-40">
+          <SupplierAutocomplete
+            value={r.supplierId}
+            onChange={(id) => updateRow(r.id, "supplierId", id)}
+            suppliers={suppliers}
+          />
+        </td>
+        <td className="px-1.5 py-1.5">
+          <input type="text" placeholder="รายละเอียด..." value={r.detail}
+            onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+        </td>
+        <td className="px-1.5 py-1.5 w-36">
+          <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
+        </td>
+        <td className="px-1.5 py-1.5 w-24">
+          <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
+            onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+        </td>
+        <td className="px-1.5 py-1.5 w-24">
+          <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
+            onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+        </td>
+        <td className="px-1.5 py-1.5">
+          <button onClick={() => removeRow(r.id)}
+            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
+        </td>
+      </>
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────────────
 
   return (
@@ -397,71 +518,49 @@ export function DailyEntryClient({
       <div className="space-y-4">
         {/* Date strip */}
         <div className="flex flex-wrap items-center gap-2 no-print">
-          <a
-            href={`/owner/accounting/daily?date=${shiftDate(date, -1)}`}
-            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-          >
+          <a href={`/owner/accounting/daily?date=${shiftDate(date, -1)}`}
+            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
             ← วันก่อน
           </a>
 
-          <button
-            type="button"
+          <button type="button"
             onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
-            className="relative flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-          >
+            className="relative flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
             <svg className="h-4 w-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <path d="M16 2v4M8 2v4M3 10h18"/>
             </svg>
             {toThaiDate(date)}
-            <input
-              ref={dateInputRef}
-              type="date"
-              value={date}
-              max={today}
+            <input ref={dateInputRef} type="date" value={date} max={today}
               onChange={(e) => router.push(`/owner/accounting/daily?date=${e.target.value}`)}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full"
-              tabIndex={-1}
-            />
+              className="absolute inset-0 opacity-0 cursor-pointer w-full" tabIndex={-1} />
           </button>
 
           {!isToday && (
-            <a
-              href={`/owner/accounting/daily?date=${shiftDate(date, 1)}`}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-            >
+            <a href={`/owner/accounting/daily?date=${shiftDate(date, 1)}`}
+              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
               วันถัดไป →
             </a>
           )}
 
           <div className="ml-auto flex gap-2">
             {selectedIds.size > 0 && (
-              <a
-                href={`/owner/accounting/daily/receipt?date=${date}&ids=${[...selectedIds].join(",")}`}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-              >
+              <a href={`/owner/accounting/daily/receipt?date=${date}&ids=${[...selectedIds].join(",")}`}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
                 สร้างใบรับรอง ({selectedIds.size})
               </a>
             )}
-            <button
-              onClick={exportCsv}
-              disabled={entries.length === 0}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40"
-            >
+            <button onClick={exportCsv} disabled={entries.length === 0}
+              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40">
               ดาวน์โหลด Excel
             </button>
-            <button
-              onClick={() => window.print()}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-            >
+            <button onClick={() => window.print()}
+              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
               พิมพ์
             </button>
             {pending.length > 0 && (
-              <button
-                onClick={handleSave}
-                disabled={isPending}
-                className="rounded-lg bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50"
-              >
+              <button onClick={handleSave} disabled={isPending}
+                className="rounded-lg bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
                 {isPending ? "กำลังบันทึก..." : `บันทึก (${pending.length} รายการ)`}
               </button>
             )}
@@ -470,9 +569,7 @@ export function DailyEntryClient({
 
         {/* ── Print-only section ──────────────────────────────────── */}
         <div className="print-show">
-          <div className="mb-4 text-lg font-semibold">
-            รายการค่าใช้จ่ายประจำวัน — {toThaiDate(date)}
-          </div>
+          <div className="mb-4 text-lg font-semibold">รายการค่าใช้จ่ายประจำวัน — {toThaiDate(date)}</div>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b-2 border-neutral-400">
@@ -517,33 +614,29 @@ export function DailyEntryClient({
           </table>
         </div>
 
-        {/* ── Regular table (hidden in print) ─────────────────────── */}
+        {/* ── Main table ──────────────────────────────────────────── */}
         <div className="no-print rounded-xl border border-neutral-200 bg-white overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-neutral-50 border-b border-neutral-200 text-xs text-neutral-500">
                   <th className="px-2 py-2.5 w-8">
-                    <input
-                      type="checkbox"
+                    <input type="checkbox"
                       checked={entries.length > 0 && selectedIds.size === entries.length}
                       ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < entries.length; }}
-                      onChange={toggleAll}
-                      className="cursor-pointer"
-                      title="เลือกทั้งหมด"
-                    />
+                      onChange={toggleAll} className="cursor-pointer" title="เลือกทั้งหมด" />
                   </th>
                   <th className="px-3 py-2.5 text-left w-8">#</th>
+                  <th className="px-3 py-2.5 text-left w-40">ซัพ</th>
                   <th className="px-3 py-2.5 text-left">รายละเอียด</th>
-                  <th className="px-3 py-2.5 text-left w-44">หมวดบัญชี</th>
-                  <th className="px-3 py-2.5 text-right w-28">เงินสด</th>
-                  <th className="px-3 py-2.5 text-right w-28">โอน</th>
+                  <th className="px-3 py-2.5 text-left w-36">หมวดบัญชี</th>
+                  <th className="px-3 py-2.5 text-right w-24">เงินสด</th>
+                  <th className="px-3 py-2.5 text-right w-24">โอน</th>
                   <th className="px-3 py-2.5 w-20"></th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  // Pre-compute sequential row numbers for all rows (saved + pending interleaved)
                   const savedNums: number[] = [];
                   let seq = 0;
                   for (let i = 0; i < entries.length; i++) {
@@ -551,7 +644,6 @@ export function DailyEntryClient({
                     savedNums.push(seq);
                     seq += pending.filter((r) => r.insertAfter === i).length;
                   }
-                  const bottomStart = seq + 1;
 
                   return entries.flatMap((e, i) => {
                     const pendingHere = pending.filter((r) => r.insertAfter === i);
@@ -565,25 +657,33 @@ export function DailyEntryClient({
                           <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
                         </td>
                         <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
-                        <td className="px-2 py-1.5">
-                          <input type="text" value={editing.note}
-                            onChange={(ev) => setEditing({ ...editing, note: ev.target.value })}
-                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" />
+                        <td className="px-1.5 py-1.5 w-40">
+                          <SupplierAutocomplete value={editing.supplierId}
+                            onChange={(id) => setEditing({ ...editing, supplierId: id })}
+                            suppliers={suppliers} />
                         </td>
-                        <td className="px-2 py-1.5">
-                          <SearchableSelect value={editing.coaCode} onChange={(code) => setEditing({ ...editing, coaCode: code })} leafCoa={leafCoa} groups={groups} />
+                        <td className="px-1.5 py-1.5">
+                          <input type="text" value={editing.detail}
+                            onChange={(ev) => setEditing({ ...editing, detail: ev.target.value })}
+                            placeholder="รายละเอียด..."
+                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" autoFocus />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-1.5 py-1.5">
+                          <SearchableSelect value={editing.coaCode}
+                            onChange={(code) => setEditing({ ...editing, coaCode: code })}
+                            leafCoa={leafCoa} groups={groups} />
+                        </td>
+                        <td className="px-1.5 py-1.5">
                           <input type="text" inputMode="decimal" placeholder="0" value={editing.amountCash}
                             onChange={(ev) => setEditing({ ...editing, amountCash: ev.target.value.replace(/[^0-9.]/g, "") })}
                             className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-1.5 py-1.5">
                           <input type="text" inputMode="decimal" placeholder="0" value={editing.amountTransfer}
                             onChange={(ev) => setEditing({ ...editing, amountTransfer: ev.target.value.replace(/[^0-9.]/g, "") })}
                             className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-1.5 py-1.5">
                           <div className="flex gap-1">
                             <button onClick={handleUpdate} disabled={isPending}
                               className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">บันทึก</button>
@@ -598,7 +698,12 @@ export function DailyEntryClient({
                           <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
                         </td>
                         <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
-                        <td className="px-3 py-2 text-neutral-700 text-sm">{e.note || "–"}</td>
+                        <td className="px-3 py-2 text-xs text-neutral-500 truncate max-w-[10rem]">
+                          {e.supplier_name ? (
+                            <span className="font-medium text-neutral-700">{e.supplier_name}</span>
+                          ) : "–"}
+                        </td>
+                        <td className="px-3 py-2 text-neutral-700 text-sm">{e.detail || e.note || "–"}</td>
                         <td className="px-3 py-2 text-xs">
                           <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
                           <span className="text-neutral-600">{e.coa_name}</span>
@@ -618,36 +723,13 @@ export function DailyEntryClient({
                       <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                         <td className="px-2 py-2" />
                         <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum + 1 + pi}</td>
-                        <td className="px-2 py-1.5">
-                          <input type="text" placeholder="รายละเอียด..." value={r.note}
-                            onChange={(ev) => updateRow(r.id, "note", ev.target.value)}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
-                            onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
-                            onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <button onClick={() => removeRow(r.id)}
-                            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">
-                            ลบ
-                          </button>
-                        </td>
+                        <PendingRowCells r={r} />
                       </tr>
                     ));
 
                     const insertStrip = !isLast ? (
                       <tr key={`ins-${i}`} className="group/ins">
-                        <td colSpan={7} className="px-0 py-0">
+                        <td colSpan={8} className="px-0 py-0">
                           <div className="relative flex items-center justify-center" style={{ height: "20px" }}>
                             <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-blue-300 transition-colors" />
                             <button type="button" onClick={() => insertRowAfter(i)} title="แทรกรายการ"
@@ -663,7 +745,7 @@ export function DailyEntryClient({
                   });
                 })()}
 
-                {/* Bottom pending rows (no insertAfter) */}
+                {/* Bottom pending rows */}
                 {pending.filter((r) => r.insertAfter === undefined).map((r, i) => (
                   <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
                     <td className="px-2 py-2" />
@@ -677,40 +759,14 @@ export function DailyEntryClient({
                         return s + 1 + i;
                       })()
                     }</td>
-                    <td className="px-2 py-1.5">
-                      <input type="text" placeholder="รายละเอียด..." value={r.note}
-                        onChange={(ev) => updateRow(r.id, "note", ev.target.value)}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
-                        onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
-                        onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <button onClick={() => removeRow(r.id)}
-                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">
-                        ลบ
-                      </button>
-                    </td>
+                    <PendingRowCells r={r} />
                   </tr>
                 ))}
 
                 {/* Add row */}
                 <tr className="border-t border-neutral-100">
-                  <td colSpan={7} className="px-3 py-2.5">
-                    <button
-                      onClick={addRow}
-                      className="text-sm font-medium text-green-700 hover:text-green-800"
-                    >
+                  <td colSpan={8} className="px-3 py-2.5">
+                    <button onClick={addRow} className="text-sm font-medium text-green-700 hover:text-green-800">
                       + เพิ่มรายการ
                     </button>
                   </td>
@@ -720,13 +776,13 @@ export function DailyEntryClient({
                 {!isEmpty && (
                   <>
                     <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold text-sm">
-                      <td colSpan={4} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
+                      <td colSpan={5} className="px-3 py-2.5 text-right text-neutral-600">รวมทั้งสิ้น</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedCash + pendCash) || "–"}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmt(savedTransfer + pendTransfer) || "–"}</td>
                       <td></td>
                     </tr>
                     <tr className="border-t border-neutral-200 bg-neutral-100 text-xs text-neutral-500">
-                      <td colSpan={4} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
+                      <td colSpan={5} className="px-3 py-2 text-right">รวมเงินสด + โอน</td>
                       <td colSpan={2} className="px-3 py-2 text-right tabular-nums font-semibold text-neutral-700">
                         {fmt(savedCash + pendCash + savedTransfer + pendTransfer)}
                       </td>
@@ -739,21 +795,17 @@ export function DailyEntryClient({
           </div>
         </div>
 
-        {/* Fix cost input - screen only */}
+        {/* Fix cost */}
         {!isEmpty && (
           <div className="no-print flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
             <span className="font-medium text-neutral-700">Fix cost</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={fixCost}
+            <input type="text" inputMode="numeric" value={fixCost}
               onChange={(e) => {
                 const raw = e.target.value.replace(/[^0-9]/g, "");
                 setFixCost(raw);
                 localStorage.setItem("daily-fix-cost", raw);
               }}
-              className="w-32 rounded border border-neutral-300 bg-white px-3 py-1.5 text-right tabular-nums focus:border-blue-400 focus:outline-none"
-            />
+              className="w-32 rounded border border-neutral-300 bg-white px-3 py-1.5 text-right tabular-nums focus:border-blue-400 focus:outline-none" />
             <span className="text-neutral-400">บาท</span>
             <span className="ml-auto text-neutral-500">
               รวมสุทธิ:{" "}
@@ -762,19 +814,14 @@ export function DailyEntryClient({
           </div>
         )}
 
-        {/* Messages */}
         {error && <p className="text-sm text-red-600 no-print">{error}</p>}
         {saveMsg && <p className="text-sm font-medium text-green-700 no-print">{saveMsg}</p>}
 
-        {/* Bottom save */}
         {pending.length > 0 && (
           <div className="flex items-center justify-between no-print">
             <p className="text-xs text-blue-600">แถวสีฟ้า = ยังไม่ได้บันทึก</p>
-            <button
-              onClick={handleSave}
-              disabled={isPending}
-              className="rounded-lg bg-green-700 px-6 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50"
-            >
+            <button onClick={handleSave} disabled={isPending}
+              className="rounded-lg bg-green-700 px-6 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
               {isPending ? "กำลังบันทึก..." : `บันทึก ${pending.length} รายการ`}
             </button>
           </div>

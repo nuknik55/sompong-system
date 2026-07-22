@@ -26,6 +26,28 @@ export type ExpenseEntry = {
   payment_method: "cash" | "transfer";
   created_at: string;
   display_order: number | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  detail: string | null;
+};
+
+export type Supplier = {
+  id: string;
+  name: string;
+  bank: string | null;
+  account_number: string | null;
+  description: string | null;
+  credit: boolean;
+  payment_mode: "transfer" | "cash";
+  internal_account: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type WeeklySupplierRow = {
+  supplier: Supplier;
+  days: (number | null)[];
+  total: number;
 };
 
 export type RevenueRow = {
@@ -46,6 +68,71 @@ export type MonthlySummaryGroup = {
     pct_of_revenue: number | null;
   }[];
 };
+
+// ── Suppliers ────────────────────────────────────────
+
+export async function getSuppliers(): Promise<Supplier[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("suppliers")
+    .select("id,name,bank,account_number,description,credit,payment_mode,internal_account,sort_order,is_active")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Supplier[];
+}
+
+export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
+  rows: WeeklySupplierRow[];
+  days: string[];
+}> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const days: string[] = [];
+  const start = new Date(tuesdayDate);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  const [suppliersRes, entriesRes] = await Promise.all([
+    supabase.from("suppliers").select("*").eq("is_active", true).order("sort_order"),
+    supabase
+      .from("expense_entries")
+      .select("supplier_id,entry_date,amount")
+      .gte("entry_date", days[0]!)
+      .lte("entry_date", days[6]!)
+      .not("supplier_id", "is", null),
+  ]);
+
+  if (suppliersRes.error) throw new Error(suppliersRes.error.message);
+  if (entriesRes.error) throw new Error(entriesRes.error.message);
+
+  const allSuppliers = (suppliersRes.data ?? []) as Supplier[];
+  const entries = entriesRes.data ?? [];
+
+  const supplierDayMap = new Map<string, number[]>();
+  for (const e of entries) {
+    if (!e.supplier_id) continue;
+    if (!supplierDayMap.has(e.supplier_id)) {
+      supplierDayMap.set(e.supplier_id, [0, 0, 0, 0, 0, 0, 0]);
+    }
+    const idx = days.indexOf(e.entry_date);
+    if (idx === -1) continue;
+    supplierDayMap.get(e.supplier_id)![idx] += e.amount ?? 0;
+  }
+
+  const rows: WeeklySupplierRow[] = allSuppliers.map((s) => {
+    const raw = supplierDayMap.get(s.id) ?? [0, 0, 0, 0, 0, 0, 0];
+    const total = raw.reduce((sum, v) => sum + v, 0);
+    return { supplier: s, days: raw.map((v) => (v === 0 ? null : v)), total };
+  });
+
+  return { rows, days };
+}
 
 // ── COA ─────────────────────────────────────────────
 
@@ -182,7 +269,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
 
   const { data, error } = await supabase
     .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
+    .select("id,entry_date,coa_code,amount,note,detail,bill_ref,payment_method,created_at,display_order,supplier_id,coa(name,group_name,is_sensitive),suppliers(name)")
     .eq("entry_date", date)
     .order("display_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
@@ -193,7 +280,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
     .map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
-      const row = r as unknown as { bill_ref: string | null; display_order: number | null };
+      const row = r as unknown as { bill_ref: string | null; display_order: number | null; supplier_id: string | null; detail: string | null; suppliers: { name: string } | null };
       return {
         id: r.id,
         entry_date: r.entry_date,
@@ -206,6 +293,9 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
         display_order: row.display_order ?? null,
+        supplier_id: row.supplier_id ?? null,
+        supplier_name: row.suppliers?.name ?? null,
+        detail: row.detail ?? null,
       };
     });
 }
@@ -241,6 +331,9 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
         display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
+        supplier_id: null,
+        supplier_name: null,
+        detail: null,
       };
     });
 }
@@ -281,6 +374,8 @@ export async function updateExpenseEntry(
     note: string | null;
     bill_ref: string | null;
     payment_method: "cash" | "transfer";
+    supplier_id?: string | null;
+    detail?: string | null;
   }
 ): Promise<void> {
   const profile = await requireAdmin();
@@ -293,7 +388,15 @@ export async function updateExpenseEntry(
 
   const { error } = await supabase
     .from("expense_entries")
-    .update({ coa_code: data.coa_code, amount: data.amount, note: data.note, bill_ref: data.bill_ref, payment_method: data.payment_method })
+    .update({
+      coa_code: data.coa_code,
+      amount: data.amount,
+      note: data.note,
+      bill_ref: data.bill_ref,
+      payment_method: data.payment_method,
+      supplier_id: data.supplier_id ?? null,
+      detail: data.detail ?? null,
+    })
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");
@@ -334,6 +437,9 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
         payment_method: r.payment_method as "cash" | "transfer",
         created_at: r.created_at,
         display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
+        supplier_id: null,
+        supplier_name: null,
+        detail: null,
       };
     });
 }
@@ -347,6 +453,8 @@ export async function bulkInsertEntries(
     bill_ref?: string;
     payment_method: "cash" | "transfer";
     display_order?: number;
+    supplier_id?: string;
+    detail?: string;
   }[]
 ): Promise<number> {
   const profile = await requireAdmin();
@@ -359,6 +467,8 @@ export async function bulkInsertEntries(
     bill_ref: e.bill_ref || null,
     payment_method: e.payment_method,
     created_by: profile.id,
+    supplier_id: e.supplier_id || null,
+    detail: e.detail || null,
     ...(e.display_order != null ? { display_order: e.display_order } : {}),
   }));
   const { error } = await supabase.from("expense_entries").insert(rows);
