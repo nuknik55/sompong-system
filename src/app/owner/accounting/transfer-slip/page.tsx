@@ -21,7 +21,7 @@ export default async function TransferSlipPage({
   const { week: rawWeek } = await searchParams;
   const tuesday = rawWeek?.match(/^\d{4}-\d{2}-\d{2}$/) ? rawWeek : prevTuesday();
 
-  const { rows, days } = await getWeeklyTransferData(tuesday);
+  const { rows, days, unlinkedCount } = await getWeeklyTransferData(tuesday);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
@@ -33,7 +33,7 @@ export default async function TransferSlipPage({
         </div>
       </div>
 
-      <TransferSlipClient tuesday={tuesday} rows={rows} days={days} />
+      <TransferSlipClient tuesday={tuesday} rows={rows} days={days} unlinkedCount={unlinkedCount} />
     </div>
   );
 }

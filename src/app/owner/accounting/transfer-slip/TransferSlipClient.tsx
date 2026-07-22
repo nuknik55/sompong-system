@@ -38,10 +38,12 @@ export function TransferSlipClient({
   tuesday,
   rows,
   days,
+  unlinkedCount,
 }: {
   tuesday: string;
   rows: WeeklySupplierRow[];
   days: string[];
+  unlinkedCount: number;
 }) {
   const router = useRouter();
   const weekInputRef = useRef<HTMLInputElement>(null);
@@ -314,9 +316,19 @@ export function TransferSlipClient({
         </div>
 
         {rows.every((r) => r.total === 0) ? (
-          <p className="py-10 text-center text-sm text-neutral-400">
-            ไม่มีรายการสัปดาห์นี้ — ลองเลือกสัปดาห์อื่น หรือตรวจสอบว่าได้เลือกซัพพลายเออร์ในรายการรายวันแล้ว
-          </p>
+          <div className="rounded-xl border border-neutral-200 bg-white px-6 py-10 text-center space-y-2">
+            <p className="text-sm text-neutral-500 font-medium">ไม่มีรายการที่ผูกซัพพลายเออร์ในสัปดาห์นี้</p>
+            {unlinkedCount > 0 ? (
+              <p className="text-sm text-amber-600">
+                พบ <strong>{unlinkedCount}</strong> รายการในสัปดาห์นี้ที่ยังไม่ได้เลือกซัพ —{" "}
+                <a href={`/owner/accounting/daily?date=${days[0]}`} className="underline hover:text-amber-800">
+                  ไปแก้ไขในหน้าบันทึกรายวัน
+                </a>
+              </p>
+            ) : (
+              <p className="text-xs text-neutral-400">ยังไม่มีรายการในสัปดาห์นี้เลย</p>
+            )}
+          </div>
         ) : (
           <div className="space-y-4">
             <SectionTable title="เครดิต (โอน)" section={sectionA} total={totalA}

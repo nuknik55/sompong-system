@@ -28,6 +28,10 @@ export default async function AccountingPage({
           <span className="text-neutral-200">|</span>
           <Link href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-800">สรุปรายเดือน</Link>
           <span className="text-neutral-200">|</span>
+          <Link href="/owner/accounting/transfer-slip" className="hover:text-neutral-800">ใบโอนเงิน</Link>
+          <span className="text-neutral-200">|</span>
+          <Link href="/owner/accounting/suppliers" className="hover:text-neutral-800">ซัพพลายเออร์</Link>
+          <span className="text-neutral-200">|</span>
           <Link href="/owner/accounting/import" className="hover:text-neutral-800">นำเข้าข้อมูล</Link>
           <span className="text-neutral-200">|</span>
           <Link href="/owner/accounting/coa" className="hover:text-neutral-800">จัดการหมวด</Link>

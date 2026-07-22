@@ -140,6 +140,7 @@ export async function reorderSupplier(id: string, direction: "up" | "down", allI
 export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
   rows: WeeklySupplierRow[];
   days: string[];
+  unlinkedCount: number;
 }> {
   await requireAdmin();
   const supabase = await createClient();
@@ -152,7 +153,7 @@ export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
     days.push(d.toISOString().slice(0, 10));
   }
 
-  const [suppliersRes, entriesRes] = await Promise.all([
+  const [suppliersRes, linkedRes, unlinkedRes] = await Promise.all([
     supabase.from("suppliers").select("*").eq("is_active", true).order("sort_order"),
     supabase
       .from("expense_entries")
@@ -160,13 +161,20 @@ export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
       .gte("entry_date", days[0]!)
       .lte("entry_date", days[6]!)
       .not("supplier_id", "is", null),
+    supabase
+      .from("expense_entries")
+      .select("id", { count: "exact", head: true })
+      .gte("entry_date", days[0]!)
+      .lte("entry_date", days[6]!)
+      .is("supplier_id", null),
   ]);
 
   if (suppliersRes.error) throw new Error(suppliersRes.error.message);
-  if (entriesRes.error) throw new Error(entriesRes.error.message);
+  if (linkedRes.error) throw new Error(linkedRes.error.message);
 
   const allSuppliers = (suppliersRes.data ?? []) as Supplier[];
-  const entries = entriesRes.data ?? [];
+  const entries = linkedRes.data ?? [];
+  const unlinkedCount = unlinkedRes.count ?? 0;
 
   const supplierDayMap = new Map<string, number[]>();
   for (const e of entries) {
@@ -185,7 +193,7 @@ export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
     return { supplier: s, days: raw.map((v) => (v === 0 ? null : v)), total };
   });
 
-  return { rows, days };
+  return { rows, days, unlinkedCount };
 }
 
 // ── COA ─────────────────────────────────────────────
