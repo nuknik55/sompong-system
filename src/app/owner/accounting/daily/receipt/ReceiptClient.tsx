@@ -170,14 +170,14 @@ export function ReceiptClient({
       </div>
 
       {/* Receipt */}
-      <div className="receipt-wrap px-6 py-8" style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.7", color: "#000" }}>
+      <div className="receipt-wrap px-6 py-8" style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "18px", lineHeight: "1.8", color: "#000" }}>
 
         {/* Title */}
-        <div style={{ textAlign: "center", marginBottom: "6px" }}>
-          <div style={{ fontSize: "20px", fontWeight: "bold", letterSpacing: "0.5px" }}>
+        <div style={{ textAlign: "center", marginBottom: "8px" }}>
+          <div style={{ fontSize: "26px", fontWeight: "bold", letterSpacing: "0.5px" }}>
             ใบรับรองแทนใบเสร็จรับเงิน
           </div>
-          <div style={{ fontSize: "15px" }}>
+          <div style={{ fontSize: "18px" }}>
             <input
               className="editable"
               value={companyName}
@@ -192,16 +192,16 @@ export function ReceiptClient({
         <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "10px" }}>
           <thead>
             <tr>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "center", width: "16%", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "center", width: "16%", fontWeight: "bold" }}>
                 วัน เดือน ปี
               </th>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "center", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "center", fontWeight: "bold" }}>
                 รายละเอียดรายจ่าย
               </th>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "center", width: "16%", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "center", width: "16%", fontWeight: "bold" }}>
                 จำนวน
               </th>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "center", width: "14%", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "center", width: "14%", fontWeight: "bold" }}>
                 หมายเหตุ
               </th>
             </tr>
@@ -209,16 +209,16 @@ export function ReceiptClient({
           <tbody>
             {receiptRows.map((row) => (
               <tr key={row.key}>
-                <td style={{ border: "1px solid #333", padding: "5px 10px", textAlign: "center" }}>
+                <td style={{ border: "1px solid #333", padding: "7px 12px", textAlign: "center" }}>
                   {toThaiDateShort(row.date)}
                 </td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px" }}>
+                <td style={{ border: "1px solid #333", padding: "7px 12px" }}>
                   {row.label}
                 </td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <td style={{ border: "1px solid #333", padding: "7px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmt(row.amount)}
                 </td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px" }}>
+                <td style={{ border: "1px solid #333", padding: "7px 12px" }}>
                   <input
                     className="editable"
                     value={rowNotes[row.key] ?? ""}
@@ -231,20 +231,20 @@ export function ReceiptClient({
             ))}
             {Array.from({ length: blankCount }).map((_, i) => (
               <tr key={`blank-${i}`}>
-                <td style={{ border: "1px solid #333", padding: "5px 10px", height: "30px" }}>&nbsp;</td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px" }}>&nbsp;</td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px" }}>&nbsp;</td>
-                <td style={{ border: "1px solid #333", padding: "5px 10px" }}>&nbsp;</td>
+                <td style={{ border: "1px solid #333", padding: "7px 12px", height: "40px" }}>&nbsp;</td>
+                <td style={{ border: "1px solid #333", padding: "7px 12px" }}>&nbsp;</td>
+                <td style={{ border: "1px solid #333", padding: "7px 12px" }}>&nbsp;</td>
+                <td style={{ border: "1px solid #333", padding: "7px 12px" }}>&nbsp;</td>
               </tr>
             ))}
             <tr>
-              <td colSpan={2} style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "center", fontWeight: "bold" }}>
+              <td colSpan={2} style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "center", fontWeight: "bold" }}>
                 รวม
               </td>
-              <td style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "right", fontWeight: "bold", fontVariantNumeric: "tabular-nums" }}>
+              <td style={{ border: "1px solid #333", padding: "8px 12px", textAlign: "right", fontWeight: "bold", fontVariantNumeric: "tabular-nums" }}>
                 {fmt(total)}
               </td>
-              <td style={{ border: "1px solid #333", padding: "6px 10px" }}>&nbsp;</td>
+              <td style={{ border: "1px solid #333", padding: "8px 12px" }}>&nbsp;</td>
             </tr>
           </tbody>
         </table>
