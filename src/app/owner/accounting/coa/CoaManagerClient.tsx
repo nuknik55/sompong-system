@@ -8,6 +8,7 @@ import {
   addCoaAccount,
   updateCoaAccount,
   deleteCoaAccount,
+  reorderCoaGroup,
   type CoaAccount,
 } from "../actions";
 
@@ -24,8 +25,9 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const groups = coa.filter((c) => c.group_code === null);
-  const leaves = coa.filter((c) => c.group_code !== null);
+  const [coaList, setCoaList] = useState(coa);
+  const groups = coaList.filter((c) => c.group_code === null);
+  const leaves = coaList.filter((c) => c.group_code !== null);
 
   function flash(m: string) {
     setMsg(m);
@@ -89,6 +91,36 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "เพิ่มไม่สำเร็จ");
+      }
+    });
+  }
+
+  // ── Reorder group ───────────────────────────────────
+  function handleReorder(code: string, direction: "up" | "down") {
+    // Optimistic: reorder locally first
+    const groupsOnly = coaList.filter((c) => c.group_code === null);
+    const idx = groupsOnly.findIndex((g) => g.code === code);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= groupsOnly.length) return;
+
+    const swapped = [...groupsOnly];
+    [swapped[idx], swapped[swapIdx]] = [swapped[swapIdx], swapped[idx]];
+    const newCodes = swapped.map((g) => g.code);
+    setCoaList((prev) => {
+      const grouped: CoaAccount[] = [];
+      for (const gc of newCodes) {
+        const g = prev.find((c) => c.code === gc)!;
+        grouped.push(g);
+        prev.filter((c) => c.group_code === gc).forEach((c) => grouped.push(c));
+      }
+      return grouped;
+    });
+
+    startTransition(async () => {
+      const result = await reorderCoaGroup(code, direction);
+      if (result?.error) {
+        setError(result.error);
+        router.refresh(); // revert on error
       }
     });
   }
@@ -172,6 +204,20 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                   </>
                 ) : (
                   <>
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        onClick={() => handleReorder(g.code, "up")}
+                        disabled={isPending || groups.indexOf(g) === 0}
+                        className="text-neutral-300 hover:text-neutral-600 disabled:opacity-20 leading-none text-xs"
+                        title="เลื่อนขึ้น"
+                      >▲</button>
+                      <button
+                        onClick={() => handleReorder(g.code, "down")}
+                        disabled={isPending || groups.indexOf(g) === groups.length - 1}
+                        className="text-neutral-300 hover:text-neutral-600 disabled:opacity-20 leading-none text-xs"
+                        title="เลื่อนลง"
+                      >▼</button>
+                    </div>
                     <span className="text-xs font-mono text-neutral-400 w-12">{g.code}</span>
                     <span className="flex-1 text-sm font-semibold text-neutral-800">{g.name}</span>
                     {g.target_pct != null && (
