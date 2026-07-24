@@ -38,7 +38,8 @@ const OWNER_NAV: Omit<NavItem, "badge">[] = [
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
   { href: "/owner/approve", label: "อนุมัติ", exact: true, icon: <CheckSquare size={16} /> },
   { href: "/owner/accounting", label: "บัญชี", exact: false, icon: <BookText size={16} /> },
-  { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
+  // HR module hidden — uncomment when ready
+  // { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
 ];
 
 const ADMIN_NAV: Omit<NavItem, "badge">[] = [
@@ -51,7 +52,8 @@ const ADMIN_NAV: Omit<NavItem, "badge">[] = [
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
   { href: "/owner/approve", label: "อนุมัติ", exact: true, icon: <CheckSquare size={16} /> },
   { href: "/owner/accounting", label: "บัญชี", exact: false, icon: <BookText size={16} /> },
-  { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
+  // HR module hidden — uncomment when ready
+  // { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
 ];
 
 const EDITOR_NAV: Omit<NavItem, "badge">[] = [
