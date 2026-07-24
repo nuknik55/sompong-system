@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, type Role } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { displayIdentity } from "@/lib/identity";
@@ -18,7 +18,7 @@ export default async function OwnerTeamPage() {
   const users = (profiles ?? []).map((p) => ({
     id: p.id,
     full_name: p.full_name,
-    role: p.role as "owner" | "admin" | "editor" | "staff",
+    role: p.role as Role,
     username: displayIdentity(emailById.get(p.id) ?? "-"),
   }));
 
