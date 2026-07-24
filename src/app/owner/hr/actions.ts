@@ -21,10 +21,8 @@ export type Employee = {
   department_id: string | null;
   department_name: string | null;
   position: string | null;
-  employment_type: "monthly" | "daily" | "hourly" | "parttime" | "parttime_regular";
+  employment_type: "full_time" | "part_time" | "contract";
   base_salary: number;
-  daily_rate: number;
-  hourly_rate: number;
   position_allowance: number;
   hire_date: string | null;
   weekly_day_off: string | null;
@@ -157,7 +155,7 @@ export async function getEmployees(): Promise<Employee[]> {
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, daily_rate, hourly_rate, position_allowance,
+      base_salary, position_allowance,
       hire_date, weekly_day_off, citizenship_type, is_active,
       departments(name)
     `)
@@ -176,7 +174,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, daily_rate, hourly_rate, position_allowance,
+      base_salary, position_allowance,
       hire_date, weekly_day_off, citizenship_type, is_active,
       departments(name)
     `)
@@ -199,8 +197,6 @@ export async function upsertEmployee(e: {
   position: string;
   employment_type: string;
   base_salary: number;
-  daily_rate: number;
-  hourly_rate: number;
   position_allowance: number;
   hire_date: string;
   weekly_day_off: string;
@@ -218,8 +214,6 @@ export async function upsertEmployee(e: {
     position: e.position || null,
     employment_type: e.employment_type,
     base_salary: e.base_salary,
-    daily_rate: e.daily_rate,
-    hourly_rate: e.hourly_rate,
     position_allowance: e.position_allowance,
     hire_date: e.hire_date || null,
     weekly_day_off: e.weekly_day_off || null,

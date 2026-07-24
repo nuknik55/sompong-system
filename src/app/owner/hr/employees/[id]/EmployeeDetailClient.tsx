@@ -51,8 +51,6 @@ export function EmployeeDetailClient({
         position: form.position ?? "",
         employment_type: form.employment_type,
         base_salary: form.base_salary,
-        daily_rate: form.daily_rate,
-        hourly_rate: form.hourly_rate,
         position_allowance: form.position_allowance,
         hire_date: form.hire_date ?? "",
         weekly_day_off: form.weekly_day_off ?? "",

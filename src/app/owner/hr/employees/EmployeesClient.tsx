@@ -7,11 +7,9 @@ import type { Employee, Department } from "../actions";
 
 const DAYS_TH = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
 const EMP_TYPES: Record<string, string> = {
-  monthly: "รายเดือน",
-  daily: "รายวัน",
-  hourly: "รายชั่วโมง",
-  parttime: "พาร์ทไทม์",
-  parttime_regular: "พาร์ทไทม์ประจำ",
+  full_time: "ประจำ",
+  part_time: "พาร์ทไทม์",
+  contract: "สัญญาจ้าง",
 };
 
 const DEPT_COLORS: string[] = [
@@ -36,10 +34,8 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   phone: "",
   department_id: null,
   position: "",
-  employment_type: "monthly",
+  employment_type: "full_time",
   base_salary: 0,
-  daily_rate: 0,
-  hourly_rate: 0,
   position_allowance: 0,
   hire_date: null,
   weekly_day_off: "จันทร์",
@@ -82,8 +78,6 @@ export function EmployeesClient({
       position: emp.position ?? "",
       employment_type: emp.employment_type,
       base_salary: emp.base_salary,
-      daily_rate: emp.daily_rate,
-      hourly_rate: emp.hourly_rate,
       position_allowance: emp.position_allowance,
       hire_date: emp.hire_date,
       weekly_day_off: emp.weekly_day_off ?? "จันทร์",
