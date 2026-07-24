@@ -2,12 +2,12 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { requireHR } from "@/lib/auth";
 import { getEmployee, getDepartments, getLeaveRequests, getPayrollEntries, getPayrollPeriods } from "../../actions";
 import { EmployeeDetailClient } from "./EmployeeDetailClient";
 
 export default async function EmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await requireHR();
   const { id } = await params;
 
   const [employee, departments, leaveRequests, periods] = await Promise.all([

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireHROrAdmin } from "@/lib/auth";
 import { getEmployees, getAttendancePunches } from "../actions";
 import { AttendanceClient } from "./AttendanceClient";
 
@@ -9,7 +9,7 @@ export default async function AttendancePage({
 }: {
   searchParams: Promise<{ employee?: string; year?: string; month?: string }>;
 }) {
-  await requireAdmin();
+  await requireHROrAdmin();
   const sp = await searchParams;
   const today = new Date();
   const year = sp.year ? parseInt(sp.year) : today.getFullYear();

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireHR } from "@/lib/auth";
 import { getPayrollPeriods, getPayrollEntries } from "../actions";
 import { PayrollClient } from "./PayrollClient";
 
@@ -9,7 +9,7 @@ export default async function PayrollPage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
-  await requireAdmin();
+  await requireHR();
   const sp = await searchParams;
   const periods = await getPayrollPeriods();
   const selectedPeriodId = sp.period ?? periods[0]?.id ?? null;

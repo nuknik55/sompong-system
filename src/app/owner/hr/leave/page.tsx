@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireHROrAdmin } from "@/lib/auth";
 import { getLeaveRequests, getEmployees, getLeaveTypes } from "../actions";
 import { LeaveClient } from "./LeaveClient";
 
@@ -9,7 +9,7 @@ export default async function LeavePage({
 }: {
   searchParams: Promise<{ year?: string; month?: string; status?: string }>;
 }) {
-  await requireAdmin();
+  await requireHROrAdmin();
   const sp = await searchParams;
   const year = sp.year ? parseInt(sp.year) : new Date().getFullYear();
   const month = sp.month ? parseInt(sp.month) : undefined;

@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type Role = "owner" | "admin" | "editor" | "staff" | "accounting";
+export type Role = "owner" | "admin" | "editor" | "staff" | "hr";
 
 export type Profile = {
   id: string;
@@ -48,6 +48,20 @@ export async function requireAdmin(): Promise<Profile> {
 export async function requireAdminOrEditor(): Promise<Profile> {
   const profile = await requireProfile();
   if (profile.role === "staff" || profile.role === "accounting") redirect("/staff");
+  return profile;
+}
+
+/** HR full access: owner or hr only (salary-sensitive pages). */
+export async function requireHR(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (profile.role !== "owner" && profile.role !== "hr") redirect("/owner");
+  return profile;
+}
+
+/** Leave/attendance access: owner, hr, or admin (no salary data). */
+export async function requireHROrAdmin(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (!["owner", "hr", "admin"].includes(profile.role)) redirect("/staff");
   return profile;
 }
 
