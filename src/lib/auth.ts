@@ -44,10 +44,10 @@ export async function requireAdmin(): Promise<Profile> {
   return profile;
 }
 
-/** Admin/owner or editor. Redirects staff and accounting to /staff. */
+/** Admin/owner or editor. Redirects staff and hr to /staff. */
 export async function requireAdminOrEditor(): Promise<Profile> {
   const profile = await requireProfile();
-  if (profile.role === "staff" || profile.role === "accounting") redirect("/staff");
+  if (profile.role === "staff" || profile.role === "hr") redirect("/staff");
   return profile;
 }
 
