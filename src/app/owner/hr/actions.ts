@@ -524,7 +524,70 @@ export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" |
   revalidatePath("/owner/hr/payroll");
 }
 
-// ─── Attendance ───────────────────────────────────────────────────────────────
+// ─── Attendance Daily ─────────────────────────────────────────────────────────
+
+export type AttendanceDaily = {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  status: "present" | "absent" | "late" | "leave" | "day_off";
+  late_minutes: number;
+  ot_hours: number;
+  leave_type_id: string | null;
+  note: string | null;
+  source: string;
+};
+
+export async function getAttendanceDailyMonth(
+  year: number,
+  month: number,
+): Promise<AttendanceDaily[]> {
+  const supabase = await createClient();
+  const m = String(month).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  const { data, error } = await supabase
+    .from("attendance_daily")
+    .select("id,employee_id,work_date,status,late_minutes,ot_hours,leave_type_id,note,source")
+    .gte("work_date", `${year}-${m}-01`)
+    .lte("work_date", `${year}-${m}-${String(lastDay).padStart(2, "0")}`)
+    .order("work_date");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function upsertAttendanceDaily(r: {
+  employee_id: string;
+  work_date: string;
+  status: string;
+  late_minutes: number;
+  ot_hours: number;
+  leave_type_id: string | null;
+  note: string | null;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  await supabase.from("attendance_daily").upsert(
+    { ...r, source: "manual" },
+    { onConflict: "employee_id,work_date" },
+  );
+  revalidatePath("/owner/hr/attendance");
+}
+
+export async function deleteAttendanceDailyRecord(
+  employeeId: string,
+  workDate: string,
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  await supabase
+    .from("attendance_daily")
+    .delete()
+    .eq("employee_id", employeeId)
+    .eq("work_date", workDate);
+  revalidatePath("/owner/hr/attendance");
+}
+
+// ─── Attendance Punches (legacy / biometric input) ────────────────────────────
 
 export async function getAttendancePunches(
   employeeId: string,
