@@ -16,6 +16,8 @@ export type SalesImportRow = {
 export type SalesImportPreview = {
   matched: SalesImportRow[];
   unmatched: { productName: string; qtySold: number }[];
+  dateFrom: string;
+  dateTo: string;
 };
 
 export async function previewPosSalesImport(formData: FormData): Promise<SalesImportPreview> {
@@ -24,8 +26,8 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
   if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
 
   const buffer = await file.arrayBuffer();
-  const parsed = parsePosSalesReport(buffer);
-  if (parsed.length === 0) {
+  const report = parsePosSalesReport(buffer);
+  if (report.rows.length === 0) {
     throw new Error('อ่านไฟล์ไม่พบรายการขายเลย ตรวจสอบว่าเป็นไฟล์ "รายงานการขายตามสินค้า" ที่ export มาจาก POS หรือไม่');
   }
 
@@ -46,7 +48,7 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
   const totals = new Map<string, { qty: number; netRevenue: number }>();
   const unmatched: { productName: string; qtySold: number }[] = [];
 
-  for (const row of parsed) {
+  for (const row of report.rows) {
     const name = row.productName.trim();
     const alias = aliasByProductName.get(name);
     const directMenu = menuByName.get(name);
@@ -80,21 +82,44 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
 
   matched.sort((a, b) => b.newQty - a.newQty);
   unmatched.sort((a, b) => b.qtySold - a.qtySold);
-  return { matched, unmatched };
+  return { matched, unmatched, dateFrom: report.dateFrom, dateTo: report.dateTo };
 }
 
-export async function applyPosSalesImport(updates: { menuId: string; newQty: number }[]): Promise<number> {
+export async function applyPosSalesImport(
+  updates: { menuId: string; newQty: number }[],
+  dateFrom: string,
+  dateTo: string,
+): Promise<number> {
   await requireAdmin();
   if (updates.length === 0) return 0;
   const supabase = await createClient();
+
+  // Reset ALL menus to 0 first — this is replace-mode, not accumulate-mode.
+  const { error: resetError } = await supabase
+    .from("menus")
+    .update({ last_period_qty_sold: 0 })
+    .neq("id", "00000000-0000-0000-0000-000000000000"); // match all rows
+  if (resetError) throw new Error(resetError.message);
 
   for (const u of updates) {
     const { error } = await supabase.from("menus").update({ last_period_qty_sold: u.newQty }).eq("id", u.menuId);
     if (error) throw new Error(error.message);
   }
 
+  // Store import date range metadata (single row, upserted on fixed key).
+  await supabase
+    .from("pos_import_meta")
+    .upsert({ id: "last", date_from: dateFrom || null, date_to: dateTo || null, imported_at: new Date().toISOString() }, { onConflict: "id" });
+
   revalidatePath("/owner");
   return updates.length;
+}
+
+export async function getPosImportMeta(): Promise<{ dateFrom: string; dateTo: string; importedAt: string } | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("pos_import_meta").select("date_from, date_to, imported_at").eq("id", "last").maybeSingle();
+  if (!data) return null;
+  return { dateFrom: data.date_from ?? "", dateTo: data.date_to ?? "", importedAt: data.imported_at ?? "" };
 }
 
 export type PosSalesAlias = {

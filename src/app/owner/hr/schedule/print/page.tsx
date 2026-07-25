@@ -170,8 +170,18 @@ export default async function SchedulePrintPage({
                       cls = `cell-${n.note_type}`;
                       text = n.note;
                     } else if (lv) {
-                      cls = "cell-leave";
-                      text = `${lv.leave_type_code} (ใบลา✓)`;
+                      const lvName = lv.leave_type_name;
+                      const lvCode = lv.leave_type_code;
+                      if (lvName.includes("พักร้อน") || lvCode === "AL") {
+                        cls = "cell-vacation";
+                        text = `พร (ใบลา✓)`;
+                      } else if (lvName.includes("ป่วย") || lvCode === "SL") {
+                        cls = "cell-sick";
+                        text = `ป่วย (ใบลา✓)`;
+                      } else {
+                        cls = "cell-leave";
+                        text = `${lvCode} (ใบลา✓)`;
+                      }
                     } else if (isHol) {
                       cls = "hol-cell";
                       text = "★";

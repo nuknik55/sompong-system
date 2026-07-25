@@ -102,7 +102,7 @@ export function PosSalesImport() {
     setError(null);
     startTransition(async () => {
       try {
-        const n = await applyPosSalesImport(updates);
+        const n = await applyPosSalesImport(updates, preview.dateFrom, preview.dateTo);
         setDoneCount(n);
         setPreview(null);
         router.refresh();
@@ -160,6 +160,17 @@ export function PosSalesImport() {
 
       {preview && (
         <div className="space-y-3">
+          {(preview.dateFrom || preview.dateTo) && (
+            <p className="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              📅 ช่วงวันที่ในรายงาน:{" "}
+              <strong>
+                {preview.dateFrom === preview.dateTo || !preview.dateTo
+                  ? preview.dateFrom
+                  : `${preview.dateFrom} – ${preview.dateTo}`}
+              </strong>
+              <span className="ml-2 text-xs text-blue-600">(ยอดขายเดิมทั้งหมดจะถูกล้าง แล้วแทนด้วยข้อมูลใหม่จากไฟล์นี้)</span>
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <p className="text-sm text-neutral-600">
               พบเมนูตรงกัน {preview.matched.length} รายการ (เลือกไว้ {checkedCount}) — ไม่พบในระบบ {preview.unmatched.length} รายการ

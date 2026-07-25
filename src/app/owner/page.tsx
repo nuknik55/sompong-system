@@ -7,6 +7,7 @@ import { MenuEngineeringSection } from "@/components/menu-engineering-section";
 import { QFactorSetting } from "@/components/q-factor-setting";
 import { PosSalesImport } from "@/components/pos-sales-import";
 import { CategoryTabs } from "@/components/category-tabs";
+import { getPosImportMeta } from "./sales-import-actions";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +33,10 @@ export default async function OwnerDashboardPage({
   const { category: rawCategory } = await searchParams;
   const selectedCategory = rawCategory?.trim() || "all";
 
-  const { menus, menuItems, unitCosts, qFactorPct } = await getCostingContext();
+  const [{ menus, menuItems, unitCosts, qFactorPct }, posImportMeta] = await Promise.all([
+    getCostingContext(),
+    getPosImportMeta(),
+  ]);
 
   // Sorted category list for the tab bar.
   const allCategories = [
@@ -97,6 +101,16 @@ export default async function OwnerDashboardPage({
       </div>
 
       {/* Revenue / cost summary cards */}
+      {posImportMeta && (posImportMeta.dateFrom || posImportMeta.dateTo) && (
+        <p className="text-xs text-neutral-500">
+          📅 ข้อมูลยอดขาย:{" "}
+          <span className="font-medium text-neutral-700">
+            {posImportMeta.dateFrom === posImportMeta.dateTo || !posImportMeta.dateTo
+              ? posImportMeta.dateFrom
+              : `${posImportMeta.dateFrom} – ${posImportMeta.dateTo}`}
+          </span>
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <SummaryCard label="ยอดขายรวม (รอบล่าสุด)" value={`${formatBaht(totalRevenue)} บาท`} />
         <SummaryCard label="ต้นทุนรวม (รอบล่าสุด)" value={`${formatBaht(totalCost)} บาท`} />

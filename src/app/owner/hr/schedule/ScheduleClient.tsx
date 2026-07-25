@@ -24,6 +24,18 @@ const NOTE_CFG: Record<NoteType, NoteConfig> = {
   note:         { label: "หมายเหตุ",      short: "⚑",  cell: "bg-yellow-50 text-yellow-900",badge: "bg-yellow-400" },
 };
 
+/** Map an approved leave to the closest schedule note style, based on type name keywords. */
+function leaveNoteStyle(code: string, name: string): NoteConfig {
+  const n = name;
+  if (n.includes("พักร้อน") || n.includes("annual") || code === "AL")
+    return NOTE_CFG.vacation;
+  if (n.includes("ป่วย") || n.includes("sick") || code === "SL")
+    return NOTE_CFG.sick;
+  if (n.includes("กิจ") || n.includes("personal") || code === "PL")
+    return NOTE_CFG.leave;
+  return NOTE_CFG.leave;
+}
+
 type EditState = {
   empId: string;
   empName: string;
@@ -228,7 +240,7 @@ export function ScheduleClient({
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="rounded bg-neutral-200 px-2 py-0.5 font-medium text-neutral-600">– วันหยุดประจำ</span>
         <span className="rounded bg-purple-100 px-2 py-0.5 font-medium text-purple-700">★ นักขัตฤกษ์</span>
-        <span className="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-700">ใบลา✓ อนุมัติแล้ว (จากระบบใบลา)</span>
+        <span className="rounded bg-teal-100 px-2 py-0.5 font-medium text-teal-800">พร✓ ใบลา✓ อนุมัติแล้ว (จากระบบใบลา)</span>
         {(Object.entries(NOTE_CFG) as [NoteType, NoteConfig][]).map(([k, v]) => (
           <span key={k} className={`rounded px-2 py-0.5 font-medium ${v.cell}`}>{v.short} {v.label}</span>
         ))}
@@ -294,12 +306,13 @@ export function ScheduleClient({
                         </div>
                       );
                     } else if (approvedLeave) {
-                      // from approved leave request — read-only, distinct styling
-                      cellCls += "bg-blue-50 text-blue-800 hover:bg-blue-100";
+                      // from approved leave request — read-only, use leave-type-aware color
+                      const lCfg = leaveNoteStyle(approvedLeave.leave_type_code, approvedLeave.leave_type_name);
+                      cellCls += lCfg.cell + " hover:brightness-95";
                       content = (
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="font-bold text-[10px]">{approvedLeave.leave_type_code}</span>
-                          <span className="rounded-full bg-blue-200 px-1 text-[8px] font-semibold text-blue-700">ใบลา✓</span>
+                          <span className="font-bold text-[10px]">{lCfg.short}</span>
+                          <span className="text-[8px] font-semibold opacity-75">ใบลา✓</span>
                         </div>
                       );
                     } else if (isHol) {

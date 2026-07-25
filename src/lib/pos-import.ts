@@ -151,10 +151,37 @@ export type PosSalesSummary = {
   netRevenue: number;
 };
 
-export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesSummary[] {
+export type PosSalesReport = {
+  rows: PosSalesSummary[];
+  /** Raw Thai date string extracted from the report header, e.g. "01 กรกฎาคม 2569". Empty string if not found. */
+  dateFrom: string;
+  dateTo: string;
+};
+
+/** Scan the first 8 rows for Thai date strings (DD MonthTH YYYY) and return up to two found. */
+function extractDatesFromHeader(rows: unknown[][]): { dateFrom: string; dateTo: string } {
+  const THAI_MONTH_NAMES = Object.keys(THAI_MONTHS);
+  const datePattern = new RegExp(`(\\d{1,2})\\s+(${THAI_MONTH_NAMES.join("|")})\\s+(\\d{4})`, "g");
+
+  const found: string[] = [];
+  for (let i = 0; i < Math.min(8, rows.length) && found.length < 2; i++) {
+    const rowText = rows[i].filter((c) => c != null).join(" ");
+    let m: RegExpExecArray | null;
+    while ((m = datePattern.exec(rowText)) !== null && found.length < 2) {
+      found.push(`${m[1]} ${m[2]} ${m[3]}`);
+    }
+    datePattern.lastIndex = 0;
+  }
+
+  return { dateFrom: found[0] ?? "", dateTo: found[found.length - 1] ?? "" };
+}
+
+export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesReport {
   const wb = XLSX.read(buffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+
+  const { dateFrom, dateTo } = extractDatesFromHeader(rows);
 
   const byProduct = new Map<string, { qtySold: number; netRevenue: number }>();
 
@@ -184,7 +211,9 @@ export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesSummary[] {
     }
   }
 
-  return Array.from(byProduct.entries())
+  const salesRows = Array.from(byProduct.entries())
     .map(([productName, v]) => ({ productName, qtySold: v.qtySold, netRevenue: v.netRevenue }))
     .sort((a, b) => b.qtySold - a.qtySold);
+
+  return { rows: salesRows, dateFrom, dateTo };
 }
