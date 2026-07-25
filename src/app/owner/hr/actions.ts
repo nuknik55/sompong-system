@@ -447,6 +447,55 @@ export async function closePayrollPeriod(id: string): Promise<void> {
   revalidatePath("/owner/hr/payroll");
 }
 
+// ─── Schedule Notes (Weekly Roster) ───────────────────────────────────────────
+
+export type NoteType = "compensatory" | "holiday_use" | "leave" | "sick" | "vacation" | "event" | "note";
+
+export type ScheduleNote = {
+  id: string;
+  employee_id: string;
+  note_date: string;
+  note: string;
+  note_type: NoteType;
+};
+
+export async function getScheduleWeek(weekStart: string): Promise<ScheduleNote[]> {
+  const supabase = await createClient();
+  const end = new Date(weekStart);
+  end.setDate(end.getDate() + 6);
+  const { data } = await supabase
+    .from("schedule_notes")
+    .select("id,employee_id,note_date,note,note_type")
+    .gte("note_date", weekStart)
+    .lte("note_date", end.toISOString().slice(0, 10));
+  return data ?? [];
+}
+
+export async function upsertScheduleNote(
+  employeeId: string,
+  noteDate: string,
+  note: string,
+  noteType: NoteType,
+): Promise<void> {
+  await requireHR();
+  const supabase = await createClient();
+  if (!note.trim()) {
+    await supabase
+      .from("schedule_notes")
+      .delete()
+      .eq("employee_id", employeeId)
+      .eq("note_date", noteDate);
+  } else {
+    await supabase
+      .from("schedule_notes")
+      .upsert(
+        { employee_id: employeeId, note_date: noteDate, note: note.trim(), note_type: noteType },
+        { onConflict: "employee_id,note_date" },
+      );
+  }
+  revalidatePath("/owner/hr/schedule");
+}
+
 // ─── Payroll Entries ──────────────────────────────────────────────────────────
 
 export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[]> {

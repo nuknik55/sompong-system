@@ -19,6 +19,8 @@ export default async function HRLayout({ children }: { children: React.ReactNode
           <Link href="/owner/hr/leave" className="hover:text-neutral-800">ใบลา</Link>
           <span className="text-neutral-200">|</span>
           <Link href="/owner/hr/attendance" className="hover:text-neutral-800">บันทึกเวลา</Link>
+          <span className="text-neutral-200">|</span>
+          <Link href="/owner/hr/schedule" className="hover:text-neutral-800">ตารางกะ</Link>
           {!adminOnly && (
             <>
               <span className="text-neutral-200">|</span>
