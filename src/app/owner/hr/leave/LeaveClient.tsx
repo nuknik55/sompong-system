@@ -61,6 +61,7 @@ export function LeaveClient({
 
   function handleSave() {
     if (!form.employee_id || !form.leave_type_id || !form.date_from || !form.date_to) return;
+    if (form.date_to < form.date_from) return;
     const total_days = calcDays(form.date_from, form.date_to);
     startTransition(async () => {
       await upsertLeaveRequest({ ...form, total_days });
@@ -104,10 +105,9 @@ export function LeaveClient({
 
   const visible = requests.filter((r) => {
     if (statusFilter !== "all" && r.status !== statusFilter) return false;
-    if (monthFilter) {
-      const m = new Date(r.date_from).getMonth() + 1;
-      if (m !== monthFilter) return false;
-    }
+    const fromDate = new Date(r.date_from);
+    if (fromDate.getFullYear() !== year) return false;
+    if (monthFilter && fromDate.getMonth() + 1 !== monthFilter) return false;
     return true;
   });
 

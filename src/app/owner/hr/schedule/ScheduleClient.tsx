@@ -141,7 +141,6 @@ export function ScheduleClient({
   function saveEdit() {
     if (!edit) return;
     const key = `${edit.empId}_${edit.date}`;
-    // Save the note type even if note text is empty — type alone is meaningful
     const updated: ScheduleNote = {
       id: noteMap.get(key)?.id ?? crypto.randomUUID(),
       employee_id: edit.empId,

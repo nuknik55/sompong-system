@@ -322,7 +322,7 @@ export function PayrollClient({
             </div>
             <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
               <button onClick={() => setShowNewPeriod(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">ยกเลิก</button>
-              <button onClick={handleCreatePeriod} disabled={isPending} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+              <button onClick={handleCreatePeriod} disabled={isPending || !newPeriod.pay_date} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
                 {isPending ? "กำลังสร้าง…" : "สร้าง"}
               </button>
             </div>

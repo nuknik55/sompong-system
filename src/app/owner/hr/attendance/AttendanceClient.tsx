@@ -179,11 +179,15 @@ export function AttendanceClient({
     let absent = 0, lateMin = 0, leave = 0, ot = 0;
     for (let d = 1; d <= daysInMonth; d++) {
       const r = getRecord(empId, d);
-      if (!r) continue;
-      if (r.status === "absent") absent++;
-      if (r.status === "late") lateMin += r.late_minutes;
-      if (r.status === "leave") leave++;
-      ot += Number(r.ot_hours);
+      if (r) {
+        if (r.status === "absent") absent++;
+        if (r.status === "late") lateMin += r.late_minutes;
+        if (r.status === "leave") leave++;
+        ot += Number(r.ot_hours);
+      } else if (leaveMap.has(`${empId}_${dateStr(d)}`)) {
+        // count approved leave days that have no manual attendance record
+        leave++;
+      }
     }
     return { absent, lateMin, leave, ot };
   }

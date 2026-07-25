@@ -283,7 +283,8 @@ export async function getLeaveRequests(filters?: {
   if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
   if (filters?.year && filters?.month) {
     const m = String(filters.month).padStart(2, "0");
-    q = q.gte("date_from", `${filters.year}-${m}-01`).lte("date_from", `${filters.year}-${m}-31`);
+    const lastDay = new Date(filters.year, filters.month, 0).getDate();
+    q = q.gte("date_from", `${filters.year}-${m}-01`).lte("date_from", `${filters.year}-${m}-${lastDay}`);
   } else if (filters?.year) {
     q = q.gte("date_from", `${filters.year}-01-01`).lte("date_from", `${filters.year}-12-31`);
   }
@@ -325,6 +326,8 @@ export async function upsertLeaveRequest(data: {
     await supabase.from("leave_requests").insert({ ...data, status: "approved" });
   }
   revalidatePath("/owner/hr/leave");
+  revalidatePath("/owner/hr/schedule");
+  revalidatePath("/owner/hr/attendance");
 }
 
 export async function updateLeaveStatus(id: string, status: "approved" | "rejected"): Promise<void> {
@@ -332,6 +335,8 @@ export async function updateLeaveStatus(id: string, status: "approved" | "reject
   const supabase = await createClient();
   await supabase.from("leave_requests").update({ status }).eq("id", id);
   revalidatePath("/owner/hr/leave");
+  revalidatePath("/owner/hr/schedule");
+  revalidatePath("/owner/hr/attendance");
 }
 
 export async function deleteLeaveRequest(id: string): Promise<void> {
@@ -339,6 +344,8 @@ export async function deleteLeaveRequest(id: string): Promise<void> {
   const supabase = await createClient();
   await supabase.from("leave_requests").delete().eq("id", id);
   revalidatePath("/owner/hr/leave");
+  revalidatePath("/owner/hr/schedule");
+  revalidatePath("/owner/hr/attendance");
 }
 
 // ─── Holidays ─────────────────────────────────────────────────────────────────
@@ -550,7 +557,7 @@ export type ScheduleNote = {
 
 export async function getScheduleWeek(weekStart: string): Promise<ScheduleNote[]> {
   const supabase = await createClient();
-  const end = new Date(weekStart);
+  const end = new Date(weekStart + "T00:00:00");
   end.setDate(end.getDate() + 6);
   const { data } = await supabase
     .from("schedule_notes")
@@ -568,13 +575,9 @@ export async function upsertScheduleNote(
 ): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  if (!note.trim()) {
-    await supabase
-      .from("schedule_notes")
-      .delete()
-      .eq("employee_id", employeeId)
-      .eq("note_date", noteDate);
-  } else {
+  // Always upsert — note text is optional, note_type alone is meaningful.
+  // Use clearNote (DELETE) when the user explicitly wants to remove a cell.
+  {
     await supabase
       .from("schedule_notes")
       .upsert(
@@ -739,7 +742,7 @@ export async function getAttendancePunches(
     .select("id,employee_id,work_date,punch_type,punch_time,note")
     .eq("employee_id", employeeId)
     .gte("work_date", `${year}-${m}-01`)
-    .lte("work_date", `${year}-${m}-31`)
+    .lte("work_date", `${year}-${m}-${new Date(year, month, 0).getDate()}`)
     .order("work_date")
     .order("punch_time");
   if (error) throw error;
