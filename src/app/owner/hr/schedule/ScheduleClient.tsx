@@ -141,18 +141,15 @@ export function ScheduleClient({
   function saveEdit() {
     if (!edit) return;
     const key = `${edit.empId}_${edit.date}`;
-    if (edit.note.trim()) {
-      const updated: ScheduleNote = {
-        id: noteMap.get(key)?.id ?? crypto.randomUUID(),
-        employee_id: edit.empId,
-        note_date: edit.date,
-        note: edit.note.trim(),
-        note_type: edit.noteType,
-      };
-      setNoteMap((prev) => new Map(prev).set(key, updated));
-    } else {
-      setNoteMap((prev) => { const m = new Map(prev); m.delete(key); return m; });
-    }
+    // Save the note type even if note text is empty — type alone is meaningful
+    const updated: ScheduleNote = {
+      id: noteMap.get(key)?.id ?? crypto.randomUUID(),
+      employee_id: edit.empId,
+      note_date: edit.date,
+      note: edit.note.trim(),
+      note_type: edit.noteType,
+    };
+    setNoteMap((prev) => new Map(prev).set(key, updated));
     const snap = { ...edit };
     setEdit(null);
     setSaving(true);

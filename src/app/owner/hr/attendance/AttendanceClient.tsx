@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertAttendanceDaily, deleteAttendanceDailyRecord } from "../actions";
-import type { Employee, Department, LeaveType, Holiday, AttendanceDaily } from "../actions";
+import type { Employee, Department, LeaveType, Holiday, AttendanceDaily, LeaveDay } from "../actions";
 
 const DAY_OF_WEEK: Record<string, number> = {
   อาทิตย์: 0, จันทร์: 1, อังคาร: 2, พุธ: 3, พฤหัสบดี: 4, ศุกร์: 5, เสาร์: 6,
@@ -39,6 +39,7 @@ export function AttendanceClient({
   initialRecords,
   leaveTypes,
   holidays,
+  leaveDays,
   year,
   month,
   deptId,
@@ -48,6 +49,7 @@ export function AttendanceClient({
   initialRecords: AttendanceDaily[];
   leaveTypes: LeaveType[];
   holidays: Holiday[];
+  leaveDays: LeaveDay[];
   year: number;
   month: number;
   deptId: string;
@@ -68,6 +70,7 @@ export function AttendanceClient({
   const daysInMonth = new Date(year, month, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.code]));
+  const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
 
   const visibleEmps = deptId
     ? employees.filter((e) => e.department_id === deptId)
@@ -217,6 +220,7 @@ export function AttendanceClient({
           <span key={k} className={`rounded px-2 py-0.5 font-medium ${v.cell}`}>{v.short} {v.label}</span>
         ))}
         <span className="rounded bg-purple-50 px-2 py-0.5 font-medium text-purple-700">* นักขัตฤกษ์</span>
+        <span className="rounded bg-teal-100 px-2 py-0.5 font-medium text-teal-800">ลา✓ ใบลาอนุมัติแล้ว</span>
         <span className="ml-2 text-neutral-400">คลิกช่องเพื่อบันทึกสถานะ</span>
       </div>
 
@@ -272,6 +276,8 @@ export function AttendanceClient({
                       cellCls += "ring-2 ring-inset ring-neutral-900 ";
                     }
 
+                    const approvedLeave = !rec ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
+
                     if (rec) {
                       const cfg = S[rec.status as Status] ?? S.present;
                       cellCls += cfg.cell;
@@ -282,6 +288,14 @@ export function AttendanceClient({
                       } else {
                         content = <span className="font-bold">{cfg.short}</span>;
                       }
+                    } else if (approvedLeave) {
+                      cellCls += "bg-teal-100 text-teal-800 hover:bg-teal-200";
+                      content = (
+                        <div className="flex flex-col items-center leading-tight">
+                          <span className="text-[8px] font-bold">ลา</span>
+                          <span className="text-[7px] opacity-70">✓</span>
+                        </div>
+                      );
                     } else if (isHol) {
                       cellCls += "bg-purple-100 text-purple-600 hover:bg-purple-200";
                       content = <span className="text-[10px] font-bold">*</span>;

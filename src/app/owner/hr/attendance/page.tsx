@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireHROrAdmin } from "@/lib/auth";
-import { getEmployees, getDepartments, getLeaveTypes, getHolidays, getAttendanceDailyMonth } from "../actions";
+import { getEmployees, getDepartments, getLeaveTypes, getHolidays, getAttendanceDailyMonth, getApprovedLeavesForMonth } from "../actions";
 import { AttendanceClient } from "./AttendanceClient";
 
 export default async function AttendancePage({
@@ -16,12 +16,13 @@ export default async function AttendancePage({
   const month = sp.month ? parseInt(sp.month) : today.getMonth() + 1;
   const deptId = sp.dept ?? "";
 
-  const [employees, departments, records, leaveTypes, holidays] = await Promise.all([
+  const [employees, departments, records, leaveTypes, holidays, leaveDays] = await Promise.all([
     getEmployees(),
     getDepartments(),
     getAttendanceDailyMonth(year, month),
     getLeaveTypes(),
     getHolidays(year),
+    getApprovedLeavesForMonth(year, month),
   ]);
 
   return (
@@ -31,6 +32,7 @@ export default async function AttendancePage({
       initialRecords={records}
       leaveTypes={leaveTypes.filter((lt) => lt.is_active)}
       holidays={holidays.filter((h) => h.is_active)}
+      leaveDays={leaveDays}
       year={year}
       month={month}
       deptId={deptId}
