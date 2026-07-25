@@ -3,6 +3,6 @@ import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 
 export default async function HomePage() {
   const profile = await requireProfile();
-  // owner/admin land on cost dashboard; editor and staff land on recipe list
+  if (profile.role === "hr") redirect("/owner/hr");
   redirect(isAdminOrAbove(profile.role) ? "/owner" : "/staff");
 }
