@@ -790,10 +790,28 @@ export type LeaveQuotaRow = {
   }[];
 };
 
+function yearsOfService(hireDateStr: string | null, year: number): number {
+  if (!hireDateStr) return 0;
+  const hire = new Date(hireDateStr + "T00:00:00");
+  const ref = new Date(`${year}-01-01T00:00:00`);
+  let y = ref.getFullYear() - hire.getFullYear();
+  const anniversary = new Date(ref.getFullYear(), hire.getMonth(), hire.getDate());
+  if (ref < anniversary) y--;
+  return Math.max(0, y);
+}
+
+function alQuotaDays(years: number): number {
+  if (years < 1) return 0;
+  if (years < 3) return 4;
+  if (years < 6) return 6;
+  if (years < 10) return 8;
+  return 10;
+}
+
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   const supabase = await createClient();
   const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
-    supabase.from("employees").select("id,full_name,nickname").eq("is_active", true).order("full_name"),
+    supabase.from("employees").select("id,full_name,nickname,hire_date").eq("is_active", true).order("full_name"),
     supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
     supabase
       .from("leave_requests")
@@ -809,18 +827,26 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
     usageMap.set(k, (usageMap.get(k) ?? 0) + (r.total_days ?? 0));
   }
 
-  return (emps ?? []).map((emp: Record<string, unknown>) => ({
-    employee_id: emp.id as string,
-    employee_name: emp.full_name as string,
-    employee_nickname: emp.nickname as string | null,
-    usage: (types ?? []).map((lt: Record<string, unknown>) => ({
-      leave_type_id: lt.id as string,
-      leave_type_code: lt.code as string,
-      leave_type_name: lt.name_th as string,
-      annual_quota: lt.annual_quota_days as number,
-      used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
-    })),
-  }));
+  return (emps ?? []).map((emp: Record<string, unknown>) => {
+    const years = yearsOfService(emp.hire_date as string | null, year);
+    return {
+      employee_id: emp.id as string,
+      employee_name: emp.full_name as string,
+      employee_nickname: emp.nickname as string | null,
+      usage: (types ?? []).map((lt: Record<string, unknown>) => {
+        const code = lt.code as string;
+        const isAL = code === "AL" || (lt.name_th as string).includes("พักร้อน");
+        const quota = isAL ? alQuotaDays(years) : (lt.annual_quota_days as number);
+        return {
+          leave_type_id: lt.id as string,
+          leave_type_code: code,
+          leave_type_name: lt.name_th as string,
+          annual_quota: quota,
+          used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
+        };
+      }),
+    };
+  });
 }
 
 // ─── Day Swap Requests ────────────────────────────────────────────────────────
@@ -830,7 +856,7 @@ export type DaySwapRequest = {
   employee_id: string;
   employee_name: string;
   employee_nickname: string | null;
-  work_date: string;
+  work_date: string | null;
   off_date: string | null;
   swap_type: "work_first" | "off_first";
   compensation: "bank_day" | "extra_pay";
@@ -863,7 +889,7 @@ export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[
     employee_id: r.employee_id as string,
     employee_name: (r.employees as { full_name: string } | null)?.full_name ?? "",
     employee_nickname: (r.employees as { nickname: string | null } | null)?.nickname ?? null,
-    work_date: r.work_date as string,
+    work_date: r.work_date as string | null,
     off_date: r.off_date as string | null,
     swap_type: r.swap_type as "work_first" | "off_first",
     compensation: r.compensation as "bank_day" | "extra_pay",
@@ -948,4 +974,36 @@ export async function deleteDaySwapRequest(id: string): Promise<void> {
   await supabase.from("day_swap_requests").delete().eq("id", id);
   revalidatePath("/owner/hr/dayswap");
   revalidatePath("/owner/hr/employees");
+}
+
+// ─── Attendance Year Summary ──────────────────────────────────────────────────
+
+export type AttendanceYearSummary = {
+  absentDays: number;
+  lateDays: number;
+  lateMinutesTotal: number;
+  otDays: number;
+  leaveDays: number;
+};
+
+export async function getAttendanceYearSummary(
+  employeeId: string,
+  year: number,
+): Promise<AttendanceYearSummary> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("attendance_daily")
+    .select("status,late_minutes,ot_hours")
+    .eq("employee_id", employeeId)
+    .gte("work_date", `${year}-01-01`)
+    .lte("work_date", `${year}-12-31`);
+
+  let absentDays = 0, lateDays = 0, lateMinutesTotal = 0, otDays = 0, leaveDays = 0;
+  for (const r of data ?? []) {
+    if (r.status === "absent") absentDays++;
+    if (r.status === "leave") leaveDays++;
+    if ((r.late_minutes ?? 0) > 0) { lateDays++; lateMinutesTotal += r.late_minutes; }
+    if ((r.ot_hours ?? 0) > 0) otDays++;
+  }
+  return { absentDays, lateDays, lateMinutesTotal, otDays, leaveDays };
 }
