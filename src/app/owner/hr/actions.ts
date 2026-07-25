@@ -775,6 +775,54 @@ export async function deleteAttendancePunch(id: string): Promise<void> {
   revalidatePath("/owner/hr/attendance");
 }
 
+// ─── Leave Quotas ─────────────────────────────────────────────────────────────
+
+export type LeaveQuotaRow = {
+  employee_id: string;
+  employee_name: string;
+  employee_nickname: string | null;
+  usage: {
+    leave_type_id: string;
+    leave_type_code: string;
+    leave_type_name: string;
+    annual_quota: number;
+    used_days: number;
+  }[];
+};
+
+export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
+  const supabase = await createClient();
+  const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
+    supabase.from("employees").select("id,full_name,nickname").eq("is_active", true).order("full_name"),
+    supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
+    supabase
+      .from("leave_requests")
+      .select("employee_id,leave_type_id,total_days,status,date_from")
+      .eq("status", "approved")
+      .gte("date_from", `${year}-01-01`)
+      .lte("date_from", `${year}-12-31`),
+  ]);
+
+  const usageMap = new Map<string, number>(); // `empId_typeId` -> total days
+  for (const r of reqs ?? []) {
+    const k = `${r.employee_id}_${r.leave_type_id}`;
+    usageMap.set(k, (usageMap.get(k) ?? 0) + (r.total_days ?? 0));
+  }
+
+  return (emps ?? []).map((emp: Record<string, unknown>) => ({
+    employee_id: emp.id as string,
+    employee_name: emp.full_name as string,
+    employee_nickname: emp.nickname as string | null,
+    usage: (types ?? []).map((lt: Record<string, unknown>) => ({
+      leave_type_id: lt.id as string,
+      leave_type_code: lt.code as string,
+      leave_type_name: lt.name_th as string,
+      annual_quota: lt.annual_quota_days as number,
+      used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
+    })),
+  }));
+}
+
 // ─── Day Swap Requests ────────────────────────────────────────────────────────
 
 export type DaySwapRequest = {

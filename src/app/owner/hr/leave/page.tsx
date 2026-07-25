@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireHROrAdmin } from "@/lib/auth";
-import { getLeaveRequests, getEmployees, getLeaveTypes } from "../actions";
+import { getLeaveRequests, getEmployees, getLeaveTypes, getLeaveQuotas } from "../actions";
 import { LeaveClient } from "./LeaveClient";
 
 export default async function LeavePage({
@@ -15,10 +15,11 @@ export default async function LeavePage({
   const month = sp.month ? parseInt(sp.month) : undefined;
   const status = sp.status ?? "all";
 
-  const [requests, employees, leaveTypes] = await Promise.all([
+  const [requests, employees, leaveTypes, quotas] = await Promise.all([
     getLeaveRequests({ year, month, status }),
     getEmployees(),
     getLeaveTypes(),
+    getLeaveQuotas(year),
   ]);
 
   return (
@@ -26,6 +27,7 @@ export default async function LeavePage({
       initialRequests={requests}
       employees={employees.filter((e) => e.is_active)}
       leaveTypes={leaveTypes.filter((lt) => lt.is_active)}
+      quotas={quotas}
       defaultYear={year}
       defaultMonth={month}
       defaultStatus={status}

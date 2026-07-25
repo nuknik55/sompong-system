@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertLeaveRequest, updateLeaveStatus, deleteLeaveRequest } from "../actions";
-import type { LeaveRequest, Employee, LeaveType } from "../actions";
+import type { LeaveRequest, Employee, LeaveType, LeaveQuotaRow } from "../actions";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const STATUS_LABEL: Record<string, string> = { all: "ทั้งหมด", pending: "รอ", approved: "อนุมัติ", rejected: "ปฏิเสธ" };
@@ -37,6 +37,7 @@ export function LeaveClient({
   initialRequests,
   employees,
   leaveTypes,
+  quotas,
   defaultYear,
   defaultMonth,
   defaultStatus,
@@ -44,6 +45,7 @@ export function LeaveClient({
   initialRequests: LeaveRequest[];
   employees: Employee[];
   leaveTypes: LeaveType[];
+  quotas: LeaveQuotaRow[];
   defaultYear: number;
   defaultMonth?: number;
   defaultStatus: string;
@@ -54,6 +56,10 @@ export function LeaveClient({
   const [form, setForm] = useState(BLANK);
   const [isPending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showQuota, setShowQuota] = useState(true);
+
+  // columns = leave types that have a quota and appear in at least one employee's usage
+  const quotaCols = quotas[0]?.usage ?? [];
 
   const year = defaultYear;
   const monthFilter = defaultMonth;
@@ -123,6 +129,66 @@ export function LeaveClient({
 
   return (
     <>
+      {/* Quota section */}
+      {quotaCols.length > 0 && (
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-white">
+          <button
+            onClick={() => setShowQuota((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+          >
+            <span>สิทธิ์การลาประจำปี {defaultYear + 543}</span>
+            <span className="text-neutral-400 text-xs">{showQuota ? "▲ ซ่อน" : "▼ แสดง"}</span>
+          </button>
+          {showQuota && (
+            <div className="overflow-x-auto border-t border-neutral-100">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-neutral-100 bg-neutral-50 text-left">
+                    <th className="px-3 py-2 font-medium text-neutral-600 min-w-[100px]">พนักงาน</th>
+                    {quotaCols.map((col) => (
+                      <th key={col.leave_type_id} className="px-3 py-2 text-center font-medium text-neutral-600 min-w-[80px]">
+                        <div>{col.leave_type_code}</div>
+                        <div className="font-normal text-neutral-400 text-[10px]">{col.leave_type_name}</div>
+                        <div className="font-normal text-neutral-400 text-[10px]">สิทธิ์ {col.annual_quota} วัน</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotas.map((row, ri) => (
+                    <tr key={row.employee_id} className={`border-b border-neutral-50 last:border-0 ${ri % 2 === 0 ? "bg-white" : "bg-neutral-50/40"}`}>
+                      <td className="px-3 py-2 font-medium text-neutral-800">
+                        {row.employee_nickname ?? row.employee_name.split(" ")[0]}
+                        <span className="ml-1 text-[10px] text-neutral-400">{row.employee_name}</span>
+                      </td>
+                      {row.usage.map((u) => {
+                        const pct = u.annual_quota > 0 ? u.used_days / u.annual_quota : 0;
+                        const barCls = pct >= 1 ? "bg-red-500" : pct >= 0.8 ? "bg-orange-400" : pct >= 0.5 ? "bg-amber-400" : "bg-green-400";
+                        const textCls = pct >= 1 ? "text-red-700 font-semibold" : pct >= 0.8 ? "text-orange-700" : "text-neutral-700";
+                        return (
+                          <td key={u.leave_type_id} className="px-3 py-2 text-center">
+                            <div className={`text-xs ${textCls}`}>
+                              {u.used_days} / {u.annual_quota}
+                            </div>
+                            <div className="mt-0.5 h-1 w-full rounded-full bg-neutral-200">
+                              <div
+                                className={`h-1 rounded-full ${barCls} transition-all`}
+                                style={{ width: `${Math.min(pct * 100, 100)}%` }}
+                              />
+                            </div>
+                            <div className="text-[10px] text-neutral-400">เหลือ {Math.max(u.annual_quota - u.used_days, 0)}</div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
