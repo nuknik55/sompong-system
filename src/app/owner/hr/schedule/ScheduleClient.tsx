@@ -240,10 +240,10 @@ export function ScheduleClient({
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="rounded bg-neutral-200 px-2 py-0.5 font-medium text-neutral-600">– วันหยุดประจำ</span>
         <span className="rounded bg-purple-100 px-2 py-0.5 font-medium text-purple-700">★ นักขัตฤกษ์</span>
-        <span className="rounded bg-teal-100 px-2 py-0.5 font-medium text-teal-800">พร✓ ใบลา✓ อนุมัติแล้ว (จากระบบใบลา)</span>
         {(Object.entries(NOTE_CFG) as [NoteType, NoteConfig][]).map(([k, v]) => (
-          <span key={k} className={`rounded px-2 py-0.5 font-medium ${v.cell}`}>{v.short} {v.label}</span>
+          <span key={k} className={`rounded px-2 py-0.5 font-medium ${v.cell}`}>{v.label}</span>
         ))}
+        <span className="text-neutral-400">&nbsp;|&nbsp;✓ = มีใบลาอนุมัติแล้ว</span>
         <span className="ml-2 text-neutral-400">คลิกช่องเพื่อเพิ่ม/แก้ไขโน้ต</span>
       </div>
 
@@ -301,8 +301,8 @@ export function ScheduleClient({
                       cellCls += cfg.cell;
                       content = (
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="font-bold text-[10px]">{cfg.short}</span>
-                          <span className="text-[9px] leading-tight line-clamp-2 max-w-[76px]">{existingNote.note}</span>
+                          <span className="font-bold text-[10px]">{cfg.label}</span>
+                          {existingNote.note && <span className="text-[9px] leading-tight line-clamp-2 max-w-[76px] opacity-70">{existingNote.note}</span>}
                         </div>
                       );
                     } else if (approvedLeave) {
@@ -311,8 +311,8 @@ export function ScheduleClient({
                       cellCls += lCfg.cell + " hover:brightness-95";
                       content = (
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="font-bold text-[10px]">{lCfg.short}</span>
-                          <span className="text-[8px] font-semibold opacity-75">ใบลา✓</span>
+                          <span className="font-bold text-[10px]">{lCfg.label}</span>
+                          <span className="text-[8px] font-semibold opacity-60">✓</span>
                         </div>
                       );
                     } else if (isHol) {
