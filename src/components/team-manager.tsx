@@ -41,7 +41,7 @@ export function TeamManager({
   // Role options visible to the current actor
   const roleOptions = isOwner
     ? ALL_ROLE_OPTIONS
-    : ALL_ROLE_OPTIONS.filter((o) => o.value !== "owner");
+    : ALL_ROLE_OPTIONS.filter((o) => o.value !== "owner" && o.value !== "hr");
 
   // ── List state ──────────────────────────────────────────────────────────────
   const [list, setList] = useState(users);
