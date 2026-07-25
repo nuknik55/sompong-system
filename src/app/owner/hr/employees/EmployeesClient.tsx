@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { upsertEmployee } from "../actions";
-import type { Employee, Department } from "../actions";
+import type { Employee, Department, CompDayBalance } from "../actions";
 
 const DAYS_TH = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
 const EMP_TYPES: Record<string, string> = {
@@ -46,13 +46,16 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
 export function EmployeesClient({
   initialEmployees,
   departments,
+  balances,
   isOwner,
 }: {
   initialEmployees: Employee[];
   departments: Department[];
+  balances: CompDayBalance[];
   isOwner: boolean;
 }) {
   const [employees, setEmployees] = useState(initialEmployees);
+  const balanceMap = new Map(balances.map((b) => [b.employee_id, b]));
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [form, setForm] = useState<Omit<Employee, "id" | "department_name">>(BLANK_EMP);
@@ -165,6 +168,7 @@ export function EmployeesClient({
                       <th className="px-3 py-2">วันหยุดประจำ</th>
                       <th className="px-3 py-2">วันบรรจุ</th>
                       <th className="px-3 py-2">ประเภท</th>
+                      <th className="px-3 py-2 text-center">วันหยุดค้าง</th>
                       <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
@@ -190,6 +194,26 @@ export function EmployeesClient({
                         <td className="px-3 py-2 text-neutral-600">{emp.weekly_day_off ?? "–"}</td>
                         <td className="px-3 py-2 text-neutral-500">{thDate(emp.hire_date)}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{EMP_TYPES[emp.employment_type] ?? emp.employment_type}</td>
+                        <td className="px-3 py-2 text-center">
+                          {(() => {
+                            const b = balanceMap.get(emp.id);
+                            if (!b) return <span className="text-xs text-neutral-300">–</span>;
+                            const avail = b.earned - b.used;
+                            return (
+                              <div className="flex flex-col items-center gap-0.5">
+                                {avail > 0 && (
+                                  <span className="rounded bg-teal-100 px-1.5 py-0.5 text-xs font-semibold text-teal-700">ค้าง {avail} วัน</span>
+                                )}
+                                {b.pending_makeup > 0 && (
+                                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-600">ต้องทดแทน {b.pending_makeup} วัน</span>
+                                )}
+                                {avail === 0 && b.pending_makeup === 0 && (
+                                  <span className="text-xs text-neutral-300">–</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-3 py-2">
                           <button
                             onClick={() => openEdit(emp)}

@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/owner/hr/leave", label: "ใบลา", hrOnly: false },
   { href: "/owner/hr/attendance", label: "บันทึกเวลา", hrOnly: false },
   { href: "/owner/hr/schedule", label: "ตารางกะ", hrOnly: false },
+  { href: "/owner/hr/dayswap", label: "เปลี่ยนวันหยุด", hrOnly: false },
   { href: "/owner/hr/payroll", label: "เงินเดือน", hrOnly: true },
   { href: "/owner/hr/settings", label: "ตั้งค่า", hrOnly: true },
 ];

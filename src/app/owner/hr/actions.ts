@@ -774,3 +774,130 @@ export async function deleteAttendancePunch(id: string): Promise<void> {
   await supabase.from("attendance_punches").delete().eq("id", id);
   revalidatePath("/owner/hr/attendance");
 }
+
+// ─── Day Swap Requests ────────────────────────────────────────────────────────
+
+export type DaySwapRequest = {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_nickname: string | null;
+  work_date: string;
+  off_date: string | null;
+  swap_type: "work_first" | "off_first";
+  compensation: "bank_day" | "extra_pay";
+  note: string | null;
+  created_at: string;
+};
+
+export type CompDayBalance = {
+  employee_id: string;
+  employee_name: string;
+  employee_nickname: string | null;
+  earned: number;        // work_first bank_day ที่ work_date ผ่านแล้ว
+  used: number;          // work_first bank_day ที่ off_date ผ่านแล้ว
+  pending_makeup: number; // off_first ที่ยังไม่ได้มาทดแทน
+};
+
+export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[]> {
+  const supabase = await createClient();
+  let q = supabase
+    .from("day_swap_requests")
+    .select(`id, employee_id, work_date, off_date, swap_type, compensation, note, created_at, employees(full_name, nickname)`)
+    .order("created_at", { ascending: false });
+  if (year) {
+    q = q.or(`work_date.gte.${year}-01-01,off_date.gte.${year}-01-01`);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    employee_id: r.employee_id as string,
+    employee_name: (r.employees as { full_name: string } | null)?.full_name ?? "",
+    employee_nickname: (r.employees as { nickname: string | null } | null)?.nickname ?? null,
+    work_date: r.work_date as string,
+    off_date: r.off_date as string | null,
+    swap_type: r.swap_type as "work_first" | "off_first",
+    compensation: r.compensation as "bank_day" | "extra_pay",
+    note: r.note as string | null,
+    created_at: r.created_at as string,
+  }));
+}
+
+export async function getCompDayBalances(): Promise<CompDayBalance[]> {
+  const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data: employees }, { data: swaps }] = await Promise.all([
+    supabase.from("employees").select("id,full_name,nickname").eq("is_active", true).order("full_name"),
+    supabase.from("day_swap_requests").select("employee_id,work_date,off_date,swap_type,compensation"),
+  ]);
+  const empList = employees ?? [];
+  const swapList = swaps ?? [];
+  return empList.map((emp: Record<string, unknown>) => {
+    const mySwaps = swapList.filter((s: Record<string, unknown>) => s.employee_id === emp.id);
+    const earned = mySwaps.filter(
+      (s: Record<string, unknown>) =>
+        s.swap_type === "work_first" &&
+        s.compensation === "bank_day" &&
+        typeof s.work_date === "string" &&
+        s.work_date <= today,
+    ).length;
+    const used = mySwaps.filter(
+      (s: Record<string, unknown>) =>
+        s.swap_type === "work_first" &&
+        s.compensation === "bank_day" &&
+        s.off_date !== null &&
+        typeof s.off_date === "string" &&
+        s.off_date <= today,
+    ).length;
+    const pending_makeup = mySwaps.filter(
+      (s: Record<string, unknown>) =>
+        s.swap_type === "off_first" &&
+        (s.work_date === null || s.work_date === ""),
+    ).length;
+    return {
+      employee_id: emp.id as string,
+      employee_name: emp.full_name as string,
+      employee_nickname: emp.nickname as string | null,
+      earned,
+      used,
+      pending_makeup,
+    };
+  });
+}
+
+export async function upsertDaySwapRequest(r: {
+  id?: string;
+  employee_id: string;
+  work_date: string | null;
+  off_date: string | null;
+  swap_type: "work_first" | "off_first";
+  compensation: "bank_day" | "extra_pay";
+  note: string | null;
+}): Promise<void> {
+  await requireHR();
+  const supabase = await createClient();
+  const payload = {
+    employee_id: r.employee_id,
+    work_date: r.work_date || null,
+    off_date: r.off_date || null,
+    swap_type: r.swap_type,
+    compensation: r.compensation,
+    note: r.note || null,
+  };
+  if (r.id) {
+    await supabase.from("day_swap_requests").update(payload).eq("id", r.id);
+  } else {
+    await supabase.from("day_swap_requests").insert(payload);
+  }
+  revalidatePath("/owner/hr/dayswap");
+  revalidatePath("/owner/hr/employees");
+}
+
+export async function deleteDaySwapRequest(id: string): Promise<void> {
+  await requireHR();
+  const supabase = await createClient();
+  await supabase.from("day_swap_requests").delete().eq("id", id);
+  revalidatePath("/owner/hr/dayswap");
+  revalidatePath("/owner/hr/employees");
+}
