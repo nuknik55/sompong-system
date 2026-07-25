@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireHR } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ export async function getDepartments(): Promise<Department[]> {
 }
 
 export async function upsertDepartment(d: { id?: string; name: string }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (d.id) {
     await supabase.from("departments").update({ name: d.name }).eq("id", d.id);
@@ -140,7 +140,7 @@ export async function upsertDepartment(d: { id?: string; name: string }): Promis
 }
 
 export async function setDepartmentActive(id: string, is_active: boolean): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("departments").update({ is_active }).eq("id", id);
   revalidatePath("/owner/hr");
@@ -203,7 +203,7 @@ export async function upsertEmployee(e: {
   citizenship_type: string;
   is_active: boolean;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   const payload = {
     employee_code: e.employee_code || null,
@@ -250,7 +250,7 @@ export async function upsertLeaveType(lt: {
   requires_medical_cert: boolean;
   is_active: boolean;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (lt.id) {
     await supabase.from("leave_types").update(lt).eq("id", lt.id);
@@ -316,7 +316,7 @@ export async function upsertLeaveRequest(data: {
   total_days: number;
   reason: string;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (data.id) {
     const { id, ...rest } = data;
@@ -328,14 +328,14 @@ export async function upsertLeaveRequest(data: {
 }
 
 export async function updateLeaveStatus(id: string, status: "approved" | "rejected"): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("leave_requests").update({ status }).eq("id", id);
   revalidatePath("/owner/hr/leave");
 }
 
 export async function deleteLeaveRequest(id: string): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("leave_requests").delete().eq("id", id);
   revalidatePath("/owner/hr/leave");
@@ -362,7 +362,7 @@ export async function upsertHoliday(h: {
   pay_type: "multiplier" | "substitute";
   pay_multiplier: number;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (h.id) {
     await supabase.from("holidays").update(h).eq("id", h.id);
@@ -373,7 +373,7 @@ export async function upsertHoliday(h: {
 }
 
 export async function deleteHoliday(id: string): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("holidays").delete().eq("id", id);
   revalidatePath("/owner/hr/settings");
@@ -398,7 +398,7 @@ export async function upsertOtRule(r: {
   multiplier: number;
   is_active: boolean;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (r.id) {
     await supabase.from("ot_rules").update(r).eq("id", r.id);
@@ -428,7 +428,7 @@ export async function createPayrollPeriod(p: {
   period_half: "first" | "second";
   pay_date: string;
 }): Promise<string> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("payroll_periods")
@@ -441,7 +441,7 @@ export async function createPayrollPeriod(p: {
 }
 
 export async function closePayrollPeriod(id: string): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("payroll_periods").update({ is_closed: true }).eq("id", id);
   revalidatePath("/owner/hr/payroll");
@@ -491,7 +491,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
 }
 
 export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" | "employee_code" | "department_name" | "gross_total" | "net_total"> & { id: string | null }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   const gross =
     e.base_salary + e.position_allowance + e.special_bonus +
@@ -564,7 +564,7 @@ export async function upsertAttendanceDaily(r: {
   leave_type_id: string | null;
   note: string | null;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("attendance_daily").upsert(
     { ...r, source: "manual" },
@@ -577,7 +577,7 @@ export async function deleteAttendanceDailyRecord(
   employeeId: string,
   workDate: string,
 ): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase
     .from("attendance_daily")
@@ -616,7 +616,7 @@ export async function upsertAttendancePunch(p: {
   punch_time: string;
   note?: string;
 }): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   if (p.id) {
     const { id, ...rest } = p;
@@ -628,7 +628,7 @@ export async function upsertAttendancePunch(p: {
 }
 
 export async function deleteAttendancePunch(id: string): Promise<void> {
-  await requireAdmin();
+  await requireHR();
   const supabase = await createClient();
   await supabase.from("attendance_punches").delete().eq("id", id);
   revalidatePath("/owner/hr/attendance");

@@ -14,11 +14,11 @@ const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มี
 type Status = "present" | "absent" | "late" | "leave" | "day_off";
 
 const S: Record<Status, { label: string; short: string; cell: string; btn: string }> = {
-  present: { label: "มา",   short: "✓", cell: "bg-green-50 text-green-700",      btn: "bg-green-100 text-green-800 hover:bg-green-200" },
-  absent:  { label: "ขาด",  short: "✗", cell: "bg-red-50 text-red-700",          btn: "bg-red-100 text-red-800 hover:bg-red-200" },
-  late:    { label: "สาย",  short: "ส", cell: "bg-amber-50 text-amber-700",      btn: "bg-amber-100 text-amber-800 hover:bg-amber-200" },
-  leave:   { label: "ลา",   short: "ล", cell: "bg-blue-50 text-blue-700",        btn: "bg-blue-100 text-blue-800 hover:bg-blue-200" },
-  day_off: { label: "หยุด", short: "–", cell: "bg-neutral-100 text-neutral-500", btn: "bg-neutral-200 text-neutral-700 hover:bg-neutral-300" },
+  present: { label: "มา",   short: "✓", cell: "bg-green-200 text-green-900",     btn: "bg-green-100 text-green-800 hover:bg-green-200" },
+  absent:  { label: "ขาด",  short: "✗", cell: "bg-red-200 text-red-900",         btn: "bg-red-100 text-red-800 hover:bg-red-200" },
+  late:    { label: "สาย",  short: "ส", cell: "bg-amber-200 text-amber-900",     btn: "bg-amber-100 text-amber-800 hover:bg-amber-200" },
+  leave:   { label: "ลา",   short: "ล", cell: "bg-blue-200 text-blue-900",       btn: "bg-blue-100 text-blue-800 hover:bg-blue-200" },
+  day_off: { label: "หยุด", short: "–", cell: "bg-neutral-300 text-neutral-600", btn: "bg-neutral-200 text-neutral-700 hover:bg-neutral-300" },
 };
 
 type EditState = {
@@ -251,7 +251,7 @@ export function AttendanceClient({
               const rowBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50/40";
               const stickyBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50";
               return (
-                <tr key={emp.id} className={`border-b border-neutral-100 last:border-0 ${rowBg}`}>
+                <tr key={emp.id} className={`border-b-2 border-neutral-300 last:border-0 ${rowBg}`}>
                   <td className={`sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 ${stickyBg}`}>
                     <div className="max-w-[96px] truncate font-medium text-neutral-900">{emp.nickname ?? emp.full_name}</div>
                     {emp.department_name && <div className="truncate text-[10px] text-neutral-400">{emp.department_name}</div>}
@@ -276,22 +276,22 @@ export function AttendanceClient({
                       const cfg = S[rec.status as Status] ?? S.present;
                       cellCls += cfg.cell;
                       if (rec.status === "late" && rec.late_minutes > 0) {
-                        content = <span className="text-[9px]">{rec.late_minutes}'</span>;
+                        content = <span className="text-[9px] font-bold">{rec.late_minutes}'</span>;
                       } else if (rec.status === "leave" && rec.leave_type_id) {
-                        content = <span className="text-[9px]">{leaveTypeMap.get(rec.leave_type_id) ?? "ล"}</span>;
+                        content = <span className="text-[9px] font-bold">{leaveTypeMap.get(rec.leave_type_id) ?? "ล"}</span>;
                       } else {
-                        content = <span>{cfg.short}</span>;
+                        content = <span className="font-bold">{cfg.short}</span>;
                       }
                     } else if (isHol) {
-                      cellCls += "bg-purple-50 text-purple-400 hover:bg-purple-100";
-                      content = <span className="text-[9px]">*</span>;
+                      cellCls += "bg-purple-100 text-purple-600 hover:bg-purple-200";
+                      content = <span className="text-[10px] font-bold">*</span>;
                     } else if (isOff) {
-                      cellCls += "bg-neutral-100 text-neutral-400 hover:bg-neutral-200";
-                      content = <span>–</span>;
+                      cellCls += "bg-neutral-200 text-neutral-500 hover:bg-neutral-300";
+                      content = <span className="font-bold">–</span>;
                     } else if (dow === 0) {
-                      cellCls += "bg-red-50/40 text-neutral-200 hover:bg-red-50";
+                      cellCls += "bg-red-50 text-neutral-300 hover:bg-red-100";
                     } else {
-                      cellCls += "text-neutral-200 hover:bg-green-50";
+                      cellCls += "bg-white text-neutral-300 hover:bg-green-100 border border-neutral-100";
                     }
 
                     return (
