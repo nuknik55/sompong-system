@@ -316,86 +316,109 @@ export function AttendanceClient({
         </table>
       </div>
 
-      {/* Edit panel — fixed bottom */}
+      {/* Edit modal */}
       {edit && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-neutral-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
-            <div className="min-w-[120px]">
-              <p className="text-xs font-semibold text-neutral-900">{edit.empName}</p>
-              <p className="text-[11px] text-neutral-500">{edit.displayDate}</p>
+        <>
+          {/* backdrop */}
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setEdit(null)} />
+
+          {/* modal */}
+          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-200 bg-white p-5 shadow-2xl">
+            {/* header */}
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{edit.empName}</p>
+                <p className="text-xs text-neutral-500">{edit.displayDate}</p>
+              </div>
+              <button onClick={() => setEdit(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">✕</button>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            {/* status buttons */}
+            <div className="mb-4 grid grid-cols-5 gap-1.5">
               {(Object.entries(S) as [Status, (typeof S)[Status]][]).map(([k, v]) => (
                 <button
                   key={k}
                   onClick={() => setEdit((e) => e ? { ...e, status: k } : e)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${edit.status === k ? `${v.btn} ring-2 ring-neutral-400 ring-offset-1` : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}
+                  className={`rounded-lg py-2 text-xs font-semibold transition-colors ${
+                    edit.status === k
+                      ? `${v.cell} ring-2 ring-offset-1 ring-neutral-500`
+                      : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                  }`}
                 >
-                  {v.label}
+                  <div className="text-sm">{v.short}</div>
+                  <div>{v.label}</div>
                 </button>
               ))}
             </div>
 
-            {edit.status === "late" && (
-              <label className="flex items-center gap-1.5 text-xs">
-                <span className="text-neutral-600">สาย</span>
+            {/* conditional fields */}
+            <div className="mb-4 space-y-2">
+              {edit.status === "late" && (
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="w-20 text-neutral-600">สายกี่นาที</span>
+                  <input
+                    type="number" min={0}
+                    value={edit.lateMin}
+                    onChange={(e) => setEdit((v) => v ? { ...v, lateMin: +e.target.value } : v)}
+                    className="w-20 rounded border border-neutral-300 px-2 py-1.5 text-center text-sm"
+                  />
+                  <span className="text-neutral-500">นาที</span>
+                </label>
+              )}
+
+              {edit.status === "leave" && leaveTypes.length > 0 && (
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="w-20 text-neutral-600">ประเภทลา</span>
+                  <select
+                    value={edit.leaveTypeId}
+                    onChange={(e) => setEdit((v) => v ? { ...v, leaveTypeId: e.target.value } : v)}
+                    className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                  >
+                    {leaveTypes.map((lt) => (
+                      <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="w-20 text-neutral-600">OT</span>
                 <input
-                  type="number" min={0}
-                  value={edit.lateMin}
-                  onChange={(e) => setEdit((v) => v ? { ...v, lateMin: +e.target.value } : v)}
-                  className="w-16 rounded border border-neutral-300 px-2 py-1 text-center text-xs"
+                  type="number" min={0} step={0.5}
+                  value={edit.otHours}
+                  onChange={(e) => setEdit((v) => v ? { ...v, otHours: +e.target.value } : v)}
+                  className="w-20 rounded border border-neutral-300 px-2 py-1.5 text-center text-sm"
                 />
-                <span className="text-neutral-600">นาที</span>
+                <span className="text-neutral-500">ชั่วโมง</span>
               </label>
-            )}
 
-            {edit.status === "leave" && leaveTypes.length > 0 && (
-              <select
-                value={edit.leaveTypeId}
-                onChange={(e) => setEdit((v) => v ? { ...v, leaveTypeId: e.target.value } : v)}
-                className="rounded border border-neutral-300 px-2 py-1 text-xs"
-              >
-                {leaveTypes.map((lt) => (
-                  <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
-                ))}
-              </select>
-            )}
+              <label className="flex items-center gap-2 text-sm">
+                <span className="w-20 text-neutral-600">หมายเหตุ</span>
+                <input
+                  type="text" placeholder="ระบุ..."
+                  value={edit.note}
+                  onChange={(e) => setEdit((v) => v ? { ...v, note: e.target.value } : v)}
+                  className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
 
-            <label className="flex items-center gap-1.5 text-xs">
-              <span className="text-neutral-500">OT</span>
-              <input
-                type="number" min={0} step={0.5}
-                value={edit.otHours}
-                onChange={(e) => setEdit((v) => v ? { ...v, otHours: +e.target.value } : v)}
-                className="w-16 rounded border border-neutral-300 px-2 py-1 text-center text-xs"
-              />
-              <span className="text-neutral-500">ชม.</span>
-            </label>
-
-            <input
-              type="text" placeholder="หมายเหตุ"
-              value={edit.note}
-              onChange={(e) => setEdit((v) => v ? { ...v, note: e.target.value } : v)}
-              className="w-32 rounded border border-neutral-300 px-2 py-1 text-xs"
-            />
-
-            <div className="ml-auto flex gap-2">
-              <button onClick={clearCell} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-500 hover:bg-neutral-50">
-                ล้าง
+            {/* actions */}
+            <div className="flex gap-2">
+              <button onClick={clearCell} className="rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
+                ล้างข้อมูล
               </button>
-              <button onClick={() => setEdit(null)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-500 hover:bg-neutral-50">
+              <div className="flex-1" />
+              <button onClick={() => setEdit(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
                 ยกเลิก
               </button>
-              <button onClick={saveEdit} disabled={isPending} className="rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+              <button onClick={saveEdit} disabled={isPending} className="rounded-lg bg-neutral-900 px-5 py-2 text-xs font-semibold text-white hover:bg-neutral-700 disabled:opacity-50">
                 บันทึก
               </button>
             </div>
           </div>
-        </div>
+        </>
       )}
-
-      {edit && <div className="h-20" />}
     </div>
   );
 }
