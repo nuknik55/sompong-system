@@ -162,7 +162,7 @@ export function TeamManager({
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
           <input
-            placeholder="ชื่อผู้ใช้สำหรับ login (ภาษาอังกฤษ/ตัวเลข)"
+            placeholder="User — ชื่อสำหรับ login (ภาษาอังกฤษ/ตัวเลข)"
             value={newUsername}
             onChange={(e) => setNewUsername(e.target.value)}
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
@@ -199,7 +199,7 @@ export function TeamManager({
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
               <th className="px-3 py-2">ชื่อ</th>
-              <th className="px-3 py-2">ชื่อผู้ใช้</th>
+              <th className="px-3 py-2">User</th>
               <th className="px-3 py-2">สิทธิ์</th>
               <th className="px-3 py-2"></th>
             </tr>
@@ -275,7 +275,7 @@ export function TeamManager({
                           <span className="inline-flex items-center rounded-full bg-brand-gold/15 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
                             {ROLE_LABEL.owner}
                           </span>
-                        ) : (
+                        ) : canActOnRow ? (
                           <div className="flex items-center gap-2">
                             <select
                               value={pendingRole}
@@ -301,6 +301,8 @@ export function TeamManager({
                               </button>
                             )}
                           </div>
+                        ) : (
+                          <span className="text-sm text-neutral-500">{ROLE_LABEL[u.role]}</span>
                         )}
                       </td>
 
