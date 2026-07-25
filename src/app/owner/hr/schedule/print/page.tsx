@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireHROrAdmin } from "@/lib/auth";
 import { getEmployees, getDepartments, getHolidays, getScheduleWeek } from "../../actions";
+import { PrintButtons } from "./PrintButtons";
 
 const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const DAYS_LONG = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
@@ -114,21 +115,7 @@ export default async function SchedulePrintPage({
         .print-date { text-align: right; font-size: 10px; color: #888; margin-bottom: 4px; }
       `}</style>
 
-      {/* Print button (hidden on print) */}
-      <div className="no-print fixed right-4 top-4 flex gap-2">
-        <button
-          onClick={() => window.history.back()}
-          style={{ padding: "6px 14px", border: "1px solid #ccc", borderRadius: 6, cursor: "pointer", background: "#fff" }}
-        >
-          ← กลับ
-        </button>
-        <button
-          onClick={() => window.print()}
-          style={{ padding: "6px 14px", background: "#111", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}
-        >
-          🖨 พิมพ์ / บันทึก PDF
-        </button>
-      </div>
+      <PrintButtons />
 
       <div style={{ padding: "16px 8px" }}>
         <p className="print-date">พิมพ์วันที่ {printDateStr}</p>
