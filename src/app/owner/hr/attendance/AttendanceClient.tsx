@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { upsertAttendanceDaily, deleteAttendanceDailyRecord } from "../actions";
 import type { Employee, Department, LeaveType, Holiday, AttendanceDaily, LeaveDay } from "../actions";
@@ -66,11 +66,20 @@ export function AttendanceClient({
 
   const [edit, setEdit] = useState<EditState | null>(null);
 
+  // Drag-to-select (desktop only)
+  const isDraggingRef = useRef(false);
+  const dragEmpIdRef = useRef<string | null>(null);
+  const dragDatesRef = useRef<string[]>([]);
+  const [dragHighlight, setDragHighlight] = useState<{ empId: string; dates: Set<string> } | null>(null);
+  type BulkEdit = { empId: string; empName: string; dates: string[]; status: Status; lateMin: number; leaveTypeId: string };
+  const [bulk, setBulk] = useState<BulkEdit | null>(null);
+
   const holidayDates = new Set(holidays.map((h) => h.holiday_date));
   const daysInMonth = new Date(year, month, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.code]));
   const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
+  const vacationTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "AL" || lt.name_th.includes("พักร้อน")).map((lt) => lt.id));
 
   const visibleEmps = deptId
     ? employees.filter((e) => e.department_id === deptId)
@@ -176,20 +185,112 @@ export function AttendanceClient({
   }
 
   function summary(empId: string) {
-    let absent = 0, lateMin = 0, leave = 0, ot = 0;
+    let absent = 0, lateMin = 0, leave = 0, vacation = 0, ot = 0;
     for (let d = 1; d <= daysInMonth; d++) {
       const r = getRecord(empId, d);
       if (r) {
         if (r.status === "absent") absent++;
         if (r.status === "late") lateMin += r.late_minutes;
-        if (r.status === "leave") leave++;
+        if (r.status === "leave") {
+          leave++;
+          if (r.leave_type_id && vacationTypeIds.has(r.leave_type_id)) vacation++;
+        }
         ot += Number(r.ot_hours);
-      } else if (leaveMap.has(`${empId}_${dateStr(d)}`)) {
-        // count approved leave days that have no manual attendance record
-        leave++;
+      } else {
+        const al = leaveMap.get(`${empId}_${dateStr(d)}`);
+        if (al) {
+          leave++;
+          if (al.leave_type_code === "AL" || al.leave_type_name.includes("พักร้อน")) vacation++;
+        }
       }
     }
-    return { absent, lateMin, leave, ot };
+    return { absent, lateMin, leave, vacation, ot };
+  }
+
+  function handleCellMouseDown(emp: Employee, day: number) {
+    isDraggingRef.current = true;
+    dragEmpIdRef.current = emp.id;
+    const ds = dateStr(day);
+    dragDatesRef.current = [ds];
+    setDragHighlight({ empId: emp.id, dates: new Set([ds]) });
+  }
+
+  function handleCellMouseEnter(emp: Employee, day: number) {
+    if (!isDraggingRef.current || dragEmpIdRef.current !== emp.id) return;
+    const ds = dateStr(day);
+    if (!dragDatesRef.current.includes(ds)) {
+      dragDatesRef.current = [...dragDatesRef.current, ds];
+      setDragHighlight((prev) => {
+        if (!prev) return null;
+        const next = new Set(prev.dates);
+        next.add(ds);
+        return { empId: prev.empId, dates: next };
+      });
+    }
+  }
+
+  useEffect(() => {
+    function handleMouseUp() {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      const empId = dragEmpIdRef.current;
+      const dates = [...dragDatesRef.current].sort();
+      dragEmpIdRef.current = null;
+      dragDatesRef.current = [];
+      setDragHighlight(null);
+      if (!empId || dates.length <= 1) return; // single cell → onClick handles it
+      const emp = visibleEmps.find((e) => e.id === empId);
+      setBulk({
+        empId,
+        empName: emp?.nickname ?? emp?.full_name ?? "",
+        dates,
+        status: "absent",
+        lateMin: 0,
+        leaveTypeId: leaveTypes[0]?.id ?? "",
+      });
+    }
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [visibleEmps, leaveTypes]);
+
+  function applyBulk() {
+    if (!bulk) return;
+    const toApply = bulk.dates.filter((ds) => !records.has(`${bulk.empId}_${ds}`));
+    if (toApply.length === 0) { setBulk(null); return; }
+    const newRecs: AttendanceDaily[] = toApply.map((ds) => ({
+      id: crypto.randomUUID(),
+      employee_id: bulk.empId,
+      work_date: ds,
+      status: bulk.status,
+      late_minutes: bulk.status === "late" ? bulk.lateMin : 0,
+      ot_hours: 0,
+      leave_type_id: bulk.status === "leave" ? (bulk.leaveTypeId || null) : null,
+      note: null,
+      source: "manual",
+    }));
+    setRecords((prev) => {
+      const m = new Map(prev);
+      for (const r of newRecs) m.set(`${r.employee_id}_${r.work_date}`, r);
+      return m;
+    });
+    setBulk(null);
+    setSaving(true);
+    startTransition(async () => {
+      await Promise.all(
+        newRecs.map((r) =>
+          upsertAttendanceDaily({
+            employee_id: r.employee_id,
+            work_date: r.work_date,
+            status: r.status,
+            late_minutes: r.late_minutes,
+            ot_hours: r.ot_hours,
+            leave_type_id: r.leave_type_id,
+            note: r.note,
+          })
+        )
+      );
+      setSaving(false);
+    });
   }
 
   return (
@@ -225,12 +326,12 @@ export function AttendanceClient({
         ))}
         <span className="rounded bg-purple-50 px-2 py-0.5 font-medium text-purple-700">* นักขัตฤกษ์</span>
         <span className="rounded bg-teal-100 px-2 py-0.5 font-medium text-teal-800">ลา✓ ใบลาอนุมัติแล้ว</span>
-        <span className="ml-2 text-neutral-400">คลิกช่องเพื่อบันทึกสถานะ</span>
+        <span className="ml-2 text-neutral-400">คลิก หรือ ลากข้ามหลายวัน เพื่อบันทึกสถานะ</span>
       </div>
 
       {/* Grid */}
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <table className="w-full border-collapse text-xs">
+        <table className={`w-full border-collapse text-xs${dragHighlight ? " select-none" : ""}`}>
           <thead>
             <tr className="bg-neutral-800 text-neutral-200">
               <th className="sticky left-0 z-10 min-w-[100px] bg-neutral-800 px-3 py-2 text-left font-medium">ชื่อ</th>
@@ -245,8 +346,9 @@ export function AttendanceClient({
                 );
               })}
               <th className="min-w-[32px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">ขาด</th>
-              <th className="min-w-[40px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">สาย(ม.)</th>
+              <th className="min-w-[40px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">สาย(น.)</th>
               <th className="min-w-[32px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">ลา</th>
+              <th className="min-w-[36px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">พักร้อน</th>
               <th className="min-w-[40px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">OT(ชม.)</th>
             </tr>
           </thead>
@@ -312,11 +414,14 @@ export function AttendanceClient({
                       cellCls += "bg-white text-neutral-300 hover:bg-green-100 border border-neutral-100";
                     }
 
+                    const isDragHighlighted = dragHighlight?.empId === emp.id && dragHighlight.dates.has(ds);
                     return (
                       <td
                         key={d}
                         onClick={() => openEdit(emp, d)}
-                        className={`h-8 w-7 text-center font-medium ${cellCls}`}
+                        onMouseDown={() => handleCellMouseDown(emp, d)}
+                        onMouseEnter={() => handleCellMouseEnter(emp, d)}
+                        className={`h-8 w-7 text-center font-medium ${cellCls}${isDragHighlighted ? " ring-2 ring-inset ring-neutral-700" : ""}`}
                       >
                         {content}
                       </td>
@@ -326,6 +431,7 @@ export function AttendanceClient({
                   <td className="bg-neutral-50/60 px-1 py-1.5 text-center font-semibold text-red-600">{sum.absent > 0 ? sum.absent : ""}</td>
                   <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-amber-700">{sum.lateMin > 0 ? sum.lateMin : ""}</td>
                   <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-blue-700">{sum.leave > 0 ? sum.leave : ""}</td>
+                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-teal-700">{sum.vacation > 0 ? sum.vacation : ""}</td>
                   <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-neutral-600">{sum.ot > 0 ? sum.ot : ""}</td>
                 </tr>
               );
@@ -437,6 +543,84 @@ export function AttendanceClient({
           </div>
         </>
       )}
+
+      {/* Bulk drag dialog */}
+      {bulk && (() => {
+        const skipCount = bulk.dates.filter((ds) => records.has(`${bulk.empId}_${ds}`)).length;
+        const applyCount = bulk.dates.length - skipCount;
+        const dayNums = bulk.dates.map((ds) => parseInt(ds.split("-")[2]));
+        return (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setBulk(null)} />
+            <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-200 bg-white p-5 shadow-2xl">
+              <div className="mb-3">
+                <p className="text-sm font-semibold text-neutral-900">{bulk.empName}</p>
+                <p className="text-xs text-neutral-500">
+                  วันที่ {dayNums.join(", ")} ({bulk.dates.length} วัน{skipCount > 0 ? ` · ข้ามที่มีข้อมูลแล้ว ${skipCount} วัน` : ""})
+                </p>
+              </div>
+
+              {/* Status — ไม่มี "มา" เพราะช่องว่าง = มาทำงาน */}
+              <div className="mb-3 grid grid-cols-4 gap-1.5">
+                {(["absent", "late", "leave", "day_off"] as Status[]).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => setBulk((b) => b ? { ...b, status: k } : b)}
+                    className={`rounded-lg py-2 text-xs font-semibold transition-colors ${
+                      bulk.status === k
+                        ? `${S[k].cell} ring-2 ring-offset-1 ring-neutral-500`
+                        : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                    }`}
+                  >
+                    {S[k].label}
+                  </button>
+                ))}
+              </div>
+
+              {bulk.status === "late" && (
+                <label className="mb-3 flex items-center gap-2 text-sm">
+                  <span className="w-20 text-neutral-600">สายกี่นาที</span>
+                  <input
+                    type="number" min={0}
+                    value={bulk.lateMin}
+                    onChange={(e) => setBulk((b) => b ? { ...b, lateMin: +e.target.value } : b)}
+                    className="w-20 rounded border border-neutral-300 px-2 py-1.5 text-center text-sm"
+                  />
+                  <span className="text-neutral-500">น.</span>
+                </label>
+              )}
+
+              {bulk.status === "leave" && leaveTypes.length > 0 && (
+                <label className="mb-3 flex items-center gap-2 text-sm">
+                  <span className="w-20 text-neutral-600">ประเภทลา</span>
+                  <select
+                    value={bulk.leaveTypeId}
+                    onChange={(e) => setBulk((b) => b ? { ...b, leaveTypeId: e.target.value } : b)}
+                    className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                  >
+                    {leaveTypes.map((lt) => (
+                      <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setBulk(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={applyBulk}
+                  disabled={applyCount === 0 || isPending}
+                  className="rounded-lg bg-neutral-900 px-5 py-2 text-xs font-semibold text-white hover:bg-neutral-700 disabled:opacity-40"
+                >
+                  บันทึก {applyCount} วัน
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

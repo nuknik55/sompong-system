@@ -379,14 +379,13 @@ export function ScheduleClient({
                 <button
                   key={k}
                   onClick={() => setEdit((e) => e ? { ...e, noteType: k } : e)}
-                  className={`rounded-lg py-2 text-[11px] font-semibold transition-colors ${
+                  className={`rounded-lg py-2.5 text-[11px] font-semibold transition-colors ${
                     edit.noteType === k
                       ? `${v.cell} ring-2 ring-offset-1 ring-neutral-400`
                       : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
                   }`}
                 >
-                  <div className="text-base">{v.short}</div>
-                  <div>{v.label}</div>
+                  {v.label}
                 </button>
               ))}
             </div>
