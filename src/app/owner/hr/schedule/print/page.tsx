@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireHROrAdmin } from "@/lib/auth";
-import { getEmployees, getDepartments, getHolidays, getScheduleWeek } from "../../actions";
+import { getEmployees, getDepartments, getHolidays, getScheduleWeek, getApprovedLeavesForWeek } from "../../actions";
 import { PrintButtons } from "./PrintButtons";
 
 const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
@@ -40,10 +40,11 @@ export default async function SchedulePrintPage({
   const deptId = sp.dept ?? "";
   const year = parseInt(weekStart.slice(0, 4));
 
-  const [employees, departments, notes, holidays, nextHol] = await Promise.all([
+  const [employees, departments, notes, leaveDays, holidays, nextHol] = await Promise.all([
     getEmployees(),
     getDepartments(),
     getScheduleWeek(weekStart),
+    getApprovedLeavesForWeek(weekStart),
     getHolidays(year),
     getHolidays(year + 1),
   ]);
@@ -53,6 +54,7 @@ export default async function SchedulePrintPage({
   const holidayName = new Map(allHolidays.map((h) => [h.holiday_date, h.name]));
 
   const noteMap = new Map(notes.map((n) => [`${n.employee_id}_${n.note_date}`, n]));
+  const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
 
   const visibleEmps = (deptId
     ? employees.filter((e) => e.department_id === deptId)
@@ -76,6 +78,7 @@ export default async function SchedulePrintPage({
       if (holidaySet.has(ds)) return false;
       const n = noteMap.get(`${emp.id}_${ds}`);
       if (n && ABSENT_TYPES.has(n.note_type)) return false;
+      if (!n && leaveMap.has(`${emp.id}_${ds}`)) return false;
       return true;
     }).length;
   }
@@ -160,11 +163,15 @@ export default async function SchedulePrintPage({
                     const isOff = dowOff === d.getDay();
                     const isHol = holidaySet.has(ds);
                     const n = noteMap.get(`${emp.id}_${ds}`);
+                    const lv = !n ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
                     let cls = "";
                     let text = "";
                     if (n) {
                       cls = `cell-${n.note_type}`;
                       text = n.note;
+                    } else if (lv) {
+                      cls = "cell-leave";
+                      text = `${lv.leave_type_code} (ใบลา✓)`;
                     } else if (isHol) {
                       cls = "hol-cell";
                       text = "★";

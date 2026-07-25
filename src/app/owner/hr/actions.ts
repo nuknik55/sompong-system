@@ -447,6 +447,54 @@ export async function closePayrollPeriod(id: string): Promise<void> {
   revalidatePath("/owner/hr/payroll");
 }
 
+// ─── Approved leaves expanded to per-day (for schedule overlay) ───────────────
+
+export type LeaveDay = {
+  employee_id: string;
+  leave_date: string;
+  leave_type_code: string;
+  leave_type_name: string;
+  leave_request_id: string;
+};
+
+export async function getApprovedLeavesForWeek(weekStart: string): Promise<LeaveDay[]> {
+  const supabase = await createClient();
+  const weekEnd = new Date(weekStart + "T00:00:00");
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+  const { data } = await supabase
+    .from("leave_requests")
+    .select("id, employee_id, date_from, date_to, leave_types(code, name_th)")
+    .eq("status", "approved")
+    .lte("date_from", weekEndStr)
+    .gte("date_to", weekStart);
+
+  if (!data) return [];
+
+  const result: LeaveDay[] = [];
+  for (const req of data as Record<string, unknown>[]) {
+    const lt = req.leave_types as { code: string; name_th: string } | null;
+    const from = new Date((req.date_from as string) + "T00:00:00");
+    const to = new Date((req.date_to as string) + "T00:00:00");
+    const wStart = new Date(weekStart + "T00:00:00");
+    const wEnd = new Date(weekEndStr + "T00:00:00");
+    const cur = new Date(Math.max(from.getTime(), wStart.getTime()));
+    const end = new Date(Math.min(to.getTime(), wEnd.getTime()));
+    while (cur <= end) {
+      result.push({
+        employee_id: req.employee_id as string,
+        leave_date: cur.toISOString().slice(0, 10),
+        leave_type_code: lt?.code ?? "ลา",
+        leave_type_name: lt?.name_th ?? "ลา",
+        leave_request_id: req.id as string,
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  return result;
+}
+
 // ─── Schedule Notes (Weekly Roster) ───────────────────────────────────────────
 
 export type NoteType = "compensatory" | "holiday_use" | "leave" | "sick" | "vacation" | "event" | "note";

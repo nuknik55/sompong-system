@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertScheduleNote } from "../actions";
-import type { Employee, Department, Holiday, ScheduleNote, NoteType } from "../actions";
+import type { Employee, Department, Holiday, ScheduleNote, NoteType, LeaveDay } from "../actions";
 
 const MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
 const DAYS_LONG = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
@@ -48,6 +48,7 @@ export function ScheduleClient({
   employees,
   departments,
   notes,
+  leaveDays,
   holidays,
   weekStart,
   deptId,
@@ -55,6 +56,7 @@ export function ScheduleClient({
   employees: Employee[];
   departments: Department[];
   notes: ScheduleNote[];
+  leaveDays: LeaveDay[];
   holidays: Holiday[];
   weekStart: string;
   deptId: string;
@@ -67,6 +69,10 @@ export function ScheduleClient({
     for (const n of notes) m.set(`${n.employee_id}_${n.note_date}`, n);
     return m;
   });
+  // approved leaves — read-only overlay (schedule_note takes priority if both exist)
+  const leaveMap = new Map<string, LeaveDay>(
+    leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l])
+  );
   const [edit, setEdit] = useState<EditState | null>(null);
 
   const monday = new Date(weekStart + "T00:00:00");
@@ -150,7 +156,6 @@ export function ScheduleClient({
     });
   }
 
-  // headcount per day = employees NOT on regular day off AND not on any note that means absent
   const ABSENT_TYPES = new Set<NoteType>(["leave", "sick", "vacation", "holiday_use", "compensatory"]);
   function headcount(ds: string): number {
     return visibleEmps.filter((emp) => {
@@ -158,6 +163,8 @@ export function ScheduleClient({
       if (holidaySet.has(ds)) return false;
       const n = getNote(emp.id, ds);
       if (n && ABSENT_TYPES.has(n.note_type)) return false;
+      // approved leave counts as absent
+      if (!n && leaveMap.has(`${emp.id}_${ds}`)) return false;
       return true;
     }).length;
   }
@@ -214,6 +221,7 @@ export function ScheduleClient({
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="rounded bg-neutral-200 px-2 py-0.5 font-medium text-neutral-600">– วันหยุดประจำ</span>
         <span className="rounded bg-purple-100 px-2 py-0.5 font-medium text-purple-700">★ นักขัตฤกษ์</span>
+        <span className="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-700">ใบลา✓ อนุมัติแล้ว (จากระบบใบลา)</span>
         {(Object.entries(NOTE_CFG) as [NoteType, NoteConfig][]).map(([k, v]) => (
           <span key={k} className={`rounded px-2 py-0.5 font-medium ${v.cell}`}>{v.short} {v.label}</span>
         ))}
@@ -261,6 +269,7 @@ export function ScheduleClient({
                     const isOff = isRegularOff(emp, ds);
                     const isHol = holidaySet.has(ds);
                     const existingNote = getNote(emp.id, ds);
+                    const approvedLeave = !existingNote ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
                     const isEditing = edit?.empId === emp.id && edit?.date === ds;
 
                     let cellCls = "cursor-pointer select-none transition-colors h-10 px-1 py-1 text-center align-middle ";
@@ -275,6 +284,15 @@ export function ScheduleClient({
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="font-bold text-[10px]">{cfg.short}</span>
                           <span className="text-[9px] leading-tight line-clamp-2 max-w-[76px]">{existingNote.note}</span>
+                        </div>
+                      );
+                    } else if (approvedLeave) {
+                      // from approved leave request — read-only, distinct styling
+                      cellCls += "bg-blue-50 text-blue-800 hover:bg-blue-100";
+                      content = (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="font-bold text-[10px]">{approvedLeave.leave_type_code}</span>
+                          <span className="rounded-full bg-blue-200 px-1 text-[8px] font-semibold text-blue-700">ใบลา✓</span>
                         </div>
                       );
                     } else if (isHol) {
