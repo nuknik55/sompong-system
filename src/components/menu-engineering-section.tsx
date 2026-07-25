@@ -56,12 +56,15 @@ const FILTERABLE_CLASSES: MenuEngineeringClass[] = ["Star", "Horse", "Puzzle", "
 
 export function MenuEngineeringSection({ rows, classCounts }: Props) {
   const [classFilter, setClassFilter] = useState<MenuEngineeringClass | null>(null);
+  const [hideUnranked, setHideUnranked] = useState(false);
 
   function toggleFilter(cls: MenuEngineeringClass) {
     setClassFilter((prev) => (prev === cls ? null : cls));
   }
 
-  const filteredRows = classFilter ? rows.filter((r) => r.menuClass === classFilter) : rows;
+  const unrankedCount = rows.filter((r) => r.menuClass === "Unranked").length;
+  const filteredRows = (classFilter ? rows.filter((r) => r.menuClass === classFilter) : rows)
+    .filter((r) => !hideUnranked || r.menuClass !== "Unranked");
 
   return (
     <div className="space-y-6">
@@ -88,19 +91,26 @@ export function MenuEngineeringSection({ rows, classCounts }: Props) {
         })}
       </div>
 
-      {/* Active filter indicator */}
-      {classFilter && (
-        <div className="flex items-center gap-2 text-sm text-neutral-600">
-          <span>กำลังดู: {CLASS_LABEL[classFilter]} ({filteredRows.length} เมนู)</span>
+      {/* Filter status row */}
+      <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-600">
+        {classFilter && (
+          <>
+            <span>กำลังดู: {CLASS_LABEL[classFilter]} ({filteredRows.length} เมนู)</span>
+            <button type="button" onClick={() => setClassFilter(null)} className="text-xs underline hover:text-neutral-900">
+              ล้างตัวกรอง
+            </button>
+          </>
+        )}
+        {unrankedCount > 0 && !classFilter && (
           <button
             type="button"
-            onClick={() => setClassFilter(null)}
-            className="text-xs underline hover:text-neutral-900"
+            onClick={() => setHideUnranked((p) => !p)}
+            className="ml-auto text-xs text-neutral-400 underline hover:text-neutral-700"
           >
-            ล้างตัวกรอง
+            {hideUnranked ? `แสดง Unranked (${unrankedCount} เมนู)` : `ซ่อน Unranked (${unrankedCount} เมนู)`}
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <MenuEngineeringTable rows={filteredRows} />
     </div>
