@@ -312,7 +312,7 @@ export function ScheduleClient({
                       content = (
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="font-bold text-[10px]">{lCfg.label}</span>
-                          <span className="text-[8px] font-semibold opacity-60">✓</span>
+                          <span className="text-[8px] font-semibold opacity-70">✓ใบลา</span>
                         </div>
                       );
                     } else if (isHol) {
