@@ -33,10 +33,17 @@ type EditState = {
   noteType: NoteType;
 };
 
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function dateStr(base: Date, offset: number): string {
   const d = new Date(base);
   d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function thaiDate(ds: string): string {
@@ -87,7 +94,7 @@ export function ScheduleClient({
   function goWeek(delta: number) {
     const d = new Date(monday);
     d.setDate(d.getDate() + delta * 7);
-    const p = new URLSearchParams({ week: d.toISOString().slice(0, 10) });
+    const p = new URLSearchParams({ week: localDateStr(d) });
     if (deptId) p.set("dept", deptId);
     router.push(`/owner/hr/schedule?${p}`);
   }
@@ -196,7 +203,7 @@ export function ScheduleClient({
 
         <button
           onClick={() => {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = localDateStr(new Date());
             const p = new URLSearchParams({ week: today });
             if (deptId) p.set("dept", deptId);
             router.push(`/owner/hr/schedule?${p}`);
