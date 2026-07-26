@@ -365,9 +365,9 @@ export function AttendanceClient({
       {/* Grid */}
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
         <table className={`w-full border-collapse text-xs${dragHighlight ? " select-none" : ""}`}>
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr className="bg-neutral-800 text-neutral-200">
-              <th className="sticky left-0 z-10 min-w-[100px] bg-neutral-800 px-3 py-2 text-left font-medium">ชื่อ</th>
+              <th className="sticky left-0 z-30 min-w-[100px] border-r-2 border-neutral-500 bg-neutral-800 px-3 py-2 text-left font-medium">ชื่อ</th>
               {days.map((d) => {
                 const dow = getDow(d);
                 const isHol = holidayDates.has(dateStr(d));
@@ -378,11 +378,11 @@ export function AttendanceClient({
                   </th>
                 );
               })}
-              <th className="min-w-[32px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">ขาด</th>
-              <th className="min-w-[40px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">สาย(น.)</th>
-              <th className="min-w-[32px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">ลา</th>
-              <th className="min-w-[36px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">พักร้อน</th>
-              <th className="min-w-[40px] bg-neutral-700 px-1 py-2 text-center text-[11px] font-normal">OT(ชม.)</th>
+              <th className="min-w-[32px] border-l-2 border-neutral-500 bg-neutral-600 px-1 py-2 text-center text-[11px] font-semibold">ขาด</th>
+              <th className="min-w-[40px] bg-neutral-600 px-1 py-2 text-center text-[11px] font-semibold">สาย(น.)</th>
+              <th className="min-w-[32px] bg-neutral-600 px-1 py-2 text-center text-[11px] font-semibold">ลา</th>
+              <th className="min-w-[36px] bg-neutral-600 px-1 py-2 text-center text-[11px] font-semibold">พักร้อน</th>
+              <th className="min-w-[40px] bg-neutral-600 px-1 py-2 text-center text-[11px] font-semibold">OT(ชม.)</th>
             </tr>
           </thead>
           <tbody>
@@ -404,7 +404,7 @@ export function AttendanceClient({
                   const stickyBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50";
                   return (
                     <tr key={emp.id} className={`border-b border-neutral-200 last:border-0 ${rowBg}`}>
-                      <td className={`sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 ${stickyBg}`}>
+                      <td className={`sticky left-0 z-10 border-r-2 border-neutral-300 px-3 py-1.5 ${stickyBg}`}>
                         <div className="max-w-[96px] truncate font-medium text-neutral-900">{emp.nickname ?? emp.full_name}</div>
                       </td>
 
@@ -469,7 +469,7 @@ export function AttendanceClient({
                         );
                       })}
 
-                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center font-semibold text-red-600">{sum.absent > 0 ? sum.absent : ""}</td>
+                      <td className="border-l-2 border-neutral-200 bg-neutral-50/60 px-1 py-1.5 text-center font-semibold text-red-600">{sum.absent > 0 ? sum.absent : ""}</td>
                       <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-amber-700">{sum.lateMin > 0 ? sum.lateMin : ""}</td>
                       <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-blue-700">{sum.leave > 0 ? sum.leave : ""}</td>
                       <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-teal-700">{sum.vacation > 0 ? sum.vacation : ""}</td>
