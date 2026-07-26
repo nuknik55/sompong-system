@@ -838,7 +838,7 @@ function alQuotaDays(years: number): number {
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   const supabase = await createClient();
   const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
-    supabase.from("employees").select("id,full_name,nickname,hire_date").eq("is_active", true).order("full_name"),
+    supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,department_id").eq("is_active", true).order("sort_order"),
     supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
     supabase
       .from("leave_requests")
