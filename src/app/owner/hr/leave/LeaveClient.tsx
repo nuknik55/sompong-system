@@ -212,18 +212,6 @@ export function LeaveClient({
             <option value="">ทุกเดือน</option>
             {MONTHS_TH.map((m, i) => <option key={i} value={String(i + 1)}>{m}</option>)}
           </select>
-          {/* Status */}
-          <div className="flex items-center gap-1">
-            {Object.entries(STATUS_LABEL).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => navigate({ status: k })}
-                className={`rounded-full px-3 py-1 text-xs transition-colors ${statusFilter === k ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
         <button onClick={() => setShowForm(true)} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
           + บันทึกใบลา
