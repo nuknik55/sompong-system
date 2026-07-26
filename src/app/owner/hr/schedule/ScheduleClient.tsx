@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { upsertScheduleNote } from "../actions";
 import type { Employee, Department, Holiday, ScheduleNote, NoteType, LeaveDay } from "../actions";
 
@@ -186,6 +187,53 @@ export function ScheduleClient({
 
   const printUrl = `/owner/hr/schedule/print?week=${weekStart}${deptId ? `&dept=${deptId}` : ""}`;
 
+  function exportExcel() {
+    const dayLabels = weekDates.map((ds) => {
+      const d = new Date(ds + "T00:00:00");
+      const dow = d.getDay();
+      return `${DAYS_SHORT[dow]} ${d.getDate()}/${d.getMonth() + 1}`;
+    });
+
+    const headers = ["ชื่อ", "หยุดประจำ", ...dayLabels, "หมายเหตุ"];
+    const rows = visibleEmps.map((emp) => {
+      const cells: string[] = [
+        emp.nickname ?? emp.full_name,
+        emp.weekly_day_off ? (DAYS_SHORT[DAY_OF_WEEK[emp.weekly_day_off] ?? -1] ?? "–") : "–",
+      ];
+      for (const ds of weekDates) {
+        const isOff = isRegularOff(emp, ds);
+        const isHol = holidaySet.has(ds);
+        const n = getNote(emp.id, ds);
+        const leave = !n ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
+        if (n) {
+          const cfg = NOTE_CFG[n.note_type] ?? NOTE_CFG.note;
+          cells.push(n.note ? `${cfg.label}: ${n.note}` : cfg.label);
+        } else if (leave) {
+          cells.push(`${leaveNoteStyle(leave.leave_type_code, leave.leave_type_name).label} ✓`);
+        } else if (isHol) {
+          cells.push(`★ ${holidayName.get(ds) ?? "นักขัตฤกษ์"}`);
+        } else if (isOff) {
+          cells.push("–");
+        } else {
+          cells.push("");
+        }
+      }
+      cells.push(""); // empty remarks column for manual edits
+      return cells;
+    });
+
+    // headcount row
+    const hcRow = ["กำลังคน (คน)", "", ...weekDates.map((ds) => String(headcount(ds))), ""];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, [], hcRow]);
+    ws["!cols"] = [{ wch: 14 }, { wch: 8 }, ...weekDates.map(() => ({ wch: 14 })), { wch: 20 }];
+
+    const wb = XLSX.utils.book_new();
+    const sheetName = `${thaiDate(weekDates[0])}`;
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+    XLSX.writeFile(wb, `ตารางกะ_${weekStart}.xlsx`);
+  }
+
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -221,13 +269,21 @@ export function ScheduleClient({
           สัปดาห์นี้
         </button>
 
-        <a
-          href={printUrl}
-          target="_blank"
-          className="ml-auto rounded-lg bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-        >
-          🖨 พิมพ์ / PDF
-        </a>
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={exportExcel}
+            className="rounded-lg border border-neutral-300 px-4 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            📥 Export Excel
+          </button>
+          <a
+            href={printUrl}
+            target="_blank"
+            className="rounded-lg bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            🖨 พิมพ์ / PDF
+          </a>
+        </div>
 
         {saving && <span className="text-xs text-neutral-400">กำลังบันทึก…</span>}
       </div>
