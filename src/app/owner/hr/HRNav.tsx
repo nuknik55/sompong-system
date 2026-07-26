@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/owner/hr/dayswap", label: "เปลี่ยนวันหยุด", hrOnly: false },
   { href: "/owner/hr/payroll", label: "เงินเดือน", hrOnly: true },
   { href: "/owner/hr/settings", label: "ตั้งค่า", hrOnly: true },
+  { href: "/owner/hr/settings/reorder", label: "จัดเรียงคน", hrOnly: true },
 ];
 
 export function HRNav({ adminOnly }: { adminOnly: boolean }) {

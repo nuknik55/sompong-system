@@ -85,6 +85,20 @@ export function AttendanceClient({
     ? employees.filter((e) => e.department_id === deptId)
     : employees;
 
+  // Group employees by department (preserves sort order from getEmployees)
+  const empGroups: { deptName: string; emps: typeof employees }[] = [];
+  if (!deptId) {
+    const seen = new Map<string, typeof employees>();
+    for (const e of visibleEmps) {
+      const k = e.department_name ?? "(ไม่มีแผนก)";
+      if (!seen.has(k)) seen.set(k, []);
+      seen.get(k)!.push(e);
+    }
+    for (const [k, v] of seen) empGroups.push({ deptName: k, emps: v });
+  } else {
+    empGroups.push({ deptName: "", emps: visibleEmps });
+  }
+
   function goMonth(delta: number) {
     let y = year, m = month + delta;
     if (m > 12) { y++; m = 1; }
@@ -373,88 +387,98 @@ export function AttendanceClient({
           </thead>
           <tbody>
             {visibleEmps.length === 0 && (
-              <tr><td colSpan={daysInMonth + 5} className="py-8 text-center text-neutral-400">ไม่มีพนักงานในแผนกนี้</td></tr>
+              <tr><td colSpan={daysInMonth + 6} className="py-8 text-center text-neutral-400">ไม่มีพนักงานในแผนกนี้</td></tr>
             )}
-            {visibleEmps.map((emp, ei) => {
-              const sum = summary(emp.id);
-              const rowBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50/40";
-              const stickyBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50";
-              return (
-                <tr key={emp.id} className={`border-b-2 border-neutral-300 last:border-0 ${rowBg}`}>
-                  <td className={`sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 ${stickyBg}`}>
-                    <div className="max-w-[96px] truncate font-medium text-neutral-900">{emp.nickname ?? emp.full_name}</div>
-                    {emp.department_name && <div className="truncate text-[10px] text-neutral-400">{emp.department_name}</div>}
-                  </td>
-
-                  {days.map((d) => {
-                    const ds = dateStr(d);
-                    const rec = getRecord(emp.id, d);
-                    const isHol = holidayDates.has(ds);
-                    const isOff = isWeeklyOff(emp, d);
-                    const dow = getDow(d);
-                    const isEditing = edit?.empId === emp.id && edit?.date === ds;
-
-                    let cellCls = "cursor-pointer select-none transition-colors ";
-                    let content: React.ReactNode = null;
-
-                    if (isEditing) {
-                      cellCls += "ring-2 ring-inset ring-neutral-900 ";
-                    }
-
-                    const approvedLeave = !rec ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
-
-                    if (rec) {
-                      const cfg = S[rec.status as Status] ?? S.present;
-                      cellCls += cfg.cell;
-                      if (rec.status === "late" && rec.late_minutes > 0) {
-                        content = <span className="text-[9px] font-bold">{rec.late_minutes}'</span>;
-                      } else if (rec.status === "leave" && rec.leave_type_id) {
-                        content = <span className="text-[9px] font-bold">{leaveTypeMap.get(rec.leave_type_id) ?? "ล"}</span>;
-                      } else {
-                        content = <span className="font-bold">{cfg.short}</span>;
-                      }
-                    } else if (approvedLeave) {
-                      cellCls += "bg-teal-100 text-teal-800 hover:bg-teal-200";
-                      content = (
-                        <div className="flex flex-col items-center leading-tight">
-                          <span className="text-[8px] font-bold">ลา</span>
-                          <span className="text-[7px] opacity-70">✓</span>
-                        </div>
-                      );
-                    } else if (isHol) {
-                      cellCls += "bg-purple-100 text-purple-600 hover:bg-purple-200";
-                      content = <span className="text-[10px] font-bold">*</span>;
-                    } else if (isOff) {
-                      cellCls += "bg-neutral-200 text-neutral-500 hover:bg-neutral-300";
-                      content = <span className="font-bold">–</span>;
-                    } else if (dow === 0) {
-                      cellCls += "bg-red-50 text-neutral-300 hover:bg-red-100";
-                    } else {
-                      cellCls += "bg-white text-neutral-300 hover:bg-green-100 border border-neutral-100";
-                    }
-
-                    const isDragHighlighted = dragHighlight?.empId === emp.id && dragHighlight.dates.has(ds);
-                    return (
-                      <td
-                        key={d}
-                        onClick={() => openEdit(emp, d)}
-                        onMouseDown={() => handleCellMouseDown(emp, d)}
-                        onMouseEnter={() => handleCellMouseEnter(emp, d)}
-                        className={`h-8 w-7 text-center font-medium ${cellCls}${isDragHighlighted ? " ring-2 ring-inset ring-neutral-700" : ""}`}
-                      >
-                        {content}
+            {empGroups.map(({ deptName, emps }) => (
+              <>
+                {!deptId && (
+                  <tr key={`dept-${deptName}`} className="bg-neutral-100 border-b border-neutral-300">
+                    <td colSpan={daysInMonth + 6} className="sticky left-0 px-3 py-1 text-xs font-semibold text-neutral-600 tracking-wide">
+                      {deptName} <span className="font-normal text-neutral-400">({emps.length} คน)</span>
+                    </td>
+                  </tr>
+                )}
+                {emps.map((emp, ei) => {
+                  const sum = summary(emp.id);
+                  const rowBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50/40";
+                  const stickyBg = ei % 2 === 0 ? "bg-white" : "bg-neutral-50";
+                  return (
+                    <tr key={emp.id} className={`border-b border-neutral-200 last:border-0 ${rowBg}`}>
+                      <td className={`sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 ${stickyBg}`}>
+                        <div className="max-w-[96px] truncate font-medium text-neutral-900">{emp.nickname ?? emp.full_name}</div>
                       </td>
-                    );
-                  })}
 
-                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center font-semibold text-red-600">{sum.absent > 0 ? sum.absent : ""}</td>
-                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-amber-700">{sum.lateMin > 0 ? sum.lateMin : ""}</td>
-                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-blue-700">{sum.leave > 0 ? sum.leave : ""}</td>
-                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-teal-700">{sum.vacation > 0 ? sum.vacation : ""}</td>
-                  <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-neutral-600">{sum.ot > 0 ? sum.ot : ""}</td>
-                </tr>
-              );
-            })}
+                      {days.map((d) => {
+                        const ds = dateStr(d);
+                        const rec = getRecord(emp.id, d);
+                        const isHol = holidayDates.has(ds);
+                        const isOff = isWeeklyOff(emp, d);
+                        const dow = getDow(d);
+                        const isEditing = edit?.empId === emp.id && edit?.date === ds;
+
+                        let cellCls = "cursor-pointer select-none transition-colors ";
+                        let content: React.ReactNode = null;
+
+                        if (isEditing) {
+                          cellCls += "ring-2 ring-inset ring-neutral-900 ";
+                        }
+
+                        const approvedLeave = !rec ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
+
+                        if (rec) {
+                          const cfg = S[rec.status as Status] ?? S.present;
+                          cellCls += cfg.cell;
+                          if (rec.status === "late" && rec.late_minutes > 0) {
+                            content = <span className="text-[9px] font-bold">{rec.late_minutes}&apos;</span>;
+                          } else if (rec.status === "leave" && rec.leave_type_id) {
+                            content = <span className="text-[9px] font-bold">{leaveTypeMap.get(rec.leave_type_id) ?? "ล"}</span>;
+                          } else {
+                            content = <span className="font-bold">{cfg.short}</span>;
+                          }
+                        } else if (approvedLeave) {
+                          cellCls += "bg-teal-100 text-teal-800 hover:bg-teal-200";
+                          content = (
+                            <div className="flex flex-col items-center leading-tight">
+                              <span className="text-[8px] font-bold">ลา</span>
+                              <span className="text-[7px] opacity-70">✓</span>
+                            </div>
+                          );
+                        } else if (isHol) {
+                          cellCls += "bg-purple-100 text-purple-600 hover:bg-purple-200";
+                          content = <span className="text-[10px] font-bold">*</span>;
+                        } else if (isOff) {
+                          cellCls += "bg-neutral-200 text-neutral-500 hover:bg-neutral-300";
+                          content = <span className="font-bold">–</span>;
+                        } else if (dow === 0) {
+                          cellCls += "bg-red-50 text-neutral-300 hover:bg-red-100";
+                        } else {
+                          cellCls += "bg-white text-neutral-300 hover:bg-green-100 border border-neutral-100";
+                        }
+
+                        const isDragHighlighted = dragHighlight?.empId === emp.id && dragHighlight.dates.has(ds);
+                        return (
+                          <td
+                            key={d}
+                            onClick={() => openEdit(emp, d)}
+                            onMouseDown={() => handleCellMouseDown(emp, d)}
+                            onMouseEnter={() => handleCellMouseEnter(emp, d)}
+                            className={`h-8 w-7 text-center font-medium ${cellCls}${isDragHighlighted ? " ring-2 ring-inset ring-neutral-700" : ""}`}
+                          >
+                            {content}
+                          </td>
+                        );
+                      })}
+
+                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center font-semibold text-red-600">{sum.absent > 0 ? sum.absent : ""}</td>
+                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-amber-700">{sum.lateMin > 0 ? sum.lateMin : ""}</td>
+                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-blue-700">{sum.leave > 0 ? sum.leave : ""}</td>
+                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-teal-700">{sum.vacation > 0 ? sum.vacation : ""}</td>
+                      <td className="bg-neutral-50/60 px-1 py-1.5 text-center text-neutral-600">{sum.ot > 0 ? sum.ot : ""}</td>
+                    </tr>
+                  );
+                })}
+              </>
+            ))}
           </tbody>
         </table>
       </div>

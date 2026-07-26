@@ -10,6 +10,7 @@ export type Department = {
   id: string;
   name: string;
   is_active: boolean;
+  sort_order: number;
 };
 
 export type Employee = {
@@ -28,6 +29,7 @@ export type Employee = {
   weekly_day_off: string | null;
   citizenship_type: "thai" | "foreign";
   is_active: boolean;
+  sort_order: number;
 };
 
 export type LeaveType = {
@@ -122,10 +124,11 @@ export async function getDepartments(): Promise<Department[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("departments")
-    .select("id,name,is_active")
+    .select("id,name,is_active,sort_order")
+    .order("sort_order")
     .order("name");
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((d) => ({ ...d, sort_order: d.sort_order ?? 999 }));
 }
 
 export async function upsertDepartment(d: { id?: string; name: string }): Promise<void> {
@@ -156,15 +159,25 @@ export async function getEmployees(): Promise<Employee[]> {
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
       base_salary, position_allowance,
-      hire_date, weekly_day_off, citizenship_type, is_active,
-      departments(name)
+      hire_date, weekly_day_off, citizenship_type, is_active, sort_order,
+      departments(name, sort_order)
     `)
-    .order("full_name");
+    .order("sort_order");
   if (error) throw error;
-  return (data ?? []).map((e: Record<string, unknown>) => ({
-    ...(e as Omit<Employee, "department_name">),
-    department_name: (e.departments as { name: string } | null)?.name ?? null,
-  }));
+  return (data ?? []).map((e: Record<string, unknown>) => {
+    const dept = e.departments as { name: string; sort_order: number } | null;
+    return {
+      ...(e as Omit<Employee, "department_name">),
+      sort_order: (e.sort_order as number) ?? 999,
+      department_name: dept?.name ?? null,
+      _dept_sort: dept?.sort_order ?? 999,
+    };
+  }).sort((a, b) => {
+    const da = (a as { _dept_sort: number })._dept_sort;
+    const db = (b as { _dept_sort: number })._dept_sort;
+    if (da !== db) return da - db;
+    return a.sort_order - b.sort_order;
+  });
 }
 
 export async function getEmployee(id: string): Promise<Employee | null> {
@@ -182,7 +195,8 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     .single();
   if (error) return null;
   return {
-    ...(data as Omit<Employee, "department_name">),
+    ...(data as unknown as Omit<Employee, "department_name">),
+    sort_order: (data as unknown as { sort_order?: number }).sort_order ?? 999,
     department_name: (data.departments as unknown as { name: string } | null)?.name ?? null,
   };
 }
@@ -226,6 +240,17 @@ export async function upsertEmployee(e: {
     await supabase.from("employees").insert(payload);
   }
   revalidatePath("/owner/hr/employees");
+}
+
+export async function updateEmployeeSortOrders(
+  updates: { id: string; sort_order: number }[]
+): Promise<void> {
+  await requireHR();
+  const supabase = await createClient();
+  for (const u of updates) {
+    await supabase.from("employees").update({ sort_order: u.sort_order }).eq("id", u.id);
+  }
+  revalidatePath("/owner/hr");
 }
 
 // ─── Leave Types ──────────────────────────────────────────────────────────────

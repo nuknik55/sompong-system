@@ -74,7 +74,7 @@ export function HRSettingsClient({
       if (id) {
         setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, name: deptName } : d)));
       } else {
-        setDepartments((prev) => [...prev, { id: crypto.randomUUID(), name: deptName, is_active: true }]);
+        setDepartments((prev) => [...prev, { id: crypto.randomUUID(), name: deptName, is_active: true, sort_order: 999 }]);
       }
       setEditingDept(null);
       setDeptName("");

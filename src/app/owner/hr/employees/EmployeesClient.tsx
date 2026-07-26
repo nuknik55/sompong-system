@@ -41,6 +41,7 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   weekly_day_off: "จันทร์",
   citizenship_type: "thai",
   is_active: true,
+  sort_order: 999,
 };
 
 export function EmployeesClient({
@@ -86,6 +87,7 @@ export function EmployeesClient({
       weekly_day_off: emp.weekly_day_off ?? "จันทร์",
       citizenship_type: emp.citizenship_type,
       is_active: emp.is_active,
+      sort_order: emp.sort_order,
     });
     setShowModal(true);
   }
