@@ -392,9 +392,9 @@ export function AttendanceClient({
             {empGroups.map(({ deptName, emps }) => (
               <>
                 {!deptId && (
-                  <tr key={`dept-${deptName}`} className="bg-neutral-100 border-b border-neutral-300">
-                    <td colSpan={daysInMonth + 6} className="sticky left-0 px-3 py-1 text-xs font-semibold text-neutral-600 tracking-wide">
-                      {deptName} <span className="font-normal text-neutral-400">({emps.length} คน)</span>
+                  <tr key={`dept-${deptName}`} className="bg-neutral-800 border-t-2 border-neutral-600">
+                    <td colSpan={daysInMonth + 6} className="sticky left-0 px-3 py-1.5 text-xs font-bold text-white tracking-widest uppercase bg-neutral-800">
+                      {deptName} <span className="font-normal text-neutral-400 normal-case tracking-normal">({emps.length} คน)</span>
                     </td>
                   </tr>
                 )}
