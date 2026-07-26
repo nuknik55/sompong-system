@@ -158,21 +158,22 @@ export type PosSalesReport = {
   dateTo: string;
 };
 
-/** Scan the first 8 rows for Thai date strings (DD MonthTH YYYY) and return up to two found. */
+/**
+ * Extract date range from the report title row (row 0 only).
+ * Single-day: "(12 สิงหาคม 2567)" → dateFrom=dateTo
+ * Range:      "(01 มกราคม 2568 - 26 กรกฎาคม 2569)" → dateFrom ≠ dateTo
+ * Row 1 is the report-creation date and is intentionally ignored.
+ */
 function extractDatesFromHeader(rows: unknown[][]): { dateFrom: string; dateTo: string } {
+  if (rows.length === 0) return { dateFrom: "", dateTo: "" };
   const THAI_MONTH_NAMES = Object.keys(THAI_MONTHS);
   const datePattern = new RegExp(`(\\d{1,2})\\s+(${THAI_MONTH_NAMES.join("|")})\\s+(\\d{4})`, "g");
-
+  const titleRow = rows[0].filter((c) => c != null).join(" ");
   const found: string[] = [];
-  for (let i = 0; i < Math.min(8, rows.length) && found.length < 2; i++) {
-    const rowText = rows[i].filter((c) => c != null).join(" ");
-    let m: RegExpExecArray | null;
-    while ((m = datePattern.exec(rowText)) !== null && found.length < 2) {
-      found.push(`${m[1]} ${m[2]} ${m[3]}`);
-    }
-    datePattern.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = datePattern.exec(titleRow)) !== null) {
+    found.push(`${m[1]} ${m[2]} ${m[3]}`);
   }
-
   return { dateFrom: found[0] ?? "", dateTo: found[found.length - 1] ?? "" };
 }
 

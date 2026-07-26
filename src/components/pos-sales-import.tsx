@@ -162,8 +162,12 @@ export function PosSalesImport() {
         <div className="space-y-3">
           {preview.dateFrom && (
             <p className="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
-              📅 วันที่ในรายงาน:{" "}
-              <strong>{preview.dateFrom}</strong>
+              📅 {preview.dateTo && preview.dateTo !== preview.dateFrom ? "ช่วงวันที่" : "วันที่"}ในรายงาน:{" "}
+              <strong>
+                {preview.dateTo && preview.dateTo !== preview.dateFrom
+                  ? `${preview.dateFrom} – ${preview.dateTo}`
+                  : preview.dateFrom}
+              </strong>
               <span className="ml-2 text-xs text-blue-600">(ยอดขายเดิมทั้งหมดจะถูกล้าง แล้วแทนด้วยข้อมูลใหม่จากไฟล์นี้)</span>
             </p>
           )}

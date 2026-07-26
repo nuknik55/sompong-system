@@ -105,7 +105,9 @@ export default async function OwnerDashboardPage({
         <p className="text-sm font-semibold text-neutral-800">
           📅 ข้อมูลยอดขาย:{" "}
           <span className="text-neutral-600 font-normal">
-            {posImportMeta.dateFrom}
+            {posImportMeta.dateTo && posImportMeta.dateTo !== posImportMeta.dateFrom
+              ? `${posImportMeta.dateFrom} – ${posImportMeta.dateTo}`
+              : posImportMeta.dateFrom}
           </span>
         </p>
       )}
