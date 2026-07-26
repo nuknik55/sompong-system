@@ -363,7 +363,7 @@ export function AttendanceClient({
       </div>
 
       {/* Grid */}
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+      <div className="overflow-auto rounded-lg border border-neutral-200" style={{ maxHeight: "calc(100vh - 260px)" }}>
         <table className={`w-full border-collapse text-xs${dragHighlight ? " select-none" : ""}`}>
           <thead className="sticky top-0 z-20">
             <tr className="bg-neutral-800 text-neutral-200">
