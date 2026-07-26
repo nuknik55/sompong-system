@@ -27,6 +27,7 @@ export default async function AttendancePage({
 
   return (
     <AttendanceClient
+      key={`${year}-${month}`}
       employees={employees.filter((e) => e.is_active)}
       departments={departments.filter((d) => d.is_active)}
       initialRecords={records}

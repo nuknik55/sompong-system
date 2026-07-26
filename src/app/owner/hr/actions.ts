@@ -508,13 +508,15 @@ export async function getApprovedLeavesForMonth(year: number, month: number): Pr
   const lastDay = new Date(year, month, 0).getDate();
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("leave_requests")
     .select("id, employee_id, date_from, date_to, leave_types(code, name_th)")
     .eq("status", "approved")
     .lte("date_from", monthEnd)
-    .gte("date_to", monthStart);
+    .gte("date_to", monthStart)
+    .limit(5000);
 
+  if (error) console.error("[getApprovedLeavesForMonth] error:", error);
   if (!data) return [];
 
   const result: LeaveDay[] = [];

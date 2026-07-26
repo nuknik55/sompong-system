@@ -71,7 +71,7 @@ export function AttendanceClient({
   const dragEmpIdRef = useRef<string | null>(null);
   const dragDatesRef = useRef<string[]>([]);
   const [dragHighlight, setDragHighlight] = useState<{ empId: string; dates: Set<string> } | null>(null);
-  type BulkEdit = { empId: string; empName: string; dates: string[]; status: Status; lateMin: number; leaveTypeId: string };
+  type BulkEdit = { empId: string; empName: string; dates: string[]; status: Status | null; lateMin: number; leaveTypeId: string };
   const [bulk, setBulk] = useState<BulkEdit | null>(null);
 
   const holidayDates = new Set(holidays.map((h) => h.holiday_date));
@@ -244,7 +244,7 @@ export function AttendanceClient({
         empId,
         empName: emp?.nickname ?? emp?.full_name ?? "",
         dates,
-        status: "absent",
+        status: null,
         lateMin: 0,
         leaveTypeId: leaveTypes[0]?.id ?? "",
       });
@@ -253,18 +253,37 @@ export function AttendanceClient({
     return () => window.removeEventListener("mouseup", handleMouseUp);
   }, [visibleEmps, leaveTypes]);
 
-  function applyBulk() {
+  function clearBulk() {
     if (!bulk) return;
+    const empId = bulk.empId;
+    const toClear = bulk.dates.filter((ds) => records.has(`${empId}_${ds}`));
+    setRecords((prev) => {
+      const m = new Map(prev);
+      for (const ds of toClear) m.delete(`${empId}_${ds}`);
+      return m;
+    });
+    setBulk(null);
+    if (toClear.length === 0) return;
+    setSaving(true);
+    startTransition(async () => {
+      for (const ds of toClear) await deleteAttendanceDailyRecord(empId, ds);
+      setSaving(false);
+    });
+  }
+
+  function applyBulk() {
+    if (!bulk || !bulk.status) return;
+    const status = bulk.status;
     const toApply = bulk.dates.filter((ds) => !records.has(`${bulk.empId}_${ds}`));
     if (toApply.length === 0) { setBulk(null); return; }
     const newRecs: AttendanceDaily[] = toApply.map((ds) => ({
       id: crypto.randomUUID(),
       employee_id: bulk.empId,
       work_date: ds,
-      status: bulk.status,
-      late_minutes: bulk.status === "late" ? bulk.lateMin : 0,
+      status,
+      late_minutes: status === "late" ? bulk.lateMin : 0,
       ot_hours: 0,
-      leave_type_id: bulk.status === "leave" ? (bulk.leaveTypeId || null) : null,
+      leave_type_id: status === "leave" ? (bulk.leaveTypeId || null) : null,
       note: null,
       source: "manual",
     }));
@@ -546,8 +565,8 @@ export function AttendanceClient({
 
       {/* Bulk drag dialog */}
       {bulk && (() => {
-        const skipCount = bulk.dates.filter((ds) => records.has(`${bulk.empId}_${ds}`)).length;
-        const applyCount = bulk.dates.length - skipCount;
+        const hasDataCount = bulk.dates.filter((ds) => records.has(`${bulk.empId}_${ds}`)).length;
+        const applyCount = bulk.dates.length - hasDataCount;
         const dayNums = bulk.dates.map((ds) => parseInt(ds.split("-")[2]));
         return (
           <>
@@ -556,7 +575,7 @@ export function AttendanceClient({
               <div className="mb-3">
                 <p className="text-sm font-semibold text-neutral-900">{bulk.empName}</p>
                 <p className="text-xs text-neutral-500">
-                  วันที่ {dayNums.join(", ")} ({bulk.dates.length} วัน{skipCount > 0 ? ` · ข้ามที่มีข้อมูลแล้ว ${skipCount} วัน` : ""})
+                  วันที่ {dayNums.join(", ")} ({bulk.dates.length} วัน{hasDataCount > 0 ? ` · มีข้อมูลแล้ว ${hasDataCount} วัน` : ""})
                 </p>
               </div>
 
@@ -577,7 +596,7 @@ export function AttendanceClient({
                 ))}
               </div>
 
-              {bulk.status === "late" && (
+              {bulk.status !== null && bulk.status === "late" && (
                 <label className="mb-3 flex items-center gap-2 text-sm">
                   <span className="w-20 text-neutral-600">สายกี่นาที</span>
                   <input
@@ -590,7 +609,7 @@ export function AttendanceClient({
                 </label>
               )}
 
-              {bulk.status === "leave" && leaveTypes.length > 0 && (
+              {bulk.status !== null && bulk.status === "leave" && leaveTypes.length > 0 && (
                 <label className="mb-3 flex items-center gap-2 text-sm">
                   <span className="w-20 text-neutral-600">ประเภทลา</span>
                   <select
@@ -605,13 +624,21 @@ export function AttendanceClient({
                 </label>
               )}
 
-              <div className="flex justify-end gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={clearBulk}
+                  disabled={hasDataCount === 0 || isPending}
+                  className="rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-500 hover:bg-neutral-50 disabled:opacity-40"
+                >
+                  ล้างข้อมูล
+                </button>
+                <div className="flex-1" />
                 <button onClick={() => setBulk(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
                   ยกเลิก
                 </button>
                 <button
                   onClick={applyBulk}
-                  disabled={applyCount === 0 || isPending}
+                  disabled={bulk.status === null || applyCount === 0 || isPending}
                   className="rounded-lg bg-neutral-900 px-5 py-2 text-xs font-semibold text-white hover:bg-neutral-700 disabled:opacity-40"
                 >
                   บันทึก {applyCount} วัน
