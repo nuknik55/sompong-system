@@ -101,13 +101,11 @@ export default async function OwnerDashboardPage({
       </div>
 
       {/* Revenue / cost summary cards */}
-      {posImportMeta && (posImportMeta.dateFrom || posImportMeta.dateTo) && (
+      {posImportMeta && posImportMeta.dateFrom && (
         <p className="text-xs text-neutral-500">
           📅 ข้อมูลยอดขาย:{" "}
           <span className="font-medium text-neutral-700">
-            {posImportMeta.dateFrom === posImportMeta.dateTo || !posImportMeta.dateTo
-              ? posImportMeta.dateFrom
-              : `${posImportMeta.dateFrom} – ${posImportMeta.dateTo}`}
+            {posImportMeta.dateFrom}
           </span>
         </p>
       )}
