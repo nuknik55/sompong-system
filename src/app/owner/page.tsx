@@ -102,9 +102,9 @@ export default async function OwnerDashboardPage({
 
       {/* Revenue / cost summary cards */}
       {posImportMeta && posImportMeta.dateFrom && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-sm font-semibold text-neutral-800">
           📅 ข้อมูลยอดขาย:{" "}
-          <span className="font-medium text-neutral-700">
+          <span className="text-neutral-600 font-normal">
             {posImportMeta.dateFrom}
           </span>
         </p>
