@@ -160,19 +160,32 @@ export type PosSalesReport = {
 
 /**
  * Extract date range from the report title row (row 0 only).
- * Single-day: "(12 สิงหาคม 2567)" → dateFrom=dateTo
+ * Month-only: "(มิถุนายน 2569)"           → dateFrom="มิถุนายน 2569", dateTo=same
+ * Single-day: "(12 สิงหาคม 2567)"         → dateFrom=dateTo
  * Range:      "(01 มกราคม 2568 - 26 กรกฎาคม 2569)" → dateFrom ≠ dateTo
  * Row 1 is the report-creation date and is intentionally ignored.
  */
 function extractDatesFromHeader(rows: unknown[][]): { dateFrom: string; dateTo: string } {
   if (rows.length === 0) return { dateFrom: "", dateTo: "" };
   const THAI_MONTH_NAMES = Object.keys(THAI_MONTHS);
-  const datePattern = new RegExp(`(\\d{1,2})\\s+(${THAI_MONTH_NAMES.join("|")})\\s+(\\d{4})`, "g");
+  const months = THAI_MONTH_NAMES.join("|");
   const titleRow = rows[0].filter((c) => c != null).join(" ");
+
+  // Try full date first: "DD MonthTH YYYY"
+  const fullDatePattern = new RegExp(`(\\d{1,2})\\s+(${months})\\s+(\\d{4})`, "g");
   const found: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = datePattern.exec(titleRow)) !== null) {
+  while ((m = fullDatePattern.exec(titleRow)) !== null) {
     found.push(`${m[1]} ${m[2]} ${m[3]}`);
+  }
+  if (found.length > 0) {
+    return { dateFrom: found[0], dateTo: found[found.length - 1] };
+  }
+
+  // Fallback: month+year only "MonthTH YYYY"
+  const monthOnlyPattern = new RegExp(`(${months})\\s+(\\d{4})`, "g");
+  while ((m = monthOnlyPattern.exec(titleRow)) !== null) {
+    found.push(`${m[1]} ${m[2]}`);
   }
   return { dateFrom: found[0] ?? "", dateTo: found[found.length - 1] ?? "" };
 }
