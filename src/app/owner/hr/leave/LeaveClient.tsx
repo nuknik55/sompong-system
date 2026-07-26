@@ -6,7 +6,7 @@ import { upsertLeaveRequest, updateLeaveStatus, deleteLeaveRequest } from "../ac
 import type { LeaveRequest, Employee, LeaveType, LeaveQuotaRow } from "../actions";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-const STATUS_LABEL: Record<string, string> = { all: "ทั้งหมด", pending: "รอ", approved: "อนุมัติ", rejected: "ปฏิเสธ" };
+const STATUS_LABEL: Record<string, string> = { all: "ทั้งหมด", approved: "อนุมัติ" };
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-amber-700 bg-amber-50 border-amber-200",
   approved: "text-green-700 bg-green-50 border-green-200",
@@ -270,15 +270,7 @@ export function LeaveClient({
                   </span>
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {r.status === "pending" && (
-                      <>
-                        <button onClick={() => handleStatus(r.id, "approved")} className="text-xs text-green-600 hover:underline">อนุมัติ</button>
-                        <button onClick={() => handleStatus(r.id, "rejected")} className="text-xs text-red-600 hover:underline">ปฏิเสธ</button>
-                      </>
-                    )}
-                    <button onClick={() => setConfirmDelete(r.id)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
-                  </div>
+                  <button onClick={() => setConfirmDelete(r.id)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
                 </td>
               </tr>
             ))}
