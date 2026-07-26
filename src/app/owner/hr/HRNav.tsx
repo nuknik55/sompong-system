@@ -10,7 +10,7 @@ const LINKS = [
   { href: "/owner/hr/schedule", label: "ตารางกะ", hrOnly: false },
   { href: "/owner/hr/dayswap", label: "เปลี่ยนวันหยุด", hrOnly: false },
   { href: "/owner/hr/payroll", label: "เงินเดือน", hrOnly: true },
-  { href: "/owner/hr/settings", label: "ตั้งค่า", hrOnly: true },
+  { href: "/owner/hr/settings", label: "ตั้งค่า", hrOnly: true, exact: true },
   { href: "/owner/hr/settings/reorder", label: "จัดเรียงคน", hrOnly: true },
 ];
 
@@ -22,7 +22,7 @@ export function HRNav({ adminOnly }: { adminOnly: boolean }) {
   return (
     <nav className="flex flex-wrap items-center gap-1">
       {visible.map((l, i) => {
-        const active = pathname.startsWith(l.href);
+        const active = l.exact ? pathname === l.href : pathname.startsWith(l.href);
         return (
           <span key={l.href} className="flex items-center gap-1">
             {i > 0 && <span className="text-neutral-200">|</span>}
