@@ -838,7 +838,7 @@ function alQuotaDays(years: number): number {
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   const supabase = await createClient();
   const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
-    supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,department_id").eq("is_active", true).order("sort_order"),
+    supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,departments(sort_order)").eq("is_active", true),
     supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
     supabase
       .from("leave_requests")
@@ -854,7 +854,14 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
     usageMap.set(k, (usageMap.get(k) ?? 0) + (r.total_days ?? 0));
   }
 
-  return (emps ?? []).map((emp: Record<string, unknown>) => {
+  const sorted = (emps ?? []).slice().sort((a, b) => {
+    const da = ((a as Record<string, unknown>).departments as { sort_order: number } | null)?.sort_order ?? 999;
+    const db = ((b as Record<string, unknown>).departments as { sort_order: number } | null)?.sort_order ?? 999;
+    if (da !== db) return da - db;
+    return ((a as Record<string, unknown>).sort_order as number ?? 999) - ((b as Record<string, unknown>).sort_order as number ?? 999);
+  });
+
+  return sorted.map((emp: Record<string, unknown>) => {
     const years = yearsOfService(emp.hire_date as string | null, year);
     return {
       employee_id: emp.id as string,
