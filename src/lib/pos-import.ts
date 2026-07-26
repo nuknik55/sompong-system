@@ -187,7 +187,17 @@ function extractDatesFromHeader(rows: unknown[][]): { dateFrom: string; dateTo: 
   while ((m = monthOnlyPattern.exec(titleRow)) !== null) {
     found.push(`${m[1]} ${m[2]}`);
   }
-  return { dateFrom: found[0] ?? "", dateTo: found[found.length - 1] ?? "" };
+  if (found.length > 0) {
+    return { dateFrom: found[0], dateTo: found[found.length - 1] };
+  }
+
+  // Fallback: year only "(YYYY)"
+  const yearOnly = titleRow.match(/\((\d{4})\)/);
+  if (yearOnly) {
+    return { dateFrom: yearOnly[1], dateTo: yearOnly[1] };
+  }
+
+  return { dateFrom: "", dateTo: "" };
 }
 
 export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesReport {
