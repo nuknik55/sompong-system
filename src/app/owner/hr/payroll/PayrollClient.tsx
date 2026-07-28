@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createPayrollPeriod, closePayrollPeriod, upsertPayrollEntry } from "../actions";
+import { createPayrollPeriod, closePayrollPeriod, reopenPayrollPeriod, upsertPayrollEntry } from "../actions";
 import type { PayrollPeriod, PayrollEntry } from "../actions";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -105,6 +105,15 @@ export function PayrollClient({
     });
   }
 
+  function handleReopen() {
+    if (!selectedPeriodId) return;
+    if (!confirm("ปลดล็อกงวดนี้เพื่อแก้ไขได้? เมื่อแก้เสร็จอย่าลืมกด \"ปิดงวด\" อีกครั้ง")) return;
+    startTransition(async () => {
+      await reopenPayrollPeriod(selectedPeriodId);
+      router.refresh();
+    });
+  }
+
   // Export Excel
   function handleExport() {
     import("xlsx").then((XLSX) => {
@@ -186,6 +195,11 @@ export function PayrollClient({
           {selectedPeriod && !selectedPeriod.is_closed && (
             <button onClick={handleClose} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50">
               ปิดงวด 🔒
+            </button>
+          )}
+          {selectedPeriod && selectedPeriod.is_closed && (
+            <button onClick={handleReopen} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-100">
+              ปลดล็อกงวด 🔓
             </button>
           )}
           {entries.length > 0 && (

@@ -30,6 +30,7 @@ type EditState = {
   lateMin: number;
   otHours: number;
   leaveTypeId: string;
+  leaveFraction: number;
   note: string;
 };
 
@@ -149,6 +150,7 @@ export function AttendanceClient({
       lateMin: rec?.late_minutes ?? 0,
       otHours: rec?.ot_hours ?? 0,
       leaveTypeId: rec?.leave_type_id ?? (leaveTypes[0]?.id ?? ""),
+      leaveFraction: rec?.leave_fraction ?? 1,
       note: rec?.note ?? "",
     });
   }
@@ -163,6 +165,7 @@ export function AttendanceClient({
       late_minutes: edit.status === "late" ? edit.lateMin : 0,
       ot_hours: edit.otHours,
       leave_type_id: edit.status === "leave" ? (edit.leaveTypeId || null) : null,
+      leave_fraction: edit.status === "leave" ? edit.leaveFraction : 1,
       note: edit.note || null,
       source: "manual",
     };
@@ -178,6 +181,7 @@ export function AttendanceClient({
         late_minutes: rec.late_minutes,
         ot_hours: rec.ot_hours,
         leave_type_id: rec.leave_type_id,
+        leave_fraction: rec.leave_fraction,
         note: rec.note,
       });
       setSaving(false);
@@ -298,6 +302,7 @@ export function AttendanceClient({
       late_minutes: status === "late" ? bulk.lateMin : 0,
       ot_hours: 0,
       leave_type_id: status === "leave" ? (bulk.leaveTypeId || null) : null,
+      leave_fraction: 1,
       note: null,
       source: "manual",
     }));
@@ -318,6 +323,7 @@ export function AttendanceClient({
             late_minutes: r.late_minutes,
             ot_hours: r.ot_hours,
             leave_type_id: r.leave_type_id,
+            leave_fraction: r.leave_fraction,
             note: r.note,
           })
         )
@@ -431,7 +437,12 @@ export function AttendanceClient({
                           if (rec.status === "late" && rec.late_minutes > 0) {
                             content = <span className="text-[9px] font-bold">{rec.late_minutes}&apos;</span>;
                           } else if (rec.status === "leave" && rec.leave_type_id) {
-                            content = <span className="text-[9px] font-bold">{leaveTypeMap.get(rec.leave_type_id) ?? "ล"}</span>;
+                            content = (
+                              <span className="text-[9px] font-bold">
+                                {leaveTypeMap.get(rec.leave_type_id) ?? "ล"}
+                                {rec.leave_fraction !== 1 && <sup>½</sup>}
+                              </span>
+                            );
                           } else {
                             content = <span className="font-bold">{cfg.short}</span>;
                           }
@@ -544,6 +555,20 @@ export function AttendanceClient({
                     {leaveTypes.map((lt) => (
                       <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
                     ))}
+                  </select>
+                </label>
+              )}
+
+              {edit.status === "leave" && (
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="w-20 text-neutral-600">จำนวนวัน</span>
+                  <select
+                    value={edit.leaveFraction}
+                    onChange={(e) => setEdit((v) => v ? { ...v, leaveFraction: +e.target.value } : v)}
+                    className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                  >
+                    <option value={1}>เต็มวัน (1)</option>
+                    <option value={0.5}>ครึ่งวัน (0.5)</option>
                   </select>
                 </label>
               )}
