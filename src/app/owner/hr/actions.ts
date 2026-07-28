@@ -506,7 +506,7 @@ export async function closePayrollPeriod(id: string): Promise<void> {
 
 export async function getEmployeePayrollHistory(employeeId: string): Promise<EmployeePayrollHistoryRow[]> {
   const supabase = await createClient();
-  const [{ data: periods, error: periodsError }, { data: entries, error: entriesError }, { data: emp }] = await Promise.all([
+  const [{ data: periods, error: periodsError }, { data: entries, error: entriesError }, { data: emp }, { data: attendance }, deductibleLeaveTypeIds] = await Promise.all([
     supabase
       .from("payroll_periods")
       .select("id,period_year,period_month,period_half,is_closed")
@@ -515,14 +515,18 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
       .order("period_half", { ascending: false }),
     supabase.from("payroll_entries").select("*").eq("employee_id", employeeId),
     supabase.from("employees").select("base_salary,position_allowance,social_security_monthly").eq("id", employeeId).single(),
+    supabase.from("attendance_daily").select("work_date,status,late_minutes,leave_type_id").eq("employee_id", employeeId),
+    getDeductibleLeaveTypeIds(supabase),
   ]);
   if (periodsError) throw periodsError;
   if (entriesError) throw entriesError;
 
   const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.payroll_period_id as string, e]));
-  const defaultBase = ((emp?.base_salary as number) ?? 0) / 2;
+  const monthlySalary = (emp?.base_salary as number) ?? 0;
+  const defaultBase = monthlySalary / 2;
   const defaultPosition = ((emp?.position_allowance as number) ?? 0) / 2;
   const defaultSS = ((emp?.social_security_monthly as number) ?? 0) / 2;
+  const attendanceRows = (attendance ?? []) as { work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null }[];
 
   return (periods ?? []).map((period: Record<string, unknown>) => {
     const entry = entryMap.get(period.id as string) as Record<string, unknown> | undefined;
@@ -532,7 +536,16 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
     const holiday_pay = (entry?.holiday_pay as number) ?? 0;
     const ot_pay = (entry?.ot_pay as number) ?? 0;
     const social_security_deduction = (entry?.social_security_deduction as number) ?? defaultSS;
-    const leave_deduction = (entry?.leave_deduction as number) ?? 0;
+    let defaultLeaveDeduction = 0;
+    if (entry?.leave_deduction === undefined) {
+      const { start, end } = periodDateRange(period.period_year as number, period.period_month as number, period.period_half as "first" | "second");
+      for (const row of attendanceRows) {
+        if (row.work_date < start || row.work_date > end) continue;
+        defaultLeaveDeduction += attendanceDeductionForRow(row, monthlySalary, deductibleLeaveTypeIds);
+      }
+      defaultLeaveDeduction = Math.round(defaultLeaveDeduction * 100) / 100;
+    }
+    const leave_deduction = (entry?.leave_deduction as number) ?? defaultLeaveDeduction;
     const advance_deduction = (entry?.advance_deduction as number) ?? 0;
     const adjustment = (entry?.adjustment as number) ?? 0;
     const other_amount = (entry?.other_amount as number) ?? 0;
@@ -702,14 +715,48 @@ export async function upsertScheduleNote(
 
 // ─── Payroll Entries ──────────────────────────────────────────────────────────
 
+// A day off/absent day costs 1/30 of the monthly base salary; a late minute
+// costs that daily rate spread over an 8-hour workday.
+function dailyRate(monthlySalary: number): number {
+  return monthlySalary / 30;
+}
+
+function periodDateRange(year: number, month: number, half: "first" | "second"): { start: string; end: string } {
+  const m = String(month).padStart(2, "0");
+  if (half === "first") return { start: `${year}-${m}-01`, end: `${year}-${m}-15` };
+  const lastDay = new Date(year, month, 0).getDate();
+  return { start: `${year}-${m}-16`, end: `${year}-${m}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function attendanceDeductionForRow(
+  row: { status: string; late_minutes: number | null; leave_type_id: string | null },
+  monthlySalary: number,
+  deductibleLeaveTypeIds: Set<string>,
+): number {
+  const rate = dailyRate(monthlySalary);
+  if (row.status === "absent") return rate;
+  if (row.status === "late") return (rate / 8 / 60) * (row.late_minutes ?? 0);
+  if (row.status === "leave" && row.leave_type_id && deductibleLeaveTypeIds.has(row.leave_type_id)) return rate;
+  return 0;
+}
+
+// Only ลากิจ (รายวัน) / PLW deducts pay like an absence — every other leave
+// type (AL, SL, SLA, PLP, CDW, CDP, UOT) is paid and never auto-deducted.
+async function getDeductibleLeaveTypeIds(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Set<string>> {
+  const { data } = await supabase.from("leave_types").select("id,code").eq("code", "PLW");
+  return new Set((data ?? []).map((t: { id: string }) => t.id));
+}
+
 export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[]> {
   const supabase = await createClient();
-  const [{ data: employees }, { data: entries }] = await Promise.all([
+  const [{ data: period }, { data: employees }, { data: entries }, deductibleLeaveTypeIds] = await Promise.all([
+    supabase.from("payroll_periods").select("period_year,period_month,period_half").eq("id", periodId).single(),
     supabase
       .from("employees")
       .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,sort_order,departments(name,sort_order)")
       .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
+    getDeductibleLeaveTypeIds(supabase),
   ]);
 
   const sortedEmployees = (employees ?? []).slice().sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
@@ -720,6 +767,21 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   });
 
   const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.employee_id as string, e]));
+
+  const deductionMap = new Map<string, number>();
+  if (period) {
+    const { start, end } = periodDateRange(period.period_year, period.period_month, period.period_half);
+    const { data: attendance } = await supabase
+      .from("attendance_daily")
+      .select("employee_id,status,late_minutes,leave_type_id")
+      .gte("work_date", start)
+      .lte("work_date", end);
+    const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
+    for (const row of (attendance ?? []) as { employee_id: string; status: string; late_minutes: number | null; leave_type_id: string | null }[]) {
+      const add = attendanceDeductionForRow(row, salaryMap.get(row.employee_id) ?? 0, deductibleLeaveTypeIds);
+      if (add > 0) deductionMap.set(row.employee_id, Math.round(((deductionMap.get(row.employee_id) ?? 0) + add) * 100) / 100);
+    }
+  }
 
   return sortedEmployees.map((emp: Record<string, unknown>) => {
     const entry = entryMap.get(emp.id as string) as Record<string, unknown> | undefined;
@@ -736,7 +798,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       holiday_pay: (entry?.holiday_pay as number) ?? 0,
       ot_pay: (entry?.ot_pay as number) ?? 0,
       social_security_deduction: (entry?.social_security_deduction as number) ?? ((emp.social_security_monthly as number) ?? 0) / 2,
-      leave_deduction: (entry?.leave_deduction as number) ?? 0,
+      leave_deduction: (entry?.leave_deduction as number) ?? (deductionMap.get(emp.id as string) ?? 0),
       advance_deduction: (entry?.advance_deduction as number) ?? 0,
       adjustment: (entry?.adjustment as number) ?? 0,
       other_amount: (entry?.other_amount as number) ?? 0,
