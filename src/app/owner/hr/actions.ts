@@ -622,15 +622,21 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   const [{ data: employees }, { data: entries }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,departments(name)")
-      .eq("is_active", true)
-      .order("full_name"),
+      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,sort_order,departments(name,sort_order)")
+      .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
   ]);
 
+  const sortedEmployees = (employees ?? []).slice().sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+    const da = (a.departments as { sort_order: number } | null)?.sort_order ?? 999;
+    const db = (b.departments as { sort_order: number } | null)?.sort_order ?? 999;
+    if (da !== db) return da - db;
+    return ((a.sort_order as number) ?? 999) - ((b.sort_order as number) ?? 999);
+  });
+
   const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.employee_id as string, e]));
 
-  return (employees ?? []).map((emp: Record<string, unknown>) => {
+  return sortedEmployees.map((emp: Record<string, unknown>) => {
     const entry = entryMap.get(emp.id as string) as Record<string, unknown> | undefined;
     return {
       id: (entry?.id as string) ?? null,
@@ -639,8 +645,8 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       employee_name: emp.full_name as string,
       employee_code: emp.employee_code as string | null,
       department_name: (emp.departments as { name: string } | null)?.name ?? null,
-      base_salary: (entry?.base_salary as number) ?? (emp.base_salary as number) ?? 0,
-      position_allowance: (entry?.position_allowance as number) ?? (emp.position_allowance as number) ?? 0,
+      base_salary: (entry?.base_salary as number) ?? ((emp.base_salary as number) ?? 0) / 2,
+      position_allowance: (entry?.position_allowance as number) ?? ((emp.position_allowance as number) ?? 0) / 2,
       special_bonus: (entry?.special_bonus as number) ?? 0,
       holiday_pay: (entry?.holiday_pay as number) ?? 0,
       ot_pay: (entry?.ot_pay as number) ?? 0,
