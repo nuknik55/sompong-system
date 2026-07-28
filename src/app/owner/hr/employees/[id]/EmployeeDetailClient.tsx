@@ -48,6 +48,8 @@ function yearsOfServiceText(hireDateStr: string | null): string {
   return `${y} ปี ${m > 0 ? `${m} เดือน` : ""}`.trim();
 }
 
+type TabKey = "summary" | "info" | "leave" | "payroll";
+
 export function EmployeeDetailClient({
   employee,
   departments,
@@ -58,6 +60,7 @@ export function EmployeeDetailClient({
   daySwaps,
   attendanceSummary,
   defaultYear,
+  initialTab,
 }: {
   employee: Employee;
   departments: Department[];
@@ -68,16 +71,22 @@ export function EmployeeDetailClient({
   daySwaps: DaySwapRequest[];
   attendanceSummary: AttendanceYearSummary;
   defaultYear: number;
+  initialTab: TabKey;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"summary" | "info" | "leave" | "payroll">("summary");
+  const [tab, setTabState] = useState<TabKey>(initialTab);
   const [form, setForm] = useState({ ...employee });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const year = defaultYear;
 
+  function setTab(t: TabKey) {
+    setTabState(t);
+    router.replace(`/owner/hr/employees/${employee.id}?year=${year}&tab=${t}`, { scroll: false });
+  }
+
   function setYear(y: number) {
-    router.push(`/owner/hr/employees/${employee.id}?year=${y}`);
+    router.push(`/owner/hr/employees/${employee.id}?year=${y}&tab=${tab}`);
   }
 
   function handleSave() {
