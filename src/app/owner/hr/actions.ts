@@ -506,41 +506,60 @@ export async function closePayrollPeriod(id: string): Promise<void> {
 
 export async function getEmployeePayrollHistory(employeeId: string): Promise<EmployeePayrollHistoryRow[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("payroll_entries")
-    .select(`
-      base_salary, position_allowance, special_bonus, holiday_pay, ot_pay,
-      social_security_deduction, leave_deduction, advance_deduction, adjustment,
-      other_amount, meal_allowance, tip_amount, gross_total, net_total,
-      payroll_periods!inner(id, period_year, period_month, period_half, is_closed)
-    `)
-    .eq("employee_id", employeeId)
-    .order("period_year", { referencedTable: "payroll_periods", ascending: false })
-    .order("period_month", { referencedTable: "payroll_periods", ascending: false })
-    .order("period_half", { referencedTable: "payroll_periods", ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((r: Record<string, unknown>) => {
-    const period = r.payroll_periods as { id: string; period_year: number; period_month: number; period_half: "first" | "second"; is_closed: boolean };
+  const [{ data: periods, error: periodsError }, { data: entries, error: entriesError }, { data: emp }] = await Promise.all([
+    supabase
+      .from("payroll_periods")
+      .select("id,period_year,period_month,period_half,is_closed")
+      .order("period_year", { ascending: false })
+      .order("period_month", { ascending: false })
+      .order("period_half", { ascending: false }),
+    supabase.from("payroll_entries").select("*").eq("employee_id", employeeId),
+    supabase.from("employees").select("base_salary,position_allowance,social_security_monthly").eq("id", employeeId).single(),
+  ]);
+  if (periodsError) throw periodsError;
+  if (entriesError) throw entriesError;
+
+  const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.payroll_period_id as string, e]));
+  const defaultBase = ((emp?.base_salary as number) ?? 0) / 2;
+  const defaultPosition = ((emp?.position_allowance as number) ?? 0) / 2;
+  const defaultSS = ((emp?.social_security_monthly as number) ?? 0) / 2;
+
+  return (periods ?? []).map((period: Record<string, unknown>) => {
+    const entry = entryMap.get(period.id as string) as Record<string, unknown> | undefined;
+    const base_salary = (entry?.base_salary as number) ?? defaultBase;
+    const position_allowance = (entry?.position_allowance as number) ?? defaultPosition;
+    const special_bonus = (entry?.special_bonus as number) ?? 0;
+    const holiday_pay = (entry?.holiday_pay as number) ?? 0;
+    const ot_pay = (entry?.ot_pay as number) ?? 0;
+    const social_security_deduction = (entry?.social_security_deduction as number) ?? defaultSS;
+    const leave_deduction = (entry?.leave_deduction as number) ?? 0;
+    const advance_deduction = (entry?.advance_deduction as number) ?? 0;
+    const adjustment = (entry?.adjustment as number) ?? 0;
+    const other_amount = (entry?.other_amount as number) ?? 0;
+    const meal_allowance = (entry?.meal_allowance as number) ?? 0;
+    const tip_amount = (entry?.tip_amount as number) ?? 0;
+    const gross = base_salary + position_allowance + special_bonus + holiday_pay + ot_pay + other_amount + meal_allowance + tip_amount;
+    const net = gross - social_security_deduction - leave_deduction - advance_deduction - adjustment;
     return {
-      period_id: period.id,
-      period_year: period.period_year,
-      period_month: period.period_month,
-      period_half: period.period_half,
-      is_closed: period.is_closed,
-      base_salary: r.base_salary as number,
-      position_allowance: r.position_allowance as number,
-      special_bonus: r.special_bonus as number,
-      holiday_pay: r.holiday_pay as number,
-      ot_pay: r.ot_pay as number,
-      social_security_deduction: r.social_security_deduction as number,
-      leave_deduction: r.leave_deduction as number,
-      advance_deduction: r.advance_deduction as number,
-      adjustment: r.adjustment as number,
-      other_amount: r.other_amount as number,
-      meal_allowance: r.meal_allowance as number,
-      tip_amount: r.tip_amount as number,
-      gross_total: (r.gross_total as number) ?? 0,
-      net_total: (r.net_total as number) ?? 0,
+      period_id: period.id as string,
+      period_year: period.period_year as number,
+      period_month: period.period_month as number,
+      period_half: period.period_half as "first" | "second",
+      is_closed: period.is_closed as boolean,
+      base_salary,
+      position_allowance,
+      special_bonus,
+      holiday_pay,
+      ot_pay,
+      social_security_deduction,
+      leave_deduction,
+      advance_deduction,
+      adjustment,
+      other_amount,
+      meal_allowance,
+      tip_amount,
+      gross_total: (entry?.gross_total as number) ?? gross,
+      net_total: (entry?.net_total as number) ?? net,
     };
   });
 }
