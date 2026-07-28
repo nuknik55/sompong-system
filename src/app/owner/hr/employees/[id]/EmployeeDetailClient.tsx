@@ -346,7 +346,7 @@ export function EmployeeDetailClient({
               <input type="number" className="input-base" value={form.position_allowance} onChange={(e) => setForm((f) => ({ ...f, position_allowance: +e.target.value }))} />
             </Field>
             <Field label="ประกันสังคม (ต่อเดือน)">
-              <input type="number" className="input-base" value={form.social_security_monthly} onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))} />
+              <input type="number" className="input-base" value={form.social_security_monthly} onFocus={(e) => e.target.select()} onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))} />
             </Field>
             <Field label="วันบรรจุ">
               <input type="date" className="input-base" value={form.hire_date ?? ""} onChange={(e) => setForm((f) => ({ ...f, hire_date: e.target.value || null }))} />

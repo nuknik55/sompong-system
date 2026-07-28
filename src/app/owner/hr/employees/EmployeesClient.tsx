@@ -349,6 +349,7 @@ export function EmployeesClient({
                     type="number"
                     className="input-base"
                     value={form.social_security_monthly}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))}
                   />
                 </Field>
