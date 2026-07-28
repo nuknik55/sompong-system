@@ -7,7 +7,7 @@ import {
   getEmployee,
   getDepartments,
   getLeaveRequests,
-  getPayrollPeriods,
+  getEmployeePayrollHistory,
   getLeaveQuotas,
   getCompDayBalances,
   getDaySwapRequests,
@@ -27,12 +27,12 @@ export default async function EmployeeDetailPage({
   const sp = await searchParams;
   const year = sp.year ? parseInt(sp.year) : new Date().getFullYear();
 
-  const [employee, departments, leaveRequests, periods, allQuotas, allBalances, daySwaps, attendanceSummary] =
+  const [employee, departments, leaveRequests, payrollHistory, allQuotas, allBalances, daySwaps, attendanceSummary] =
     await Promise.all([
       getEmployee(id),
       getDepartments(),
       getLeaveRequests({ employeeId: id }),
-      getPayrollPeriods(),
+      getEmployeePayrollHistory(id),
       getLeaveQuotas(year),
       getCompDayBalances(),
       getDaySwapRequests(year),
@@ -56,7 +56,7 @@ export default async function EmployeeDetailPage({
         employee={employee}
         departments={departments}
         leaveRequests={leaveRequests}
-        periods={periods}
+        payrollHistory={payrollHistory}
         quota={quota}
         compBalance={balance}
         daySwaps={myDaySwaps}

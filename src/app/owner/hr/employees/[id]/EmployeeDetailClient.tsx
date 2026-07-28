@@ -7,12 +7,17 @@ import type {
   Employee,
   Department,
   LeaveRequest,
-  PayrollPeriod,
+  EmployeePayrollHistoryRow,
   LeaveQuotaRow,
   CompDayBalance,
   DaySwapRequest,
   AttendanceYearSummary,
 } from "../../actions";
+
+function fmtMoney(n: number) {
+  if (!n) return "–";
+  return n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const DAYS_TH = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
@@ -47,7 +52,7 @@ export function EmployeeDetailClient({
   employee,
   departments,
   leaveRequests,
-  periods,
+  payrollHistory,
   quota,
   compBalance,
   daySwaps,
@@ -57,7 +62,7 @@ export function EmployeeDetailClient({
   employee: Employee;
   departments: Department[];
   leaveRequests: LeaveRequest[];
-  periods: PayrollPeriod[];
+  payrollHistory: EmployeePayrollHistoryRow[];
   quota: LeaveQuotaRow | null;
   compBalance: CompDayBalance | null;
   daySwaps: DaySwapRequest[];
@@ -88,6 +93,7 @@ export function EmployeeDetailClient({
         employment_type: form.employment_type,
         base_salary: form.base_salary,
         position_allowance: form.position_allowance,
+        social_security_monthly: form.social_security_monthly,
         hire_date: form.hire_date ?? "",
         weekly_day_off: form.weekly_day_off ?? "",
         citizenship_type: form.citizenship_type,
@@ -330,6 +336,9 @@ export function EmployeeDetailClient({
             <Field label="ค่าตำแหน่ง">
               <input type="number" className="input-base" value={form.position_allowance} onChange={(e) => setForm((f) => ({ ...f, position_allowance: +e.target.value }))} />
             </Field>
+            <Field label="ประกันสังคม (ต่อเดือน)">
+              <input type="number" className="input-base" value={form.social_security_monthly} onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))} />
+            </Field>
             <Field label="วันบรรจุ">
               <input type="date" className="input-base" value={form.hire_date ?? ""} onChange={(e) => setForm((f) => ({ ...f, hire_date: e.target.value || null }))} />
             </Field>
@@ -413,26 +422,52 @@ export function EmployeeDetailClient({
       {/* ─── Tab: ประวัติเงินเดือน ─── */}
       {tab === "payroll" && (
         <div className="overflow-x-auto rounded-lg border border-neutral-200">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-800 text-left text-xs text-neutral-100">
-                <th className="px-3 py-2">งวด</th>
-                <th className="px-3 py-2 text-right">ดูรายละเอียด</th>
+              <tr className="border-b border-neutral-200 bg-neutral-800 text-neutral-100">
+                <th className="px-3 py-2 text-left">งวด</th>
+                <th className="px-2 py-2 text-right">เงินเดือน</th>
+                <th className="px-2 py-2 text-right">ค่าตำแหน่ง</th>
+                <th className="px-2 py-2 text-right">พิเศษ</th>
+                <th className="px-2 py-2 text-right">นักขัตฤกษ์</th>
+                <th className="px-2 py-2 text-right">OT</th>
+                <th className="px-2 py-2 text-right text-red-200">ประกัน</th>
+                <th className="px-2 py-2 text-right text-red-200">ขาด/ลา/สาย</th>
+                <th className="px-2 py-2 text-right text-red-200">ยืม</th>
+                <th className="px-2 py-2 text-right text-red-200">ปรับ</th>
+                <th className="px-2 py-2 text-right">อื่นๆ</th>
+                <th className="px-2 py-2 text-right">ข้าวพนง</th>
+                <th className="px-2 py-2 text-right">ทิป</th>
+                <th className="px-2 py-2 text-right font-semibold">รวม</th>
+                <th className="px-2 py-2 text-right font-semibold text-yellow-200">สุทธิ</th>
               </tr>
             </thead>
             <tbody>
-              {periods.length === 0 && (
-                <tr><td colSpan={2} className="py-6 text-center text-neutral-400">ยังไม่มีรอบเงินเดือน</td></tr>
+              {payrollHistory.length === 0 && (
+                <tr><td colSpan={15} className="py-6 text-center text-neutral-400">ยังไม่มีประวัติเงินเดือน</td></tr>
               )}
-              {periods.map((p, i) => (
-                <tr key={p.id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
+              {payrollHistory.map((r, i) => (
+                <tr key={r.period_id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
                   <td className="px-3 py-2 text-neutral-700">
-                    {MONTHS_TH[(p.period_month - 1) % 12]} {p.period_year + 543}
-                    <span className="ml-1 text-xs text-neutral-400">{p.period_half === "first" ? "(ครึ่งแรก)" : "(ครึ่งหลัง)"}</span>
+                    <a href={`/owner/hr/payroll?period=${r.period_id}`} className="hover:underline">
+                      {MONTHS_TH[(r.period_month - 1) % 12]} {r.period_year + 543}
+                      <span className="ml-1 text-neutral-400">{r.period_half === "first" ? "(ครึ่งแรก)" : "(ครึ่งหลัง)"}</span>
+                    </a>
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <a href={`/owner/hr/payroll?period=${p.id}`} className="text-xs text-blue-500 hover:underline">ดูรายละเอียด →</a>
-                  </td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.base_salary)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.position_allowance)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.special_bonus)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.holiday_pay)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.ot_pay)}</td>
+                  <td className="px-2 py-2 text-right text-red-600">{fmtMoney(r.social_security_deduction)}</td>
+                  <td className="px-2 py-2 text-right text-red-600">{fmtMoney(r.leave_deduction)}</td>
+                  <td className="px-2 py-2 text-right text-red-600">{fmtMoney(r.advance_deduction)}</td>
+                  <td className="px-2 py-2 text-right text-red-600">{fmtMoney(r.adjustment)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.other_amount)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.meal_allowance)}</td>
+                  <td className="px-2 py-2 text-right text-neutral-700">{fmtMoney(r.tip_amount)}</td>
+                  <td className="px-2 py-2 text-right font-medium text-neutral-700">{fmtMoney(r.gross_total)}</td>
+                  <td className="px-2 py-2 text-right font-bold text-neutral-900">{fmtMoney(r.net_total)}</td>
                 </tr>
               ))}
             </tbody>

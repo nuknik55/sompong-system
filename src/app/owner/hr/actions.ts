@@ -25,6 +25,7 @@ export type Employee = {
   employment_type: "full_time" | "part_time" | "contract";
   base_salary: number;
   position_allowance: number;
+  social_security_monthly: number;
   hire_date: string | null;
   weekly_day_off: string | null;
   citizenship_type: "thai" | "foreign";
@@ -83,6 +84,28 @@ export type PayrollPeriod = {
   period_half: "first" | "second";
   pay_date: string | null;
   is_closed: boolean;
+};
+
+export type EmployeePayrollHistoryRow = {
+  period_id: string;
+  period_year: number;
+  period_month: number;
+  period_half: "first" | "second";
+  is_closed: boolean;
+  base_salary: number;
+  position_allowance: number;
+  special_bonus: number;
+  holiday_pay: number;
+  ot_pay: number;
+  social_security_deduction: number;
+  leave_deduction: number;
+  advance_deduction: number;
+  adjustment: number;
+  other_amount: number;
+  meal_allowance: number;
+  tip_amount: number;
+  gross_total: number;
+  net_total: number;
 };
 
 export type PayrollEntry = {
@@ -158,7 +181,7 @@ export async function getEmployees(): Promise<Employee[]> {
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, position_allowance,
+      base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active, sort_order,
       departments(name, sort_order)
     `)
@@ -187,7 +210,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, position_allowance,
+      base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active,
       departments(name)
     `)
@@ -212,6 +235,7 @@ export async function upsertEmployee(e: {
   employment_type: string;
   base_salary: number;
   position_allowance: number;
+  social_security_monthly: number;
   hire_date: string;
   weekly_day_off: string;
   citizenship_type: string;
@@ -229,6 +253,7 @@ export async function upsertEmployee(e: {
     employment_type: e.employment_type,
     base_salary: e.base_salary,
     position_allowance: e.position_allowance,
+    social_security_monthly: e.social_security_monthly,
     hire_date: e.hire_date || null,
     weekly_day_off: e.weekly_day_off || null,
     citizenship_type: e.citizenship_type,
@@ -479,6 +504,47 @@ export async function closePayrollPeriod(id: string): Promise<void> {
   revalidatePath("/owner/hr/payroll");
 }
 
+export async function getEmployeePayrollHistory(employeeId: string): Promise<EmployeePayrollHistoryRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("payroll_entries")
+    .select(`
+      base_salary, position_allowance, special_bonus, holiday_pay, ot_pay,
+      social_security_deduction, leave_deduction, advance_deduction, adjustment,
+      other_amount, meal_allowance, tip_amount, gross_total, net_total,
+      payroll_periods!inner(id, period_year, period_month, period_half, is_closed)
+    `)
+    .eq("employee_id", employeeId)
+    .order("period_year", { referencedTable: "payroll_periods", ascending: false })
+    .order("period_month", { referencedTable: "payroll_periods", ascending: false })
+    .order("period_half", { referencedTable: "payroll_periods", ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const period = r.payroll_periods as { id: string; period_year: number; period_month: number; period_half: "first" | "second"; is_closed: boolean };
+    return {
+      period_id: period.id,
+      period_year: period.period_year,
+      period_month: period.period_month,
+      period_half: period.period_half,
+      is_closed: period.is_closed,
+      base_salary: r.base_salary as number,
+      position_allowance: r.position_allowance as number,
+      special_bonus: r.special_bonus as number,
+      holiday_pay: r.holiday_pay as number,
+      ot_pay: r.ot_pay as number,
+      social_security_deduction: r.social_security_deduction as number,
+      leave_deduction: r.leave_deduction as number,
+      advance_deduction: r.advance_deduction as number,
+      adjustment: r.adjustment as number,
+      other_amount: r.other_amount as number,
+      meal_allowance: r.meal_allowance as number,
+      tip_amount: r.tip_amount as number,
+      gross_total: (r.gross_total as number) ?? 0,
+      net_total: (r.net_total as number) ?? 0,
+    };
+  });
+}
+
 // ─── Approved leaves expanded to per-day (for schedule overlay) ───────────────
 
 export type LeaveDay = {
@@ -622,7 +688,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   const [{ data: employees }, { data: entries }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,sort_order,departments(name,sort_order)")
+      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,sort_order,departments(name,sort_order)")
       .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
   ]);
@@ -650,7 +716,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       special_bonus: (entry?.special_bonus as number) ?? 0,
       holiday_pay: (entry?.holiday_pay as number) ?? 0,
       ot_pay: (entry?.ot_pay as number) ?? 0,
-      social_security_deduction: (entry?.social_security_deduction as number) ?? 0,
+      social_security_deduction: (entry?.social_security_deduction as number) ?? ((emp.social_security_monthly as number) ?? 0) / 2,
       leave_deduction: (entry?.leave_deduction as number) ?? 0,
       advance_deduction: (entry?.advance_deduction as number) ?? 0,
       adjustment: (entry?.adjustment as number) ?? 0,

@@ -37,6 +37,7 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   employment_type: "full_time",
   base_salary: 0,
   position_allowance: 0,
+  social_security_monthly: 0,
   hire_date: null,
   weekly_day_off: "จันทร์",
   citizenship_type: "thai",
@@ -83,6 +84,7 @@ export function EmployeesClient({
       employment_type: emp.employment_type,
       base_salary: emp.base_salary,
       position_allowance: emp.position_allowance,
+      social_security_monthly: emp.social_security_monthly,
       hire_date: emp.hire_date,
       weekly_day_off: emp.weekly_day_off ?? "จันทร์",
       citizenship_type: emp.citizenship_type,
@@ -340,6 +342,14 @@ export function EmployeesClient({
                     className="input-base"
                     value={form.position_allowance}
                     onChange={(e) => setForm((f) => ({ ...f, position_allowance: +e.target.value }))}
+                  />
+                </Field>
+                <Field label="ประกันสังคม (ต่อเดือน)">
+                  <input
+                    type="number"
+                    className="input-base"
+                    value={form.social_security_monthly}
+                    onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))}
                   />
                 </Field>
 
