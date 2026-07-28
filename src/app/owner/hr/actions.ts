@@ -539,11 +539,8 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
     let defaultLeaveDeduction = 0;
     if (entry?.leave_deduction === undefined) {
       const { start, end } = periodDateRange(period.period_year as number, period.period_month as number, period.period_half as "first" | "second");
-      for (const row of attendanceRows) {
-        if (row.work_date < start || row.work_date > end) continue;
-        defaultLeaveDeduction += attendanceDeductionForRow(row, monthlySalary, deductibleLeaveTypeIds);
-      }
-      defaultLeaveDeduction = Math.round(defaultLeaveDeduction * 100) / 100;
+      const periodRows = attendanceRows.filter((row) => row.work_date >= start && row.work_date <= end);
+      defaultLeaveDeduction = computeAttendanceDeduction(periodRows, monthlySalary, deductibleLeaveTypeIds);
     }
     const leave_deduction = (entry?.leave_deduction as number) ?? defaultLeaveDeduction;
     const advance_deduction = (entry?.advance_deduction as number) ?? 0;
@@ -715,10 +712,31 @@ export async function upsertScheduleNote(
 
 // ─── Payroll Entries ──────────────────────────────────────────────────────────
 
-// A day off/absent day costs 1/30 of the monthly base salary; a late minute
-// costs that daily rate spread over an 8-hour workday.
+// A day off/absent day costs 1/30 of the monthly base salary.
 function dailyRate(monthlySalary: number): number {
   return monthlySalary / 30;
+}
+
+// Absences and unpaid leave (PLW) cost a full day; every other leave type
+// (AL, SL, SLA, PLP, CDW, CDP, UOT) is paid and never auto-deducted.
+function perDayDeduction(
+  row: { status: string; leave_type_id: string | null },
+  monthlySalary: number,
+  deductibleLeaveTypeIds: Set<string>,
+): number {
+  const rate = dailyRate(monthlySalary);
+  if (row.status === "absent") return rate;
+  if (row.status === "leave" && row.leave_type_id && deductibleLeaveTypeIds.has(row.leave_type_id)) return rate;
+  return 0;
+}
+
+// Lateness is judged on the TOTAL minutes late across the whole half-month
+// period, not per incident: the first 30 minutes (cumulative) are free,
+// then every additional 30-minute block (rounded up) costs half a day.
+function lateDeductionFromTotal(monthlySalary: number, totalLateMinutes: number): number {
+  if (totalLateMinutes <= 30) return 0;
+  const blocks = Math.ceil((totalLateMinutes - 30) / 30);
+  return blocks * (dailyRate(monthlySalary) / 2);
 }
 
 function periodDateRange(year: number, month: number, half: "first" | "second"): { start: string; end: string } {
@@ -728,16 +746,19 @@ function periodDateRange(year: number, month: number, half: "first" | "second"):
   return { start: `${year}-${m}-16`, end: `${year}-${m}-${String(lastDay).padStart(2, "0")}` };
 }
 
-function attendanceDeductionForRow(
-  row: { status: string; late_minutes: number | null; leave_type_id: string | null },
+function computeAttendanceDeduction(
+  rows: { status: string; late_minutes: number | null; leave_type_id: string | null }[],
   monthlySalary: number,
   deductibleLeaveTypeIds: Set<string>,
 ): number {
-  const rate = dailyRate(monthlySalary);
-  if (row.status === "absent") return rate;
-  if (row.status === "late") return (rate / 8 / 60) * (row.late_minutes ?? 0);
-  if (row.status === "leave" && row.leave_type_id && deductibleLeaveTypeIds.has(row.leave_type_id)) return rate;
-  return 0;
+  let total = 0;
+  let lateMinutes = 0;
+  for (const row of rows) {
+    if (row.status === "late") lateMinutes += row.late_minutes ?? 0;
+    else total += perDayDeduction(row, monthlySalary, deductibleLeaveTypeIds);
+  }
+  total += lateDeductionFromTotal(monthlySalary, lateMinutes);
+  return Math.round(total * 100) / 100;
 }
 
 // Only ลากิจ (รายวัน) / PLW deducts pay like an absence — every other leave
@@ -777,9 +798,13 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       .gte("work_date", start)
       .lte("work_date", end);
     const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
+    const rowsByEmployee = new Map<string, { status: string; late_minutes: number | null; leave_type_id: string | null }[]>();
     for (const row of (attendance ?? []) as { employee_id: string; status: string; late_minutes: number | null; leave_type_id: string | null }[]) {
-      const add = attendanceDeductionForRow(row, salaryMap.get(row.employee_id) ?? 0, deductibleLeaveTypeIds);
-      if (add > 0) deductionMap.set(row.employee_id, Math.round(((deductionMap.get(row.employee_id) ?? 0) + add) * 100) / 100);
+      if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
+      rowsByEmployee.get(row.employee_id)!.push(row);
+    }
+    for (const [employeeId, rows] of rowsByEmployee) {
+      deductionMap.set(employeeId, computeAttendanceDeduction(rows, salaryMap.get(employeeId) ?? 0, deductibleLeaveTypeIds));
     }
   }
 
