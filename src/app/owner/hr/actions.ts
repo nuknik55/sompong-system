@@ -935,22 +935,34 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
 
   return sorted.map((emp: Record<string, unknown>) => {
     const years = yearsOfService(emp.hire_date as string | null, year);
+    const usage = (types ?? []).map((lt: Record<string, unknown>) => {
+      const code = lt.code as string;
+      const isAL = code === "AL" || (lt.name_th as string).includes("พักร้อน");
+      const quota = isAL ? alQuotaDays(years) : (lt.annual_quota_days as number);
+      return {
+        leave_type_id: lt.id as string,
+        leave_type_code: code,
+        leave_type_name: lt.name_th as string,
+        annual_quota: quota,
+        used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
+      };
+    });
+
+    // SL and SLA (ลาป่วย / ลาป่วยมีใบแพทย์) share one 30-day sick leave pool —
+    // merge SLA's usage into SL instead of tracking two separate quotas.
+    const sl = usage.find((u) => u.leave_type_code === "SL");
+    const sla = usage.find((u) => u.leave_type_code === "SLA");
+    const mergedUsage = sl && sla
+      ? usage.filter((u) => u.leave_type_code !== "SLA").map((u) =>
+          u.leave_type_code === "SL" ? { ...u, used_days: u.used_days + sla.used_days } : u
+        )
+      : usage;
+
     return {
       employee_id: emp.id as string,
       employee_name: emp.full_name as string,
       employee_nickname: emp.nickname as string | null,
-      usage: (types ?? []).map((lt: Record<string, unknown>) => {
-        const code = lt.code as string;
-        const isAL = code === "AL" || (lt.name_th as string).includes("พักร้อน");
-        const quota = isAL ? alQuotaDays(years) : (lt.annual_quota_days as number);
-        return {
-          leave_type_id: lt.id as string,
-          leave_type_code: code,
-          leave_type_name: lt.name_th as string,
-          annual_quota: quota,
-          used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
-        };
-      }),
+      usage: mergedUsage,
     };
   });
 }
