@@ -43,6 +43,7 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   citizenship_type: "thai",
   is_active: true,
   sort_order: 999,
+  al_quota_override: null,
 };
 
 export function EmployeesClient({
@@ -90,6 +91,7 @@ export function EmployeesClient({
       citizenship_type: emp.citizenship_type,
       is_active: emp.is_active,
       sort_order: emp.sort_order,
+      al_quota_override: emp.al_quota_override ?? null,
     });
     setShowModal(true);
   }

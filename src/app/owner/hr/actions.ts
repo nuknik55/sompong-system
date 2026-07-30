@@ -31,6 +31,7 @@ export type Employee = {
   citizenship_type: "thai" | "foreign";
   is_active: boolean;
   sort_order: number;
+  al_quota_override: number | null;
 };
 
 export type LeaveType = {
@@ -183,6 +184,7 @@ export async function getEmployees(): Promise<Employee[]> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active, sort_order,
+      al_quota_override,
       departments(name, sort_order)
     `)
     .order("sort_order");
@@ -212,6 +214,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active,
+      al_quota_override,
       departments(name)
     `)
     .eq("id", id)
@@ -221,6 +224,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     ...(data as unknown as Omit<Employee, "department_name">),
     sort_order: (data as unknown as { sort_order?: number }).sort_order ?? 999,
     department_name: (data.departments as unknown as { name: string } | null)?.name ?? null,
+    al_quota_override: (data as unknown as { al_quota_override?: number | null }).al_quota_override ?? null,
   };
 }
 
@@ -240,6 +244,7 @@ export async function upsertEmployee(e: {
   weekly_day_off: string;
   citizenship_type: string;
   is_active: boolean;
+  al_quota_override?: number | null;
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
@@ -258,6 +263,7 @@ export async function upsertEmployee(e: {
     weekly_day_off: e.weekly_day_off || null,
     citizenship_type: e.citizenship_type,
     is_active: e.is_active,
+    al_quota_override: e.al_quota_override ?? null,
   };
   if (e.id) {
     await supabase.from("employees").update(payload).eq("id", e.id);
@@ -1028,7 +1034,7 @@ function alQuotaDays(years: number): number {
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   const supabase = await createClient();
   const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
-    supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,departments(sort_order)").eq("is_active", true),
+    supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,al_quota_override,departments(sort_order)").eq("is_active", true),
     supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
     supabase
       .from("leave_requests")
@@ -1053,10 +1059,11 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
 
   return sorted.map((emp: Record<string, unknown>) => {
     const years = yearsOfService(emp.hire_date as string | null, year);
+    const alOverride = (emp.al_quota_override as number | null) ?? null;
     const usage = (types ?? []).map((lt: Record<string, unknown>) => {
       const code = lt.code as string;
       const isAL = code === "AL" || (lt.name_th as string).includes("พักร้อน");
-      const quota = isAL ? alQuotaDays(years) : (lt.annual_quota_days as number);
+      const quota = isAL ? (alOverride ?? alQuotaDays(years)) : (lt.annual_quota_days as number);
       return {
         leave_type_id: lt.id as string,
         leave_type_code: code,

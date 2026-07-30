@@ -48,6 +48,23 @@ function yearsOfServiceText(hireDateStr: string | null): string {
   return `${y} ปี ${m > 0 ? `${m} เดือน` : ""}`.trim();
 }
 
+function calcYears(hireDateStr: string | null): number {
+  if (!hireDateStr) return 0;
+  const hire = new Date(hireDateStr + "T00:00:00");
+  const now = new Date();
+  let y = now.getFullYear() - hire.getFullYear();
+  if (now < new Date(now.getFullYear(), hire.getMonth(), hire.getDate())) y--;
+  return Math.max(0, y);
+}
+
+function alAutoQuota(years: number): number {
+  if (years < 1) return 0;
+  if (years < 3) return 4;
+  if (years < 6) return 6;
+  if (years < 10) return 8;
+  return 10;
+}
+
 type TabKey = "summary" | "info" | "leave" | "payroll";
 
 export function EmployeeDetailClient({
@@ -75,7 +92,7 @@ export function EmployeeDetailClient({
 }) {
   const router = useRouter();
   const [tab, setTabState] = useState<TabKey>(initialTab);
-  const [form, setForm] = useState({ ...employee });
+  const [form, setForm] = useState({ ...employee, al_quota_override: employee.al_quota_override ?? null });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const year = defaultYear;
@@ -107,6 +124,7 @@ export function EmployeeDetailClient({
         weekly_day_off: form.weekly_day_off ?? "",
         citizenship_type: form.citizenship_type,
         is_active: form.is_active,
+        al_quota_override: form.al_quota_override,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -370,6 +388,53 @@ export function EmployeeDetailClient({
               </label>
             </Field>
           </div>
+          {/* AL quota */}
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">โควต้าพักร้อน (AL)</p>
+            {(() => {
+              const yrs = calcYears(form.hire_date);
+              const auto = alAutoQuota(yrs);
+              return (
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <p className="text-xs text-neutral-500">อัตโนมัติตามอายุงาน</p>
+                    <p className="mt-0.5 text-sm font-medium text-neutral-700">
+                      {yrs} ปี → <span className="text-blue-700 font-semibold">{auto} วัน</span>
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      0–2ปี=0วัน · 1–2ปี=4วัน · 3–5ปี=6วัน · 6–9ปี=8วัน · 10ปีขึ้นไป=10วัน
+                    </p>
+                  </div>
+                  <Field label="แก้ไขพิเศษ (เว้นว่าง = ใช้อัตโนมัติ)">
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      placeholder={String(auto)}
+                      className="input-base w-28"
+                      value={form.al_quota_override ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          al_quota_override: e.target.value === "" ? null : parseInt(e.target.value),
+                        }))
+                      }
+                    />
+                  </Field>
+                  {form.al_quota_override !== null && (
+                    <button
+                      type="button"
+                      className="mb-0.5 text-xs text-red-500 hover:text-red-700 underline"
+                      onClick={() => setForm((f) => ({ ...f, al_quota_override: null }))}
+                    >
+                      รีเซ็ตเป็นอัตโนมัติ
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
           <div className="flex items-center gap-3">
             <button onClick={handleSave} disabled={isPending} className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
               {isPending ? "กำลังบันทึก…" : "บันทึกการเปลี่ยนแปลง"}
