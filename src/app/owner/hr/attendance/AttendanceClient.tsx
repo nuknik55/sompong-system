@@ -450,7 +450,7 @@ export function AttendanceClient({
                           cellCls += "bg-teal-100 text-teal-800 hover:bg-teal-200";
                           content = (
                             <div className="flex flex-col items-center leading-tight">
-                              <span className="text-[8px] font-bold">ลา</span>
+                              <span className="text-[8px] font-bold">{approvedLeave.leave_type_code}</span>
                               <span className="text-[7px] opacity-70">✓</span>
                             </div>
                           );
