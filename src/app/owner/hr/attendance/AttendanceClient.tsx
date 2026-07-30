@@ -81,6 +81,8 @@ export function AttendanceClient({
   const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.code]));
   const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
   const vacationTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "AL" || lt.name_th.includes("พักร้อน")).map((lt) => lt.id));
+  const swapTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "CDW" || lt.code === "CDP").map((lt) => lt.id));
+  const SWAP_CODES = new Set(["CDW", "CDP"]);
 
   const visibleEmps = deptId
     ? employees.filter((e) => e.department_id === deptId)
@@ -210,14 +212,14 @@ export function AttendanceClient({
         if (r.status === "absent") absent++;
         if (r.status === "late") lateMin += r.late_minutes;
         if (r.status === "leave") {
-          leave++;
+          if (!r.leave_type_id || !swapTypeIds.has(r.leave_type_id)) leave++;
           if (r.leave_type_id && vacationTypeIds.has(r.leave_type_id)) vacation++;
         }
         ot += Number(r.ot_hours);
       } else {
         const al = leaveMap.get(`${empId}_${dateStr(d)}`);
         if (al) {
-          leave++;
+          if (!SWAP_CODES.has(al.leave_type_code)) leave++;
           if (al.leave_type_code === "AL" || al.leave_type_name.includes("พักร้อน")) vacation++;
         }
       }
@@ -365,6 +367,7 @@ export function AttendanceClient({
         ))}
         <span className="rounded bg-purple-50 px-2 py-0.5 font-medium text-purple-700">* นักขัตฤกษ์</span>
         <span className="rounded bg-teal-100 px-2 py-0.5 font-medium text-teal-800">ลา✓ ใบลาอนุมัติแล้ว</span>
+        <span className="rounded bg-orange-100 px-2 py-0.5 font-medium text-orange-700">CD✓ สลับวันหยุด (ไม่นับลา)</span>
         <span className="ml-2 text-neutral-400">คลิก หรือ ลากข้ามหลายวัน เพื่อบันทึกสถานะ</span>
       </div>
 
@@ -447,7 +450,10 @@ export function AttendanceClient({
                             content = <span className="font-bold">{cfg.short}</span>;
                           }
                         } else if (approvedLeave) {
-                          cellCls += "bg-teal-100 text-teal-800 hover:bg-teal-200";
+                          const isSwap = SWAP_CODES.has(approvedLeave.leave_type_code);
+                          cellCls += isSwap
+                            ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                            : "bg-teal-100 text-teal-800 hover:bg-teal-200";
                           content = (
                             <div className="flex flex-col items-center leading-tight">
                               <span className="text-[8px] font-bold">{approvedLeave.leave_type_code}</span>
