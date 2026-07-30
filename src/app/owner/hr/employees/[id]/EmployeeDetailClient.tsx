@@ -235,6 +235,45 @@ export function EmployeeDetailClient({
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">โควต้าการลา {year + 543}</h3>
               <div className="space-y-2 max-w-md">
                 {quota.usage.map((u) => {
+                  const isAL = u.h1_quota !== undefined;
+                  if (isAL) {
+                    // AL: show H1 + H2 split
+                    const halves = [
+                      { label: "ครึ่งปีแรก (ม.ค.–มิ.ย.)", quota: u.h1_quota ?? 0, used: u.h1_used ?? 0 },
+                      { label: "ครึ่งปีหลัง (ก.ค.–ธ.ค.)", quota: u.h2_quota ?? 0, used: u.h2_used ?? 0 },
+                    ];
+                    return (
+                      <div key={u.leave_type_id} className="rounded-lg border border-neutral-200 bg-white p-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600">{u.leave_type_code}</span>
+                          <span className="text-sm font-medium text-neutral-800">{u.leave_type_name}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {halves.map(({ label, quota: q, used }) => {
+                            const pct = q > 0 ? Math.min(100, Math.round((used / q) * 100)) : 0;
+                            const remaining = q - used;
+                            const barColor = pct >= 100 ? "bg-red-500" : pct >= 75 ? "bg-orange-400" : pct >= 50 ? "bg-amber-400" : "bg-green-500";
+                            return (
+                              <div key={label}>
+                                <div className="mb-1 flex items-center justify-between">
+                                  <span className="text-xs text-neutral-500">{label}</span>
+                                  <span className="text-xs text-neutral-500">
+                                    {used} / {q} วัน
+                                    {remaining > 0 && <span className="ml-1 text-green-600">(เหลือ {remaining})</span>}
+                                    {remaining <= 0 && q > 0 && <span className="ml-1 text-red-500">(หมดสิทธิ์)</span>}
+                                  </span>
+                                </div>
+                                <div className="h-2 rounded-full bg-neutral-100">
+                                  <div className={`h-2 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+                  // Other leave types: original display
                   const pct = u.annual_quota > 0 ? Math.min(100, Math.round((u.used_days / u.annual_quota) * 100)) : 0;
                   const remaining = u.annual_quota - u.used_days;
                   const barColor = pct >= 100 ? "bg-red-500" : pct >= 75 ? "bg-orange-400" : pct >= 50 ? "bg-amber-400" : "bg-green-500";
@@ -402,7 +441,7 @@ export function EmployeeDetailClient({
                       {yrs} ปี → <span className="text-blue-700 font-semibold">{auto} วัน</span>
                     </p>
                     <p className="text-xs text-neutral-400 mt-0.5">
-                      0–2ปี=0วัน · 1–2ปี=4วัน · 3–5ปี=6วัน · 6–9ปี=8วัน · 10ปีขึ้นไป=10วัน
+                      1–2ปี=4วัน · 3–5ปี=6วัน · 6–9ปี=8วัน · 10ปีขึ้นไป=10วัน
                     </p>
                   </div>
                   <Field label="แก้ไขพิเศษ (เว้นว่าง = ใช้อัตโนมัติ)">

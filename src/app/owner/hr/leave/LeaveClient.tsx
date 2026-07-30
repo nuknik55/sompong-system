@@ -149,7 +149,10 @@ export function LeaveClient({
                       <th key={col.leave_type_id} className="px-3 py-2 text-center font-medium text-neutral-600 min-w-[80px]">
                         <div>{col.leave_type_code}</div>
                         <div className="font-normal text-neutral-400 text-[10px]">{col.leave_type_name}</div>
-                        <div className="font-normal text-neutral-400 text-[10px]">สิทธิ์ {col.annual_quota} วัน</div>
+                        {col.h1_quota !== undefined
+                          ? <div className="font-normal text-neutral-400 text-[10px]">ครึ่งแรก / ครึ่งหลัง</div>
+                          : <div className="font-normal text-neutral-400 text-[10px]">สิทธิ์ {col.annual_quota} วัน</div>
+                        }
                       </th>
                     ))}
                   </tr>
@@ -162,6 +165,30 @@ export function LeaveClient({
                         <span className="ml-1 text-[10px] text-neutral-400">{row.employee_name}</span>
                       </td>
                       {row.usage.map((u) => {
+                        const isAL = u.h1_quota !== undefined;
+                        if (isAL) {
+                          const halves = [
+                            { q: u.h1_quota ?? 0, used: u.h1_used ?? 0 },
+                            { q: u.h2_quota ?? 0, used: u.h2_used ?? 0 },
+                          ];
+                          return (
+                            <td key={u.leave_type_id} className="px-3 py-1.5 text-center space-y-1">
+                              {halves.map(({ q, used }, hi) => {
+                                const pct = q > 0 ? used / q : 0;
+                                const barCls = pct >= 1 ? "bg-red-500" : pct >= 0.8 ? "bg-orange-400" : pct >= 0.5 ? "bg-amber-400" : "bg-green-400";
+                                const textCls = pct >= 1 ? "text-red-700 font-semibold" : "text-neutral-700";
+                                return (
+                                  <div key={hi}>
+                                    <div className={`text-xs ${textCls}`}>{used}/{q}</div>
+                                    <div className="mt-0.5 h-1 w-full rounded-full bg-neutral-200">
+                                      <div className={`h-1 rounded-full ${barCls} transition-all`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </td>
+                          );
+                        }
                         const pct = u.annual_quota > 0 ? u.used_days / u.annual_quota : 0;
                         const barCls = pct >= 1 ? "bg-red-500" : pct >= 0.8 ? "bg-orange-400" : pct >= 0.5 ? "bg-amber-400" : "bg-green-400";
                         const textCls = pct >= 1 ? "text-red-700 font-semibold" : pct >= 0.8 ? "text-orange-700" : "text-neutral-700";

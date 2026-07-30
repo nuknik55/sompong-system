@@ -1010,18 +1010,26 @@ export type LeaveQuotaRow = {
     leave_type_name: string;
     annual_quota: number;
     used_days: number;
+    // AL only: half-year breakdown
+    h1_quota?: number;
+    h2_quota?: number;
+    h1_used?: number;
+    h2_used?: number;
   }[];
 };
 
-function yearsOfService(hireDateStr: string | null, year: number): number {
+function yearsOfServiceAt(hireDateStr: string | null, refDateStr: string): number {
   if (!hireDateStr) return 0;
   const hire = new Date(hireDateStr + "T00:00:00");
-  // Use Dec 31 so anyone who reaches a milestone during the year gets the higher quota
-  const ref = new Date(`${year}-12-31T00:00:00`);
+  const ref = new Date(refDateStr + "T00:00:00");
   let y = ref.getFullYear() - hire.getFullYear();
   const anniversary = new Date(ref.getFullYear(), hire.getMonth(), hire.getDate());
   if (ref < anniversary) y--;
   return Math.max(0, y);
+}
+
+function yearsOfService(hireDateStr: string | null, year: number): number {
+  return yearsOfServiceAt(hireDateStr, `${year}-12-31`);
 }
 
 function alQuotaDays(years: number): number {
@@ -1045,10 +1053,15 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
       .lte("date_from", `${year}-12-31`),
   ]);
 
-  const usageMap = new Map<string, number>(); // `empId_typeId` -> total days
+  const usageMap = new Map<string, number>();
+  const h1UsageMap = new Map<string, number>(); // Jan–Jun
+  const h2UsageMap = new Map<string, number>(); // Jul–Dec
   for (const r of reqs ?? []) {
     const k = `${r.employee_id}_${r.leave_type_id}`;
     usageMap.set(k, (usageMap.get(k) ?? 0) + (r.total_days ?? 0));
+    const isH1 = (r.date_from ?? "") <= `${year}-06-30`;
+    const hMap = isH1 ? h1UsageMap : h2UsageMap;
+    hMap.set(k, (hMap.get(k) ?? 0) + (r.total_days ?? 0));
   }
 
   const sorted = (emps ?? []).slice().sort((a, b) => {
@@ -1059,18 +1072,34 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   });
 
   return sorted.map((emp: Record<string, unknown>) => {
-    const years = yearsOfService(emp.hire_date as string | null, year);
     const alOverride = (emp.al_quota_override as number | null) ?? null;
+    const yearsH1 = yearsOfServiceAt(emp.hire_date as string | null, `${year}-01-01`);
+    const yearsH2 = yearsOfServiceAt(emp.hire_date as string | null, `${year}-12-31`);
     const usage = (types ?? []).map((lt: Record<string, unknown>) => {
       const code = lt.code as string;
       const isAL = code === "AL" || (lt.name_th as string).includes("พักร้อน");
-      const quota = isAL ? (alOverride ?? alQuotaDays(years)) : (lt.annual_quota_days as number);
+      const k = `${emp.id}_${lt.id}`;
+      if (isAL) {
+        const h1q = alOverride !== null ? Math.floor(alOverride / 2) : alQuotaDays(yearsH1) / 2;
+        const h2q = alOverride !== null ? (alOverride - Math.floor(alOverride / 2)) : alQuotaDays(yearsH2) / 2;
+        return {
+          leave_type_id: lt.id as string,
+          leave_type_code: code,
+          leave_type_name: lt.name_th as string,
+          annual_quota: h1q + h2q,
+          used_days: usageMap.get(k) ?? 0,
+          h1_quota: h1q,
+          h2_quota: h2q,
+          h1_used: h1UsageMap.get(k) ?? 0,
+          h2_used: h2UsageMap.get(k) ?? 0,
+        };
+      }
       return {
         leave_type_id: lt.id as string,
         leave_type_code: code,
         leave_type_name: lt.name_th as string,
-        annual_quota: quota,
-        used_days: usageMap.get(`${emp.id}_${lt.id}`) ?? 0,
+        annual_quota: lt.annual_quota_days as number,
+        used_days: usageMap.get(k) ?? 0,
       };
     });
 
