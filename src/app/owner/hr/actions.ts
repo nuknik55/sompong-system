@@ -1016,7 +1016,8 @@ export type LeaveQuotaRow = {
 function yearsOfService(hireDateStr: string | null, year: number): number {
   if (!hireDateStr) return 0;
   const hire = new Date(hireDateStr + "T00:00:00");
-  const ref = new Date(`${year}-01-01T00:00:00`);
+  // Use Dec 31 so anyone who reaches a milestone during the year gets the higher quota
+  const ref = new Date(`${year}-12-31T00:00:00`);
   let y = ref.getFullYear() - hire.getFullYear();
   const anniversary = new Date(ref.getFullYear(), hire.getMonth(), hire.getDate());
   if (ref < anniversary) y--;
