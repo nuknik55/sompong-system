@@ -3,13 +3,14 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { upsertEmployee } from "../actions";
-import type { Employee, Department, CompDayBalance } from "../actions";
+import type { Employee, Department, CompDayBalance, ProbationAlert } from "../actions";
 
 const DAYS_TH = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
 const EMP_TYPES: Record<string, string> = {
   full_time: "ประจำ",
-  part_time: "พาร์ทไทม์",
-  contract: "สัญญาจ้าง",
+  part_time_fixed: "พาร์ทไทม์ประจำ",
+  part_time_oncall: "พาร์ทไทม์ตามเรียก",
+  probation: "ทดลองงาน",
 };
 
 const DEPT_COLORS: string[] = [
@@ -44,17 +45,20 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   is_active: true,
   sort_order: 999,
   al_quota_override: null,
+  probation_end_date: null,
 };
 
 export function EmployeesClient({
   initialEmployees,
   departments,
   balances,
+  probationAlerts,
   isOwner,
 }: {
   initialEmployees: Employee[];
   departments: Department[];
   balances: CompDayBalance[];
+  probationAlerts: ProbationAlert[];
   isOwner: boolean;
 }) {
   const [employees, setEmployees] = useState(initialEmployees);
@@ -92,13 +96,18 @@ export function EmployeesClient({
       is_active: emp.is_active,
       sort_order: emp.sort_order,
       al_quota_override: emp.al_quota_override ?? null,
+      probation_end_date: emp.probation_end_date ?? null,
     });
     setShowModal(true);
   }
 
   function handleSave() {
     startTransition(async () => {
-      await upsertEmployee({ ...(editing ? { id: editing.id } : {}), ...form } as Parameters<typeof upsertEmployee>[0]);
+      await upsertEmployee({
+        ...(editing ? { id: editing.id } : {}),
+        ...form,
+        probation_end_date: form.employment_type === "probation" ? (form.probation_end_date ?? null) : null,
+      } as Parameters<typeof upsertEmployee>[0]);
       setShowModal(false);
       // optimistic update
       const dept = departments.find((d) => d.id === form.department_id);
@@ -131,6 +140,28 @@ export function EmployeesClient({
 
   return (
     <>
+      {/* Probation alerts */}
+      {probationAlerts.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="mb-2 text-xs font-semibold text-amber-800">พนักงานทดลองงานใกล้ครบกำหนด</p>
+          <div className="flex flex-wrap gap-2">
+            {probationAlerts.map((a) => (
+              <Link
+                key={a.id}
+                href={`/owner/hr/employees/${a.id}?tab=info`}
+                className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-xs hover:bg-amber-50"
+              >
+                <span className="font-medium text-neutral-800">{a.full_name}</span>
+                {a.nickname && <span className="text-neutral-400">({a.nickname})</span>}
+                <span className={`ml-1 font-semibold ${a.days_remaining < 0 ? "text-red-600" : a.days_remaining <= 7 ? "text-orange-600" : "text-amber-700"}`}>
+                  {a.days_remaining < 0 ? `เกินกำหนด ${Math.abs(a.days_remaining)} วัน` : a.days_remaining === 0 ? "ครบวันนี้" : `อีก ${a.days_remaining} วัน`}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
@@ -199,7 +230,14 @@ export function EmployeesClient({
                         <td className="px-3 py-2 text-neutral-700">{emp.position ?? "–"}</td>
                         <td className="px-3 py-2 text-neutral-600">{emp.weekly_day_off ?? "–"}</td>
                         <td className="px-3 py-2 text-neutral-500">{thDate(emp.hire_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">{EMP_TYPES[emp.employment_type] ?? emp.employment_type}</td>
+                        <td className="px-3 py-2 text-xs">
+                          <span className={emp.employment_type === "probation" ? "font-semibold text-amber-700" : "text-neutral-500"}>
+                            {EMP_TYPES[emp.employment_type] ?? emp.employment_type}
+                          </span>
+                          {emp.employment_type === "probation" && emp.probation_end_date && (
+                            <span className="ml-1 text-neutral-400">({thDate(emp.probation_end_date)})</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-center">
                           {(() => {
                             const b = balanceMap.get(emp.id);
@@ -314,11 +352,21 @@ export function EmployeesClient({
                   <select
                     className="input-base"
                     value={form.employment_type}
-                    onChange={(e) => setForm((f) => ({ ...f, employment_type: e.target.value as Employee["employment_type"] }))}
+                    onChange={(e) => setForm((f) => ({ ...f, employment_type: e.target.value as Employee["employment_type"], probation_end_date: e.target.value !== "probation" ? null : f.probation_end_date }))}
                   >
                     {Object.entries(EMP_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </Field>
+                {form.employment_type === "probation" && (
+                  <Field label="วันสิ้นสุดทดลองงาน">
+                    <input
+                      type="date"
+                      className="input-base"
+                      value={form.probation_end_date ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, probation_end_date: e.target.value || null }))}
+                    />
+                  </Field>
+                )}
                 <Field label="สัญชาติ">
                   <select
                     className="input-base"

@@ -22,7 +22,7 @@ export type Employee = {
   department_id: string | null;
   department_name: string | null;
   position: string | null;
-  employment_type: "full_time" | "part_time" | "contract";
+  employment_type: "full_time" | "part_time_fixed" | "part_time_oncall" | "probation";
   base_salary: number;
   position_allowance: number;
   social_security_monthly: number;
@@ -32,6 +32,7 @@ export type Employee = {
   is_active: boolean;
   sort_order: number;
   al_quota_override: number | null;
+  probation_end_date: string | null;
 };
 
 export type LeaveType = {
@@ -184,7 +185,7 @@ export async function getEmployees(): Promise<Employee[]> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active, sort_order,
-      al_quota_override,
+      al_quota_override, probation_end_date,
       departments(name, sort_order)
     `)
     .order("sort_order");
@@ -214,7 +215,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, weekly_day_off, citizenship_type, is_active,
-      al_quota_override,
+      al_quota_override, probation_end_date,
       departments(name)
     `)
     .eq("id", id)
@@ -245,6 +246,7 @@ export async function upsertEmployee(e: {
   citizenship_type: string;
   is_active: boolean;
   al_quota_override?: number | null;
+  probation_end_date?: string | null;
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
@@ -264,6 +266,7 @@ export async function upsertEmployee(e: {
     citizenship_type: e.citizenship_type,
     is_active: e.is_active,
     al_quota_override: e.al_quota_override ?? null,
+    probation_end_date: e.probation_end_date || null,
   };
   if (e.id) {
     await supabase.from("employees").update(payload).eq("id", e.id);
@@ -282,6 +285,39 @@ export async function updateEmployeeSortOrders(
     await supabase.from("employees").update({ sort_order: u.sort_order }).eq("id", u.id);
   }
   revalidatePath("/owner/hr");
+}
+
+export type ProbationAlert = {
+  id: string;
+  full_name: string;
+  nickname: string | null;
+  probation_end_date: string;
+  days_remaining: number;
+};
+
+export async function getProbationAlerts(): Promise<ProbationAlert[]> {
+  const supabase = await createClient();
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0]!;
+  const alertDate = new Date(today);
+  alertDate.setDate(alertDate.getDate() + 30);
+  const alertDateStr = alertDate.toISOString().split("T")[0]!;
+
+  const { data } = await supabase
+    .from("employees")
+    .select("id, full_name, nickname, probation_end_date")
+    .eq("employment_type", "probation")
+    .eq("is_active", true)
+    .not("probation_end_date", "is", null)
+    .lte("probation_end_date", alertDateStr)
+    .order("probation_end_date");
+
+  return (data ?? []).map((e) => {
+    const end = new Date(e.probation_end_date + "T00:00:00");
+    const now = new Date(todayStr + "T00:00:00");
+    const diff = Math.round((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return { id: e.id, full_name: e.full_name, nickname: e.nickname, probation_end_date: e.probation_end_date, days_remaining: diff };
+  });
 }
 
 // ─── Leave Types ──────────────────────────────────────────────────────────────

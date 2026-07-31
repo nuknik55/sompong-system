@@ -92,7 +92,7 @@ export function EmployeeDetailClient({
 }) {
   const router = useRouter();
   const [tab, setTabState] = useState<TabKey>(initialTab);
-  const [form, setForm] = useState({ ...employee, al_quota_override: employee.al_quota_override ?? null });
+  const [form, setForm] = useState({ ...employee, al_quota_override: employee.al_quota_override ?? null, probation_end_date: employee.probation_end_date ?? null });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const year = defaultYear;
@@ -125,6 +125,7 @@ export function EmployeeDetailClient({
         citizenship_type: form.citizenship_type,
         is_active: form.is_active,
         al_quota_override: form.al_quota_override,
+        probation_end_date: form.employment_type === "probation" ? form.probation_end_date : null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -420,6 +421,28 @@ export function EmployeeDetailClient({
                 <option value="foreign">ต่างด้าว</option>
               </select>
             </Field>
+            <Field label="ประเภทจ้าง">
+              <select
+                className="input-base"
+                value={form.employment_type}
+                onChange={(e) => setForm((f) => ({ ...f, employment_type: e.target.value as Employee["employment_type"], probation_end_date: e.target.value !== "probation" ? null : f.probation_end_date }))}
+              >
+                <option value="full_time">ประจำ</option>
+                <option value="part_time_fixed">พาร์ทไทม์ประจำ</option>
+                <option value="part_time_oncall">พาร์ทไทม์ตามเรียก</option>
+                <option value="probation">ทดลองงาน</option>
+              </select>
+            </Field>
+            {form.employment_type === "probation" && (
+              <Field label="วันสิ้นสุดทดลองงาน">
+                <input
+                  type="date"
+                  className="input-base"
+                  value={form.probation_end_date ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, probation_end_date: e.target.value || null }))}
+                />
+              </Field>
+            )}
             <Field label="สถานะ">
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="rounded" />
