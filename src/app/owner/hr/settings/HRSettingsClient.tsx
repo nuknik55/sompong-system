@@ -6,9 +6,8 @@ import {
   upsertDepartment, setDepartmentActive,
   upsertLeaveType,
   upsertHoliday, deleteHoliday,
-  upsertOtRule,
 } from "../actions";
-import type { Department, LeaveType, Holiday, OtRule } from "../actions";
+import type { Department, LeaveType, Holiday } from "../actions";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const MONTHS_LONG = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -24,17 +23,15 @@ export function HRSettingsClient({
   initialDepartments,
   initialLeaveTypes,
   initialHolidays,
-  initialOtRules,
   calendarYear,
 }: {
   initialDepartments: Department[];
   initialLeaveTypes: LeaveType[];
   initialHolidays: Holiday[];
-  initialOtRules: OtRule[];
   calendarYear: number;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"dept" | "leave" | "holiday" | "ot">("dept");
+  const [tab, setTab] = useState<"dept" | "leave" | "holiday">("dept");
   const [isPending, startTransition] = useTransition();
 
   // Departments
@@ -57,12 +54,6 @@ export function HRSettingsClient({
   const [holidayModal, setHolidayModal] = useState<{ date: string; existing?: Holiday } | null>(null);
   const [hForm, setHForm] = useState({ name: "", pay_type: "multiplier" as "multiplier" | "substitute", pay_multiplier: 2 });
   const year = calendarYear;
-
-  // OT Rules
-  const [otRules, setOtRules] = useState(initialOtRules);
-  const [editingOT, setEditingOT] = useState<OtRule | null>(null);
-  const [showOTForm, setShowOTForm] = useState(false);
-  const [otForm, setOtForm] = useState<Omit<OtRule, "id">>({ name: "", applies_to: "weekday", multiplier: 1.5, is_active: true });
 
   const holidayMap = new Map(holidays.map((h) => [h.holiday_date, h]));
 
@@ -137,26 +128,10 @@ export function HRSettingsClient({
     });
   }
 
-  // ─── OT handlers ──────────────────────────────────────────────────────────
-  function openNewOT() { setEditingOT(null); setOtForm({ name: "", applies_to: "weekday", multiplier: 1.5, is_active: true }); setShowOTForm(true); }
-  function openEditOT(r: OtRule) { setEditingOT(r); setOtForm({ name: r.name, applies_to: r.applies_to, multiplier: r.multiplier, is_active: r.is_active }); setShowOTForm(true); }
-  function saveOT() {
-    startTransition(async () => {
-      await upsertOtRule({ ...(editingOT ? { id: editingOT.id } : {}), ...otForm });
-      if (editingOT) {
-        setOtRules((prev) => prev.map((x) => (x.id === editingOT.id ? { ...x, ...otForm } : x)));
-      } else {
-        setOtRules((prev) => [...prev, { id: crypto.randomUUID(), ...otForm }]);
-      }
-      setShowOTForm(false);
-    });
-  }
-
-  const TABS: { key: "dept" | "leave" | "holiday" | "ot"; label: string }[] = [
+  const TABS: { key: "dept" | "leave" | "holiday"; label: string }[] = [
     { key: "dept", label: "แผนก" },
     { key: "leave", label: "ประเภทลา" },
     { key: "holiday", label: "วันนักขัตฤกษ์" },
-    { key: "ot", label: "กฎ OT" },
   ];
 
   return (
@@ -287,29 +262,6 @@ export function HRSettingsClient({
         </>
       )}
 
-      {/* ─── กฎ OT ─── */}
-      {tab === "ot" && (
-        <>
-          <div className="mb-3 flex justify-end">
-            <button onClick={openNewOT} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">+ เพิ่มกฎ OT</button>
-          </div>
-          <div className="max-w-xl space-y-2">
-            {otRules.map((r) => (
-              <div key={r.id} className={`flex items-center gap-3 rounded-lg border border-neutral-200 px-4 py-3 ${!r.is_active ? "opacity-50" : ""}`}>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{r.name}</div>
-                  <div className="text-xs text-neutral-500">
-                    {r.applies_to === "weekday" ? "วันธรรมดา" : r.applies_to === "weekend" ? "เสาร์-อาทิตย์" : "วันนักขัตฤกษ์"} — x{r.multiplier}
-                  </div>
-                </div>
-                <button onClick={() => openEditOT(r)} className="text-xs text-neutral-400 hover:text-neutral-700">แก้ไข</button>
-              </div>
-            ))}
-            {otRules.length === 0 && <p className="py-6 text-center text-sm text-neutral-400">ยังไม่มีกฎ OT</p>}
-          </div>
-        </>
-      )}
-
       {/* ─── Holiday Modal ─── */}
       {holidayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -390,40 +342,6 @@ export function HRSettingsClient({
         </div>
       )}
 
-      {/* ─── OT Rule Modal ─── */}
-      {showOTForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h2 className="font-kanit text-base font-semibold">{editingOT ? "แก้ไข" : "เพิ่ม"}กฎ OT</h2>
-              <button onClick={() => setShowOTForm(false)} className="text-neutral-400 hover:text-neutral-700">✕</button>
-            </div>
-            <div className="space-y-3 px-5 py-4">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-600">ชื่อกฎ *</label>
-                <input className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" value={otForm.name} onChange={(e) => setOtForm((f) => ({ ...f, name: e.target.value }))} placeholder="OT วันธรรมดา" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-600">ใช้กับ</label>
-                <select className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" value={otForm.applies_to} onChange={(e) => setOtForm((f) => ({ ...f, applies_to: e.target.value as OtRule["applies_to"] }))}>
-                  <option value="weekday">วันธรรมดา</option>
-                  <option value="weekend">เสาร์-อาทิตย์</option>
-                  <option value="holiday">วันนักขัตฤกษ์</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-600">อัตราคูณ</label>
-                <input type="number" step="0.5" className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" value={otForm.multiplier} onChange={(e) => setOtForm((f) => ({ ...f, multiplier: +e.target.value }))} />
-              </div>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={otForm.is_active} onChange={(e) => setOtForm((f) => ({ ...f, is_active: e.target.checked }))} /> เปิดใช้งาน</label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
-              <button onClick={() => setShowOTForm(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">ยกเลิก</button>
-              <button onClick={saveOT} disabled={!otForm.name || isPending} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">บันทึก</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

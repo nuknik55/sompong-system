@@ -71,14 +71,6 @@ export type Holiday = {
   is_active: boolean;
 };
 
-export type OtRule = {
-  id: string;
-  name: string;
-  applies_to: "weekday" | "weekend" | "holiday";
-  multiplier: number;
-  is_active: boolean;
-};
-
 export type PayrollPeriod = {
   id: string;
   period_year: number;
@@ -475,35 +467,6 @@ export async function deleteHoliday(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
   await supabase.from("holidays").delete().eq("id", id);
-  revalidatePath("/owner/hr/settings");
-}
-
-// ─── OT Rules ─────────────────────────────────────────────────────────────────
-
-export async function getOtRules(): Promise<OtRule[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("ot_rules")
-    .select("id,name,applies_to,multiplier,is_active")
-    .order("applies_to");
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function upsertOtRule(r: {
-  id?: string;
-  name: string;
-  applies_to: "weekday" | "weekend" | "holiday";
-  multiplier: number;
-  is_active: boolean;
-}): Promise<void> {
-  await requireHR();
-  const supabase = await createClient();
-  if (r.id) {
-    await supabase.from("ot_rules").update(r).eq("id", r.id);
-  } else {
-    await supabase.from("ot_rules").insert(r);
-  }
   revalidatePath("/owner/hr/settings");
 }
 
@@ -1109,7 +1072,7 @@ export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
 
   return sorted.map((emp: Record<string, unknown>) => {
     const alOverride = (emp.al_quota_override as number | null) ?? null;
-    const yearsH1 = yearsOfServiceAt(emp.hire_date as string | null, `${year}-01-01`);
+    const yearsH1 = yearsOfServiceAt(emp.hire_date as string | null, `${year}-06-30`);
     const yearsH2 = yearsOfServiceAt(emp.hire_date as string | null, `${year}-12-31`);
     const usage = (types ?? []).map((lt: Record<string, unknown>) => {
       const code = lt.code as string;
