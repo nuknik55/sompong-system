@@ -404,6 +404,16 @@ export function EmployeeDetailClient({
               <input type="number" className="input-base" value={form.position_allowance} onChange={(e) => setForm((f) => ({ ...f, position_allowance: +e.target.value }))} />
             </Field>
             <Field label="ประกันสังคม (ต่อเดือน)">
+              {(() => {
+                const suggested = form.base_salary > 0 ? Math.min(Math.round(form.base_salary * 0.05), 875) : 0;
+                const isDiff = form.social_security_monthly !== suggested && suggested > 0;
+                return isDiff ? (
+                  <p className="mb-1 flex items-center gap-1 text-xs text-amber-700">
+                    แนะนำ: {suggested} บาท (5% ของ {form.base_salary.toLocaleString()}, เพดาน 875)
+                    <button type="button" className="underline hover:text-amber-900" onClick={() => setForm((f) => ({ ...f, social_security_monthly: suggested }))}>ใช้ค่านี้</button>
+                  </p>
+                ) : null;
+              })()}
               <input type="number" className="input-base" value={form.social_security_monthly} onFocus={(e) => e.target.select()} onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))} />
             </Field>
             <Field label="วันบรรจุ">
