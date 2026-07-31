@@ -99,6 +99,7 @@ export function PayrollClient({
 
   function handleClose() {
     if (!selectedPeriodId) return;
+    if (!confirm("ปิดงวดนี้? หลังปิดแล้วแก้ไขได้โดยกด \"ปลดล็อก\"")) return;
     startTransition(async () => {
       await closePayrollPeriod(selectedPeriodId);
       router.refresh();
