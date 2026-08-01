@@ -41,6 +41,7 @@ export function AttendanceClient({
   leaveTypes,
   holidays,
   leaveDays,
+  swapDates,
   year,
   month,
   deptId,
@@ -51,6 +52,7 @@ export function AttendanceClient({
   leaveTypes: LeaveType[];
   holidays: Holiday[];
   leaveDays: LeaveDay[];
+  swapDates: string[];
   year: number;
   month: number;
   deptId: string;
@@ -80,6 +82,7 @@ export function AttendanceClient({
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.code]));
   const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
+  const swapDateSet = new Set(swapDates);
   const vacationTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "AL" || lt.name_th.includes("พักร้อน")).map((lt) => lt.id));
   const swapTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "CDW" || lt.code === "CDP").map((lt) => lt.id));
   const SWAP_CODES = new Set(["CDW", "CDP"]);
@@ -450,7 +453,7 @@ export function AttendanceClient({
                             content = <span className="font-bold">{cfg.short}</span>;
                           }
                         } else if (approvedLeave) {
-                          const isSwap = SWAP_CODES.has(approvedLeave.leave_type_code);
+                          const isSwap = SWAP_CODES.has(approvedLeave.leave_type_code) || swapDateSet.has(`${emp.id}_${ds}`);
                           cellCls += isSwap
                             ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
                             : "bg-teal-100 text-teal-800 hover:bg-teal-200";
@@ -458,6 +461,14 @@ export function AttendanceClient({
                             <div className="flex flex-col items-center leading-tight">
                               <span className="text-[8px] font-bold">{approvedLeave.leave_type_code}</span>
                               <span className="text-[7px] opacity-70">✓</span>
+                            </div>
+                          );
+                        } else if (swapDateSet.has(`${emp.id}_${ds}`)) {
+                          cellCls += "bg-orange-100 text-orange-700 hover:bg-orange-200";
+                          content = (
+                            <div className="flex flex-col items-center leading-tight">
+                              <span className="text-[8px] font-bold">CD</span>
+                              <span className="text-[7px] opacity-70">↔</span>
                             </div>
                           );
                         } else if (isHol) {

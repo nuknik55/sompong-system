@@ -1170,6 +1170,23 @@ export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[
   }));
 }
 
+export async function getSwapDatesForMonth(year: number, month: number): Promise<string[]> {
+  const supabase = await createClient();
+  const m = String(month).padStart(2, "0");
+  const start = `${year}-${m}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const end = `${year}-${m}-${String(lastDay).padStart(2, "0")}`;
+  const { data } = await supabase
+    .from("day_swap_requests")
+    .select("employee_id,work_date,off_date");
+  const result: string[] = [];
+  for (const r of (data ?? []) as { employee_id: string; work_date: string | null; off_date: string | null }[]) {
+    if (r.work_date && r.work_date >= start && r.work_date <= end) result.push(`${r.employee_id}_${r.work_date}`);
+    if (r.off_date  && r.off_date  >= start && r.off_date  <= end) result.push(`${r.employee_id}_${r.off_date}`);
+  }
+  return result;
+}
+
 export async function getCompDayBalances(): Promise<CompDayBalance[]> {
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);

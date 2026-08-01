@@ -311,7 +311,7 @@ export function LeaveClient({
               <Field label="ประเภทลา *">
                 <select className="input-base" value={form.leave_type_id} onChange={(e) => setForm((f) => ({ ...f, leave_type_id: e.target.value }))}>
                   <option value="">– เลือกประเภท –</option>
-                  {leaveTypes.map((lt) => <option key={lt.id} value={lt.id}>{lt.code} — {lt.name_th}</option>)}
+                  {leaveTypes.filter((lt) => lt.code !== "CDW" && lt.code !== "CDP").map((lt) => <option key={lt.id} value={lt.id}>{lt.code} — {lt.name_th}</option>)}
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-3">
