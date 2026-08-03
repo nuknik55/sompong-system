@@ -569,7 +569,7 @@ export function AttendanceClient({
                     onChange={(e) => setEdit((v) => v ? { ...v, leaveTypeId: e.target.value } : v)}
                     className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
                   >
-                    {leaveTypes.map((lt) => (
+                    {leaveTypes.filter((lt) => lt.code !== "CDW" && lt.code !== "CDP").map((lt) => (
                       <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
                     ))}
                   </select>
@@ -683,7 +683,7 @@ export function AttendanceClient({
                     onChange={(e) => setBulk((b) => b ? { ...b, leaveTypeId: e.target.value } : b)}
                     className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm"
                   >
-                    {leaveTypes.map((lt) => (
+                    {leaveTypes.filter((lt) => lt.code !== "CDW" && lt.code !== "CDP").map((lt) => (
                       <option key={lt.id} value={lt.id}>{lt.code} – {lt.name_th}</option>
                     ))}
                   </select>

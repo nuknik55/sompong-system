@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireHROrAdmin } from "@/lib/auth";
-import { getEmployees, getDepartments, getHolidays, getScheduleWeek, getApprovedLeavesForWeek } from "../actions";
+import { getEmployees, getDepartments, getHolidays, getScheduleWeek, getApprovedLeavesForWeek, getSwapDatesForWeek } from "../actions";
 import { ScheduleClient } from "./ScheduleClient";
 
 function getMondayOf(dateStr: string): string {
@@ -26,13 +26,14 @@ export default async function SchedulePage({
 
   const year = parseInt(weekStart.slice(0, 4));
 
-  const [employees, departments, notes, leaveDays, holidays, nextYearHolidays] = await Promise.all([
+  const [employees, departments, notes, leaveDays, holidays, nextYearHolidays, swapDates] = await Promise.all([
     getEmployees(),
     getDepartments(),
     getScheduleWeek(weekStart),
     getApprovedLeavesForWeek(weekStart),
     getHolidays(year),
     getHolidays(year + 1),
+    getSwapDatesForWeek(weekStart),
   ]);
 
   return (
@@ -44,6 +45,7 @@ export default async function SchedulePage({
       holidays={[...holidays, ...nextYearHolidays].filter((h) => h.is_active)}
       weekStart={weekStart}
       deptId={deptId}
+      swapDates={swapDates}
     />
   );
 }

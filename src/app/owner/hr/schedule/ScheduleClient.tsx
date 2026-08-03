@@ -72,6 +72,7 @@ export function ScheduleClient({
   holidays,
   weekStart,
   deptId,
+  swapDates,
 }: {
   employees: Employee[];
   departments: Department[];
@@ -80,6 +81,7 @@ export function ScheduleClient({
   holidays: Holiday[];
   weekStart: string;
   deptId: string;
+  swapDates: string[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -93,6 +95,7 @@ export function ScheduleClient({
   const leaveMap = new Map<string, LeaveDay>(
     leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l])
   );
+  const swapDateSet = new Set(swapDates);
   const [edit, setEdit] = useState<EditState | null>(null);
 
   const monday = new Date(weekStart + "T00:00:00");
@@ -210,6 +213,8 @@ export function ScheduleClient({
           cells.push(n.note ? `${cfg.label}: ${n.note}` : cfg.label);
         } else if (leave) {
           cells.push(`${leaveNoteStyle(leave.leave_type_code, leave.leave_type_name).label} ✓`);
+        } else if (swapDateSet.has(`${emp.id}_${ds}`)) {
+          cells.push("CD ↔");
         } else if (isHol) {
           cells.push(`★ ${holidayName.get(ds) ?? "นักขัตฤกษ์"}`);
         } else if (isOff) {
@@ -358,13 +363,21 @@ export function ScheduleClient({
                         </div>
                       );
                     } else if (approvedLeave) {
-                      // from approved leave request — read-only, use leave-type-aware color
+                      // from attendance_daily status='leave' — read-only, use leave-type-aware color
                       const lCfg = leaveNoteStyle(approvedLeave.leave_type_code, approvedLeave.leave_type_name);
                       cellCls += lCfg.cell + " hover:brightness-95";
                       content = (
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="font-bold text-[10px]">{lCfg.label}</span>
-                          <span className="text-[8px] font-semibold opacity-70">✓ใบลา</span>
+                          <span className="text-[8px] font-semibold opacity-70">✓ลา</span>
+                        </div>
+                      );
+                    } else if (swapDateSet.has(`${emp.id}_${ds}`)) {
+                      cellCls += "bg-orange-100 text-orange-700 hover:bg-orange-200";
+                      content = (
+                        <div className="flex flex-col items-center leading-tight">
+                          <span className="text-[10px] font-bold">CD</span>
+                          <span className="text-[8px] opacity-70">↔</span>
                         </div>
                       );
                     } else if (isHol) {

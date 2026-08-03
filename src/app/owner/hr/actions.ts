@@ -403,12 +403,63 @@ export async function upsertLeaveRequest(data: {
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
+  let oldDateFrom: string | null = null;
+  let oldDateTo: string | null = null;
   if (data.id) {
     const { id, ...rest } = data;
+    const { data: old } = await supabase
+      .from("leave_requests")
+      .select("date_from,date_to")
+      .eq("id", id)
+      .single();
+    oldDateFrom = old?.date_from ?? null;
+    oldDateTo = old?.date_to ?? null;
     await supabase.from("leave_requests").update(rest).eq("id", id);
   } else {
     await supabase.from("leave_requests").insert({ ...data, status: "approved" });
   }
+
+  // Mirror every date in the leave range to attendance_daily (source of truth for payroll/quota/schedule).
+  const dailyRows: object[] = [];
+  const cur = new Date(data.date_from + "T00:00:00");
+  const end = new Date(data.date_to + "T00:00:00");
+  while (cur <= end) {
+    dailyRows.push({
+      employee_id: data.employee_id,
+      work_date: cur.toISOString().slice(0, 10),
+      status: "leave",
+      leave_type_id: data.leave_type_id,
+      leave_fraction: 1,
+      late_minutes: 0,
+      ot_hours: 0,
+      note: null,
+      source: "leave_request",
+    });
+    cur.setDate(cur.getDate() + 1);
+  }
+  await supabase.from("attendance_daily").upsert(dailyRows, { onConflict: "employee_id,work_date" });
+
+  // On edit: delete attendance_daily rows for dates that dropped out of the new range.
+  if (oldDateFrom && oldDateTo) {
+    const newDates = new Set(dailyRows.map((r) => (r as { work_date: string }).work_date));
+    const toDelete: string[] = [];
+    const c2 = new Date(oldDateFrom + "T00:00:00");
+    const e2 = new Date(oldDateTo + "T00:00:00");
+    while (c2 <= e2) {
+      const ds = c2.toISOString().slice(0, 10);
+      if (!newDates.has(ds)) toDelete.push(ds);
+      c2.setDate(c2.getDate() + 1);
+    }
+    if (toDelete.length > 0) {
+      await supabase
+        .from("attendance_daily")
+        .delete()
+        .eq("employee_id", data.employee_id)
+        .eq("source", "leave_request")
+        .in("work_date", toDelete);
+    }
+  }
+
   revalidatePath("/owner/hr/leave");
   revalidatePath("/owner/hr/schedule");
   revalidatePath("/owner/hr/attendance");
@@ -426,7 +477,29 @@ export async function updateLeaveStatus(id: string, status: "approved" | "reject
 export async function deleteLeaveRequest(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
+  const { data: lr } = await supabase
+    .from("leave_requests")
+    .select("employee_id,date_from,date_to")
+    .eq("id", id)
+    .single();
   await supabase.from("leave_requests").delete().eq("id", id);
+  if (lr) {
+    const toDelete: string[] = [];
+    const cur = new Date(lr.date_from + "T00:00:00");
+    const end = new Date(lr.date_to + "T00:00:00");
+    while (cur <= end) {
+      toDelete.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (toDelete.length > 0) {
+      await supabase
+        .from("attendance_daily")
+        .delete()
+        .eq("employee_id", lr.employee_id)
+        .eq("source", "leave_request")
+        .in("work_date", toDelete);
+    }
+  }
   revalidatePath("/owner/hr/leave");
   revalidatePath("/owner/hr/schedule");
   revalidatePath("/owner/hr/attendance");
@@ -603,33 +676,40 @@ export async function getApprovedLeavesForWeek(weekStart: string): Promise<Leave
   const weekEndStr = weekEnd.toISOString().slice(0, 10);
 
   const { data } = await supabase
-    .from("leave_requests")
-    .select("id, employee_id, date_from, date_to, leave_types(code, name_th)")
-    .eq("status", "approved")
-    .lte("date_from", weekEndStr)
-    .gte("date_to", weekStart);
+    .from("attendance_daily")
+    .select("employee_id,work_date,leave_type_id,leave_types(code,name_th)")
+    .eq("status", "leave")
+    .gte("work_date", weekStart)
+    .lte("work_date", weekEndStr);
 
   if (!data) return [];
 
-  const result: LeaveDay[] = [];
-  for (const req of data as Record<string, unknown>[]) {
-    const lt = req.leave_types as { code: string; name_th: string } | null;
-    const from = new Date((req.date_from as string) + "T00:00:00");
-    const to = new Date((req.date_to as string) + "T00:00:00");
-    const wStart = new Date(weekStart + "T00:00:00");
-    const wEnd = new Date(weekEndStr + "T00:00:00");
-    const cur = new Date(Math.max(from.getTime(), wStart.getTime()));
-    const end = new Date(Math.min(to.getTime(), wEnd.getTime()));
-    while (cur <= end) {
-      result.push({
-        employee_id: req.employee_id as string,
-        leave_date: cur.toISOString().slice(0, 10),
-        leave_type_code: lt?.code ?? "ลา",
-        leave_type_name: lt?.name_th ?? "ลา",
-        leave_request_id: req.id as string,
-      });
-      cur.setDate(cur.getDate() + 1);
-    }
+  return (data as Record<string, unknown>[]).map((row) => {
+    const lt = row.leave_types as { code: string; name_th: string } | null;
+    return {
+      employee_id: row.employee_id as string,
+      leave_date: row.work_date as string,
+      leave_type_code: lt?.code ?? "ลา",
+      leave_type_name: lt?.name_th ?? "ลา",
+      leave_request_id: "",
+    };
+  });
+}
+
+export async function getSwapDatesForWeek(weekStart: string): Promise<string[]> {
+  const supabase = await createClient();
+  const weekEnd = new Date(weekStart + "T00:00:00");
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("day_swap_requests")
+    .select("employee_id,work_date,off_date");
+  const result: string[] = [];
+  for (const r of (data ?? []) as { employee_id: string; work_date: string | null; off_date: string | null }[]) {
+    if (r.work_date && r.work_date >= weekStart && r.work_date <= weekEndStr)
+      result.push(`${r.employee_id}_${r.work_date}`);
+    if (r.off_date && r.off_date >= weekStart && r.off_date <= weekEndStr)
+      result.push(`${r.employee_id}_${r.off_date}`);
   }
   return result;
 }
@@ -1041,26 +1121,27 @@ function alQuotaDays(years: number): number {
 
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
   const supabase = await createClient();
-  const [{ data: emps }, { data: types }, { data: reqs }] = await Promise.all([
+  const [{ data: emps }, { data: types }, { data: adLeave }] = await Promise.all([
     supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,al_quota_override,departments(sort_order)").eq("is_active", true),
     supabase.from("leave_types").select("id,code,name_th,annual_quota_days").eq("is_active", true).not("annual_quota_days", "is", null),
     supabase
-      .from("leave_requests")
-      .select("employee_id,leave_type_id,total_days,status,date_from")
-      .eq("status", "approved")
-      .gte("date_from", `${year}-01-01`)
-      .lte("date_from", `${year}-12-31`),
+      .from("attendance_daily")
+      .select("employee_id,leave_type_id,leave_fraction,work_date")
+      .eq("status", "leave")
+      .gte("work_date", `${year}-01-01`)
+      .lte("work_date", `${year}-12-31`)
+      .limit(10000),
   ]);
 
   const usageMap = new Map<string, number>();
   const h1UsageMap = new Map<string, number>(); // Jan–Jun
   const h2UsageMap = new Map<string, number>(); // Jul–Dec
-  for (const r of reqs ?? []) {
+  for (const r of adLeave ?? []) {
     const k = `${r.employee_id}_${r.leave_type_id}`;
-    usageMap.set(k, (usageMap.get(k) ?? 0) + (r.total_days ?? 0));
-    const isH1 = (r.date_from ?? "") <= `${year}-06-30`;
+    usageMap.set(k, (usageMap.get(k) ?? 0) + (r.leave_fraction ?? 1));
+    const isH1 = (r.work_date ?? "") <= `${year}-06-30`;
     const hMap = isH1 ? h1UsageMap : h2UsageMap;
-    hMap.set(k, (hMap.get(k) ?? 0) + (r.total_days ?? 0));
+    hMap.set(k, (hMap.get(k) ?? 0) + (r.leave_fraction ?? 1));
   }
 
   const sorted = (emps ?? []).slice().sort((a, b) => {
