@@ -27,6 +27,8 @@ export type Employee = {
   position_allowance: number;
   social_security_monthly: number;
   hire_date: string | null;
+  start_date: string | null;
+  daily_wage: number | null;
   weekly_day_off: string | null;
   citizenship_type: "thai" | "foreign";
   is_active: boolean;
@@ -176,7 +178,8 @@ export async function getEmployees(): Promise<Employee[]> {
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
-      hire_date, weekly_day_off, citizenship_type, is_active, sort_order,
+      hire_date, start_date, daily_wage,
+      weekly_day_off, citizenship_type, is_active, sort_order,
       al_quota_override, probation_end_date,
       departments(name, sort_order)
     `)
@@ -206,7 +209,8 @@ export async function getEmployee(id: string): Promise<Employee | null> {
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
-      hire_date, weekly_day_off, citizenship_type, is_active,
+      hire_date, start_date, daily_wage,
+      weekly_day_off, citizenship_type, is_active,
       al_quota_override, probation_end_date,
       departments(name)
     `)
@@ -234,6 +238,8 @@ export async function upsertEmployee(e: {
   position_allowance: number;
   social_security_monthly: number;
   hire_date: string;
+  start_date?: string | null;
+  daily_wage?: number | null;
   weekly_day_off: string;
   citizenship_type: string;
   is_active: boolean;
@@ -254,6 +260,8 @@ export async function upsertEmployee(e: {
     position_allowance: e.position_allowance,
     social_security_monthly: e.social_security_monthly,
     hire_date: e.hire_date || null,
+    start_date: e.start_date || null,
+    daily_wage: e.daily_wage ?? null,
     weekly_day_off: e.weekly_day_off || null,
     citizenship_type: e.citizenship_type,
     is_active: e.is_active,

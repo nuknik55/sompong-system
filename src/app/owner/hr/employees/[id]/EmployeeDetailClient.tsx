@@ -21,6 +21,8 @@ function fmtMoney(n: number) {
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const DAYS_TH = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
+// ประเภทจ้างที่จ่ายค่าแรงเป็นรายวัน — โชว์ช่อง "เงินเดือนรายวัน" เฉพาะกลุ่มนี้
+const DAILY_WAGE_TYPES = new Set(["part_time_fixed", "part_time_oncall"]);
 const STATUS_LABEL: Record<string, string> = { pending: "รอ", approved: "อนุมัติ", rejected: "ปฏิเสธ" };
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-amber-700 bg-amber-50",
@@ -92,7 +94,13 @@ export function EmployeeDetailClient({
 }) {
   const router = useRouter();
   const [tab, setTabState] = useState<TabKey>(initialTab);
-  const [form, setForm] = useState({ ...employee, al_quota_override: employee.al_quota_override ?? null, probation_end_date: employee.probation_end_date ?? null });
+  const [form, setForm] = useState({
+    ...employee,
+    al_quota_override: employee.al_quota_override ?? null,
+    probation_end_date: employee.probation_end_date ?? null,
+    start_date: employee.start_date ?? null,
+    daily_wage: employee.daily_wage ?? null,
+  });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const year = defaultYear;
@@ -121,6 +129,8 @@ export function EmployeeDetailClient({
         position_allowance: form.position_allowance,
         social_security_monthly: form.social_security_monthly,
         hire_date: form.hire_date ?? "",
+        start_date: form.start_date ?? null,
+        daily_wage: DAILY_WAGE_TYPES.has(form.employment_type) ? form.daily_wage : null,
         weekly_day_off: form.weekly_day_off ?? "",
         citizenship_type: form.citizenship_type,
         is_active: form.is_active,
@@ -183,7 +193,7 @@ export function EmployeeDetailClient({
 
       {/* Tabs */}
       <div className="mb-4 flex gap-1 border-b border-neutral-200">
-        {(["summary", "info", "leave", "payroll"] as const).map((t) => (
+        {(["info", "summary", "leave", "payroll"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -416,6 +426,9 @@ export function EmployeeDetailClient({
               })()}
               <input type="number" className="input-base" value={form.social_security_monthly} onFocus={(e) => e.target.select()} onChange={(e) => setForm((f) => ({ ...f, social_security_monthly: +e.target.value }))} />
             </Field>
+            <Field label="วันเข้าทำงานวันแรก">
+              <input type="date" className="input-base" value={form.start_date ?? ""} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value || null }))} />
+            </Field>
             <Field label="วันบรรจุ">
               <input type="date" className="input-base" value={form.hire_date ?? ""} onChange={(e) => setForm((f) => ({ ...f, hire_date: e.target.value || null }))} />
             </Field>
@@ -435,7 +448,12 @@ export function EmployeeDetailClient({
               <select
                 className="input-base"
                 value={form.employment_type}
-                onChange={(e) => setForm((f) => ({ ...f, employment_type: e.target.value as Employee["employment_type"], probation_end_date: e.target.value !== "probation" ? null : f.probation_end_date }))}
+                onChange={(e) => setForm((f) => ({
+                  ...f,
+                  employment_type: e.target.value as Employee["employment_type"],
+                  probation_end_date: e.target.value !== "probation" ? null : f.probation_end_date,
+                  daily_wage: DAILY_WAGE_TYPES.has(e.target.value) ? f.daily_wage : null,
+                }))}
               >
                 <option value="full_time">ประจำ</option>
                 <option value="part_time_fixed">พาร์ทไทม์ประจำ</option>
@@ -450,6 +468,16 @@ export function EmployeeDetailClient({
                   className="input-base"
                   value={form.probation_end_date ?? ""}
                   onChange={(e) => setForm((f) => ({ ...f, probation_end_date: e.target.value || null }))}
+                />
+              </Field>
+            )}
+            {DAILY_WAGE_TYPES.has(form.employment_type) && (
+              <Field label="เงินเดือนรายวัน">
+                <input
+                  type="number"
+                  className="input-base"
+                  value={form.daily_wage ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, daily_wage: e.target.value === "" ? null : +e.target.value }))}
                 />
               </Field>
             )}

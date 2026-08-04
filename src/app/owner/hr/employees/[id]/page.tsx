@@ -15,7 +15,7 @@ import {
 } from "../../actions";
 import { EmployeeDetailClient } from "./EmployeeDetailClient";
 
-const TAB_KEYS = ["summary", "info", "leave", "payroll"] as const;
+const TAB_KEYS = ["info", "summary", "leave", "payroll"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default async function EmployeeDetailPage({
@@ -29,7 +29,7 @@ export default async function EmployeeDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const year = sp.year ? parseInt(sp.year) : new Date().getFullYear();
-  const initialTab: TabKey = TAB_KEYS.includes(sp.tab as TabKey) ? (sp.tab as TabKey) : "summary";
+  const initialTab: TabKey = TAB_KEYS.includes(sp.tab as TabKey) ? (sp.tab as TabKey) : "info";
 
   const [employee, departments, leaveRequests, payrollHistory, allQuotas, allBalances, daySwaps, attendanceSummary] =
     await Promise.all([
