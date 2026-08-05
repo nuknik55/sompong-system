@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { upsertAttendanceDaily, deleteAttendanceDailyRecord } from "../actions";
+import { upsertAttendanceDaily, deleteAttendanceDailyRecord, upsertDaySwapRequest } from "../actions";
 import type { Employee, Department, LeaveType, Holiday, AttendanceDaily, LeaveDay } from "../actions";
 
 const DAY_OF_WEEK: Record<string, number> = {
@@ -31,6 +31,12 @@ type EditState = {
   otHours: number;
   leaveTypeId: string;
   leaveFraction: number;
+  note: string;
+};
+
+type CDForm = {
+  off_date: string;
+  compensation: "bank_day" | "extra_pay";
   note: string;
 };
 
@@ -68,6 +74,8 @@ export function AttendanceClient({
   });
 
   const [edit, setEdit] = useState<EditState | null>(null);
+  const [cdForm, setCdForm] = useState<CDForm | null>(null);
+  const [localSwapDates, setLocalSwapDates] = useState<Set<string>>(() => new Set(swapDates));
 
   // Drag-to-select (desktop only)
   const isDraggingRef = useRef(false);
@@ -82,7 +90,7 @@ export function AttendanceClient({
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.code]));
   const leaveMap = new Map(leaveDays.map((l) => [`${l.employee_id}_${l.leave_date}`, l]));
-  const swapDateSet = new Set(swapDates);
+  const swapDateSet = localSwapDates;
   const vacationTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "AL" || lt.name_th.includes("พักร้อน")).map((lt) => lt.id));
   const swapTypeIds = new Set(leaveTypes.filter((lt) => lt.code === "CDW" || lt.code === "CDP").map((lt) => lt.id));
   const SWAP_CODES = new Set(["CDW", "CDP"]);
@@ -158,6 +166,7 @@ export function AttendanceClient({
       leaveFraction: rec?.leave_fraction ?? 1,
       note: rec?.note ?? "",
     });
+    setCdForm(null);
   }
 
   function saveEdit() {
@@ -203,6 +212,35 @@ export function AttendanceClient({
     setSaving(true);
     startTransition(async () => {
       await deleteAttendanceDailyRecord(empId, date);
+      setSaving(false);
+    });
+  }
+
+  function saveCd() {
+    if (!edit || !cdForm) return;
+    const empId = edit.empId;
+    const workDate = edit.date;
+    const offDate = cdForm.off_date || null;
+    const compensation = cdForm.compensation;
+    const note = cdForm.note || null;
+    setLocalSwapDates((prev) => {
+      const next = new Set(prev);
+      next.add(`${empId}_${workDate}`);
+      if (offDate) next.add(`${empId}_${offDate}`);
+      return next;
+    });
+    setCdForm(null);
+    setEdit(null);
+    setSaving(true);
+    startTransition(async () => {
+      await upsertDaySwapRequest({
+        employee_id: empId,
+        work_date: workDate,
+        off_date: offDate,
+        swap_type: "work_first",
+        compensation,
+        note,
+      });
       setSaving(false);
     });
   }
@@ -515,7 +553,7 @@ export function AttendanceClient({
       {edit && (
         <>
           {/* backdrop */}
-          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setEdit(null)} />
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => { setEdit(null); setCdForm(null); }} />
 
           {/* modal */}
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-200 bg-white p-5 shadow-2xl">
@@ -525,7 +563,7 @@ export function AttendanceClient({
                 <p className="text-sm font-semibold text-neutral-900">{edit.empName}</p>
                 <p className="text-xs text-neutral-500">{edit.displayDate}</p>
               </div>
-              <button onClick={() => setEdit(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">✕</button>
+              <button onClick={() => { setEdit(null); setCdForm(null); }} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">✕</button>
             </div>
 
             {/* status buttons */}
@@ -544,6 +582,86 @@ export function AttendanceClient({
                   <div>{v.label}</div>
                 </button>
               ))}
+            </div>
+
+            {/* CD (day-swap) quick action */}
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={() => setCdForm((f) => f ? null : { off_date: "", compensation: "bank_day", note: "" })}
+                className={`w-full rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                  cdForm
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                }`}
+              >
+                {cdForm ? "ยกเลิกเปลี่ยนวันหยุด" : "เปลี่ยนวันหยุด (CD)"}
+              </button>
+
+              {cdForm && (
+                <div className="mt-2 space-y-2 rounded-lg border border-orange-200 bg-orange-50/50 p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs">
+                      <span className="mb-1 block text-neutral-600">วันทำงาน</span>
+                      <input
+                        type="date"
+                        value={edit.date}
+                        disabled
+                        className="w-full rounded border border-neutral-200 bg-neutral-100 px-2 py-1.5 text-sm text-neutral-500"
+                      />
+                    </label>
+                    <label className="text-xs">
+                      <span className="mb-1 block text-neutral-600">วันหยุดชดเชย</span>
+                      <input
+                        type="date"
+                        value={cdForm.off_date}
+                        onChange={(e) => setCdForm((f) => f ? { ...f, off_date: e.target.value } : f)}
+                        className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                  </div>
+
+                  <div>
+                    <span className="mb-1 block text-xs text-neutral-600">ทดแทนด้วย</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["bank_day", "extra_pay"] as const).map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setCdForm((f) => f ? { ...f, compensation: c } : f)}
+                          className={`rounded-lg border py-2 text-xs font-medium transition-colors ${
+                            cdForm.compensation === c
+                              ? "border-neutral-900 bg-neutral-900 text-white"
+                              : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                          }`}
+                        >
+                          {c === "bank_day" ? "เก็บวันหยุดค้าง" : "จ่ายค่าแรงเพิ่ม 1 เท่า"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="block text-xs">
+                    <span className="mb-1 block text-neutral-600">หมายเหตุ</span>
+                    <input
+                      type="text"
+                      value={cdForm.note}
+                      onChange={(e) => setCdForm((f) => f ? { ...f, note: e.target.value } : f)}
+                      placeholder="เช่น มีงานด่วน..."
+                      className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={saveCd}
+                    disabled={isPending}
+                    className="w-full rounded-lg bg-orange-600 py-2 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    บันทึกเปลี่ยนวันหยุด
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* conditional fields */}
@@ -618,7 +736,7 @@ export function AttendanceClient({
                 ล้างข้อมูล
               </button>
               <div className="flex-1" />
-              <button onClick={() => setEdit(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
+              <button onClick={() => { setEdit(null); setCdForm(null); }} className="rounded-lg border border-neutral-200 px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
                 ยกเลิก
               </button>
               <button onClick={saveEdit} disabled={isPending} className="rounded-lg bg-neutral-900 px-5 py-2 text-xs font-semibold text-white hover:bg-neutral-700 disabled:opacity-50">
