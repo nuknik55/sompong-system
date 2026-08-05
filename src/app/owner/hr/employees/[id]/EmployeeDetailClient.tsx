@@ -67,7 +67,7 @@ function alAutoQuota(years: number): number {
   return 10;
 }
 
-type TabKey = "summary" | "info" | "leave" | "payroll";
+type TabKey = "summary" | "info" | "leave" | "dayswap" | "payroll";
 
 export function EmployeeDetailClient({
   employee,
@@ -149,9 +149,6 @@ export function EmployeeDetailClient({
     leaveSummaryAll.set(r.leave_type_code, { ...cur, days: cur.days + r.total_days });
   }
 
-  // Leave filtered by selected year
-  const leaveThisYear = leaveRequests.filter((r) => r.date_from?.startsWith(String(year)));
-
   // Day swap status labels
   function swapStatusLabel(d: DaySwapRequest) {
     if (d.swap_type === "work_first" && d.compensation === "extra_pay") return "จ่ายเพิ่ม";
@@ -193,13 +190,13 @@ export function EmployeeDetailClient({
 
       {/* Tabs */}
       <div className="mb-4 flex gap-1 border-b border-neutral-200">
-        {(["info", "summary", "leave", "payroll"] as const).map((t) => (
+        {(["info", "summary", "leave", "dayswap", "payroll"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${tab === t ? "border-b-2 border-neutral-900 text-neutral-900" : "text-neutral-500 hover:text-neutral-800"}`}
           >
-            {t === "summary" ? "สรุปรายปี" : t === "info" ? "ข้อมูล" : t === "leave" ? "ประวัติลา" : "ประวัติเงินเดือน"}
+            {t === "summary" ? "สรุปรายปี" : t === "info" ? "ข้อมูล" : t === "leave" ? "ประวัติลา" : t === "dayswap" ? "เปลี่ยนวันหยุด" : "ประวัติเงินเดือน"}
           </button>
         ))}
       </div>
@@ -213,32 +210,6 @@ export function EmployeeDetailClient({
             <span className="min-w-[4rem] text-center text-sm font-medium">{year + 543}</span>
             <button onClick={() => setYear(year + 1)} className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50">›</button>
           </div>
-
-          {/* Comp day balance */}
-          {compBalance && (
-            <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">วันหยุดชดเชย</h3>
-              <div className="flex flex-wrap gap-3">
-                <StatChip label="วันสะสม (ได้รับ)" value={compBalance.earned} color="teal" />
-                <StatChip label="ใช้ไปแล้ว" value={compBalance.used} color="neutral" />
-                <StatChip label="คงเหลือ" value={availableCompDays} color={availableCompDays > 0 ? "green" : "neutral"} />
-                {compBalance.pending_makeup > 0 && (
-                  <StatChip label="รอมาทดแทน" value={compBalance.pending_makeup} color="red" />
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* Attendance stats */}
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">สถิติการเข้างาน {year + 543}</h3>
-            <div className="flex flex-wrap gap-3">
-              <StatChip label="ขาดงาน" value={attendanceSummary.absentDays} unit="วัน" color={attendanceSummary.absentDays > 0 ? "red" : "neutral"} />
-              <StatChip label="มาสาย" value={attendanceSummary.lateDays} unit="วัน" color={attendanceSummary.lateDays > 0 ? "amber" : "neutral"} />
-              <StatChip label="รวมนาทีสาย" value={attendanceSummary.lateMinutesTotal} unit="น." color="neutral" />
-              <StatChip label="OT" value={attendanceSummary.otDays} unit="วัน" color="blue" />
-            </div>
-          </section>
 
           {/* Leave quota */}
           {quota && quota.usage.length > 0 && (
@@ -311,74 +282,31 @@ export function EmployeeDetailClient({
             </section>
           )}
 
-          {/* Leave this year */}
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">การลา {year + 543}</h3>
-            {leaveThisYear.length === 0 ? (
-              <p className="text-sm text-neutral-400">ยังไม่มีประวัติการลาในปีนี้</p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-800 text-left text-xs text-neutral-100">
-                      <th className="px-3 py-2">วันที่ลา</th>
-                      <th className="px-3 py-2">ประเภท</th>
-                      <th className="px-3 py-2 text-right">วัน</th>
-                      <th className="px-3 py-2">สถานะ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leaveThisYear.map((r, i) => (
-                      <tr key={r.id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-                        <td className="px-3 py-2 text-neutral-700">{thDate(r.date_from)} – {thDate(r.date_to)}</td>
-                        <td className="px-3 py-2">
-                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs">{r.leave_type_code}</span>
-                          <span className="ml-1 text-xs text-neutral-500">{r.leave_type_name}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right">{r.total_days}</td>
-                        <td className="px-3 py-2">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[r.status] ?? ""}`}>
-                            {STATUS_LABEL[r.status] ?? r.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* Day swap this year */}
-          {daySwaps.length > 0 && (
+          {/* Comp day balance (day-swap only — holiday-substitute balance not tracked yet) */}
+          {compBalance && (
             <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">เปลี่ยนวันหยุด {year + 543}</h3>
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-800 text-left text-xs text-neutral-100">
-                      <th className="px-3 py-2">วันทำงาน</th>
-                      <th className="px-3 py-2">วันหยุดชดเชย</th>
-                      <th className="px-3 py-2">สถานะ</th>
-                      <th className="px-3 py-2">หมายเหตุ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {daySwaps.map((d, i) => (
-                      <tr key={d.id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-                        <td className="px-3 py-2">{thDate(d.work_date)}</td>
-                        <td className="px-3 py-2">{thDate(d.off_date)}</td>
-                        <td className="px-3 py-2">
-                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">{swapStatusLabel(d)}</span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-neutral-400">{d.note ?? "–"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">เปลี่ยนวันหยุด</h3>
+              <div className="flex flex-wrap gap-3">
+                <StatChip label="วันสะสม (ได้รับ)" value={compBalance.earned} color="teal" />
+                <StatChip label="ใช้ไปแล้ว" value={compBalance.used} color="neutral" />
+                <StatChip label="คงเหลือ" value={availableCompDays} color={availableCompDays > 0 ? "green" : "neutral"} />
+                {compBalance.pending_makeup > 0 && (
+                  <StatChip label="รอมาทดแทน" value={compBalance.pending_makeup} color="red" />
+                )}
               </div>
             </section>
           )}
+
+          {/* Attendance stats */}
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">สถิติการเข้างาน {year + 543}</h3>
+            <div className="flex flex-wrap gap-3">
+              <StatChip label="ขาดงาน" value={attendanceSummary.absentDays} unit="วัน" color={attendanceSummary.absentDays > 0 ? "red" : "neutral"} />
+              <StatChip label="มาสาย" value={attendanceSummary.lateDays} unit="วัน" color={attendanceSummary.lateDays > 0 ? "amber" : "neutral"} />
+              <StatChip label="รวมนาทีสาย" value={attendanceSummary.lateMinutesTotal} unit="น." color="neutral" />
+              <StatChip label="OT" value={attendanceSummary.otDays} unit="วัน" color="blue" />
+            </div>
+          </section>
         </div>
       )}
 
@@ -585,6 +513,45 @@ export function EmployeeDetailClient({
                         {STATUS_LABEL[r.status] ?? r.status}
                       </span>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Tab: เปลี่ยนวันหยุด ─── */}
+      {tab === "dayswap" && (
+        <div className="space-y-4">
+          {/* Year nav */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => setYear(year - 1)} className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50">‹</button>
+            <span className="min-w-[4rem] text-center text-sm font-medium">{year + 543}</span>
+            <button onClick={() => setYear(year + 1)} className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50">›</button>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-800 text-left text-xs text-neutral-100">
+                  <th className="px-3 py-2">วันทำงาน</th>
+                  <th className="px-3 py-2">วันหยุดชดเชย</th>
+                  <th className="px-3 py-2">สถานะ</th>
+                  <th className="px-3 py-2">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daySwaps.length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-center text-neutral-400">ยังไม่มีประวัติเปลี่ยนวันหยุดในปีนี้</td></tr>
+                )}
+                {daySwaps.map((d, i) => (
+                  <tr key={d.id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
+                    <td className="px-3 py-2">{thDate(d.work_date)}</td>
+                    <td className="px-3 py-2">{thDate(d.off_date)}</td>
+                    <td className="px-3 py-2">
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">{swapStatusLabel(d)}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-neutral-400">{d.note ?? "–"}</td>
                   </tr>
                 ))}
               </tbody>

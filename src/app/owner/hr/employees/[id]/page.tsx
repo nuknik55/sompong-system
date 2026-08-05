@@ -15,7 +15,7 @@ import {
 } from "../../actions";
 import { EmployeeDetailClient } from "./EmployeeDetailClient";
 
-const TAB_KEYS = ["info", "summary", "leave", "payroll"] as const;
+const TAB_KEYS = ["info", "summary", "leave", "dayswap", "payroll"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default async function EmployeeDetailPage({
