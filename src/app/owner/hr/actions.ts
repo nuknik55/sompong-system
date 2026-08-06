@@ -888,6 +888,21 @@ function computeMealAllowance(
   return 800 - absentDays * 60 + workedOnOffDays * 60;
 }
 
+// Same set as EmployeeDetailClient.tsx's DAILY_WAGE_TYPES — employment types
+// paid per day worked rather than a flat monthly salary. Kept as a separate
+// const here (not imported) since that file is a "use client" component and
+// this one is "use server"; the values must be changed in both places.
+const DAILY_WAGE_TYPES = new Set(["part_time_fixed", "part_time_oncall"]);
+
+// พนักงานรายวัน: default เงินเดือน = ค่าแรงรายวัน × จำนวนวันที่มา/สายในงวดนั้น
+function computeDailyWageBase(
+  rows: { status: string }[],
+  dailyWage: number | null,
+): number {
+  const daysWorked = rows.filter((r) => r.status === "present" || r.status === "late").length;
+  return (dailyWage ?? 0) * daysWorked;
+}
+
 // Only ลากิจ (รายวัน) / PLW deducts pay like an absence — every other leave
 // type (AL, SL, SLA, PLP, CDW, CDP, UOT) is paid and never auto-deducted.
 async function getDeductibleLeaveTypeIds(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Set<string>> {
@@ -901,7 +916,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     supabase.from("payroll_periods").select("period_year,period_month,period_half").eq("id", periodId).single(),
     supabase
       .from("employees")
-      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,weekly_day_off,sort_order,departments(name,sort_order)")
+      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,weekly_day_off,employment_type,daily_wage,sort_order,departments(name,sort_order)")
       .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
     getDeductibleLeaveTypeIds(supabase),
@@ -918,6 +933,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
 
   const deductionMap = new Map<string, number>();
   const mealAllowanceMap = new Map<string, number>();
+  const dailyWageBaseMap = new Map<string, number>();
   if (period) {
     const { start, end } = periodDateRange(period.period_year, period.period_month, period.period_half);
     const [{ data: attendance }, holidays] = await Promise.all([
@@ -931,6 +947,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     const holidayDates = new Set(holidays.filter((h) => h.is_active).map((h) => h.holiday_date));
     const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
     const weeklyDayOffMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.weekly_day_off as string | null) ?? null]));
+    const dailyWageMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.daily_wage as number | null) ?? null]));
     const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
     for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
       if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
@@ -939,6 +956,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     for (const [employeeId, rows] of rowsByEmployee) {
       deductionMap.set(employeeId, computeAttendanceDeduction(rows, salaryMap.get(employeeId) ?? 0, deductibleLeaveTypeIds));
       mealAllowanceMap.set(employeeId, computeMealAllowance(rows, weeklyDayOffMap.get(employeeId) ?? null, holidayDates));
+      dailyWageBaseMap.set(employeeId, computeDailyWageBase(rows, dailyWageMap.get(employeeId) ?? null));
     }
   }
 
@@ -951,7 +969,11 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       employee_name: emp.full_name as string,
       employee_code: emp.employee_code as string | null,
       department_name: (emp.departments as { name: string } | null)?.name ?? null,
-      base_salary: (entry?.base_salary as number) ?? ((emp.base_salary as number) ?? 0) / 2,
+      base_salary: (entry?.base_salary as number) ?? (
+        DAILY_WAGE_TYPES.has(emp.employment_type as string)
+          ? (dailyWageBaseMap.get(emp.id as string) ?? 0)
+          : ((emp.base_salary as number) ?? 0) / 2
+      ),
       position_allowance: (entry?.position_allowance as number) ?? ((emp.position_allowance as number) ?? 0) / 2,
       special_bonus: (entry?.special_bonus as number) ?? 0,
       holiday_pay: (entry?.holiday_pay as number) ?? 0,
