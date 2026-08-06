@@ -80,6 +80,7 @@ export function EmployeeDetailClient({
   holidayCompBalance,
   daySwaps,
   attendanceSummary,
+  unpaidOtHours,
   defaultYear,
   initialTab,
 }: {
@@ -92,6 +93,7 @@ export function EmployeeDetailClient({
   holidayCompBalance: HolidayCompDayBalance | null;
   daySwaps: DaySwapRequest[];
   attendanceSummary: AttendanceYearSummary;
+  unpaidOtHours: number;
   defaultYear: number;
   initialTab: TabKey;
 }) {
@@ -321,6 +323,7 @@ export function EmployeeDetailClient({
               <StatChip label="มาสาย" value={attendanceSummary.lateDays} unit="วัน" color={attendanceSummary.lateDays > 0 ? "amber" : "neutral"} />
               <StatChip label="รวมนาทีสาย" value={attendanceSummary.lateMinutesTotal} unit="น." color="neutral" />
               <StatChip label="OT" value={attendanceSummary.otDays} unit="วัน" color="blue" />
+              <StatChip label="ชม. OT ที่เลือกไม่จ่าย (สะสม)" value={unpaidOtHours} unit="ชม." color={unpaidOtHours > 0 ? "amber" : "neutral"} />
             </div>
           </section>
         </div>

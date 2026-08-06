@@ -610,7 +610,7 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
       .order("period_half", { ascending: false }),
     supabase.from("payroll_entries").select("*").eq("employee_id", employeeId),
     supabase.from("employees").select("base_salary,position_allowance,social_security_monthly").eq("id", employeeId).single(),
-    supabase.from("attendance_daily").select("work_date,status,late_minutes,leave_type_id,leave_fraction").eq("employee_id", employeeId),
+    supabase.from("attendance_daily").select("work_date,status,late_minutes,late_excused,leave_type_id,leave_fraction").eq("employee_id", employeeId),
     getDeductibleLeaveTypeIds(supabase),
   ]);
   if (periodsError) throw periodsError;
@@ -621,7 +621,7 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
   const defaultBase = monthlySalary / 2;
   const defaultPosition = ((emp?.position_allowance as number) ?? 0) / 2;
   const defaultSS = ((emp?.social_security_monthly as number) ?? 0) / 2;
-  const attendanceRows = (attendance ?? []) as { work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[];
+  const attendanceRows = (attendance ?? []) as { work_date: string; status: string; late_minutes: number | null; late_excused: boolean | null; leave_type_id: string | null; leave_fraction: number | null }[];
 
   return (periods ?? []).map((period: Record<string, unknown>) => {
     const entry = entryMap.get(period.id as string) as Record<string, unknown> | undefined;
@@ -852,15 +852,18 @@ function periodDateRange(year: number, month: number, half: "first" | "second"):
 }
 
 function computeAttendanceDeduction(
-  rows: { status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction?: number | null }[],
+  rows: { status: string; late_minutes: number | null; late_excused?: boolean | null; leave_type_id: string | null; leave_fraction?: number | null }[],
   monthlySalary: number,
   deductibleLeaveTypeIds: Set<string>,
 ): number {
   let total = 0;
   let lateMinutes = 0;
   for (const row of rows) {
-    if (row.status === "late") lateMinutes += row.late_minutes ?? 0;
-    else total += perDayDeduction(row, monthlySalary, deductibleLeaveTypeIds);
+    if (row.status === "late") {
+      if (!row.late_excused) lateMinutes += row.late_minutes ?? 0;
+    } else {
+      total += perDayDeduction(row, monthlySalary, deductibleLeaveTypeIds);
+    }
   }
   total += lateDeductionFromTotal(monthlySalary, lateMinutes);
   return Math.round(total * 100) / 100;
@@ -905,9 +908,9 @@ function computeDailyWageBase(
   return (dailyWage ?? 0) * daysWorked;
 }
 
-// ค่า OT default = ชั่วโมง OT รวมในงวดนั้น × 40 บาท/ชม.
-function computeOtPay(rows: { ot_hours: number | null }[]): number {
-  const totalHours = rows.reduce((s, r) => s + (r.ot_hours ?? 0), 0);
+// ค่า OT default = ชั่วโมง OT รวมในงวดนั้น × 40 บาท/ชม. — นับเฉพาะแถวที่เลือก "จ่ายเงิน" (ot_paid ไม่เท่ากับ false)
+function computeOtPay(rows: { ot_hours: number | null; ot_paid?: boolean | null }[]): number {
+  const totalHours = rows.filter((r) => r.ot_paid !== false).reduce((s, r) => s + (r.ot_hours ?? 0), 0);
   return totalHours * 40;
 }
 
@@ -948,7 +951,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     const [{ data: attendance }, holidays] = await Promise.all([
       supabase
         .from("attendance_daily")
-        .select("employee_id,work_date,status,late_minutes,ot_hours,leave_type_id,leave_fraction")
+        .select("employee_id,work_date,status,late_minutes,late_excused,ot_hours,ot_paid,leave_type_id,leave_fraction")
         .gte("work_date", start)
         .lte("work_date", end),
       getHolidays(period.period_year),
@@ -957,8 +960,8 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
     const weeklyDayOffMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.weekly_day_off as string | null) ?? null]));
     const dailyWageMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.daily_wage as number | null) ?? null]));
-    const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; ot_hours: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
-    for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; ot_hours: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
+    const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; late_excused: boolean | null; ot_hours: number | null; ot_paid: boolean | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
+    for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; late_excused: boolean | null; ot_hours: number | null; ot_paid: boolean | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
       if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
       rowsByEmployee.get(row.employee_id)!.push(row);
     }
@@ -1045,6 +1048,8 @@ export type AttendanceDaily = {
   status: "present" | "absent" | "late" | "leave" | "day_off";
   late_minutes: number;
   ot_hours: number;
+  ot_paid: boolean;
+  late_excused: boolean;
   leave_type_id: string | null;
   leave_fraction: number;
   note: string | null;
@@ -1060,7 +1065,7 @@ export async function getAttendanceDailyMonth(
   const lastDay = new Date(year, month, 0).getDate();
   const { data, error } = await supabase
     .from("attendance_daily")
-    .select("id,employee_id,work_date,status,late_minutes,ot_hours,leave_type_id,leave_fraction,note,source")
+    .select("id,employee_id,work_date,status,late_minutes,ot_hours,ot_paid,late_excused,leave_type_id,leave_fraction,note,source")
     .gte("work_date", `${year}-${m}-01`)
     .lte("work_date", `${year}-${m}-${String(lastDay).padStart(2, "0")}`)
     .order("work_date");
@@ -1074,6 +1079,8 @@ export async function upsertAttendanceDaily(r: {
   status: string;
   late_minutes: number;
   ot_hours: number;
+  ot_paid: boolean;
+  late_excused: boolean;
   leave_type_id: string | null;
   leave_fraction: number;
   note: string | null;
@@ -1478,4 +1485,23 @@ export async function getAttendanceYearSummary(
     if ((r.ot_hours ?? 0) > 0) otDays++;
   }
   return { absentDays, lateDays, lateMinutesTotal, otDays, leaveDays };
+}
+
+export type UnpaidOtBalance = {
+  employee_id: string;
+  hours: number;
+};
+
+// สะสมตลอดกาล ไม่จำกัดช่วงเวลา — ข้อมูลอย่างเดียว ไม่มีผลต่อการหักหรือคำนวณใดๆ
+export async function getUnpaidOtHours(): Promise<UnpaidOtBalance[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("attendance_daily")
+    .select("employee_id,ot_hours")
+    .eq("ot_paid", false);
+  const byEmployee = new Map<string, number>();
+  for (const r of (data ?? []) as { employee_id: string; ot_hours: number | null }[]) {
+    byEmployee.set(r.employee_id, (byEmployee.get(r.employee_id) ?? 0) + (r.ot_hours ?? 0));
+  }
+  return [...byEmployee.entries()].map(([employee_id, hours]) => ({ employee_id, hours }));
 }

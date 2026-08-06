@@ -28,7 +28,9 @@ type EditState = {
   displayDate: string;
   status: Status;
   lateMin: number;
+  lateExcused: boolean;
   otHours: number;
+  otPaid: boolean;
   leaveTypeId: string;
   leaveFraction: number;
   note: string;
@@ -161,7 +163,9 @@ export function AttendanceClient({
       displayDate: `${day} ${MONTHS_TH[month - 1]} ${year + 543}`,
       status: defaultStatus,
       lateMin: rec?.late_minutes ?? 0,
+      lateExcused: rec?.late_excused ?? false,
       otHours: rec?.ot_hours ?? 0,
+      otPaid: rec?.ot_paid ?? true,
       leaveTypeId: rec?.leave_type_id ?? (leaveTypes[0]?.id ?? ""),
       leaveFraction: rec?.leave_fraction ?? 1,
       note: rec?.note ?? "",
@@ -177,7 +181,9 @@ export function AttendanceClient({
       work_date: edit.date,
       status: edit.status,
       late_minutes: edit.status === "late" ? edit.lateMin : 0,
+      late_excused: edit.status === "late" ? edit.lateExcused : false,
       ot_hours: edit.otHours,
+      ot_paid: edit.otPaid,
       leave_type_id: edit.status === "leave" ? (edit.leaveTypeId || null) : null,
       leave_fraction: edit.status === "leave" ? edit.leaveFraction : 1,
       note: edit.note || null,
@@ -193,7 +199,9 @@ export function AttendanceClient({
         work_date: rec.work_date,
         status: rec.status,
         late_minutes: rec.late_minutes,
+        late_excused: rec.late_excused,
         ot_hours: rec.ot_hours,
+        ot_paid: rec.ot_paid,
         leave_type_id: rec.leave_type_id,
         leave_fraction: rec.leave_fraction,
         note: rec.note,
@@ -343,7 +351,9 @@ export function AttendanceClient({
       work_date: ds,
       status,
       late_minutes: status === "late" ? bulk.lateMin : 0,
+      late_excused: false,
       ot_hours: 0,
+      ot_paid: true,
       leave_type_id: status === "leave" ? (bulk.leaveTypeId || null) : null,
       leave_fraction: 1,
       note: null,
@@ -364,7 +374,9 @@ export function AttendanceClient({
             work_date: r.work_date,
             status: r.status,
             late_minutes: r.late_minutes,
+            late_excused: r.late_excused,
             ot_hours: r.ot_hours,
+            ot_paid: r.ot_paid,
             leave_type_id: r.leave_type_id,
             leave_fraction: r.leave_fraction,
             note: r.note,
@@ -679,6 +691,18 @@ export function AttendanceClient({
                 </label>
               )}
 
+              {edit.status === "late" && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={edit.lateExcused}
+                    onChange={(e) => setEdit((v) => v ? { ...v, lateExcused: e.target.checked } : v)}
+                    className="rounded"
+                  />
+                  <span className="text-neutral-600">ไม่หักเงิน (ชดเชยจาก OT)</span>
+                </label>
+              )}
+
               {edit.status === "leave" && leaveTypes.length > 0 && (
                 <label className="flex items-center gap-2 text-sm">
                   <span className="w-20 text-neutral-600">ประเภทลา</span>
@@ -718,6 +742,26 @@ export function AttendanceClient({
                 />
                 <span className="text-neutral-500">ชั่วโมง</span>
               </label>
+
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-20 text-neutral-600"></span>
+                <div className="flex gap-1.5">
+                  {([true, false] as const).map((paid) => (
+                    <button
+                      key={String(paid)}
+                      type="button"
+                      onClick={() => setEdit((v) => v ? { ...v, otPaid: paid } : v)}
+                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                        edit.otPaid === paid
+                          ? "border-neutral-900 bg-neutral-900 text-white"
+                          : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                      }`}
+                    >
+                      {paid ? "จ่ายเงิน" : "ไม่จ่าย (แลกสาย)"}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="w-20 text-neutral-600">หมายเหตุ</span>
