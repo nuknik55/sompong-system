@@ -10,6 +10,7 @@ import type {
   EmployeePayrollHistoryRow,
   LeaveQuotaRow,
   CompDayBalance,
+  HolidayCompDayBalance,
   DaySwapRequest,
   AttendanceYearSummary,
 } from "../../actions";
@@ -76,6 +77,7 @@ export function EmployeeDetailClient({
   payrollHistory,
   quota,
   compBalance,
+  holidayCompBalance,
   daySwaps,
   attendanceSummary,
   defaultYear,
@@ -87,6 +89,7 @@ export function EmployeeDetailClient({
   payrollHistory: EmployeePayrollHistoryRow[];
   quota: LeaveQuotaRow | null;
   compBalance: CompDayBalance | null;
+  holidayCompBalance: HolidayCompDayBalance | null;
   daySwaps: DaySwapRequest[];
   attendanceSummary: AttendanceYearSummary;
   defaultYear: number;
@@ -164,6 +167,7 @@ export function EmployeeDetailClient({
   }
 
   const availableCompDays = (compBalance?.earned ?? 0) - (compBalance?.used ?? 0);
+  const availableHolidayCompDays = (holidayCompBalance?.earned ?? 0) - (holidayCompBalance?.used ?? 0);
 
   return (
     <div>
@@ -282,7 +286,7 @@ export function EmployeeDetailClient({
             </section>
           )}
 
-          {/* Comp day balance (day-swap only — holiday-substitute balance not tracked yet) */}
+          {/* Comp day balance (day-swap, all sources) */}
           {compBalance && (
             <section>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">เปลี่ยนวันหยุด</h3>
@@ -293,6 +297,18 @@ export function EmployeeDetailClient({
                 {compBalance.pending_makeup > 0 && (
                   <StatChip label="รอมาทดแทน" value={compBalance.pending_makeup} color="red" />
                 )}
+              </div>
+            </section>
+          )}
+
+          {/* Holiday-linked comp day balance (subset of the above, only rows tied to a specific holiday) */}
+          {holidayCompBalance && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">วันหยุดชดเชยจากนักขัตฤกษ์</h3>
+              <div className="flex flex-wrap gap-3">
+                <StatChip label="วันสะสม (ได้รับ)" value={holidayCompBalance.earned} color="teal" />
+                <StatChip label="ใช้ไปแล้ว" value={holidayCompBalance.used} color="neutral" />
+                <StatChip label="คงเหลือ" value={availableHolidayCompDays} color={availableHolidayCompDays > 0 ? "green" : "neutral"} />
               </div>
             </section>
           )}

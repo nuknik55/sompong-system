@@ -70,6 +70,7 @@ export type Holiday = {
   name: string;
   pay_type: "multiplier" | "substitute";
   pay_multiplier: number;
+  pay_policy: "must_work_bonus" | "comp_day_only";
   is_active: boolean;
 };
 
@@ -519,7 +520,7 @@ export async function getHolidays(year: number): Promise<Holiday[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("holidays")
-    .select("id,holiday_date,name,pay_type,pay_multiplier,is_active")
+    .select("id,holiday_date,name,pay_type,pay_multiplier,pay_policy,is_active")
     .gte("holiday_date", `${year}-01-01`)
     .lte("holiday_date", `${year}-12-31`)
     .order("holiday_date");
@@ -533,6 +534,7 @@ export async function upsertHoliday(h: {
   name: string;
   pay_type: "multiplier" | "substitute";
   pay_multiplier: number;
+  pay_policy: "must_work_bonus" | "comp_day_only";
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
@@ -1284,6 +1286,8 @@ export type DaySwapRequest = {
   compensation: "bank_day" | "extra_pay";
   note: string | null;
   created_at: string;
+  holiday_id: string | null;
+  holiday_name: string | null;
 };
 
 export type CompDayBalance = {
@@ -1299,7 +1303,7 @@ export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[
   const supabase = await createClient();
   let q = supabase
     .from("day_swap_requests")
-    .select(`id, employee_id, work_date, off_date, swap_type, compensation, note, created_at, employees(full_name, nickname)`)
+    .select(`id, employee_id, work_date, off_date, swap_type, compensation, note, created_at, holiday_id, employees(full_name, nickname), holidays(name)`)
     .order("created_at", { ascending: false });
   if (year) {
     q = q.or(`work_date.gte.${year}-01-01,off_date.gte.${year}-01-01`);
@@ -1317,6 +1321,8 @@ export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[
     compensation: r.compensation as "bank_day" | "extra_pay",
     note: r.note as string | null,
     created_at: r.created_at as string,
+    holiday_id: r.holiday_id as string | null,
+    holiday_name: (r.holidays as { name: string } | null)?.name ?? null,
   }));
 }
 
@@ -1379,6 +1385,31 @@ export async function getCompDayBalances(): Promise<CompDayBalance[]> {
   });
 }
 
+export type HolidayCompDayBalance = {
+  employee_id: string;
+  earned: number;
+  used: number;
+};
+
+// เหมือน getCompDayBalances แต่กรองเฉพาะแถวที่ผูกกับวันนักขัตฤกษ์ (holiday_id ไม่ว่าง)
+export async function getHolidayCompDayBalances(): Promise<HolidayCompDayBalance[]> {
+  const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: swaps } = await supabase
+    .from("day_swap_requests")
+    .select("employee_id,work_date,off_date,swap_type,compensation,holiday_id")
+    .not("holiday_id", "is", null);
+  const byEmployee = new Map<string, { earned: number; used: number }>();
+  for (const s of (swaps ?? []) as { employee_id: string; work_date: string | null; off_date: string | null; swap_type: string; compensation: string }[]) {
+    if (s.swap_type !== "work_first" || s.compensation !== "bank_day") continue;
+    const cur = byEmployee.get(s.employee_id) ?? { earned: 0, used: 0 };
+    if (s.work_date && s.work_date <= today) cur.earned++;
+    if (s.off_date && s.off_date <= today) cur.used++;
+    byEmployee.set(s.employee_id, cur);
+  }
+  return [...byEmployee.entries()].map(([employee_id, v]) => ({ employee_id, ...v }));
+}
+
 export async function upsertDaySwapRequest(r: {
   id?: string;
   employee_id: string;
@@ -1387,6 +1418,7 @@ export async function upsertDaySwapRequest(r: {
   swap_type: "work_first" | "off_first";
   compensation: "bank_day" | "extra_pay";
   note: string | null;
+  holiday_id?: string | null;
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
@@ -1397,6 +1429,7 @@ export async function upsertDaySwapRequest(r: {
     swap_type: r.swap_type,
     compensation: r.compensation,
     note: r.note || null,
+    holiday_id: r.holiday_id || null,
   };
   if (r.id) {
     await supabase.from("day_swap_requests").update(payload).eq("id", r.id);

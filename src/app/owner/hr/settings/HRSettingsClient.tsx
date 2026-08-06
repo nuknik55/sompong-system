@@ -52,7 +52,7 @@ export function HRSettingsClient({
   // Holidays
   const [holidays, setHolidays] = useState(initialHolidays);
   const [holidayModal, setHolidayModal] = useState<{ date: string; existing?: Holiday } | null>(null);
-  const [hForm, setHForm] = useState({ name: "", pay_type: "multiplier" as "multiplier" | "substitute", pay_multiplier: 2 });
+  const [hForm, setHForm] = useState({ name: "", pay_type: "multiplier" as "multiplier" | "substitute", pay_multiplier: 2, pay_policy: "must_work_bonus" as "must_work_bonus" | "comp_day_only" });
   const year = calendarYear;
 
   const holidayMap = new Map(holidays.map((h) => [h.holiday_date, h]));
@@ -98,7 +98,7 @@ export function HRSettingsClient({
   function openHoliday(dateStr: string) {
     const existing = holidayMap.get(dateStr);
     setHolidayModal({ date: dateStr, existing });
-    setHForm({ name: existing?.name ?? "", pay_type: existing?.pay_type ?? "multiplier", pay_multiplier: existing?.pay_multiplier ?? 2 });
+    setHForm({ name: existing?.name ?? "", pay_type: existing?.pay_type ?? "multiplier", pay_multiplier: existing?.pay_multiplier ?? 2, pay_policy: existing?.pay_policy ?? "must_work_bonus" });
   }
 
   function saveHoliday() {
@@ -290,6 +290,13 @@ export function HRSettingsClient({
                   <input type="number" step="0.5" className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" value={hForm.pay_multiplier} onChange={(e) => setHForm((f) => ({ ...f, pay_multiplier: +e.target.value }))} />
                 </div>
               )}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-600">นโยบายเมื่อมาทำงานวันนี้</label>
+                <select className="w-full rounded border border-neutral-200 px-3 py-2 text-sm" value={hForm.pay_policy} onChange={(e) => setHForm((f) => ({ ...f, pay_policy: e.target.value as "must_work_bonus" | "comp_day_only" }))}>
+                  <option value="must_work_bonus">ได้รับโบนัส/ค่าแรงพิเศษ</option>
+                  <option value="comp_day_only">ได้วันหยุดชดเชยเท่านั้น</option>
+                </select>
+              </div>
             </div>
             <div className="flex items-center justify-between border-t border-neutral-100 px-5 py-3">
               {holidayModal.existing && (

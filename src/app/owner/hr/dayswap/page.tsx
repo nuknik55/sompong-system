@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireHR } from "@/lib/auth";
-import { getEmployees, getDaySwapRequests, getCompDayBalances } from "../actions";
+import { getEmployees, getDaySwapRequests, getCompDayBalances, getHolidays } from "../actions";
 import { DaySwapClient } from "./DaySwapClient";
 
 export default async function DaySwapPage({
@@ -13,10 +13,11 @@ export default async function DaySwapPage({
   const sp = await searchParams;
   const year = sp.year ? parseInt(sp.year) : new Date().getFullYear();
 
-  const [employees, swaps, balances] = await Promise.all([
+  const [employees, swaps, balances, holidays] = await Promise.all([
     getEmployees(),
     getDaySwapRequests(year),
     getCompDayBalances(),
+    getHolidays(year),
   ]);
 
   return (
@@ -25,6 +26,7 @@ export default async function DaySwapPage({
       initialSwaps={swaps}
       balances={balances}
       defaultYear={year}
+      holidayOptions={holidays.filter((h) => h.is_active && h.pay_policy === "comp_day_only")}
     />
   );
 }

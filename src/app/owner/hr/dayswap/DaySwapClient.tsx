@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertDaySwapRequest, deleteDaySwapRequest } from "../actions";
-import type { Employee, DaySwapRequest, CompDayBalance } from "../actions";
+import type { Employee, DaySwapRequest, CompDayBalance, Holiday } from "../actions";
 
 const MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
 
@@ -20,6 +20,7 @@ const BLANK = {
   work_date: "",
   off_date: "",
   note: "",
+  holiday_id: "",
 };
 
 export function DaySwapClient({
@@ -27,11 +28,13 @@ export function DaySwapClient({
   initialSwaps,
   balances,
   defaultYear,
+  holidayOptions,
 }: {
   employees: Employee[];
   initialSwaps: DaySwapRequest[];
   balances: CompDayBalance[];
   defaultYear: number;
+  holidayOptions: Holiday[];
 }) {
   const router = useRouter();
   const [swaps, setSwaps] = useState(initialSwaps);
@@ -59,6 +62,7 @@ export function DaySwapClient({
       work_date: s.work_date ?? "",
       off_date: s.off_date ?? "",
       note: s.note ?? "",
+      holiday_id: s.holiday_id ?? "",
     });
     setShowForm(true);
   }
@@ -76,6 +80,7 @@ export function DaySwapClient({
         swap_type: form.swap_type,
         compensation: form.swap_type === "off_first" ? "bank_day" : form.compensation,
         note: form.note || null,
+        holiday_id: form.swap_type === "work_first" ? (form.holiday_id || null) : null,
       });
       // optimistic: re-fetch by navigating (server action revalidates)
       setShowForm(false);
@@ -185,7 +190,10 @@ export function DaySwapClient({
                     <span className="font-medium text-neutral-900">{s.employee_nickname ?? s.employee_name.split(" ")[0]}</span>
                     <span className="ml-1 text-xs text-neutral-400">{s.employee_name}</span>
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{swapLabel(s)}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">
+                    {swapLabel(s)}
+                    {s.holiday_name && <div className="mt-0.5 text-[10px] text-purple-600">🎌 {s.holiday_name}</div>}
+                  </td>
                   <td className="px-3 py-2 text-neutral-700">{thDate(s.work_date)}</td>
                   <td className="px-3 py-2 text-neutral-700">{thDate(s.off_date)}</td>
                   <td className="px-3 py-2">
@@ -276,6 +284,18 @@ export function DaySwapClient({
                       </button>
                     ))}
                   </div>
+                </Field>
+              )}
+
+              {/* Holiday reference (work_first only) */}
+              {form.swap_type === "work_first" && (
+                <Field label="อ้างอิงวันนักขัตฤกษ์ (ถ้ามี)">
+                  <select className="input-base" value={form.holiday_id} onChange={(e) => setForm((f) => ({ ...f, holiday_id: e.target.value }))}>
+                    <option value="">– ไม่อ้างอิง –</option>
+                    {holidayOptions.map((h) => (
+                      <option key={h.id} value={h.id}>{thDate(h.holiday_date)} — {h.name}</option>
+                    ))}
+                  </select>
                 </Field>
               )}
 
