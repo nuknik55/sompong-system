@@ -864,6 +864,30 @@ function computeAttendanceDeduction(
   return Math.round(total * 100) / 100;
 }
 
+const DAY_OF_WEEK_TH: Record<string, number> = {
+  อาทิตย์: 0, จันทร์: 1, อังคาร: 2, พุธ: 3, พฤหัสบดี: 4, ศุกร์: 5, เสาร์: 6,
+};
+
+// ค่าข้าวเริ่มต้น 800 บาท/งวด หักวันขาด 60 บาท/วัน บวกคืนวันที่มาทำงาน
+// ในวันนักขัตฤกษ์หรือวันหยุดประจำสัปดาห์ของพนักงานคนนั้น 60 บาท/วัน
+function computeMealAllowance(
+  rows: { status: string; work_date: string }[],
+  weeklyDayOff: string | null,
+  holidayDates: Set<string>,
+): number {
+  const weeklyOffDow = DAY_OF_WEEK_TH[weeklyDayOff ?? ""] ?? -1;
+  let absentDays = 0;
+  let workedOnOffDays = 0;
+  for (const row of rows) {
+    if (row.status === "absent") absentDays++;
+    if (row.status === "present" || row.status === "late") {
+      const dow = new Date(row.work_date + "T00:00:00").getDay();
+      if (holidayDates.has(row.work_date) || dow === weeklyOffDow) workedOnOffDays++;
+    }
+  }
+  return 800 - absentDays * 60 + workedOnOffDays * 60;
+}
+
 // Only ลากิจ (รายวัน) / PLW deducts pay like an absence — every other leave
 // type (AL, SL, SLA, PLP, CDW, CDP, UOT) is paid and never auto-deducted.
 async function getDeductibleLeaveTypeIds(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Set<string>> {
@@ -877,7 +901,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     supabase.from("payroll_periods").select("period_year,period_month,period_half").eq("id", periodId).single(),
     supabase
       .from("employees")
-      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,sort_order,departments(name,sort_order)")
+      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,weekly_day_off,sort_order,departments(name,sort_order)")
       .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
     getDeductibleLeaveTypeIds(supabase),
@@ -893,21 +917,28 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.employee_id as string, e]));
 
   const deductionMap = new Map<string, number>();
+  const mealAllowanceMap = new Map<string, number>();
   if (period) {
     const { start, end } = periodDateRange(period.period_year, period.period_month, period.period_half);
-    const { data: attendance } = await supabase
-      .from("attendance_daily")
-      .select("employee_id,status,late_minutes,leave_type_id,leave_fraction")
-      .gte("work_date", start)
-      .lte("work_date", end);
+    const [{ data: attendance }, holidays] = await Promise.all([
+      supabase
+        .from("attendance_daily")
+        .select("employee_id,work_date,status,late_minutes,leave_type_id,leave_fraction")
+        .gte("work_date", start)
+        .lte("work_date", end),
+      getHolidays(period.period_year),
+    ]);
+    const holidayDates = new Set(holidays.filter((h) => h.is_active).map((h) => h.holiday_date));
     const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
-    const rowsByEmployee = new Map<string, { status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
-    for (const row of (attendance ?? []) as { employee_id: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
+    const weeklyDayOffMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.weekly_day_off as string | null) ?? null]));
+    const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
+    for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
       if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
       rowsByEmployee.get(row.employee_id)!.push(row);
     }
     for (const [employeeId, rows] of rowsByEmployee) {
       deductionMap.set(employeeId, computeAttendanceDeduction(rows, salaryMap.get(employeeId) ?? 0, deductibleLeaveTypeIds));
+      mealAllowanceMap.set(employeeId, computeMealAllowance(rows, weeklyDayOffMap.get(employeeId) ?? null, holidayDates));
     }
   }
 
@@ -930,7 +961,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       advance_deduction: (entry?.advance_deduction as number) ?? 0,
       adjustment: (entry?.adjustment as number) ?? 0,
       other_amount: (entry?.other_amount as number) ?? 0,
-      meal_allowance: (entry?.meal_allowance as number) ?? 0,
+      meal_allowance: (entry?.meal_allowance as number) ?? (mealAllowanceMap.get(emp.id as string) ?? 0),
       tip_amount: (entry?.tip_amount as number) ?? 0,
       gross_total: (entry?.gross_total as number) ?? null,
       net_total: (entry?.net_total as number) ?? null,
