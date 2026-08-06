@@ -903,6 +903,12 @@ function computeDailyWageBase(
   return (dailyWage ?? 0) * daysWorked;
 }
 
+// ค่า OT default = ชั่วโมง OT รวมในงวดนั้น × 40 บาท/ชม.
+function computeOtPay(rows: { ot_hours: number | null }[]): number {
+  const totalHours = rows.reduce((s, r) => s + (r.ot_hours ?? 0), 0);
+  return totalHours * 40;
+}
+
 // Only ลากิจ (รายวัน) / PLW deducts pay like an absence — every other leave
 // type (AL, SL, SLA, PLP, CDW, CDP, UOT) is paid and never auto-deducted.
 async function getDeductibleLeaveTypeIds(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Set<string>> {
@@ -934,12 +940,13 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   const deductionMap = new Map<string, number>();
   const mealAllowanceMap = new Map<string, number>();
   const dailyWageBaseMap = new Map<string, number>();
+  const otPayMap = new Map<string, number>();
   if (period) {
     const { start, end } = periodDateRange(period.period_year, period.period_month, period.period_half);
     const [{ data: attendance }, holidays] = await Promise.all([
       supabase
         .from("attendance_daily")
-        .select("employee_id,work_date,status,late_minutes,leave_type_id,leave_fraction")
+        .select("employee_id,work_date,status,late_minutes,ot_hours,leave_type_id,leave_fraction")
         .gte("work_date", start)
         .lte("work_date", end),
       getHolidays(period.period_year),
@@ -948,8 +955,8 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     const salaryMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.base_salary as number) ?? 0]));
     const weeklyDayOffMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.weekly_day_off as string | null) ?? null]));
     const dailyWageMap = new Map(sortedEmployees.map((e: Record<string, unknown>) => [e.id as string, (e.daily_wage as number | null) ?? null]));
-    const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
-    for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
+    const rowsByEmployee = new Map<string, { work_date: string; status: string; late_minutes: number | null; ot_hours: number | null; leave_type_id: string | null; leave_fraction: number | null }[]>();
+    for (const row of (attendance ?? []) as { employee_id: string; work_date: string; status: string; late_minutes: number | null; ot_hours: number | null; leave_type_id: string | null; leave_fraction: number | null }[]) {
       if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
       rowsByEmployee.get(row.employee_id)!.push(row);
     }
@@ -957,6 +964,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       deductionMap.set(employeeId, computeAttendanceDeduction(rows, salaryMap.get(employeeId) ?? 0, deductibleLeaveTypeIds));
       mealAllowanceMap.set(employeeId, computeMealAllowance(rows, weeklyDayOffMap.get(employeeId) ?? null, holidayDates));
       dailyWageBaseMap.set(employeeId, computeDailyWageBase(rows, dailyWageMap.get(employeeId) ?? null));
+      otPayMap.set(employeeId, computeOtPay(rows));
     }
   }
 
@@ -977,7 +985,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       position_allowance: (entry?.position_allowance as number) ?? ((emp.position_allowance as number) ?? 0) / 2,
       special_bonus: (entry?.special_bonus as number) ?? 0,
       holiday_pay: (entry?.holiday_pay as number) ?? 0,
-      ot_pay: (entry?.ot_pay as number) ?? 0,
+      ot_pay: (entry?.ot_pay as number) ?? (otPayMap.get(emp.id as string) ?? 0),
       social_security_deduction: (entry?.social_security_deduction as number) ?? ((emp.social_security_monthly as number) ?? 0) / 2,
       leave_deduction: (entry?.leave_deduction as number) ?? (deductionMap.get(emp.id as string) ?? 0),
       advance_deduction: (entry?.advance_deduction as number) ?? 0,
