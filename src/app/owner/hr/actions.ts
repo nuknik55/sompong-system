@@ -138,6 +138,20 @@ export type AttendancePunch = {
   note: string | null;
 };
 
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
+// Format a Date back to YYYY-MM-DD using its LOCAL components.
+// Never use toISOString() for this: a date parsed from "YYYY-MM-DDT00:00:00" is
+// local midnight, and toISOString() converts to UTC — on any server east of UTC
+// (e.g. Asia/Bangkok) that lands on the PREVIOUS day and silently shifts every
+// date by one.
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // ─── Departments ──────────────────────────────────────────────────────────────
 
 export async function getDepartments(): Promise<Department[]> {
@@ -429,33 +443,51 @@ export async function upsertLeaveRequest(data: {
   }
 
   // Mirror every date in the leave range to attendance_daily (source of truth for payroll/quota/schedule).
-  const dailyRows: object[] = [];
+  const rangeDates: string[] = [];
   const cur = new Date(data.date_from + "T00:00:00");
   const end = new Date(data.date_to + "T00:00:00");
   while (cur <= end) {
-    dailyRows.push({
+    rangeDates.push(toDateStr(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Preserve OT and note already recorded on those days — the upsert replaces the
+  // whole row, so without this an existing OT entry would be wiped by filing leave.
+  const { data: existingRows } = await supabase
+    .from("attendance_daily")
+    .select("work_date,ot_hours,ot_paid,note")
+    .eq("employee_id", data.employee_id)
+    .in("work_date", rangeDates);
+  const existingByDate = new Map(
+    (existingRows ?? []).map((r: { work_date: string; ot_hours: number | null; ot_paid: boolean | null; note: string | null }) => [r.work_date, r]),
+  );
+
+  const dailyRows = rangeDates.map((ds) => {
+    const prev = existingByDate.get(ds);
+    return {
       employee_id: data.employee_id,
-      work_date: cur.toISOString().slice(0, 10),
+      work_date: ds,
       status: "leave",
       leave_type_id: data.leave_type_id,
       leave_fraction: 1,
       late_minutes: 0,
-      ot_hours: 0,
-      note: null,
+      late_excused: false,
+      ot_hours: prev?.ot_hours ?? 0,
+      ot_paid: prev?.ot_paid ?? true,
+      note: prev?.note ?? null,
       source: "leave_request",
-    });
-    cur.setDate(cur.getDate() + 1);
-  }
+    };
+  });
   await supabase.from("attendance_daily").upsert(dailyRows, { onConflict: "employee_id,work_date" });
 
   // On edit: delete attendance_daily rows for dates that dropped out of the new range.
   if (oldDateFrom && oldDateTo) {
-    const newDates = new Set(dailyRows.map((r) => (r as { work_date: string }).work_date));
+    const newDates = new Set(rangeDates);
     const toDelete: string[] = [];
     const c2 = new Date(oldDateFrom + "T00:00:00");
     const e2 = new Date(oldDateTo + "T00:00:00");
     while (c2 <= e2) {
-      const ds = c2.toISOString().slice(0, 10);
+      const ds = toDateStr(c2);
       if (!newDates.has(ds)) toDelete.push(ds);
       c2.setDate(c2.getDate() + 1);
     }
@@ -497,7 +529,7 @@ export async function deleteLeaveRequest(id: string): Promise<void> {
     const cur = new Date(lr.date_from + "T00:00:00");
     const end = new Date(lr.date_to + "T00:00:00");
     while (cur <= end) {
-      toDelete.push(cur.toISOString().slice(0, 10));
+      toDelete.push(toDateStr(cur));
       cur.setDate(cur.getDate() + 1);
     }
     if (toDelete.length > 0) {
@@ -683,7 +715,7 @@ export async function getApprovedLeavesForWeek(weekStart: string): Promise<Leave
   const supabase = await createClient();
   const weekEnd = new Date(weekStart + "T00:00:00");
   weekEnd.setDate(weekEnd.getDate() + 6);
-  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+  const weekEndStr = toDateStr(weekEnd);
 
   const { data } = await supabase
     .from("attendance_daily")
@@ -710,7 +742,7 @@ export async function getSwapDatesForWeek(weekStart: string): Promise<string[]> 
   const supabase = await createClient();
   const weekEnd = new Date(weekStart + "T00:00:00");
   weekEnd.setDate(weekEnd.getDate() + 6);
-  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+  const weekEndStr = toDateStr(weekEnd);
   const { data } = await supabase
     .from("day_swap_requests")
     .select("employee_id,work_date,off_date");
@@ -787,7 +819,7 @@ export async function getScheduleWeek(weekStart: string): Promise<ScheduleNote[]
     .from("schedule_notes")
     .select("id,employee_id,note_date,note,note_type")
     .gte("note_date", weekStart)
-    .lte("note_date", end.toISOString().slice(0, 10));
+    .lte("note_date", toDateStr(end));
   return data ?? [];
 }
 
@@ -965,7 +997,12 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
       if (!rowsByEmployee.has(row.employee_id)) rowsByEmployee.set(row.employee_id, []);
       rowsByEmployee.get(row.employee_id)!.push(row);
     }
-    for (const [employeeId, rows] of rowsByEmployee) {
+    // Iterate over EVERY employee, not just those with attendance rows — meal
+    // allowance is a flat 800/period baseline that only goes down on absence, so
+    // an employee with no attendance recorded must still get the full 800.
+    for (const emp of sortedEmployees) {
+      const employeeId = emp.id as string;
+      const rows = rowsByEmployee.get(employeeId) ?? [];
       deductionMap.set(employeeId, computeAttendanceDeduction(rows, salaryMap.get(employeeId) ?? 0, deductibleLeaveTypeIds));
       mealAllowanceMap.set(employeeId, computeMealAllowance(rows, weeklyDayOffMap.get(employeeId) ?? null, holidayDates));
       dailyWageBaseMap.set(employeeId, computeDailyWageBase(rows, dailyWageMap.get(employeeId) ?? null));
