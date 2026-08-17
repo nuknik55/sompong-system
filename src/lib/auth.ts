@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type Role = "owner" | "admin" | "editor" | "staff" | "hr";
+export type Role = "owner" | "admin" | "editor" | "staff" | "hr" | "sales";
 
 export type Profile = {
   id: string;
@@ -44,10 +44,14 @@ export async function requireAdmin(): Promise<Profile> {
   return profile;
 }
 
-/** Admin/owner or editor. Redirects staff and hr to /staff. */
+/**
+ * Admin/owner or editor. Redirects everyone else to /staff.
+ * Positive allowlist on purpose: a negative check (block staff/hr) silently
+ * admits every role added later.
+ */
 export async function requireAdminOrEditor(): Promise<Profile> {
   const profile = await requireProfile();
-  if (profile.role === "staff" || profile.role === "hr") redirect("/staff");
+  if (!["owner", "admin", "editor"].includes(profile.role)) redirect("/staff");
   return profile;
 }
 
@@ -62,6 +66,13 @@ export async function requireHR(): Promise<Profile> {
 export async function requireHROrAdmin(): Promise<Profile> {
   const profile = await requireProfile();
   if (!["owner", "hr", "admin"].includes(profile.role)) redirect("/staff");
+  return profile;
+}
+
+/** Catering access: owner, admin, or sales. Redirects everyone else to /staff. */
+export async function requireSales(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (!["owner", "admin", "sales"].includes(profile.role)) redirect("/staff");
   return profile;
 }
 
