@@ -41,6 +41,97 @@ function pill(credit: boolean, mode: string) {
 // Confirm dialog state
 type ConfirmState = { id: string; name: string } | null;
 
+// Declared at module level ON PURPOSE. When this lived inside SuppliersClient it
+// was a brand-new function identity on every render, so React saw a different
+// component type each time and unmounted/remounted the whole row — every
+// keystroke destroyed the <input> DOM nodes, which reset the caret to the end
+// (and re-fired autoFocus, stealing focus back to the name field).
+function EditForm({
+  isNew,
+  draft,
+  set,
+  isPending,
+  error,
+  onSave,
+  onCancel,
+}: {
+  isNew?: boolean;
+  draft: DraftRow;
+  set: <K extends keyof DraftRow>(k: K, v: DraftRow[K]) => void;
+  isPending: boolean;
+  error: string | null;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <tr className={`border-t-2 ${isNew ? "border-green-300 bg-green-50/60" : "border-amber-300 bg-amber-50/60"}`}>
+      <td className="px-2 py-2 w-8" />
+      <td className="px-2 py-2 w-14">
+        <input type="number" value={draft.sort_order}
+          onChange={(e) => set("sort_order", Number(e.target.value))}
+          className="w-14 rounded border border-neutral-300 px-1.5 py-1 text-xs text-right focus:border-blue-400 focus:outline-none" />
+      </td>
+      <td className="px-1.5 py-2">
+        <input type="text" autoFocus placeholder="ชื่อซัพ *" value={draft.name}
+          onChange={(e) => set("name", e.target.value)}
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+      </td>
+      <td className="px-1.5 py-2">
+        <input type="text" placeholder="รายละเอียด/ชื่อเล่น" value={draft.description ?? ""}
+          onChange={(e) => set("description", e.target.value)}
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+      </td>
+      <td className="px-1.5 py-2 w-28">
+        <select value={draft.bank ?? ""} onChange={(e) => set("bank", e.target.value || null)}
+          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
+          <option value="">—</option>
+          {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </td>
+      <td className="px-1.5 py-2 w-36">
+        <input type="text" placeholder="เลขบัญชี" value={draft.account_number ?? ""}
+          onChange={(e) => set("account_number", e.target.value)}
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums focus:border-blue-400 focus:outline-none" />
+      </td>
+      <td className="px-1.5 py-2 w-36">
+        <select value={`${draft.credit ? "c" : "i"}-${draft.payment_mode}`}
+          onChange={(e) => {
+            const [c, m] = e.target.value.split("-") as ["c" | "i", "transfer" | "cash"];
+            set("credit", c === "c");
+            set("payment_mode", m);
+          }}
+          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
+          <option value="c-transfer">เครดิต / โอน</option>
+          <option value="c-cash">เครดิต / สด</option>
+          <option value="i-transfer">โอนทันที</option>
+        </select>
+      </td>
+      <td className="px-1.5 py-2 w-40">
+        {!draft.credit ? (
+          <input type="text" placeholder="K-Bank_Sompong / SCB_Sompong" value={draft.internal_account ?? ""}
+            onChange={(e) => set("internal_account", e.target.value)}
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none" />
+        ) : (
+          <span className="text-xs text-neutral-300">—</span>
+        )}
+      </td>
+      <td className="px-2 py-2 whitespace-nowrap">
+        <div className="flex gap-1.5">
+          <button onClick={onSave} disabled={isPending}
+            className="rounded bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800 disabled:opacity-50">
+            {isPending ? "..." : "บันทึก"}
+          </button>
+          <button onClick={onCancel}
+            className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100">
+            ยกเลิก
+          </button>
+        </div>
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </td>
+    </tr>
+  );
+}
+
 export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Supplier[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -157,78 +248,6 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
     });
   }
 
-  // ── Edit form row ─────────────────────────────────────────────────
-
-  function EditForm({ isNew }: { isNew?: boolean }) {
-    return (
-      <tr className={`border-t-2 ${isNew ? "border-green-300 bg-green-50/60" : "border-amber-300 bg-amber-50/60"}`}>
-        <td className="px-2 py-2 w-8" />
-        <td className="px-2 py-2 w-14">
-          <input type="number" value={draft.sort_order}
-            onChange={(e) => set("sort_order", Number(e.target.value))}
-            className="w-14 rounded border border-neutral-300 px-1.5 py-1 text-xs text-right focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-2">
-          <input type="text" autoFocus placeholder="ชื่อซัพ *" value={draft.name}
-            onChange={(e) => set("name", e.target.value)}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-2">
-          <input type="text" placeholder="รายละเอียด/ชื่อเล่น" value={draft.description ?? ""}
-            onChange={(e) => set("description", e.target.value)}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-2 w-28">
-          <select value={draft.bank ?? ""} onChange={(e) => set("bank", e.target.value || null)}
-            className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
-            <option value="">—</option>
-            {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </td>
-        <td className="px-1.5 py-2 w-36">
-          <input type="text" placeholder="เลขบัญชี" value={draft.account_number ?? ""}
-            onChange={(e) => set("account_number", e.target.value)}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums focus:border-blue-400 focus:outline-none" />
-        </td>
-        <td className="px-1.5 py-2 w-36">
-          <select value={`${draft.credit ? "c" : "i"}-${draft.payment_mode}`}
-            onChange={(e) => {
-              const [c, m] = e.target.value.split("-") as ["c" | "i", "transfer" | "cash"];
-              set("credit", c === "c");
-              set("payment_mode", m);
-            }}
-            className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
-            <option value="c-transfer">เครดิต / โอน</option>
-            <option value="c-cash">เครดิต / สด</option>
-            <option value="i-transfer">โอนทันที</option>
-          </select>
-        </td>
-        <td className="px-1.5 py-2 w-40">
-          {!draft.credit ? (
-            <input type="text" placeholder="K-Bank_Sompong / SCB_Sompong" value={draft.internal_account ?? ""}
-              onChange={(e) => set("internal_account", e.target.value)}
-              className="w-full rounded border border-neutral-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none" />
-          ) : (
-            <span className="text-xs text-neutral-300">—</span>
-          )}
-        </td>
-        <td className="px-2 py-2 whitespace-nowrap">
-          <div className="flex gap-1.5">
-            <button onClick={handleSave} disabled={isPending}
-              className="rounded bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800 disabled:opacity-50">
-              {isPending ? "..." : "บันทึก"}
-            </button>
-            <button onClick={cancelEdit}
-              className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100">
-              ยกเลิก
-            </button>
-          </div>
-          {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-        </td>
-      </tr>
-    );
-  }
-
   // ── Render ───────────────────────────────────────────────────────
 
   // Reset counter before render
@@ -273,7 +292,10 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
               </tr>
             </thead>
             <tbody>
-              {editId === "new" && <EditForm isNew />}
+              {editId === "new" && (
+                <EditForm isNew draft={draft} set={set} isPending={isPending}
+                  error={error} onSave={handleSave} onCancel={cancelEdit} />
+              )}
 
               {visible.map((s, i) => {
                 const isFirst = i === 0;
@@ -281,7 +303,10 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
                 const bg = nextRowBg(s);
 
                 if (editId === s.id) {
-                  return <EditForm key={s.id} />;
+                  return (
+                    <EditForm key={s.id} draft={draft} set={set} isPending={isPending}
+                      error={error} onSave={handleSave} onCancel={cancelEdit} />
+                  );
                 }
 
                 return (
