@@ -214,12 +214,15 @@ export function TeamManager({
               const isChangingPwd = pwdRowId === u.id;
               const isSelf = u.id === currentUserId;
               const isAdmin = currentUserRole === "admin";
-              const targetIsLower = u.role === "staff" || u.role === "editor";
-              // owner sees action buttons on ALL rows; admin only on staff/editor + own row
+              // sales sits at editor level, not the protected tier: it only reaches
+              // customer records and bookings, never salary. hr stays protected
+              // because it can see every employee's pay.
+              const targetIsLower = u.role === "staff" || u.role === "editor" || u.role === "sales";
+              // owner sees action buttons on ALL rows; admin only on staff/editor/sales + own row
               const canActOnRow = isOwner || targetIsLower || isSelf;
-              // owner: everyone incl. self; admin: self + staff/editor only
+              // owner: everyone incl. self; admin: self + staff/editor/sales only
               const canChangePwd = isOwner || (isAdmin && (isSelf || targetIsLower));
-              // no self-delete; owner: anyone else (incl. other owners); admin: staff/editor only
+              // no self-delete; owner: anyone else (incl. other owners); admin: staff/editor/sales only
               const canDelete = !isSelf && (isOwner || (isAdmin && targetIsLower));
 
               return (
