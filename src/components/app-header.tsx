@@ -18,6 +18,7 @@ import {
   UserCog,
   CalendarDays,
   Clock,
+  PartyPopper,
   Menu,
   X,
 } from "lucide-react";
@@ -40,6 +41,7 @@ const OWNER_NAV: Omit<NavItem, "badge">[] = [
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
   { href: "/owner/approve", label: "อนุมัติ", exact: true, icon: <CheckSquare size={16} /> },
   { href: "/owner/accounting", label: "บัญชี", exact: false, icon: <BookText size={16} /> },
+  { href: "/owner/catering", label: "จองงานจัดเลี้ยง", exact: false, icon: <PartyPopper size={16} /> },
   { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
 ];
 
@@ -53,12 +55,19 @@ const ADMIN_NAV: Omit<NavItem, "badge">[] = [
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
   { href: "/owner/approve", label: "อนุมัติ", exact: true, icon: <CheckSquare size={16} /> },
   { href: "/owner/accounting", label: "บัญชี", exact: false, icon: <BookText size={16} /> },
+  { href: "/owner/catering", label: "จองงานจัดเลี้ยง", exact: false, icon: <PartyPopper size={16} /> },
   { href: "/owner/hr/leave", label: "ใบลา", exact: true, icon: <CalendarDays size={16} /> },
   { href: "/owner/hr/attendance", label: "บันทึกเวลา", exact: true, icon: <Clock size={16} /> },
 ];
 
 const HR_NAV: Omit<NavItem, "badge">[] = [
   { href: "/owner/hr", label: "ฝ่ายบุคคล", exact: false, icon: <UserCog size={16} /> },
+  { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
+];
+
+// sales only owns the catering module; maintenance is available to every role.
+const SALES_NAV: Omit<NavItem, "badge">[] = [
+  { href: "/owner/catering", label: "จองงานจัดเลี้ยง", exact: false, icon: <PartyPopper size={16} /> },
   { href: "/maintenance", label: "แจ้งซ่อม", exact: false, icon: <Wrench size={16} /> },
 ];
 
@@ -83,6 +92,7 @@ const ROLE_LABEL: Record<string, string> = {
   editor: "Editor",
   staff: "Staff",
   hr: "ฝ่ายบุคคล",
+  sales: "ฝ่ายขาย",
 };
 
 function isActiveLink(href: string, exact: boolean, pathname: string): boolean {
@@ -182,6 +192,7 @@ export function AppHeader({
   const baseNav =
     profile.role === "owner" ? OWNER_NAV
     : profile.role === "hr" ? HR_NAV
+    : profile.role === "sales" ? SALES_NAV
     : profile.role === "admin" ? ADMIN_NAV
     : profile.role === "editor" ? EDITOR_NAV
     : STAFF_NAV;
