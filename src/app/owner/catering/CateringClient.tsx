@@ -18,12 +18,15 @@ export function CateringClient({
   staffOptions,
   year,
   month,
+  defaultStaffId,
 }: {
   initialEvents: CateringEvent[];
   customers: CateringCustomer[];
   staffOptions: StaffOption[];
   year: number;
   month: number;
+  /** The current user's linked employee, pre-selected on new bookings only. */
+  defaultStaffId: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -100,7 +103,7 @@ export function CateringClient({
               <th className="px-3 py-2 text-center">โต๊ะ</th>
               <th className="px-3 py-2 text-center">แขก</th>
               <th className="px-3 py-2">สถานะ</th>
-              <th className="px-3 py-2">ผู้รับงาน</th>
+              <th className="px-3 py-2">ผู้รับผิดชอบงาน</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -160,6 +163,7 @@ export function CateringClient({
           error={error}
           onSave={handleSave}
           onCancel={closeForm}
+          defaultStaffId={defaultStaffId}
         />
       )}
 

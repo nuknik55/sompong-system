@@ -8,6 +8,9 @@ export type Profile = {
   id: string;
   full_name: string;
   role: Role;
+  /** Optional link to the HR employee record — null for logins with no
+   *  payroll record (owner/admin accounts, system users). */
+  employee_id: string | null;
 };
 
 export async function getCurrentProfile(): Promise<Profile | null> {
@@ -17,7 +20,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, employee_id")
     .eq("id", user.id)
     .single();
 

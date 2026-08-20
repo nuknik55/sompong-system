@@ -39,6 +39,7 @@ export default async function CateringPage({
         staffOptions={staffOptions}
         year={year}
         month={month}
+        defaultStaffId={profile.employee_id}
       />
     </div>
   );

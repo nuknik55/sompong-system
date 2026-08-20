@@ -190,7 +190,13 @@ export type FormState = {
   staff_ids: string[];
 };
 
-export function blankForm(): FormState {
+/**
+ * defaultStaffId pre-selects whoever is creating the booking, resolved from
+ * their profiles.employee_id. Only applies to new bookings — an existing event
+ * always loads its own saved staff list via formFromEvent(). Fully editable
+ * either way; the creator can remove themselves.
+ */
+export function blankForm(defaultStaffId?: string | null): FormState {
   return {
     customerId: null, customerQuery: "", newPhone: "", newLineId: "", newCompany: "",
     customerAddress: "", customerContactPerson: "",
@@ -201,7 +207,7 @@ export function blankForm(): FormState {
     table_count: "", reserve_tables: "", table_label: "", guest_count: "",
     music_type: "none", music_note: "",
     status: "inquiry", deposit_amount: "", deposit_paid_at: "",
-    detail_note: "", kitchen_note: "", staff_ids: [],
+    detail_note: "", kitchen_note: "", staff_ids: defaultStaffId ? [defaultStaffId] : [],
   };
 }
 
@@ -457,6 +463,7 @@ export function EventFormModal({
   error,
   onSave,
   onCancel,
+  defaultStaffId,
 }: {
   initial: CateringEvent | null;
   customers: CateringCustomer[];
@@ -465,8 +472,10 @@ export function EventFormModal({
   error: string | null;
   onSave: (form: FormState) => void;
   onCancel: () => void;
+  /** Ignored when `initial` is set — only new bookings get a pre-selected owner. */
+  defaultStaffId?: string | null;
 }) {
-  const [form, setForm] = useState<FormState>(() => (initial ? formFromEvent(initial) : blankForm()));
+  const [form, setForm] = useState<FormState>(() => (initial ? formFromEvent(initial) : blankForm(defaultStaffId)));
 
   function set<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -676,7 +685,7 @@ export function EventFormModal({
           </div>
 
           {/* Staff */}
-          <Field label="ผู้รับงานจอง">
+          <Field label="ผู้รับผิดชอบงาน">
             <StaffMultiSelect
               options={staffOptions}
               selected={form.staff_ids}

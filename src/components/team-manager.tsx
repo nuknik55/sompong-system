@@ -9,7 +9,10 @@ export type TeamUser = {
   full_name: string;
   role: Role;
   username: string;
+  employee_id: string | null;
 };
+
+export type EmployeeOption = { id: string; label: string };
 
 const ALL_ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "owner",  label: "Owner (เจ้าของร้าน)" },
@@ -33,10 +36,12 @@ export function TeamManager({
   users,
   currentUserId,
   currentUserRole,
+  employeeOptions,
 }: {
   users: TeamUser[];
   currentUserId: string;
   currentUserRole: Role;
+  employeeOptions: EmployeeOption[];
 }) {
   const isOwner = currentUserRole === "owner";
 
@@ -55,7 +60,22 @@ export function TeamManager({
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<Role>("staff");
+  const [newEmployeeId, setNewEmployeeId] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Employees already linked to some account — excluded from the pickers so an
+  // admin cannot pick one that would fail the profiles_employee_id_unique
+  // constraint. The row being edited keeps its own selection available.
+  const linkedEmployeeIds = new Map(
+    users.filter((u) => u.employee_id).map((u) => [u.employee_id as string, u.id]),
+  );
+  function availableEmployees(forUserId?: string): EmployeeOption[] {
+    return employeeOptions.filter((e) => {
+      const owner = linkedEmployeeIds.get(e.id);
+      return !owner || owner === forUserId;
+    });
+  }
+  const employeeLabelById = new Map(employeeOptions.map((e) => [e.id, e.label]));
 
   // ── Inline role change ───────────────────────────────────────────────────────
   const [selectedRole, setSelectedRole] = useState<Record<string, Role>>(
@@ -67,6 +87,7 @@ export function TeamManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editUsername, setEditUsername] = useState("");
+  const [editEmployeeId, setEditEmployeeId] = useState("");
 
   // ── Change password (owner-only) ─────────────────────────────────────────────
   const [pwdRowId, setPwdRowId] = useState<string | null>(null);
@@ -81,9 +102,9 @@ export function TeamManager({
   function submitCreate() {
     setCreateError(null);
     startTransition(async () => {
-      const result = await createUser(newFullName, newUsername, newPassword, newRole);
+      const result = await createUser(newFullName, newUsername, newPassword, newRole, newEmployeeId || null);
       if (result.error) { setCreateError(result.error); return; }
-      setNewFullName(""); setNewUsername(""); setNewPassword(""); setNewRole("staff");
+      setNewFullName(""); setNewUsername(""); setNewPassword(""); setNewRole("staff"); setNewEmployeeId("");
       setShowForm(false);
       window.location.reload();
     });
@@ -107,6 +128,7 @@ export function TeamManager({
     setEditingId(u.id);
     setEditFullName(u.full_name);
     setEditUsername(u.username);
+    setEditEmployeeId(u.employee_id ?? "");
     clearRowErr(u.id);
     setPwdRowId(null);
   }
@@ -114,10 +136,11 @@ export function TeamManager({
   function saveEdit() {
     if (!editingId) return;
     const id = editingId;
+    const employeeId = editEmployeeId || null;
     startTransition(async () => {
-      const result = await updateUserDetails(id, { fullName: editFullName, username: editUsername });
+      const result = await updateUserDetails(id, { fullName: editFullName, username: editUsername, employeeId });
       if (result.error) { setRowError((prev) => ({ ...prev, [id]: result.error! })); return; }
-      setList((prev) => prev.map((u) => (u.id === id ? { ...u, full_name: editFullName, username: editUsername } : u)));
+      setList((prev) => prev.map((u) => (u.id === id ? { ...u, full_name: editFullName, username: editUsername, employee_id: employeeId } : u)));
       setEditingId(null);
     });
   }
@@ -185,6 +208,16 @@ export function TeamManager({
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          <select
+            value={newEmployeeId}
+            onChange={(e) => setNewEmployeeId(e.target.value)}
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          >
+            <option value="">พนักงาน (HR) — ไม่ผูก</option>
+            {availableEmployees().map((e) => (
+              <option key={e.id} value={e.id}>{e.label}</option>
+            ))}
+          </select>
           <button
             type="button"
             disabled={isPending}
@@ -244,7 +277,21 @@ export function TeamManager({
                           className="w-44 rounded border border-neutral-300 px-2 py-1"
                         />
                       </td>
-                      <td className="px-3 py-2 text-neutral-400">-</td>
+                      {/* Role is not editable inline here (that has its own
+                          save button in normal mode), so this cell carries the
+                          employee link picker while editing. */}
+                      <td className="px-3 py-2">
+                        <select
+                          value={editEmployeeId}
+                          onChange={(e) => setEditEmployeeId(e.target.value)}
+                          className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                        >
+                          <option value="">พนักงาน (HR) — ไม่ผูก</option>
+                          {availableEmployees(u.id).map((e) => (
+                            <option key={e.id} value={e.id}>{e.label}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
                           <button
@@ -271,7 +318,14 @@ export function TeamManager({
                   ) : (
                     /* ── Normal mode ── */
                     <>
-                      <td className="px-3 py-2">{u.full_name}</td>
+                      <td className="px-3 py-2">
+                        {u.full_name}
+                        {u.employee_id && (
+                          <div className="text-xs text-neutral-400">
+                            HR: {employeeLabelById.get(u.employee_id) ?? "ไม่พบพนักงาน"}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-neutral-500">{u.username}</td>
 
                       {/* Role cell */}

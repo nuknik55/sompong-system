@@ -9,11 +9,29 @@ import type { Role } from "@/lib/auth";
 
 export type CreateUserResult = { error?: string };
 
+/**
+ * profiles.employee_id is UNIQUE, so a second account pointing at the same
+ * employee fails with a raw Postgres 23505. Checked up front instead — in
+ * createUser especially, the auth.users row is created first, so hitting the
+ * constraint later would leave an orphaned login behind.
+ */
+async function employeeAlreadyLinked(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  employeeId: string,
+  exceptUserId?: string,
+): Promise<boolean> {
+  let query = supabase.from("profiles").select("id").eq("employee_id", employeeId);
+  if (exceptUserId) query = query.neq("id", exceptUserId);
+  const { data } = await query.limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function createUser(
   fullName: string,
   username: string,
   password: string,
-  role: Role
+  role: Role,
+  employeeId: string | null = null
 ): Promise<CreateUserResult> {
   const me = await requireAdmin();
 
@@ -22,6 +40,11 @@ export async function createUser(
   }
   if (role === "owner" && me.role !== "owner") {
     return { error: "เฉพาะ Owner เท่านั้นที่สร้างบัญชี Owner ได้" };
+  }
+
+  const supabaseCheck = await createClient();
+  if (employeeId && (await employeeAlreadyLinked(supabaseCheck, employeeId))) {
+    return { error: "พนักงานคนนี้ถูกผูกกับบัญชีอื่นแล้ว" };
   }
 
   const admin = createAdminClient();
@@ -36,11 +59,11 @@ export async function createUser(
     return { error: error?.message ?? "สร้างบัญชีไม่สำเร็จ" };
   }
 
-  // DB trigger inserts profile with role='staff'; set name/role here
+  // DB trigger inserts profile with role='staff'; set name/role/employee here
   const supabase = await createClient();
   const { error: profileError } = await supabase
     .from("profiles")
-    .update({ full_name: fullName.trim(), role })
+    .update({ full_name: fullName.trim(), role, employee_id: employeeId })
     .eq("id", data.user.id);
 
   if (profileError) {
@@ -101,12 +124,17 @@ export async function updateUserRole(userId: string, role: Role): Promise<Action
 
 export async function updateUserDetails(
   userId: string,
-  fields: { fullName: string; username: string }
+  fields: { fullName: string; username: string; employeeId: string | null }
 ): Promise<ActionResult> {
   await requireAdmin();
 
   if (!fields.fullName.trim() || !fields.username.trim()) {
     return { error: "กรุณากรอกชื่อและชื่อผู้ใช้" };
+  }
+
+  const supabase = await createClient();
+  if (fields.employeeId && (await employeeAlreadyLinked(supabase, fields.employeeId, userId))) {
+    return { error: "พนักงานคนนี้ถูกผูกกับบัญชีอื่นแล้ว" };
   }
 
   const admin = createAdminClient();
@@ -115,10 +143,9 @@ export async function updateUserDetails(
   });
   if (authError) return { error: authError.message };
 
-  const supabase = await createClient();
   const { error: profileError } = await supabase
     .from("profiles")
-    .update({ full_name: fields.fullName.trim() })
+    .update({ full_name: fields.fullName.trim(), employee_id: fields.employeeId })
     .eq("id", userId);
   if (profileError) return { error: profileError.message };
 

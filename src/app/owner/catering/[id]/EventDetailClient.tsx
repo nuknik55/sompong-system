@@ -139,7 +139,7 @@ export function EventDetailClient({
 
         {/* Staff */}
         <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">ผู้รับงานจอง</h3>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">ผู้รับผิดชอบงาน</h3>
           <p className="text-sm text-neutral-700">
             {event.staff_ids.length === 0
               ? "–"
