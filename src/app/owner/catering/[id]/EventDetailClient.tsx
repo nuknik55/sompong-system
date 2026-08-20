@@ -3,22 +3,27 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
-import type { CateringEvent, CateringCustomer, StaffOption } from "../actions";
+import type { CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate } from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
   thFullDate, timeRange, staffLabel, formToUpsertPayload,
   StatusBadge, EventFormModal,
 } from "../shared";
 import type { FormState } from "../shared";
+import { ChargesSection } from "./ChargesSection";
 
 export function EventDetailClient({
   event,
   customers,
   staffOptions,
+  charges,
+  rates,
 }: {
   event: CateringEvent;
   customers: CateringCustomer[];
   staffOptions: StaffOption[];
+  charges: CateringCharge[];
+  rates: CateringRate[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -161,6 +166,10 @@ export function EventDetailClient({
         <div className="border-t border-neutral-100 pt-3 text-xs text-neutral-400">
           จองโดย {event.created_by_name ?? "ไม่ทราบ"}
         </div>
+      </div>
+
+      <div className="mt-5">
+        <ChargesSection event={event} initialCharges={charges} rates={rates} />
       </div>
 
       {error && !showForm && <p className="mt-3 text-sm text-red-600">{error}</p>}

@@ -63,7 +63,42 @@ export type CateringEvent = {
    *  booking unless the viewer is owner. Render "ไม่ทราบ" in that case —
    *  do not treat a null here as missing data. */
   created_by_name: string | null;
+  quote_number: string | null;
+  quote_revision: number;
+  quoted_total: number | null;
+  quoted_at: string | null;
   staff_ids: string[];
+};
+
+export type CateringCharge = {
+  id: string;
+  label: string;
+  charge_type: string;
+  unit_price: number;
+  quantity: number;
+  amount: number;
+  note: string | null;
+};
+
+export type CateringRate = {
+  id: string;
+  rate_type: string;
+  label: string;
+  amount: number;
+  unit: string | null;
+  note: string | null;
+  min_distance_km: number | null;
+  max_distance_km: number | null;
+};
+
+export type CateringSettings = {
+  company_name: string | null;
+  address: string | null;
+  tax_id: string | null;
+  phone: string | null;
+  bank_name: string | null;
+  bank_account_name: string | null;
+  bank_account_number: string | null;
 };
 
 const CATERING_EVENT_SELECT = `
@@ -72,6 +107,7 @@ const CATERING_EVENT_SELECT = `
   booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
   deposit_amount, deposit_paid_at, detail_note, kitchen_note, created_by,
+  quote_number, quote_revision, quoted_total, quoted_at,
   catering_customers(name, phone, company_name, address, contact_person),
   catering_event_staff(employee_id),
   profiles(full_name)
@@ -116,6 +152,10 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
     kitchen_note: r.kitchen_note as string | null,
     created_by: r.created_by as string | null,
     created_by_name: creator?.full_name ?? null,
+    quote_number: r.quote_number as string | null,
+    quote_revision: r.quote_revision as number,
+    quoted_total: r.quoted_total as number | null,
+    quoted_at: r.quoted_at as string | null,
     staff_ids: staff.map((s) => s.employee_id),
   };
 }
@@ -184,6 +224,43 @@ export async function getCateringEvent(id: string): Promise<CateringEvent | null
 
   if (error) throw error;
   return data ? mapEventRow(data as unknown as Record<string, unknown>) : null;
+}
+
+export async function getCateringCharges(eventId: string): Promise<CateringCharge[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_charges")
+    .select("id, label, charge_type, unit_price, quantity, amount, note")
+    .eq("event_id", eventId)
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as CateringCharge[];
+}
+
+export async function getCateringRates(): Promise<CateringRate[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_rates")
+    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km")
+    .eq("is_active", true)
+    .order("rate_type")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as CateringRate[];
+}
+
+export async function getCateringSettings(): Promise<CateringSettings | null> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_settings")
+    .select("company_name, address, tax_id, phone, bank_name, bank_account_name, bank_account_number")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────────
@@ -312,6 +389,103 @@ export async function upsertCateringEvent(data: {
 
   revalidatePath("/owner/catering");
   revalidatePath(`/owner/catering/${eventId}`);
+}
+
+/**
+ * Replaces the full charge list wholesale — same reasoning as
+ * catering_event_staff above: simpler than diffing, and the row count per
+ * event is tiny.
+ */
+export async function saveCateringCharges(
+  eventId: string,
+  charges: {
+    label: string;
+    charge_type: string;
+    unit_price: number;
+    quantity: number;
+    amount: number;
+    note: string | null;
+  }[],
+): Promise<void> {
+  await requireSales();
+  const supabase = await createClient();
+
+  await supabase.from("catering_event_charges").delete().eq("event_id", eventId);
+  if (charges.length > 0) {
+    const { error } = await supabase.from("catering_event_charges").insert(
+      charges.map((c, i) => ({
+        event_id: eventId,
+        label: c.label.trim(),
+        charge_type: c.charge_type,
+        unit_price: c.unit_price,
+        quantity: c.quantity,
+        amount: c.amount,
+        note: c.note?.trim() || null,
+        sort_order: (i + 1) * 10,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  revalidatePath(`/owner/catering/${eventId}`);
+}
+
+/**
+ * Issues (or re-issues) the quotation. Recomputes quoted_total from the
+ * catering_event_charges rows actually in the database — not from whatever
+ * the caller thinks the total is — so this must run after
+ * saveCateringCharges, never before.
+ *
+ * quote_number is assigned once via next_catering_quote_seq() (see
+ * supabase/catering_quote_sequence_function.sql) and never changes after
+ * that; quote_revision increments on every subsequent call.
+ */
+export async function issueCateringQuote(eventId: string): Promise<void> {
+  await requireSales();
+  const supabase = await createClient();
+
+  const { data: charges, error: chargesError } = await supabase
+    .from("catering_event_charges")
+    .select("amount")
+    .eq("event_id", eventId);
+  if (chargesError) throw chargesError;
+  const total = (charges ?? []).reduce((sum, c) => sum + (c.amount as number), 0);
+
+  const { data: event, error: eventError } = await supabase
+    .from("catering_events")
+    .select("quote_number, quote_revision")
+    .eq("id", eventId)
+    .single();
+  if (eventError) throw eventError;
+
+  let quoteNumber = event.quote_number as string | null;
+  const nextRevision = quoteNumber ? ((event.quote_revision as number) ?? 0) + 1 : 0;
+
+  if (!quoteNumber) {
+    const now = new Date();
+    const beYY = String((now.getFullYear() + 543) % 100).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const yymm = `${beYY}${mm}`;
+
+    const { data: seq, error: seqError } = await supabase.rpc("next_catering_quote_seq", { p_yymm: yymm });
+    if (seqError) throw seqError;
+    quoteNumber = `QSP-IN${yymm}-${String(seq as number).padStart(3, "0")}`;
+  }
+
+  const { error: updateError } = await supabase
+    .from("catering_events")
+    .update({
+      quote_number: quoteNumber,
+      quote_revision: nextRevision,
+      quoted_total: total,
+      quoted_at: new Date().toISOString(),
+    })
+    .eq("id", eventId);
+  if (updateError) throw updateError;
+
+  revalidatePath("/owner/catering");
+  revalidatePath(`/owner/catering/${eventId}`);
+  revalidatePath(`/owner/catering/${eventId}/quote`);
 }
 
 export async function deleteCateringEvent(id: string): Promise<void> {

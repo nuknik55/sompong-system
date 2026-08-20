@@ -55,6 +55,38 @@ export const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "done",             label: "เสร็จสิ้น" },
   { value: "cancelled",        label: "ยกเลิก" },
 ];
+// Values mirror the CHECK constraint in supabase/catering_migration.sql.
+export const CHARGE_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "food",      label: "อาหาร" },
+  { value: "drink",     label: "เครื่องดื่ม" },
+  { value: "venue",     label: "สถานที่" },
+  { value: "service",   label: "บริการ" },
+  { value: "transport", label: "ขนส่ง" },
+  { value: "equipment", label: "อุปกรณ์" },
+  { value: "other",     label: "อื่นๆ" },
+  { value: "discount",  label: "ส่วนลด" },
+];
+// Values mirror the CHECK constraint in supabase/catering_quotation_migration.sql.
+// Order here is also the group order shown in the rate picker.
+export const RATE_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "room",        label: "ห้อง/สถานที่" },
+  { value: "food_set",    label: "อาหาร/ชุดโต๊ะ" },
+  { value: "drink",       label: "เครื่องดื่ม" },
+  { value: "delivery",    label: "ค่าขนส่ง" },
+  { value: "music",       label: "ดนตรี" },
+  { value: "staff_bonus", label: "เบี้ยเลี้ยงพนักงาน" },
+  { value: "other",       label: "อื่นๆ" },
+];
+/** rate_type -> charge_type, applied when a charge row is inserted from the rate picker. */
+export const RATE_TYPE_TO_CHARGE_TYPE: Record<string, string> = {
+  room: "venue",
+  delivery: "transport",
+  food_set: "food",
+  drink: "drink",
+  music: "other",
+  staff_bonus: "other",
+  other: "other",
+};
 
 export const LOCATION_TYPE_LABEL = Object.fromEntries(LOCATION_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const VENUE_LABEL         = Object.fromEntries(VENUE_OPTIONS.map((o) => [o.value, o.label]));
@@ -63,6 +95,8 @@ export const BOOKING_TYPE_LABEL  = Object.fromEntries(BOOKING_TYPE_OPTIONS.map((
 export const FOOD_FORMAT_LABEL   = Object.fromEntries(FOOD_FORMAT_OPTIONS.map((o) => [o.value, o.label]));
 export const MUSIC_TYPE_LABEL    = Object.fromEntries(MUSIC_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const STATUS_LABEL        = Object.fromEntries(STATUS_OPTIONS.map((o) => [o.value, o.label]));
+export const CHARGE_TYPE_LABEL   = Object.fromEntries(CHARGE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
+export const RATE_TYPE_LABEL     = Object.fromEntries(RATE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 
 export const STATUS_COLOR: Record<string, string> = {
   inquiry:          "text-neutral-600 bg-neutral-50 border-neutral-200",
@@ -115,6 +149,10 @@ export function locationLabel(e: CateringEvent): string {
   const room = e.venue ? VENUE_LABEL[e.venue] ?? e.venue : "–";
   const portion = e.room_portion ? ROOM_PORTION_LABEL[e.room_portion] : null;
   return portion ? `${room} (${portion})` : room;
+}
+
+export function fmtBaht(n: number): string {
+  return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
