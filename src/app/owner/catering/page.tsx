@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { requireSales } from "@/lib/auth";
+import Link from "next/link";
+import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import { getCateringEvents, getCateringCustomers, getStaffOptions } from "./actions";
 import { CateringClient } from "./CateringClient";
 
@@ -9,7 +10,7 @@ export default async function CateringPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
-  await requireSales();
+  const profile = await requireSales();
   const sp = await searchParams;
   const today = new Date();
   const year = sp.year ? parseInt(sp.year) : today.getFullYear();
@@ -25,6 +26,11 @@ export default async function CateringPage({
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">จองงานจัดเลี้ยง</h1>
+        {isAdminOrAbove(profile.role) && (
+          <Link href="/owner/catering/settings" className="text-sm text-neutral-500 hover:text-neutral-800">
+            ตั้งค่าอัตราค่าบริการ →
+          </Link>
+        )}
       </div>
 
       <CateringClient

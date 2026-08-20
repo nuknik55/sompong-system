@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSales } from "@/lib/auth";
+import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -89,6 +89,8 @@ export type CateringRate = {
   note: string | null;
   min_distance_km: number | null;
   max_distance_km: number | null;
+  sort_order: number;
+  is_active: boolean;
 };
 
 export type CateringSettings = {
@@ -243,8 +245,21 @@ export async function getCateringRates(): Promise<CateringRate[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_rates")
-    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km")
+    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
     .eq("is_active", true)
+    .order("rate_type")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as CateringRate[];
+}
+
+/** Admin-only management list — includes inactive rows, unlike getCateringRates(). */
+export async function getAllCateringRates(): Promise<CateringRate[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_rates")
+    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
     .order("rate_type")
     .order("sort_order");
   if (error) throw error;
@@ -261,6 +276,91 @@ export async function getCateringSettings(): Promise<CateringSettings | null> {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+// ─── Rate management (owner/admin only — see catering_rates_all RLS) ──────────
+
+export async function addCateringRate(data: {
+  rate_type: string;
+  label: string;
+  amount: number;
+  unit: string | null;
+  note: string | null;
+  min_distance_km: number | null;
+  max_distance_km: number | null;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: last } = await supabase
+    .from("catering_rates")
+    .select("sort_order")
+    .eq("rate_type", data.rate_type)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
+
+  const { error } = await supabase.from("catering_rates").insert({ ...data, sort_order: nextSort });
+  if (error) throw error;
+  revalidatePath("/owner/catering/settings");
+}
+
+export async function updateCateringRate(
+  id: string,
+  data: {
+    rate_type: string;
+    label: string;
+    amount: number;
+    unit: string | null;
+    note: string | null;
+    min_distance_km: number | null;
+    max_distance_km: number | null;
+  },
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_rates").update(data).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/settings");
+}
+
+export async function toggleCateringRateActive(id: string, isActive: boolean): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_rates").update({ is_active: isActive }).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/settings");
+}
+
+export async function deleteCateringRate(id: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_rates").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/settings");
+}
+
+/** Same swap-sort_order-with-neighbor approach as reorderCoaAccount in accounting/actions.ts. */
+export async function reorderCateringRate(id: string, rateType: string, direction: "up" | "down"): Promise<{ error?: string }> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: siblings } = await supabase
+    .from("catering_rates").select("id,sort_order").eq("rate_type", rateType).order("sort_order");
+  if (!siblings) return { error: "ไม่พบข้อมูล" };
+
+  const idx = siblings.findIndex((s) => s.id === id);
+  if (idx < 0) return { error: "ไม่พบรายการ" };
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return {};
+
+  const current = siblings[idx]!;
+  const swap = siblings[swapIdx]!;
+  await supabase.from("catering_rates").update({ sort_order: swap.sort_order }).eq("id", current.id);
+  await supabase.from("catering_rates").update({ sort_order: current.sort_order }).eq("id", swap.id);
+
+  revalidatePath("/owner/catering/settings");
+  return {};
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────────

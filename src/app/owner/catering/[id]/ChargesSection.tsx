@@ -243,7 +243,19 @@ export function ChargesSection({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed text-sm">
+          {/* Fixed widths so the charge_type select and note input get room
+              to show their full text instead of being auto-sized down by
+              the numeric columns next to them. */}
+          <colgroup>
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "31%" }} />
+            <col style={{ width: "6%" }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
               <th className="px-3 py-2">รายการ</th>
