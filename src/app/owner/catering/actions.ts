@@ -103,6 +103,54 @@ export type CateringSettings = {
   bank_account_number: string | null;
 };
 
+/**
+ * A line in catering_event_menus — "what did we actually order for this
+ * event", separate from catering_event_charges ("what's on the quotation").
+ * Sale-price fields only; never joins ingredients/menu_recipe_items.
+ */
+export type CateringEventMenu = {
+  id: string;
+  set_menu_id: string | null;
+  menu_id: string | null;
+  name: string;
+  quantity: number;
+  note: string | null;
+};
+
+/** Sales-safe: name + sale price only. For the event-menu picker (part B). */
+export type CateringSetMenuOption = {
+  id: string;
+  name: string;
+  price_per_set: number;
+};
+
+/** Sales-safe: name + sale price only, from the existing menus table. */
+export type CateringDishOption = {
+  id: string;
+  name: string;
+  category: string | null;
+  selling_price: number;
+};
+
+/** Admin-only management list — see set-menus/page.tsx, the one screen that renders cost. */
+export type CateringSetMenu = {
+  id: string;
+  name: string;
+  description: string | null;
+  price_per_set: number;
+  serves_guests: number | null;
+  is_active: boolean;
+  dish_count: number;
+};
+
+export type CateringSetMenuItem = {
+  id: string;
+  menu_id: string;
+  menu_name: string;
+  quantity: number;
+  note: string | null;
+};
+
 const CATERING_EVENT_SELECT = `
   id, customer_id, event_date, start_time, end_time,
   location_type, venue, room_portion, offsite_address, offsite_distance_km, floor_level,
@@ -276,6 +324,180 @@ export async function getCateringSettings(): Promise<CateringSettings | null> {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+// ─── Event menus (sales-safe — sale price only, never cost) ───────────────────
+// Deliberately kept in this file, never importing getCostingContext/
+// computeMenuCost, so there is no code path here that could accidentally end
+// up cost-bearing. The one place that computes cost lives entirely in
+// set-menus/page.tsx (admin-only) and is never exported for reuse.
+
+export async function getCateringEventMenus(eventId: string): Promise<CateringEventMenu[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_menus")
+    .select("id, set_menu_id, menu_id, quantity, note, catering_set_menus(name), menus(name)")
+    .eq("event_id", eventId)
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const setMenu = r.catering_set_menus as { name: string } | null;
+    const dish = r.menus as { name: string } | null;
+    return {
+      id: r.id as string,
+      set_menu_id: r.set_menu_id as string | null,
+      menu_id: r.menu_id as string | null,
+      name: setMenu?.name ?? dish?.name ?? "-",
+      quantity: r.quantity as number,
+      note: r.note as string | null,
+    };
+  });
+}
+
+export async function getCateringSetMenuOptions(): Promise<CateringSetMenuOption[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_set_menus")
+    .select("id, name, price_per_set")
+    .eq("is_active", true)
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as CateringSetMenuOption[];
+}
+
+/** menus already grants SELECT to sales (sales_read_menus) — same query shape. */
+export async function getCateringDishOptions(): Promise<CateringDishOption[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("menus")
+    .select("id, name, category, selling_price")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as CateringDishOption[];
+}
+
+// ─── Set menu management (owner/admin only — set-menus/page.tsx) ──────────────
+
+export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_set_menus")
+    .select("id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(count)")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const countRow = (r.catering_set_menu_items as { count: number }[] | null)?.[0];
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      description: r.description as string | null,
+      price_per_set: r.price_per_set as number,
+      serves_guests: r.serves_guests as number | null,
+      is_active: r.is_active as boolean,
+      dish_count: countRow?.count ?? 0,
+    };
+  });
+}
+
+export async function getCateringSetMenuItems(setMenuId: string): Promise<CateringSetMenuItem[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_set_menu_items")
+    .select("id, menu_id, quantity, note, menus(name)")
+    .eq("set_menu_id", setMenuId)
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    menu_id: r.menu_id as string,
+    menu_name: (r.menus as { name: string } | null)?.name ?? "-",
+    quantity: r.quantity as number,
+    note: r.note as string | null,
+  }));
+}
+
+export async function saveCateringSetMenu(data: {
+  id?: string;
+  name: string;
+  description: string | null;
+  price_per_set: number;
+  serves_guests: number | null;
+  items: { menu_id: string; quantity: number; note: string | null }[];
+}): Promise<string> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const payload = {
+    name: data.name.trim(),
+    description: data.description?.trim() || null,
+    price_per_set: data.price_per_set,
+    serves_guests: data.serves_guests,
+  };
+
+  let setMenuId = data.id;
+  if (setMenuId) {
+    const { error } = await supabase.from("catering_set_menus").update(payload).eq("id", setMenuId);
+    if (error) throw error;
+  } else {
+    const { data: created, error } = await supabase
+      .from("catering_set_menus")
+      .insert(payload)
+      .select("id")
+      .single();
+    if (error) throw error;
+    setMenuId = created.id;
+  }
+
+  // Replace the dish list wholesale — same reasoning as catering_event_staff /
+  // catering_event_charges: simpler than diffing, and the row count is tiny.
+  // The picker on the client already dedupes by menu_id (bumps quantity
+  // instead of adding a second row), which catering_set_menu_items requires
+  // anyway via its UNIQUE (set_menu_id, menu_id) constraint.
+  await supabase.from("catering_set_menu_items").delete().eq("set_menu_id", setMenuId);
+  if (data.items.length > 0) {
+    const { error } = await supabase.from("catering_set_menu_items").insert(
+      data.items.map((it, i) => ({
+        set_menu_id: setMenuId,
+        menu_id: it.menu_id,
+        quantity: it.quantity,
+        note: it.note?.trim() || null,
+        sort_order: (i + 1) * 10,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  revalidatePath("/owner/catering/set-menus");
+  return setMenuId!;
+}
+
+export async function toggleCateringSetMenuActive(id: string, isActive: boolean): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_set_menus").update({ is_active: isActive }).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/set-menus");
+}
+
+export async function deleteCateringSetMenu(id: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  // catering_set_menu_items cascades; catering_event_menus.set_menu_id is
+  // ON DELETE RESTRICT, so this throws 23503 if any event has already
+  // ordered this set — surfaced below with a friendly message.
+  const { error } = await supabase.from("catering_set_menus").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") {
+      throw new Error("ลบไม่ได้ เพราะมีการจองงานที่ใช้ชุดเมนูนี้อยู่ — เอาออกจากการจองทั้งหมดก่อน หรือปิดใช้งานแทนการลบ");
+    }
+    throw error;
+  }
+  revalidatePath("/owner/catering/set-menus");
 }
 
 // ─── Rate management (owner/admin only — see catering_rates_all RLS) ──────────
@@ -527,6 +749,116 @@ export async function saveCateringCharges(
     if (error) throw error;
   }
 
+  revalidatePath(`/owner/catering/${eventId}`);
+}
+
+/**
+ * Adds one line to catering_event_menus (the "what did we order" list) and a
+ * matching line to catering_event_charges (the quotation), so the two never
+ * drift apart at the moment of entry. They are NOT linked afterward — editing
+ * or removing one never touches the other, since the charge may since have
+ * been hand-adjusted (a different price agreed, split into two lines, etc).
+ *
+ * The same dish/set added twice bumps quantity on the existing
+ * catering_event_menus row instead of creating a duplicate line (that table
+ * has no such row to begin with, unlike charges) — but the charge line always
+ * inserts fresh, same as every other line in ChargesSection, so duplicates
+ * are expected to stack there.
+ *
+ * Resolves name/price from catering_set_menus or menus only — both already
+ * sales-readable sale-price data, never touching ingredients/menu_recipe_items.
+ */
+export async function addCateringEventMenu(
+  eventId: string,
+  item: { kind: "set" | "dish"; id: string; quantity: number; note: string | null },
+): Promise<void> {
+  await requireSales();
+  const supabase = await createClient();
+
+  let name: string;
+  let unitPrice: number;
+  if (item.kind === "set") {
+    const { data, error } = await supabase
+      .from("catering_set_menus")
+      .select("name, price_per_set")
+      .eq("id", item.id)
+      .single();
+    if (error) throw error;
+    name = data.name;
+    unitPrice = data.price_per_set;
+  } else {
+    const { data, error } = await supabase
+      .from("menus")
+      .select("name, selling_price")
+      .eq("id", item.id)
+      .single();
+    if (error) throw error;
+    name = data.name;
+    unitPrice = data.selling_price;
+  }
+
+  let existingQuery = supabase
+    .from("catering_event_menus")
+    .select("id, quantity")
+    .eq("event_id", eventId);
+  existingQuery = item.kind === "set"
+    ? existingQuery.eq("set_menu_id", item.id)
+    : existingQuery.eq("menu_id", item.id);
+  const { data: existingRow } = await existingQuery.maybeSingle();
+
+  if (existingRow) {
+    const { error } = await supabase
+      .from("catering_event_menus")
+      .update({ quantity: (existingRow.quantity as number) + item.quantity })
+      .eq("id", existingRow.id);
+    if (error) throw error;
+  } else {
+    const { data: last } = await supabase
+      .from("catering_event_menus")
+      .select("sort_order")
+      .eq("event_id", eventId)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
+    const { error } = await supabase.from("catering_event_menus").insert({
+      event_id: eventId,
+      set_menu_id: item.kind === "set" ? item.id : null,
+      menu_id: item.kind === "dish" ? item.id : null,
+      quantity: item.quantity,
+      note: item.note?.trim() || null,
+      sort_order: nextSort,
+    });
+    if (error) throw error;
+  }
+
+  const { data: lastCharge } = await supabase
+    .from("catering_event_charges")
+    .select("sort_order")
+    .eq("event_id", eventId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextChargeSort = ((lastCharge?.[0]?.sort_order as number | undefined) ?? 0) + 10;
+  const { error: chargeError } = await supabase.from("catering_event_charges").insert({
+    event_id: eventId,
+    label: name,
+    charge_type: "food",
+    unit_price: unitPrice,
+    quantity: item.quantity,
+    amount: unitPrice * item.quantity,
+    note: item.note?.trim() || null,
+    sort_order: nextChargeSort,
+  });
+  if (chargeError) throw chargeError;
+
+  revalidatePath(`/owner/catering/${eventId}`);
+}
+
+/** Does not touch catering_event_charges — see addCateringEventMenu's comment. */
+export async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
+  await requireSales();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_event_menus").delete().eq("id", id);
+  if (error) throw error;
   revalidatePath(`/owner/catering/${eventId}`);
 }
 

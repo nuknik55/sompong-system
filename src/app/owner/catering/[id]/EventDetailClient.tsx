@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
-import type { CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate } from "../actions";
+import type {
+  CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
+  CateringEventMenu, CateringSetMenuOption, CateringDishOption,
+} from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
   thFullDate, timeRange, staffLabel, formToUpsertPayload,
@@ -11,6 +14,7 @@ import {
 } from "../shared";
 import type { FormState } from "../shared";
 import { ChargesSection } from "./ChargesSection";
+import { EventMenusSection } from "./EventMenusSection";
 
 export function EventDetailClient({
   event,
@@ -18,12 +22,18 @@ export function EventDetailClient({
   staffOptions,
   charges,
   rates,
+  eventMenus,
+  setMenuOptions,
+  dishOptions,
 }: {
   event: CateringEvent;
   customers: CateringCustomer[];
   staffOptions: StaffOption[];
   charges: CateringCharge[];
   rates: CateringRate[];
+  eventMenus: CateringEventMenu[];
+  setMenuOptions: CateringSetMenuOption[];
+  dishOptions: CateringDishOption[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -166,6 +176,10 @@ export function EventDetailClient({
         <div className="border-t border-neutral-100 pt-3 text-xs text-neutral-400">
           จองโดย {event.created_by_name ?? "ไม่ทราบ"}
         </div>
+      </div>
+
+      <div className="mt-5">
+        <EventMenusSection eventId={event.id} initialMenus={eventMenus} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
       </div>
 
       <div className="mt-5">
