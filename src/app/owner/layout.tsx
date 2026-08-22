@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getPendingCount } from "@/lib/pending-data";
 import { AppHeader } from "@/components/app-header";
 
@@ -14,7 +14,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // through here to reach it. Narrowing this to an allowlist would lock them
   // out of their own pages.
   if (profile.role === "staff") redirect("/staff");
-  const pendingCount = profile.role === "admin" ? await getPendingCount() : 0;
+  const pendingCount = isAdminOrAbove(profile.role) ? await getPendingCount() : 0;
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       <AppHeader profile={profile} pendingCount={pendingCount} />
