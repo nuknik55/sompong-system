@@ -16,6 +16,7 @@ const CHANGE_TYPE_LABEL: Record<string, string> = {
   ingredient_edit: "แก้วัตถุดิบ",
   ingredient_create: "สร้างวัตถุดิบใหม่",
   ingredient_delete: "ลบวัตถุดิบ",
+  ingredient_category_delete: "ล้างหมวดวัตถุดิบ",
   sop_upsert: "บันทึก SOP",
   sop_delete: "ลบ SOP",
 };
@@ -40,6 +41,8 @@ function payloadSummary(type: string, payload: Record<string, unknown>): string 
       return `"${payload.ingredientName}"`;
     case "ingredient_delete":
       return `ลบ "${payload.ingredientName}"`;
+    case "ingredient_category_delete":
+      return `ล้างหมวด "${payload.category}"`;
     case "sop_upsert":
       return `"${payload.menuName}"`;
     case "sop_delete":
@@ -256,6 +259,14 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
       return (
         <div className="rounded bg-red-50 border border-red-100 p-2 text-xs text-red-700">
           ⚠ ต้องการลบ <strong>{name}</strong> — ข้อมูลจะหายถาวร
+        </div>
+      );
+    }
+
+    case "ingredient_category_delete": {
+      return (
+        <div className="rounded bg-amber-50 border border-amber-100 p-2 text-xs text-amber-700">
+          ⚠ จะล้างหมวด <strong>{String(payload.category)}</strong> ออกจากวัตถุดิบทุกรายการที่อยู่ในหมวดนี้ (วัตถุดิบยังอยู่ในระบบ แค่ไม่มีหมวด)
         </div>
       );
     }

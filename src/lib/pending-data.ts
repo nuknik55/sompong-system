@@ -11,6 +11,7 @@ export type ChangeType =
   | "ingredient_edit"
   | "ingredient_create"
   | "ingredient_delete"
+  | "ingredient_category_delete"
   | "sop_upsert"
   | "sop_delete";
 

@@ -105,6 +105,12 @@ export async function approveChange(id: string): Promise<ApproveResult> {
         break;
       }
 
+      case "ingredient_category_delete": {
+        await supabase.from("ingredients").update({ category: null }).eq("category", p.category as string);
+        revalidatePath("/owner/ingredients");
+        break;
+      }
+
       case "sop_upsert": {
         const sopData = p.sopData as {
           menuId: string; authorName: string; updatedAt: string; demoVideoUrl: string;

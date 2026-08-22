@@ -110,6 +110,7 @@ export function IngredientManager({
   const [page, setPage] = useState(0);
   const [rowStatus, setRowStatus] = useState<Record<string, "saved" | "pending">>({});
   const [newFormPending, setNewFormPending] = useState(false);
+  const [categoryDeletePending, setCategoryDeletePending] = useState(false);
 
   const knownCategories = useMemo(() => {
     const set = new Set<string>();
@@ -266,10 +267,19 @@ export function IngredientManager({
                 type="button"
                 onClick={() => {
                   const count = rows.filter((r) => r.category === filterCategory).length;
-                  if (!confirm(`ลบหมวด "${filterCategory}" และเอา ${count} รายการออกจากหมวดนี้?\n(วัตถุดิบยังอยู่ในระบบ แค่ไม่มีหมวด)`)) return;
+                  const confirmMsg = submitMode === "pending"
+                    ? `ส่งขอล้างหมวด "${filterCategory}" (${count} รายการ) เพื่อรอ Admin อนุมัติ?`
+                    : `ลบหมวด "${filterCategory}" และเอา ${count} รายการออกจากหมวดนี้?\n(วัตถุดิบยังอยู่ในระบบ แค่ไม่มีหมวด)`;
+                  if (!confirm(confirmMsg)) return;
+                  setError(null);
                   startTransition(async () => {
                     try {
-                      await deleteCategory(filterCategory);
+                      const result = await deleteCategory(filterCategory);
+                      if (result.status === "pending") {
+                        setCategoryDeletePending(true);
+                        setFilterCategory("ทั้งหมด");
+                        return;
+                      }
                       setRows((prev) => prev.map((r) => r.category === filterCategory ? { ...r, category: null } : r));
                       setFilterCategory("ทั้งหมด");
                     } catch (e) {
@@ -283,6 +293,7 @@ export function IngredientManager({
               </button>
             )}
           </div>
+          {categoryDeletePending && <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
           <button
             type="button"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"

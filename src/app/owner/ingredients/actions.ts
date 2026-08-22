@@ -108,8 +108,20 @@ export type PriceHistoryEntry = {
   changedAt: string;
 };
 
-export async function deleteCategory(category: string): Promise<void> {
-  await requireAdminOrEditor();
+export async function deleteCategory(category: string): Promise<IngredientSaveResult> {
+  const profile = await requireAdminOrEditor();
+
+  // Was a direct write regardless of role — the one place in this file that
+  // didn't follow the stage-for-editor / write-for-admin split its siblings
+  // use. Fixed to match: editor's request now goes through the same
+  // pending_changes approval flow as updateIngredient/createIngredient/deleteIngredient.
+  if (profile.role === "editor") {
+    await savePendingChange(profile.id, "ingredient_category_delete", `category:${category}`, {
+      category,
+    });
+    return { status: "pending" };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("ingredients")
@@ -117,6 +129,7 @@ export async function deleteCategory(category: string): Promise<void> {
     .eq("category", category);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/ingredients");
+  return { status: "saved" };
 }
 
 export async function getIngredientHistory(ingredientId: string): Promise<PriceHistoryEntry[]> {
