@@ -23,10 +23,13 @@ type ChargeRow = {
   quantity: string;
   amount: string;
   note: string;
+  /** Carried through unedited — see saveCateringCharges in actions.ts for why
+   *  this must survive every save, not just display on load. */
+  event_menu_id: string | null;
 };
 
 function blankChargeRow(): ChargeRow {
-  return { _key: crypto.randomUUID(), label: "", charge_type: "other", unit_price: "", quantity: "1", amount: "", note: "" };
+  return { _key: crypto.randomUUID(), label: "", charge_type: "other", unit_price: "", quantity: "1", amount: "", note: "", event_menu_id: null };
 }
 
 function rowFromCharge(c: CateringCharge): ChargeRow {
@@ -38,6 +41,7 @@ function rowFromCharge(c: CateringCharge): ChargeRow {
     quantity: c.quantity.toString(),
     amount: c.amount.toString(),
     note: c.note ?? "",
+    event_menu_id: c.event_menu_id,
   };
 }
 
@@ -46,10 +50,12 @@ function rowFromCharge(c: CateringCharge): ChargeRow {
 function RatePicker({
   rates,
   event,
+  disabled,
   onInsert,
 }: {
   rates: CateringRate[];
   event: CateringEvent;
+  disabled: boolean;
   onInsert: (rate: CateringRate) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -83,7 +89,8 @@ function RatePicker({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+        disabled={disabled}
+        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
       >
         เลือกจากอัตราที่ตั้งไว้
       </button>
@@ -143,6 +150,17 @@ export function ChargesSection({
   const [error, setError] = useState<string | null>(null);
   const [confirmIssue, setConfirmIssue] = useState(false);
 
+  // useState(() => ...) only seeds state on mount — router.refresh() after a
+  // save delivers a fresh initialCharges prop, but the already-mounted
+  // component never picks it up on its own, so the table looked unchanged
+  // until a manual browser reload. Resyncing on every prop change is only
+  // safe because every row input below is disabled while isPending: without
+  // that, a keystroke made in the gap between "saved" and the refreshed
+  // props landing would get silently overwritten by this effect.
+  useEffect(() => {
+    setCharges(initialCharges.map(rowFromCharge));
+  }, [initialCharges]);
+
   function updateRow(key: string, patch: Partial<ChargeRow>) {
     setCharges((cs) =>
       cs.map((c) => {
@@ -176,6 +194,7 @@ export function ChargesSection({
         quantity: "1",
         amount: rate.amount.toString(),
         note: rate.note ?? "",
+        event_menu_id: null,
       },
     ]);
   }
@@ -194,6 +213,7 @@ export function ChargesSection({
         quantity: toNum(c.quantity) ?? 0,
         amount: toNum(c.amount) ?? 0,
         note: c.note || null,
+        event_menu_id: c.event_menu_id,
       }));
   }
 
@@ -235,10 +255,10 @@ export function ChargesSection({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-kanit text-base font-semibold text-neutral-900">รายการค่าใช้จ่าย / ใบเสนอราคา</h3>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={addBlankRow} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+          <button type="button" onClick={addBlankRow} disabled={isPending} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
             + เพิ่มรายการ
           </button>
-          <RatePicker rates={rates} event={event} onInsert={insertFromRate} />
+          <RatePicker rates={rates} event={event} disabled={isPending} onInsert={insertFromRate} />
         </div>
       </div>
 
@@ -276,30 +296,30 @@ export function ChargesSection({
             {charges.map((c) => (
               <tr key={c._key} className="border-b border-neutral-100 last:border-0">
                 <td className="px-2 py-1.5">
-                  <input className="charge-input" value={c.label} onChange={(e) => updateRow(c._key, { label: e.target.value })} />
+                  <input disabled={isPending} className="charge-input" value={c.label} onChange={(e) => updateRow(c._key, { label: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <select className="charge-input" value={c.charge_type} onChange={(e) => updateRow(c._key, { charge_type: e.target.value })}>
+                  <select disabled={isPending} className="charge-input" value={c.charge_type} onChange={(e) => updateRow(c._key, { charge_type: e.target.value })}>
                     {CHARGE_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </td>
                 <td className="px-2 py-1.5">
-                  <input type="number" className="charge-input text-right tabular-nums" value={c.unit_price}
+                  <input disabled={isPending} type="number" className="charge-input text-right tabular-nums" value={c.unit_price}
                     onChange={(e) => updateRow(c._key, { unit_price: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <input type="number" className="charge-input text-right tabular-nums" value={c.quantity}
+                  <input disabled={isPending} type="number" className="charge-input text-right tabular-nums" value={c.quantity}
                     onChange={(e) => updateRow(c._key, { quantity: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <input type="number" className="charge-input text-right tabular-nums" value={c.amount}
+                  <input disabled={isPending} type="number" className="charge-input text-right tabular-nums" value={c.amount}
                     onChange={(e) => updateRow(c._key, { amount: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <input className="charge-input" value={c.note} onChange={(e) => updateRow(c._key, { note: e.target.value })} />
+                  <input disabled={isPending} className="charge-input" value={c.note} onChange={(e) => updateRow(c._key, { note: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5 text-center">
-                  <button type="button" onClick={() => removeRow(c._key)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                  <button type="button" onClick={() => removeRow(c._key)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-30">ลบ</button>
                 </td>
               </tr>
             ))}
@@ -372,6 +392,7 @@ export function ChargesSection({
       <style>{`
         .charge-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 8px; font-size: 0.8125rem; outline: none; background: white; }
         .charge-input:focus { border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
+        .charge-input:disabled { background: #f9fafb; color: #9ca3af; }
       `}</style>
     </section>
   );

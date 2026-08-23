@@ -24,16 +24,13 @@ export default async function CateringPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-4">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">จองงานจัดเลี้ยง</h1>
         {isAdminOrAbove(profile.role) && (
-          <div className="flex flex-wrap gap-4">
-            <Link href="/owner/catering/set-menus" className="text-sm text-neutral-500 hover:text-neutral-800">
-              จัดการชุดเมนู →
-            </Link>
-            <Link href="/owner/catering/settings" className="text-sm text-neutral-500 hover:text-neutral-800">
-              ตั้งค่าอัตราค่าบริการ →
-            </Link>
+          <div className="flex items-center gap-4 text-sm text-neutral-500">
+            <Link href="/owner/catering/set-menus" className="hover:text-neutral-800">จัดการชุดเมนู</Link>
+            <span className="text-neutral-200">|</span>
+            <Link href="/owner/catering/settings" className="hover:text-neutral-800">ตั้งค่าอัตราค่าบริการ</Link>
           </div>
         )}
       </div>

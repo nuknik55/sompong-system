@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveCateringSetMenu, deleteCateringSetMenu, toggleCateringSetMenuActive, getCateringSetMenuItems,
@@ -38,8 +38,16 @@ function blankForm(): SetMenuForm {
   return { name: "", description: "", price_per_set: "", serves_guests: "", items: [] };
 }
 
+const ALL_CATEGORY = "ทั้งหมด";
+const UNCATEGORIZED = "ไม่มีหมวด";
+
 // Module level on purpose — see the note in shared.tsx: declaring this inside
 // the modal would remount it (and close the panel) on every keystroke.
+//
+// A full overlay rather than a small anchored dropdown — 238 dishes is too
+// many to browse in a 320px-wide list. Category pills (from menus.category)
+// let the admin scroll a manageable group instead of only typing; search
+// still filters within whichever category is selected.
 function DishPicker({
   dishes,
   excludeIds,
@@ -51,19 +59,24 @@ function DishPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState(ALL_CATEGORY);
   const [quantity, setQuantity] = useState("1");
-  const boxRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function onDocDown(ev: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(ev.target as Node)) setOpen(false);
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    let hasUncategorized = false;
+    for (const d of dishes) {
+      if (d.category) set.add(d.category);
+      else hasUncategorized = true;
     }
-    document.addEventListener("mousedown", onDocDown);
-    return () => document.removeEventListener("mousedown", onDocDown);
-  }, []);
+    return [ALL_CATEGORY, ...[...set].sort((a, b) => a.localeCompare(b, "th")), ...(hasUncategorized ? [UNCATEGORIZED] : [])];
+  }, [dishes]);
 
   const q = query.trim().toLowerCase();
-  const matches = (q === "" ? dishes : dishes.filter((d) => d.name.toLowerCase().includes(q))).slice(0, 8);
+  const filtered = dishes.filter((d) => {
+    if (category === UNCATEGORIZED ? d.category : category !== ALL_CATEGORY && d.category !== category) return false;
+    return q === "" || d.name.toLowerCase().includes(q);
+  });
 
   function pick(dish: DishCostOption) {
     onAdd(dish, Number(quantity) || 1);
@@ -73,57 +86,78 @@ function DishPicker({
   }
 
   return (
-    <div ref={boxRef} className="relative inline-block">
+    <>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
         className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
       >
         + เพิ่มเมนูในชุด
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-96 rounded-lg border border-neutral-200 bg-white shadow-lg">
-          <div className="flex items-center gap-2 border-b border-neutral-100 p-2">
-            <input
-              autoFocus
-              className="flex-1 rounded border border-neutral-200 px-2 py-1 text-sm focus:outline-none"
-              placeholder="พิมพ์ชื่อเมนู"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <input
-              type="number"
-              min={1}
-              className="w-16 rounded border border-neutral-200 px-2 py-1 text-sm focus:outline-none"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {matches.length === 0 && <p className="px-3 py-4 text-center text-xs text-neutral-400">ไม่พบเมนู</p>}
-            {matches.map((d) => {
-              const already = excludeIds.has(d.id);
-              return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+              <h3 className="font-kanit text-sm font-semibold">เลือกเมนู</h3>
+              <button onClick={() => setOpen(false)} className="text-neutral-400 hover:text-neutral-700">✕</button>
+            </div>
+            <div className="flex items-center gap-2 border-b border-neutral-100 px-5 py-3">
+              <input
+                autoFocus
+                className="flex-1 rounded border border-neutral-200 px-3 py-1.5 text-sm focus:outline-none"
+                placeholder="พิมพ์ชื่อเมนู"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <label className="text-xs text-neutral-500">จำนวน</label>
+              <input
+                type="number"
+                min={1}
+                className="w-16 rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2">
+              {categories.map((c) => (
                 <button
-                  key={d.id}
+                  key={c}
                   type="button"
-                  onClick={() => pick(d)}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-neutral-50"
+                  onClick={() => setCategory(c)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    category === c ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                  }`}
                 >
-                  <span className="text-neutral-800">
-                    {d.name}
-                    {already && <span className="ml-1.5 text-[10px] text-neutral-400">(อยู่ในชุดแล้ว — เพิ่มจะรวมจำนวน)</span>}
-                  </span>
-                  <span className="whitespace-nowrap text-xs tabular-nums text-neutral-500">
-                    ทุน ฿{fmtBaht(d.unit_cost)}
-                  </span>
+                  {c}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {filtered.length === 0 && <p className="py-8 text-center text-sm text-neutral-400">ไม่พบเมนู</p>}
+              {filtered.map((d) => {
+                const already = excludeIds.has(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => pick(d)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-50"
+                  >
+                    <span className="text-neutral-800">
+                      {d.name}
+                      {already && <span className="ml-1.5 text-[10px] text-neutral-400">(อยู่ในชุดแล้ว — เพิ่มจะรวมจำนวน)</span>}
+                    </span>
+                    <span className="whitespace-nowrap text-xs tabular-nums text-neutral-500">
+                      ทุน ฿{fmtBaht(d.unit_cost)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -139,6 +173,17 @@ export function SetMenusClient({
   const [setMenus, setSetMenus] = useState(initialSetMenus);
   const [modal, setModal] = useState<{ editingId: string | null; form: SetMenuForm } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // useState(initialSetMenus) only seeds state on mount — router.refresh()
+  // after saveModal() delivers a fresh initialSetMenus prop, but without this
+  // the already-mounted component never picks it up, so the list looked
+  // unchanged until a manual browser reload. Safe to resync unconditionally
+  // here: the modal form is a separate state snapshot (see openEdit) that
+  // this never touches, and the list rows themselves have no inline editable
+  // fields to clobber.
+  useEffect(() => {
+    setSetMenus(initialSetMenus);
+  }, [initialSetMenus]);
 
   const dishById = new Map(dishOptions.map((d) => [d.id, d]));
 

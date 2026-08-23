@@ -78,6 +78,9 @@ export type CateringCharge = {
   quantity: number;
   amount: number;
   note: string | null;
+  /** Set only when addCateringEventMenu() created this charge; NULL for
+   *  every other charge (rate picker, "+ เพิ่มรายการ", hand-typed). */
+  event_menu_id: string | null;
 };
 
 export type CateringRate = {
@@ -281,7 +284,7 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_event_charges")
-    .select("id, label, charge_type, unit_price, quantity, amount, note")
+    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id")
     .eq("event_id", eventId)
     .order("sort_order");
   if (error) throw error;
@@ -727,11 +730,16 @@ export async function saveCateringCharges(
     quantity: number;
     amount: number;
     note: string | null;
+    event_menu_id: string | null;
   }[],
 ): Promise<void> {
   await requireSales();
   const supabase = await createClient();
 
+  // Deletes and reinserts every row, so event_menu_id MUST be threaded
+  // through the caller's payload — otherwise this silently drops every link
+  // to catering_event_menus on the very next unrelated charges edit. See
+  // ChargeRow/rowFromCharge/toPayload in ChargesSection.tsx.
   await supabase.from("catering_event_charges").delete().eq("event_id", eventId);
   if (charges.length > 0) {
     const { error } = await supabase.from("catering_event_charges").insert(
@@ -743,6 +751,7 @@ export async function saveCateringCharges(
         quantity: c.quantity,
         amount: c.amount,
         note: c.note?.trim() || null,
+        event_menu_id: c.event_menu_id,
         sort_order: (i + 1) * 10,
       })),
     );
@@ -806,11 +815,14 @@ export async function addCateringEventMenu(
     : existingQuery.eq("menu_id", item.id);
   const { data: existingRow } = await existingQuery.maybeSingle();
 
+  let eventMenuId: string;
+
   if (existingRow) {
+    eventMenuId = existingRow.id as string;
     const { error } = await supabase
       .from("catering_event_menus")
       .update({ quantity: (existingRow.quantity as number) + item.quantity })
-      .eq("id", existingRow.id);
+      .eq("id", eventMenuId);
     if (error) throw error;
   } else {
     const { data: last } = await supabase
@@ -820,15 +832,20 @@ export async function addCateringEventMenu(
       .order("sort_order", { ascending: false })
       .limit(1);
     const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-    const { error } = await supabase.from("catering_event_menus").insert({
-      event_id: eventId,
-      set_menu_id: item.kind === "set" ? item.id : null,
-      menu_id: item.kind === "dish" ? item.id : null,
-      quantity: item.quantity,
-      note: item.note?.trim() || null,
-      sort_order: nextSort,
-    });
+    const { data: created, error } = await supabase
+      .from("catering_event_menus")
+      .insert({
+        event_id: eventId,
+        set_menu_id: item.kind === "set" ? item.id : null,
+        menu_id: item.kind === "dish" ? item.id : null,
+        quantity: item.quantity,
+        note: item.note?.trim() || null,
+        sort_order: nextSort,
+      })
+      .select("id")
+      .single();
     if (error) throw error;
+    eventMenuId = created.id;
   }
 
   const { data: lastCharge } = await supabase
@@ -846,6 +863,7 @@ export async function addCateringEventMenu(
     quantity: item.quantity,
     amount: unitPrice * item.quantity,
     note: item.note?.trim() || null,
+    event_menu_id: eventMenuId,
     sort_order: nextChargeSort,
   });
   if (chargeError) throw chargeError;
@@ -853,7 +871,15 @@ export async function addCateringEventMenu(
   revalidatePath(`/owner/catering/${eventId}`);
 }
 
-/** Does not touch catering_event_charges — see addCateringEventMenu's comment. */
+/**
+ * Relies entirely on catering_event_charges.event_menu_id's ON DELETE
+ * CASCADE (see catering_event_menu_link_migration.sql) to remove every
+ * charge line this menu row is linked to — a single menu row can be linked
+ * to more than one charge row (re-adding the same dish/set bumps quantity
+ * here but always inserts a fresh charge, see addCateringEventMenu above),
+ * so an explicit single-row delete here would miss the rest. No separate
+ * catering_event_charges delete needed.
+ */
 export async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
   await requireSales();
   const supabase = await createClient();
