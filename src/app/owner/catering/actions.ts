@@ -279,6 +279,47 @@ export async function getCateringEvent(id: string): Promise<CateringEvent | null
   return data ? mapEventRow(data as unknown as Record<string, unknown>) : null;
 }
 
+export type RoomConflictCandidate = {
+  id: string;
+  customer_name: string | null;
+  venue: string;
+  start_time: string | null;
+  end_time: string | null;
+};
+
+/**
+ * Other in-house bookings on `eventDate` holding an exclusive room
+ * (room_v1/room_v2/room_v1_v2 — air_shared/offsite never conflict, see
+ * findRoomConflict in shared.tsx). Cancelled bookings are excluded: a
+ * cancelled booking no longer actually holds the room, so it shouldn't
+ * trigger a permanent false-positive warning.
+ */
+export async function getRoomConflictCandidates(
+  eventDate: string,
+  excludeId: string | null,
+): Promise<RoomConflictCandidate[]> {
+  await requireSales();
+  if (!eventDate) return [];
+  const supabase = await createClient();
+  let query = supabase
+    .from("catering_events")
+    .select("id, venue, start_time, end_time, catering_customers(name)")
+    .eq("event_date", eventDate)
+    .in("venue", ["room_v1", "room_v2", "room_v1_v2"])
+    .neq("status", "cancelled");
+  if (excludeId) query = query.neq("id", excludeId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    customer_name: (r.catering_customers as { name: string } | null)?.name ?? null,
+    venue: r.venue as string,
+    start_time: r.start_time as string | null,
+    end_time: r.end_time as string | null,
+  }));
+}
+
 export async function getCateringCharges(eventId: string): Promise<CateringCharge[]> {
   await requireSales();
   const supabase = await createClient();

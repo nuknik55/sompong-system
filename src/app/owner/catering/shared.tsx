@@ -4,7 +4,8 @@
 // (edit modal) — both need the exact same form, options, and helpers.
 
 import { useState, useRef, useEffect } from "react";
-import type { CateringEvent, CateringCustomer, StaffOption } from "./actions";
+import { getRoomConflictCandidates } from "./actions";
+import type { CateringEvent, CateringCustomer, StaffOption, RoomConflictCandidate } from "./actions";
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -153,6 +154,53 @@ export function locationLabel(e: CateringEvent): string {
 
 export function fmtBaht(n: number): string {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ─── Room-conflict rule ───────────────────────────────────────────────────────
+// Only exclusive rooms can conflict, and only with each other — air_shared and
+// offsite bookings never block anything (no entry here). room_portion
+// (half/full) is ignored: any room_v1/room_v2/room_v1_v2 booking blocks the
+// whole room.
+const ROOM_CONFLICTS: Record<string, string[]> = {
+  room_v1:    ["room_v1", "room_v1_v2"],
+  room_v2:    ["room_v2", "room_v1_v2"],
+  room_v1_v2: ["room_v1", "room_v2", "room_v1_v2"],
+};
+
+/**
+ * Half-open interval overlap — e.g. 10:00–12:00 then 12:00–14:00 do not
+ * conflict. Missing a time on either side (common for early-stage inquiry
+ * bookings) is treated conservatively as a same-day conflict regardless of
+ * time, so missing time data can't hide a real double-booking.
+ */
+function timesOverlap(aStart: string | null, aEnd: string | null, bStart: string | null, bEnd: string | null): boolean {
+  if (!aStart || !aEnd || !bStart || !bEnd) return true;
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/** First candidate (if any) whose room conflicts with `venue` on the same date. */
+export function findRoomConflict(
+  venue: string,
+  startTime: string,
+  endTime: string,
+  candidates: RoomConflictCandidate[],
+): RoomConflictCandidate | null {
+  const conflictingVenues = ROOM_CONFLICTS[venue];
+  if (!conflictingVenues) return null;
+  const aStart = toTimeInput(startTime) || null;
+  const aEnd = toTimeInput(endTime) || null;
+  for (const c of candidates) {
+    if (!conflictingVenues.includes(c.venue)) continue;
+    const bStart = toTimeInput(c.start_time) || null;
+    const bEnd = toTimeInput(c.end_time) || null;
+    if (timesOverlap(aStart, aEnd, bStart, bEnd)) return c;
+  }
+  return null;
+}
+
+export function conflictTimeLabel(start: string | null, end: string | null): string {
+  const r = timeRange(start, end);
+  return r === "–" ? "ไม่ระบุเวลา" : r;
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -485,6 +533,32 @@ export function EventFormModal({
   const roomPortionApplies = form.location_type === "in_house" && (form.venue === "room_v1" || form.venue === "room_v2");
   const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending;
 
+  // Room-conflict check — see findRoomConflict in this file for the rule.
+  const excludeId = initial?.id ?? null;
+  const isRoomConflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue];
+  const [conflictCandidates, setConflictCandidates] = useState<RoomConflictCandidate[]>([]);
+
+  useEffect(() => {
+    if (!isRoomConflictEligible || !form.event_date) {
+      setConflictCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    // Small debounce — event_date/venue can each change a couple of times in
+    // quick succession while the form settles (e.g. picking a date, then
+    // switching venue right after).
+    const timer = setTimeout(() => {
+      getRoomConflictCandidates(form.event_date, excludeId)
+        .then((rows) => { if (!cancelled) setConflictCandidates(rows); })
+        .catch(() => { if (!cancelled) setConflictCandidates([]); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.event_date, excludeId, isRoomConflictEligible]);
+
+  const conflict = isRoomConflictEligible
+    ? findRoomConflict(form.venue, form.start_time, form.end_time, conflictCandidates)
+    : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
@@ -620,6 +694,12 @@ export function EventFormModal({
                 <input type="number" min={0} className="input-base" value={form.floor_level}
                   onChange={(e) => set("floor_level", e.target.value)} />
               </Field>
+            </div>
+          )}
+
+          {conflict && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              ⚠ ชนกับการจองอื่นในวันนี้: {conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})
             </div>
           )}
 
