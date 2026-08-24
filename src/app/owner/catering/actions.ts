@@ -33,6 +33,8 @@ export type StaffOption = {
 export type CateringEvent = {
   id: string;
   created_at: string;
+  /** Bumped by trg_catering_events_updated_at on every row update — use for staleness, not a display timestamp. */
+  updated_at: string;
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
@@ -158,7 +160,7 @@ export type CateringSetMenuItem = {
 };
 
 const CATERING_EVENT_SELECT = `
-  id, created_at, customer_id, event_date, start_time, end_time,
+  id, created_at, updated_at, customer_id, event_date, start_time, end_time,
   location_type, venue, room_portion, offsite_address, offsite_distance_km, floor_level,
   booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
@@ -179,6 +181,7 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
   return {
     id: r.id as string,
     created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
     customer_id: r.customer_id as string | null,
     customer_name: cust?.name ?? null,
     customer_phone: cust?.phone ?? null,
@@ -281,6 +284,29 @@ export async function getCateringEvent(id: string): Promise<CateringEvent | null
 
   if (error) throw error;
   return data ? mapEventRow(data as unknown as Record<string, unknown>) : null;
+}
+
+/**
+ * For the status/pipeline overview page — unbounded by month (a pipeline
+ * spans whatever event dates are still open), catering bookings only
+ * (booking_type = 'catering'; table/room-only bookings aren't part of this
+ * pipeline). By default excludes done/cancelled — those are historical, not
+ * pipeline; pass includeHistory to fetch everything for the history toggle.
+ */
+export async function getCateringPipelineEvents(includeHistory: boolean): Promise<CateringEvent[]> {
+  await requireSales();
+  const supabase = await createClient();
+  let query = supabase
+    .from("catering_events")
+    .select(CATERING_EVENT_SELECT)
+    .eq("booking_type", "catering")
+    .order("event_date");
+  if (!includeHistory) {
+    query = query.in("status", ["inquiry", "awaiting_deposit", "deposit_paid", "confirmed"]);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((r) => mapEventRow(r as unknown as Record<string, unknown>));
 }
 
 /**
