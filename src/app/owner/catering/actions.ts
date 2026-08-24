@@ -16,6 +16,8 @@ export type CateringCustomer = {
   company_name: string | null;
   address: string | null;
   contact_person: string | null;
+  tax_id: string | null;
+  note: string | null;
 };
 
 /**
@@ -227,10 +229,128 @@ export async function getCateringCustomers(): Promise<CateringCustomer[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_customers")
-    .select("id,name,phone,line_id,company_name,address,contact_person")
+    .select("id,name,phone,line_id,company_name,address,contact_person,tax_id,note")
     .order("name");
   if (error) throw error;
   return data ?? [];
+}
+
+export async function getCateringCustomer(id: string): Promise<CateringCustomer | null> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_customers")
+    .select("id,name,phone,line_id,company_name,address,contact_person,tax_id,note")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+export type CateringCustomerListItem = {
+  id: string;
+  name: string;
+  phone: string | null;
+  company_name: string | null;
+  event_count: number;
+  last_event_date: string | null;
+};
+
+/**
+ * Two plain queries + in-memory grouping, not a view/RPC — simplest thing
+ * that works at this app's scale (every other list page in this module is
+ * unpaginated too). Counts/dates are catering bookings only (booking_type
+ * = 'catering'), matching the pipeline/status page's same scope decision.
+ */
+export async function getCateringCustomerList(): Promise<CateringCustomerListItem[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const [{ data: customers, error: custError }, { data: events, error: evError }] = await Promise.all([
+    supabase.from("catering_customers").select("id, name, phone, company_name").order("name"),
+    supabase.from("catering_events").select("customer_id, event_date").eq("booking_type", "catering"),
+  ]);
+  if (custError) throw custError;
+  if (evError) throw evError;
+
+  const statsByCustomer = new Map<string, { count: number; lastDate: string | null }>();
+  for (const e of events ?? []) {
+    const customerId = e.customer_id as string | null;
+    if (!customerId) continue;
+    const s = statsByCustomer.get(customerId) ?? { count: 0, lastDate: null };
+    s.count += 1;
+    const eventDate = e.event_date as string;
+    if (!s.lastDate || eventDate > s.lastDate) s.lastDate = eventDate;
+    statsByCustomer.set(customerId, s);
+  }
+
+  return (customers ?? []).map((c: Record<string, unknown>) => {
+    const s = statsByCustomer.get(c.id as string);
+    return {
+      id: c.id as string,
+      name: c.name as string,
+      phone: c.phone as string | null,
+      company_name: c.company_name as string | null,
+      event_count: s?.count ?? 0,
+      last_event_date: s?.lastDate ?? null,
+    };
+  });
+}
+
+export type CateringCustomerEventSummary = {
+  id: string;
+  event_date: string;
+  location_type: string;
+  venue: string | null;
+  room_portion: string | null;
+  status: string;
+  quote_number: string | null;
+  quoted_total: number | null;
+};
+
+export async function getCateringCustomerEvents(customerId: string): Promise<CateringCustomerEventSummary[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_events")
+    .select("id, event_date, location_type, venue, room_portion, status, quote_number, quoted_total")
+    .eq("customer_id", customerId)
+    .eq("booking_type", "catering")
+    .order("event_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CateringCustomerEventSummary[];
+}
+
+export async function updateCateringCustomer(
+  id: string,
+  data: {
+    name: string;
+    phone: string | null;
+    line_id: string | null;
+    company_name: string | null;
+    address: string | null;
+    contact_person: string | null;
+    tax_id: string | null;
+    note: string | null;
+  },
+): Promise<void> {
+  await requireSales();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("catering_customers")
+    .update({
+      name: data.name.trim(),
+      phone: data.phone?.trim() || null,
+      line_id: data.line_id?.trim() || null,
+      company_name: data.company_name?.trim() || null,
+      address: data.address?.trim() || null,
+      contact_person: data.contact_person?.trim() || null,
+      tax_id: data.tax_id?.trim() || null,
+      note: data.note?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) throw error;
+  revalidatePath(`/owner/catering/customers/${id}`);
+  revalidatePath("/owner/catering/customers");
 }
 
 /**

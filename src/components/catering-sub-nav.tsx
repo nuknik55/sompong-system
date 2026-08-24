@@ -19,6 +19,7 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     { href: "/owner/catering", label: "รายการจอง", exact: true },
     { href: "/owner/catering/calendar", label: "ปฏิทิน" },
     { href: "/owner/catering/status", label: "สถานะ" },
+    { href: "/owner/catering/customers", label: "ลูกค้า" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
     ...(isAdmin ? [{ href: "/owner/catering/settings", label: "อัตราค่าบริการ" }] : []),
   ];

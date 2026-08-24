@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
 import type {
   CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
@@ -106,7 +107,15 @@ export function EventDetailClient({
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-100 pb-4">
           <div>
-            <h2 className="font-kanit text-lg font-semibold text-neutral-900">{event.customer_name ?? "ไม่ระบุลูกค้า"}</h2>
+            <h2 className="font-kanit text-lg font-semibold text-neutral-900">
+              {event.customer_id ? (
+                <Link href={`/owner/catering/customers/${event.customer_id}`} className="hover:underline">
+                  {event.customer_name ?? "ไม่ระบุลูกค้า"}
+                </Link>
+              ) : (
+                event.customer_name ?? "ไม่ระบุลูกค้า"
+              )}
+            </h2>
             <p className="text-sm text-neutral-500">
               {event.customer_phone ?? "–"}
               {event.customer_company_name ? ` · ${event.customer_company_name}` : ""}

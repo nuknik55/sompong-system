@@ -147,7 +147,7 @@ export function staffLabel(s: StaffOption): string {
   return s.nickname ?? s.full_name;
 }
 
-export function locationLabel(e: CateringEvent): string {
+export function locationLabel(e: Pick<CateringEvent, "location_type" | "venue" | "room_portion">): string {
   if (e.location_type === "offsite") return "นอกสถานที่";
   const room = e.venue ? VENUE_LABEL[e.venue] ?? e.venue : "–";
   const portion = e.room_portion ? ROOM_PORTION_LABEL[e.room_portion] : null;
