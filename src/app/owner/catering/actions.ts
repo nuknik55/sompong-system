@@ -861,20 +861,47 @@ export async function upsertCateringEvent(data: {
 
   let customerId = data.customer_id ?? null;
   if (!customerId && data.new_customer && data.new_customer.name.trim()) {
-    const { data: created, error: custError } = await supabase
+    const trimmedName = data.new_customer.name.trim();
+    const trimmedPhone = data.new_customer.phone?.trim() || null;
+
+    // Dedup safety net: this path runs any time customer_id is null when
+    // the form is saved — not just for a genuinely new name. Retyping the
+    // query box after picking a suggestion resets customerId to null (see
+    // CustomerCombobox's onQueryChange in shared.tsx), and staff can save
+    // without ever clicking a dropdown suggestion at all, so a name that
+    // already exists can reach here unselected. Match on name alone
+    // (case-insensitive) — a shared full name is far more likely the same
+    // person (with a new/updated phone) than two different customers, so
+    // phone is only a tie-breaker among multiple same-name matches, never
+    // a requirement.
+    const { data: nameMatches, error: matchError } = await supabase
       .from("catering_customers")
-      .insert({
-        name: data.new_customer.name.trim(),
-        phone: data.new_customer.phone?.trim() || null,
-        line_id: data.new_customer.line_id?.trim() || null,
-        company_name: data.new_customer.company_name?.trim() || null,
-        address: data.new_customer.address?.trim() || null,
-        contact_person: data.new_customer.contact_person?.trim() || null,
-      })
-      .select("id")
-      .single();
-    if (custError) throw custError;
-    customerId = created.id;
+      .select("id, phone")
+      .ilike("name", trimmedName);
+    if (matchError) throw matchError;
+
+    const existing = nameMatches && nameMatches.length > 0
+      ? nameMatches.find((m) => (m.phone as string | null)?.trim() === trimmedPhone) ?? nameMatches[0]
+      : null;
+
+    if (existing) {
+      customerId = existing.id;
+    } else {
+      const { data: created, error: custError } = await supabase
+        .from("catering_customers")
+        .insert({
+          name: trimmedName,
+          phone: trimmedPhone,
+          line_id: data.new_customer.line_id?.trim() || null,
+          company_name: data.new_customer.company_name?.trim() || null,
+          address: data.new_customer.address?.trim() || null,
+          contact_person: data.new_customer.contact_person?.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (custError) throw custError;
+      customerId = created.id;
+    }
   } else if (customerId && data.customer_edits) {
     const { error: custUpdateError } = await supabase
       .from("catering_customers")
