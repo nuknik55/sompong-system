@@ -359,6 +359,11 @@ export function ChargesSection({
               พิมพ์ใบเสนอราคา
             </Link>
           )}
+          {/* Not gated on quote_number — kitchen prep can start before pricing is finalized. */}
+          <Link href={`/owner/catering/${event.id}/function-sheet`}
+            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+            พิมพ์ใบฟังก์ชั่นงาน
+          </Link>
           <button type="button" onClick={() => setConfirmIssue(true)} disabled={isPending || charges.length === 0}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
             {issueLabel}

@@ -32,6 +32,7 @@ export type StaffOption = {
 
 export type CateringEvent = {
   id: string;
+  created_at: string;
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
@@ -157,7 +158,7 @@ export type CateringSetMenuItem = {
 };
 
 const CATERING_EVENT_SELECT = `
-  id, customer_id, event_date, start_time, end_time,
+  id, created_at, customer_id, event_date, start_time, end_time,
   location_type, venue, room_portion, offsite_address, offsite_distance_km, floor_level,
   booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
@@ -177,6 +178,7 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
   const creator = r.profiles as { full_name: string } | null;
   return {
     id: r.id as string,
+    created_at: r.created_at as string,
     customer_id: r.customer_id as string | null,
     customer_name: cust?.name ?? null,
     customer_phone: cust?.phone ?? null,
