@@ -198,15 +198,15 @@ export function EventDetailClient({
       )}
 
       <div className="mt-5">
-        <TaskChecklistSection event={event} initialCompletions={taskCompletions} />
-      </div>
-
-      <div className="mt-5">
         <EventMenusSection eventId={event.id} initialMenus={eventMenus} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
       </div>
 
       <div className="mt-5">
         <ChargesSection event={event} initialCharges={charges} rates={rates} />
+      </div>
+
+      <div className="mt-5">
+        <TaskChecklistSection event={event} initialCompletions={taskCompletions} />
       </div>
 
       {error && !isEditing && <p className="mt-3 text-sm text-red-600">{error}</p>}

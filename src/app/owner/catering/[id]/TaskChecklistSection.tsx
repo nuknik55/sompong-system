@@ -24,6 +24,7 @@ export function TaskChecklistSection({
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   const steps = CHECKLIST_STEPS.filter((s) => !s.showFor || s.showFor(event.location_type));
+  const completedCount = steps.filter((s) => completedMap.get(s.key) != null).length;
 
   function toggle(key: string, next: boolean) {
     setError(null);
@@ -38,8 +39,12 @@ export function TaskChecklistSection({
   }
 
   return (
-    <section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
-      <h3 className="font-kanit text-base font-semibold text-neutral-900">เช็คลิสต์งาน</h3>
+    // Native <details>/<summary> — same collapsible pattern already used in
+    // pos-sales-import.tsx, collapsed by default (no `open` attribute).
+    <details className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
+      <summary className="cursor-pointer font-kanit text-base font-semibold text-neutral-900">
+        เช็คลิสต์งาน ({completedCount}/{steps.length} เสร็จ)
+      </summary>
       <div className="divide-y divide-neutral-100">
         {steps.map((step) => {
           const checked = completedMap.get(step.key) != null;
@@ -67,6 +72,6 @@ export function TaskChecklistSection({
         })}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-    </section>
+    </details>
   );
 }
