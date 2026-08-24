@@ -75,8 +75,10 @@ export function CateringClient({
 
   return (
     <>
-      {/* Toolbar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      {/* Header: h1 LEFT, month nav RIGHT — matches InventoryListClient.tsx's
+          title/description-left, control-right shape. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-kanit text-xl font-semibold text-neutral-900">จองงานจัดเลี้ยง</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => goMonth(-1)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">←</button>
           <span className="min-w-[150px] text-center text-sm font-medium">
@@ -84,6 +86,10 @@ export function CateringClient({
           </span>
           <button onClick={() => goMonth(1)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">→</button>
         </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="mb-4 flex flex-wrap gap-2">
         <button onClick={openNew} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
           + บันทึกการจอง
         </button>
@@ -142,7 +148,7 @@ export function CateringClient({
                       }).join(", ")}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <Link href={`/owner/catering/${e.id}`} className="text-xs text-blue-600 hover:underline">แก้ไข</Link>
+                  <Link href={`/owner/catering/${e.id}`} className="text-xs text-blue-600 hover:underline">ดู</Link>
                   <button onClick={() => setConfirmDelete(e)} className="ml-2 text-xs text-neutral-400 hover:text-red-600">ลบ</button>
                 </td>
               </tr>

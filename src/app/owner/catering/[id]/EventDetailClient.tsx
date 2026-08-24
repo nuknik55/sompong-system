@@ -10,7 +10,7 @@ import type {
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
   thFullDate, timeRange, staffLabel, formToUpsertPayload,
-  StatusBadge, EventFormModal,
+  StatusBadge, EventForm,
 } from "../shared";
 import type { FormState } from "../shared";
 import { ChargesSection } from "./ChargesSection";
@@ -37,7 +37,7 @@ export function EventDetailClient({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +48,7 @@ export function EventDetailClient({
     startTransition(async () => {
       try {
         await upsertCateringEvent(formToUpsertPayload(form, event.id));
-        setShowForm(false);
+        setIsEditing(false);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
@@ -75,15 +75,30 @@ export function EventDetailClient({
           ← กลับ
         </button>
         <div className="flex gap-2">
-          <button onClick={() => setShowForm(true)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-            แก้ไข
-          </button>
+          {!isEditing && (
+            <button onClick={() => setIsEditing(true)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+              แก้ไข
+            </button>
+          )}
           <button onClick={() => setConfirmDelete(true)} className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
             ลบ
           </button>
         </div>
       </div>
 
+      {isEditing ? (
+        <div className="rounded-xl border border-neutral-200 bg-white">
+          <EventForm
+            initial={event}
+            customers={customers}
+            staffOptions={staffOptions}
+            isPending={isPending}
+            error={error}
+            onSave={handleSave}
+            onCancel={() => { setIsEditing(false); setError(null); }}
+          />
+        </div>
+      ) : (
       <div className="space-y-5 rounded-xl border border-neutral-200 bg-white p-6">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-100 pb-4">
@@ -177,6 +192,7 @@ export function EventDetailClient({
           จองโดย {event.created_by_name ?? "ไม่ทราบ"}
         </div>
       </div>
+      )}
 
       <div className="mt-5">
         <EventMenusSection eventId={event.id} initialMenus={eventMenus} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
@@ -186,19 +202,7 @@ export function EventDetailClient({
         <ChargesSection event={event} initialCharges={charges} rates={rates} />
       </div>
 
-      {error && !showForm && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
-      {showForm && (
-        <EventFormModal
-          initial={event}
-          customers={customers}
-          staffOptions={staffOptions}
-          isPending={isPending}
-          error={error}
-          onSave={handleSave}
-          onCancel={() => { setShowForm(false); setError(null); }}
-        />
-      )}
+      {error && !isEditing && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

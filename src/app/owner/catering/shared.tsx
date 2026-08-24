@@ -509,7 +509,17 @@ export function StaffMultiSelect({
   );
 }
 
-export function EventFormModal({
+/**
+ * The form fields + footer (cancel/save), with no outer chrome — used both
+ * inside EventFormModal's backdrop+panel (create flow, and historically the
+ * edit flow) and rendered directly inline on the event detail page (current
+ * edit flow — see EventDetailClient.tsx). Returns two siblings (fields,
+ * then footer) so EventFormModal can host them inside one scrolling panel
+ * with a sticky footer exactly as before; inline on a full page "sticky"
+ * simply has no scrolling ancestor to stick to, so it degrades to a normal
+ * block — no separate inline-specific layout needed.
+ */
+export function EventForm({
   initial,
   customers,
   staffOptions,
@@ -571,16 +581,8 @@ export function EventFormModal({
   const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending && !conflict;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-neutral-100 bg-white px-5 py-4">
-          <h2 className="font-kanit text-base font-semibold">
-            {initial ? "แก้ไขการจอง" : "บันทึกการจองใหม่"}
-          </h2>
-          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-700">✕</button>
-        </div>
-
-        <div className="space-y-4 px-5 py-4">
+    <>
+      <div className="space-y-4 px-5 py-4">
           {/* Customer */}
           <Field label="ลูกค้า *">
             <CustomerCombobox
@@ -803,20 +805,63 @@ export function EventFormModal({
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
+      </div>
 
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-neutral-100 bg-white px-5 py-3">
-          <button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">
-            ยกเลิก
-          </button>
-          <button
-            onClick={() => onSave(form)}
-            disabled={!canSave}
-            className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-          >
-            {isPending ? "กำลังบันทึก…" : "บันทึก"}
-          </button>
+      <div className="sticky bottom-0 flex justify-end gap-2 border-t border-neutral-100 bg-white px-5 py-3">
+        <button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">
+          ยกเลิก
+        </button>
+        <button
+          onClick={() => onSave(form)}
+          disabled={!canSave}
+          className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {isPending ? "กำลังบันทึก…" : "บันทึก"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** Modal chrome (backdrop, panel, sticky header) around EventForm — the create flow on the list page. */
+export function EventFormModal({
+  initial,
+  customers,
+  staffOptions,
+  isPending,
+  error,
+  onSave,
+  onCancel,
+  defaultStaffId,
+}: {
+  initial: CateringEvent | null;
+  customers: CateringCustomer[];
+  staffOptions: StaffOption[];
+  isPending: boolean;
+  error: string | null;
+  onSave: (form: FormState) => void;
+  onCancel: () => void;
+  defaultStaffId?: string | null;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
+        <div className="sticky top-0 flex items-center justify-between border-b border-neutral-100 bg-white px-5 py-4">
+          <h2 className="font-kanit text-base font-semibold">
+            {initial ? "แก้ไขการจอง" : "บันทึกการจองใหม่"}
+          </h2>
+          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-700">✕</button>
         </div>
+        <EventForm
+          initial={initial}
+          customers={customers}
+          staffOptions={staffOptions}
+          isPending={isPending}
+          error={error}
+          onSave={onSave}
+          onCancel={onCancel}
+          defaultStaffId={defaultStaffId}
+        />
       </div>
     </div>
   );
