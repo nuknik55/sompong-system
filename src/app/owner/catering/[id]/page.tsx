@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
-  getCateringEventMenus, getCateringSetMenuOptions, getCateringDishOptions,
+  getCateringEventMenus, getCateringSetMenuOptions, getCateringDishOptions, getCateringTaskCompletions,
 } from "../actions";
 import { EventDetailClient } from "./EventDetailClient";
 
@@ -16,7 +16,7 @@ export default async function CateringEventPage({
   await requireSales();
   const { id } = await params;
 
-  const [event, customers, staffOptions, charges, rates, eventMenus, setMenuOptions, dishOptions] = await Promise.all([
+  const [event, customers, staffOptions, charges, rates, eventMenus, setMenuOptions, dishOptions, taskCompletions] = await Promise.all([
     getCateringEvent(id),
     getCateringCustomers(),
     getStaffOptions(),
@@ -25,6 +25,7 @@ export default async function CateringEventPage({
     getCateringEventMenus(id),
     getCateringSetMenuOptions(),
     getCateringDishOptions(),
+    getCateringTaskCompletions(id),
   ]);
 
   if (!event) notFound();
@@ -40,6 +41,7 @@ export default async function CateringEventPage({
         eventMenus={eventMenus}
         setMenuOptions={setMenuOptions}
         dishOptions={dishOptions}
+        taskCompletions={taskCompletions}
       />
     </div>
   );

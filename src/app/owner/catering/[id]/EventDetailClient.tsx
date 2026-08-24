@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
 import type {
   CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
-  CateringEventMenu, CateringSetMenuOption, CateringDishOption,
+  CateringEventMenu, CateringSetMenuOption, CateringDishOption, TaskCompletion,
 } from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
@@ -15,6 +15,7 @@ import {
 import type { FormState } from "../shared";
 import { ChargesSection } from "./ChargesSection";
 import { EventMenusSection } from "./EventMenusSection";
+import { TaskChecklistSection } from "./TaskChecklistSection";
 
 export function EventDetailClient({
   event,
@@ -25,6 +26,7 @@ export function EventDetailClient({
   eventMenus,
   setMenuOptions,
   dishOptions,
+  taskCompletions,
 }: {
   event: CateringEvent;
   customers: CateringCustomer[];
@@ -34,6 +36,7 @@ export function EventDetailClient({
   eventMenus: CateringEventMenu[];
   setMenuOptions: CateringSetMenuOption[];
   dishOptions: CateringDishOption[];
+  taskCompletions: TaskCompletion[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -193,6 +196,10 @@ export function EventDetailClient({
         </div>
       </div>
       )}
+
+      <div className="mt-5">
+        <TaskChecklistSection event={event} initialCompletions={taskCompletions} />
+      </div>
 
       <div className="mt-5">
         <EventMenusSection eventId={event.id} initialMenus={eventMenus} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
