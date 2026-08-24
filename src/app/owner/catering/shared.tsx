@@ -5,7 +5,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { getRoomConflictCandidates } from "./actions";
-import type { CateringEvent, CateringCustomer, StaffOption, RoomConflictCandidate } from "./actions";
+import type { CateringEvent, CateringCustomer, StaffOption } from "./actions";
+import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
+import type { RoomConflictCandidate } from "./conflict";
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -156,48 +158,9 @@ export function fmtBaht(n: number): string {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ─── Room-conflict rule ───────────────────────────────────────────────────────
-// Only exclusive rooms can conflict, and only with each other — air_shared and
-// offsite bookings never block anything (no entry here). room_portion
-// (half/full) is ignored: any room_v1/room_v2/room_v1_v2 booking blocks the
-// whole room.
-const ROOM_CONFLICTS: Record<string, string[]> = {
-  room_v1:    ["room_v1", "room_v1_v2"],
-  room_v2:    ["room_v2", "room_v1_v2"],
-  room_v1_v2: ["room_v1", "room_v2", "room_v1_v2"],
-};
-
-/**
- * Half-open interval overlap — e.g. 10:00–12:00 then 12:00–14:00 do not
- * conflict. Missing a time on either side (common for early-stage inquiry
- * bookings) is treated conservatively as a same-day conflict regardless of
- * time, so missing time data can't hide a real double-booking.
- */
-function timesOverlap(aStart: string | null, aEnd: string | null, bStart: string | null, bEnd: string | null): boolean {
-  if (!aStart || !aEnd || !bStart || !bEnd) return true;
-  return aStart < bEnd && bStart < aEnd;
-}
-
-/** First candidate (if any) whose room conflicts with `venue` on the same date. */
-export function findRoomConflict(
-  venue: string,
-  startTime: string,
-  endTime: string,
-  candidates: RoomConflictCandidate[],
-): RoomConflictCandidate | null {
-  const conflictingVenues = ROOM_CONFLICTS[venue];
-  if (!conflictingVenues) return null;
-  const aStart = toTimeInput(startTime) || null;
-  const aEnd = toTimeInput(endTime) || null;
-  for (const c of candidates) {
-    if (!conflictingVenues.includes(c.venue)) continue;
-    const bStart = toTimeInput(c.start_time) || null;
-    const bEnd = toTimeInput(c.end_time) || null;
-    if (timesOverlap(aStart, aEnd, bStart, bEnd)) return c;
-  }
-  return null;
-}
-
+// Room-conflict rule itself (ROOM_CONFLICTS + findRoomConflict) lives in
+// conflict.ts, shared with the server-side enforcement in actions.ts — this
+// file only adds the display label for a conflict's time.
 export function conflictTimeLabel(start: string | null, end: string | null): string {
   const r = timeRange(start, end);
   return r === "–" ? "ไม่ระบุเวลา" : r;
@@ -390,6 +353,49 @@ function ToggleGroup({
   );
 }
 
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const timeSelectCls = "rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/15";
+
+/**
+ * Native <input type="time"> renders per the browser/OS locale, not the
+ * page's <html lang>, so it can still show a 12-hour AM/PM picker even with
+ * lang="th" set (confirmed in the field on at least one device/browser).
+ * This controls the hour/minute segments directly instead of delegating to
+ * the native widget, so the display is always 24-hour everywhere. Value
+ * format matches what the native input produced ("" or "HH:MM"), so nothing
+ * downstream (FormState, formToUpsertPayload, findRoomConflict, …) changes.
+ */
+function Time24Input({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [h, m] = value ? value.split(":") : ["", ""];
+
+  function setHour(hh: string) {
+    onChange(hh === "" && m === "" ? "" : `${hh || "00"}:${m || "00"}`);
+  }
+  function setMinute(mm: string) {
+    onChange(h === "" && mm === "" ? "" : `${h || "00"}:${mm || "00"}`);
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <select className={timeSelectCls} value={h} onChange={(e) => setHour(e.target.value)}>
+        <option value="">--</option>
+        {HOURS.map((hh) => <option key={hh} value={hh}>{hh}</option>)}
+      </select>
+      <span className="text-neutral-400">:</span>
+      <select className={timeSelectCls} value={m} onChange={(e) => setMinute(e.target.value)}>
+        <option value="">--</option>
+        {MINUTES.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
+      </select>
+      {value && (
+        <button type="button" onClick={() => onChange("")} title="ล้างเวลา" className="text-xs text-neutral-400 hover:text-neutral-700">
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function CustomerCombobox({
   customers,
   customerId,
@@ -531,9 +537,12 @@ export function EventFormModal({
 
   const isNewCustomer = form.customerId === null && form.customerQuery.trim() !== "";
   const roomPortionApplies = form.location_type === "in_house" && (form.venue === "room_v1" || form.venue === "room_v2");
-  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending;
 
-  // Room-conflict check — see findRoomConflict in this file for the rule.
+  // Room-conflict check — rule lives in conflict.ts, shared with the
+  // server-side enforcement in upsertCateringEvent. A conflict hard-blocks
+  // saving (see canSave below); the same rule is re-checked server-side so
+  // two people racing to save around the same time can't both slip past
+  // this client-side check.
   const excludeId = initial?.id ?? null;
   const isRoomConflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue];
   const [conflictCandidates, setConflictCandidates] = useState<RoomConflictCandidate[]>([]);
@@ -558,6 +567,8 @@ export function EventFormModal({
   const conflict = isRoomConflictEligible
     ? findRoomConflict(form.venue, form.start_time, form.end_time, conflictCandidates)
     : null;
+
+  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending && !conflict;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -641,12 +652,10 @@ export function EventFormModal({
                 onChange={(e) => set("event_date", e.target.value)} />
             </Field>
             <Field label="เวลาเริ่ม">
-              <input type="time" className="input-base" value={form.start_time}
-                onChange={(e) => set("start_time", e.target.value)} />
+              <Time24Input value={form.start_time} onChange={(v) => set("start_time", v)} />
             </Field>
             <Field label="เวลาสิ้นสุด">
-              <input type="time" className="input-base" value={form.end_time}
-                onChange={(e) => set("end_time", e.target.value)} />
+              <Time24Input value={form.end_time} onChange={(v) => set("end_time", v)} />
             </Field>
           </div>
 
@@ -698,8 +707,9 @@ export function EventFormModal({
           )}
 
           {conflict && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              ⚠ ชนกับการจองอื่นในวันนี้: {conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})
+            <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <p className="font-medium">⚠ ไม่สามารถบันทึกได้ — ห้องชนกับการจองอื่น</p>
+              <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
             </div>
           )}
 

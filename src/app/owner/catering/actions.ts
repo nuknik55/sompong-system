@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { findRoomConflict } from "./conflict";
+import type { RoomConflictCandidate } from "./conflict";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -279,18 +281,10 @@ export async function getCateringEvent(id: string): Promise<CateringEvent | null
   return data ? mapEventRow(data as unknown as Record<string, unknown>) : null;
 }
 
-export type RoomConflictCandidate = {
-  id: string;
-  customer_name: string | null;
-  venue: string;
-  start_time: string | null;
-  end_time: string | null;
-};
-
 /**
  * Other in-house bookings on `eventDate` holding an exclusive room
  * (room_v1/room_v2/room_v1_v2 — air_shared/offsite never conflict, see
- * findRoomConflict in shared.tsx). Cancelled bookings are excluded: a
+ * findRoomConflict in conflict.ts). Cancelled bookings are excluded: a
  * cancelled booking no longer actually holds the room, so it shouldn't
  * trigger a permanent false-positive warning.
  */
@@ -727,6 +721,19 @@ export async function upsertCateringEvent(data: {
     detail_note: data.detail_note?.trim() || null,
     kitchen_note: data.kitchen_note?.trim() || null,
   };
+
+  // Same rule the client already warned with (see conflict.ts) — enforced
+  // again here so two people racing to save around the same time can't both
+  // pass the client-side check and land a genuine double-booking.
+  if (payload.location_type === "in_house" && payload.venue) {
+    const candidates = await getRoomConflictCandidates(payload.event_date, data.id ?? null);
+    const conflict = findRoomConflict(payload.venue, payload.start_time, payload.end_time, candidates);
+    if (conflict) {
+      throw new Error(
+        `ห้องชนกับการจองอื่น: ${conflict.customer_name ?? "-"} ในวันเดียวกัน — ไม่สามารถบันทึกได้`,
+      );
+    }
+  }
 
   let eventId = data.id;
   if (eventId) {
