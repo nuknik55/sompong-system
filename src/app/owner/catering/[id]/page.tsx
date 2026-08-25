@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
-import { requireSales } from "@/lib/auth";
+import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
   getCateringEventMenus, getCateringSetMenuOptions, getCateringDishOptions, getCateringTaskCompletions,
@@ -14,7 +14,7 @@ export default async function CateringEventPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireSales();
+  const profile = await requireSales();
   const { id } = await params;
 
   const [event, customers, staffOptions, charges, rates, eventMenus, setMenuOptions, dishOptions, taskCompletions, activityLog] = await Promise.all([
@@ -45,6 +45,7 @@ export default async function CateringEventPage({
         dishOptions={dishOptions}
         taskCompletions={taskCompletions}
         activityLog={activityLog}
+        isAdmin={isAdminOrAbove(profile.role)}
       />
     </div>
   );

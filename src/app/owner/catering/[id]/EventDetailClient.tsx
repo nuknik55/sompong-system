@@ -30,6 +30,7 @@ export function EventDetailClient({
   dishOptions,
   taskCompletions,
   activityLog,
+  isAdmin,
 }: {
   event: CateringEvent;
   customers: CateringCustomer[];
@@ -41,6 +42,8 @@ export function EventDetailClient({
   dishOptions: CateringDishOption[];
   taskCompletions: TaskCompletion[];
   activityLog: CateringActivityLogEntry[];
+  /** Gates the ต้นทุน-กำไร link only — the page it links to has its own independent requireAdmin(), this is just so a sales viewer never sees the link at all. */
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -82,6 +85,11 @@ export function EventDetailClient({
           ← กลับ
         </button>
         <div className="flex gap-2">
+          {isAdmin && (
+            <Link href={`/owner/catering/${event.id}/cost`} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+              ต้นทุน-กำไร
+            </Link>
+          )}
           {!isEditing && (
             <button onClick={() => setIsEditing(true)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
               แก้ไข

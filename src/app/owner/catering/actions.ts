@@ -977,6 +977,54 @@ export async function reorderCateringTransferCostRate(id: string, costType: stri
   return {};
 }
 
+// ─── Per-event labor/vehicle cost entries ──────────────────────────────────
+// owner/admin ONLY — see catering_event_labor RLS; sales has zero access.
+// Plain CRUD against a snapshot table, no ingredient/food-cost computation
+// here — that lives entirely in [id]/cost/page.tsx (the only other place in
+// this module allowed to import getCostingContext/computeMenuCost, see the
+// comment there and in set-menus/page.tsx).
+
+export type CateringEventLabor = {
+  id: string;
+  cost_rate_id: string | null;
+  label: string;
+  quantity: number;
+  unit_amount: number;
+  amount: number;
+  note: string | null;
+};
+
+export async function getCateringEventLabor(eventId: string): Promise<CateringEventLabor[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_labor")
+    .select("id, cost_rate_id, label, quantity, unit_amount, amount, note")
+    .eq("event_id", eventId)
+    .order("created_at");
+  if (error) throw error;
+  return (data ?? []) as CateringEventLabor[];
+}
+
+export async function addCateringEventLabor(
+  eventId: string,
+  data: { cost_rate_id: string | null; label: string; quantity: number; unit_amount: number; amount: number; note: string | null },
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_event_labor").insert({ event_id: eventId, ...data });
+  if (error) throw error;
+  revalidatePath(`/owner/catering/${eventId}/cost`);
+}
+
+export async function deleteCateringEventLabor(id: string, eventId: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_event_labor").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath(`/owner/catering/${eventId}/cost`);
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
 export async function upsertCateringEvent(data: {
