@@ -6,7 +6,7 @@ import Link from "next/link";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
 import type {
   CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
-  CateringEventMenu, CateringSetMenuOption, CateringDishOption, TaskCompletion,
+  CateringEventMenu, CateringSetMenuOption, CateringDishOption, TaskCompletion, CateringActivityLogEntry,
 } from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
@@ -17,6 +17,7 @@ import type { FormState } from "../shared";
 import { ChargesSection } from "./ChargesSection";
 import { EventMenusSection } from "./EventMenusSection";
 import { TaskChecklistSection } from "./TaskChecklistSection";
+import { ActivityLogSection } from "./ActivityLogSection";
 
 export function EventDetailClient({
   event,
@@ -28,6 +29,7 @@ export function EventDetailClient({
   setMenuOptions,
   dishOptions,
   taskCompletions,
+  activityLog,
 }: {
   event: CateringEvent;
   customers: CateringCustomer[];
@@ -38,6 +40,7 @@ export function EventDetailClient({
   setMenuOptions: CateringSetMenuOption[];
   dishOptions: CateringDishOption[];
   taskCompletions: TaskCompletion[];
+  activityLog: CateringActivityLogEntry[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -216,6 +219,10 @@ export function EventDetailClient({
 
       <div className="mt-5">
         <TaskChecklistSection event={event} initialCompletions={taskCompletions} />
+      </div>
+
+      <div className="mt-5">
+        <ActivityLogSection entries={activityLog} />
       </div>
 
       {error && !isEditing && <p className="mt-3 text-sm text-red-600">{error}</p>}

@@ -5,6 +5,7 @@ import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
+import { CHECKLIST_STEPS } from "./checklist";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -557,6 +558,60 @@ export async function getCateringTaskCompletions(eventId: string): Promise<TaskC
   return (data ?? []) as TaskCompletion[];
 }
 
+// ─── Activity log ───────────────────────────────────────────────────────────
+// Simple who/what/when, no field-level diffs. Every event-scoped write
+// action below calls logCateringActivity() right after its own write
+// succeeds. deleteCateringEvent is deliberately NOT logged — the log rows
+// cascade-delete along with the event, so a "deleted" entry would never be
+// visible to anyone.
+
+export type CateringActivityLogEntry = {
+  id: string;
+  action_key: string;
+  description: string;
+  created_at: string;
+  actor_name: string | null;
+};
+
+export async function getCateringActivityLog(eventId: string): Promise<CateringActivityLogEntry[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_activity_log")
+    .select("id, action_key, description, created_at, profiles(full_name)")
+    .eq("event_id", eventId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    action_key: r.action_key as string,
+    description: r.description as string,
+    created_at: r.created_at as string,
+    actor_name: (r.profiles as { full_name: string } | null)?.full_name ?? null,
+  }));
+}
+
+/**
+ * Best-effort: a logging failure must never fail the write that already
+ * succeeded by the time this runs — the user's actual change (event saved,
+ * quote issued, box checked, ...) already went through.
+ */
+async function logCateringActivity(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  actorId: string,
+  actionKey: string,
+  description: string,
+): Promise<void> {
+  const { error } = await supabase.from("catering_event_activity_log").insert({
+    event_id: eventId,
+    actor: actorId,
+    action_key: actionKey,
+    description,
+  });
+  if (error) console.error("logCateringActivity failed:", error);
+}
+
 /**
  * Upserts a single row per (event_id, task_key) — checking sets
  * completed_at/completed_by, unchecking clears both back to NULL on the
@@ -580,6 +635,16 @@ export async function setCateringTaskCompletion(eventId: string, taskKey: string
       { onConflict: "event_id,task_key" },
     );
   if (error) throw error;
+
+  const stepLabel = CHECKLIST_STEPS.find((s) => s.key === taskKey)?.label ?? taskKey;
+  await logCateringActivity(
+    supabase,
+    eventId,
+    profile.id,
+    completed ? "task_completed" : "task_uncompleted",
+    completed ? `ทำเครื่องหมายเสร็จ: ${stepLabel}` : `ยกเลิกเครื่องหมาย: ${stepLabel}`,
+  );
+
   revalidatePath(`/owner/catering/${eventId}`);
 }
 
@@ -952,6 +1017,7 @@ export async function upsertCateringEvent(data: {
     }
   }
 
+  const isCreate = !data.id;
   let eventId = data.id;
   if (eventId) {
     // created_by is set once, on creation, and never touched by an edit.
@@ -977,6 +1043,14 @@ export async function upsertCateringEvent(data: {
     if (error) throw error;
   }
 
+  await logCateringActivity(
+    supabase,
+    eventId as string,
+    profile.id,
+    isCreate ? "created" : "edited",
+    isCreate ? "สร้างการจอง" : "แก้ไขข้อมูลงาน",
+  );
+
   revalidatePath("/owner/catering");
   revalidatePath(`/owner/catering/${eventId}`);
 }
@@ -998,7 +1072,7 @@ export async function saveCateringCharges(
     event_menu_id: string | null;
   }[],
 ): Promise<void> {
-  await requireSales();
+  const profile = await requireSales();
   const supabase = await createClient();
 
   // Deletes and reinserts every row, so event_menu_id MUST be threaded
@@ -1023,6 +1097,10 @@ export async function saveCateringCharges(
     if (error) throw error;
   }
 
+  // One coarse entry per save, not per line item — favors a readable log
+  // over a noisy one, per your call.
+  await logCateringActivity(supabase, eventId, profile.id, "charges_updated", "แก้ไขรายการค่าใช้จ่าย");
+
   revalidatePath(`/owner/catering/${eventId}`);
 }
 
@@ -1046,7 +1124,7 @@ export async function addCateringEventMenu(
   eventId: string,
   item: { kind: "set" | "dish"; id: string; quantity: number; note: string | null },
 ): Promise<void> {
-  await requireSales();
+  const profile = await requireSales();
   const supabase = await createClient();
 
   let name: string;
@@ -1133,6 +1211,8 @@ export async function addCateringEventMenu(
   });
   if (chargeError) throw chargeError;
 
+  await logCateringActivity(supabase, eventId, profile.id, "menu_added", `เพิ่มเมนู: ${name}`);
+
   revalidatePath(`/owner/catering/${eventId}`);
 }
 
@@ -1146,10 +1226,26 @@ export async function addCateringEventMenu(
  * catering_event_charges delete needed.
  */
 export async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
-  await requireSales();
+  const profile = await requireSales();
   const supabase = await createClient();
+
+  // Resolved before the delete purely for the activity-log description —
+  // the row (and its name join) won't exist to read afterward.
+  const { data: row } = await supabase
+    .from("catering_event_menus")
+    .select("catering_set_menus(name), menus(name)")
+    .eq("id", id)
+    .maybeSingle();
+  const r = row as Record<string, unknown> | null;
+  const setMenu = r?.catering_set_menus as { name: string } | null;
+  const dish = r?.menus as { name: string } | null;
+  const name = setMenu?.name ?? dish?.name ?? "-";
+
   const { error } = await supabase.from("catering_event_menus").delete().eq("id", id);
   if (error) throw error;
+
+  await logCateringActivity(supabase, eventId, profile.id, "menu_removed", `ลบเมนู: ${name}`);
+
   revalidatePath(`/owner/catering/${eventId}`);
 }
 
@@ -1164,7 +1260,7 @@ export async function removeCateringEventMenu(id: string, eventId: string): Prom
  * that; quote_revision increments on every subsequent call.
  */
 export async function issueCateringQuote(eventId: string): Promise<void> {
-  await requireSales();
+  const profile = await requireSales();
   const supabase = await createClient();
 
   const { data: charges, error: chargesError } = await supabase
@@ -1181,6 +1277,7 @@ export async function issueCateringQuote(eventId: string): Promise<void> {
     .single();
   if (eventError) throw eventError;
 
+  const isReissue = !!event.quote_number;
   let quoteNumber = event.quote_number as string | null;
   const nextRevision = quoteNumber ? ((event.quote_revision as number) ?? 0) + 1 : 0;
 
@@ -1205,6 +1302,14 @@ export async function issueCateringQuote(eventId: string): Promise<void> {
     })
     .eq("id", eventId);
   if (updateError) throw updateError;
+
+  await logCateringActivity(
+    supabase,
+    eventId,
+    profile.id,
+    "quote_issued",
+    isReissue ? `ออกใบเสนอราคาใหม่ (แก้ไขครั้งที่ ${nextRevision})` : "ออกใบเสนอราคา",
+  );
 
   revalidatePath("/owner/catering");
   revalidatePath(`/owner/catering/${eventId}`);
