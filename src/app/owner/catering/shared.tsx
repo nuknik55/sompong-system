@@ -90,6 +90,17 @@ export const RATE_TYPE_TO_CHARGE_TYPE: Record<string, string> = {
   staff_bonus: "other",
   other: "other",
 };
+// Values mirror the CHECK constraint in
+// supabase/catering_transfer_cost_rates_migration.sql. Internal cost only —
+// never shown to a customer, never on a quotation. Unrelated to
+// RATE_TYPE_OPTIONS' 'staff_bonus' (a customer-facing per-diem line item).
+export const COST_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "staff_labor",    label: "ค่าแรงพนักงาน/เชฟ" },
+  { value: "kitchen_helper", label: "ค่าแรงผู้ช่วยครัว" },
+  { value: "vehicle",        label: "ค่ารถ/น้ำมัน" },
+  { value: "other",          label: "อื่นๆ" },
+];
+export const COST_TYPE_LABEL = Object.fromEntries(COST_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 
 export const LOCATION_TYPE_LABEL = Object.fromEntries(LOCATION_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const VENUE_LABEL         = Object.fromEntries(VENUE_OPTIONS.map((o) => [o.value, o.label]));

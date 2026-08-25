@@ -878,6 +878,105 @@ export async function reorderCateringRate(id: string, rateType: string, directio
   return {};
 }
 
+// ─── Internal transfer-cost rate management ────────────────────────────────
+// owner/admin ONLY — see catering_transfer_cost_rates_rw RLS. Unlike
+// catering_rates, sales has zero access here, not even read, so there is no
+// sales-safe read function for this table anywhere in this module.
+
+export type CateringTransferCostRate = {
+  id: string;
+  cost_type: string;
+  label: string;
+  amount: number;
+  unit: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export async function getCateringTransferCostRates(): Promise<CateringTransferCostRate[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_transfer_cost_rates")
+    .select("id, cost_type, label, amount, unit, sort_order, is_active")
+    .order("cost_type")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as CateringTransferCostRate[];
+}
+
+export async function addCateringTransferCostRate(data: {
+  cost_type: string;
+  label: string;
+  amount: number;
+  unit: string | null;
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: last } = await supabase
+    .from("catering_transfer_cost_rates")
+    .select("sort_order")
+    .eq("cost_type", data.cost_type)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
+
+  const { error } = await supabase.from("catering_transfer_cost_rates").insert({ ...data, sort_order: nextSort });
+  if (error) throw error;
+  revalidatePath("/owner/catering/cost-settings");
+}
+
+export async function updateCateringTransferCostRate(
+  id: string,
+  data: { cost_type: string; label: string; amount: number; unit: string | null },
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_transfer_cost_rates").update(data).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/cost-settings");
+}
+
+export async function toggleCateringTransferCostRateActive(id: string, isActive: boolean): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_transfer_cost_rates").update({ is_active: isActive }).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/cost-settings");
+}
+
+export async function deleteCateringTransferCostRate(id: string): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("catering_transfer_cost_rates").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/cost-settings");
+}
+
+/** Same swap-sort_order-with-neighbor approach as reorderCateringRate above. */
+export async function reorderCateringTransferCostRate(id: string, costType: string, direction: "up" | "down"): Promise<{ error?: string }> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: siblings } = await supabase
+    .from("catering_transfer_cost_rates").select("id,sort_order").eq("cost_type", costType).order("sort_order");
+  if (!siblings) return { error: "ไม่พบข้อมูล" };
+
+  const idx = siblings.findIndex((s) => s.id === id);
+  if (idx < 0) return { error: "ไม่พบรายการ" };
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return {};
+
+  const current = siblings[idx]!;
+  const swap = siblings[swapIdx]!;
+  await supabase.from("catering_transfer_cost_rates").update({ sort_order: swap.sort_order }).eq("id", current.id);
+  await supabase.from("catering_transfer_cost_rates").update({ sort_order: current.sort_order }).eq("id", swap.id);
+
+  revalidatePath("/owner/catering/cost-settings");
+  return {};
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
 export async function upsertCateringEvent(data: {

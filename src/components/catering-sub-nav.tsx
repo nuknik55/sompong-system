@@ -22,6 +22,7 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     { href: "/owner/catering/customers", label: "ลูกค้า" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
     ...(isAdmin ? [{ href: "/owner/catering/settings", label: "อัตราค่าบริการ" }] : []),
+    ...(isAdmin ? [{ href: "/owner/catering/cost-settings", label: "ต้นทุนภายใน" }] : []),
   ];
 
   return (
