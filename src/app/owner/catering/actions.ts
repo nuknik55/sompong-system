@@ -376,6 +376,16 @@ export async function getStaffOptions(): Promise<StaffOption[]> {
   }));
 }
 
+/**
+ * For the list page (both เดือน and ปี modes) and calendar/page.tsx.
+ * Deliberately unscoped by booking_type — this is a general table/room/
+ * catering booking log, not a catering-only view (new bookings created here
+ * default to booking_type='table', see blankForm() in shared.tsx). Adding
+ * an .eq("booking_type", "catering") filter here once hid every table/room
+ * booking from production and had to be reverted (see git history) — the
+ * status/customers pages are legitimately catering-scoped by purpose; this
+ * one and the calendar are not. Do not add that filter here again.
+ */
 export async function getCateringEvents(year: number, month: number): Promise<CateringEvent[]> {
   await requireSales();
   const supabase = await createClient();
@@ -385,7 +395,6 @@ export async function getCateringEvents(year: number, month: number): Promise<Ca
   const { data, error } = await supabase
     .from("catering_events")
     .select(CATERING_EVENT_SELECT)
-    .eq("booking_type", "catering")
     .gte("event_date", `${year}-${m}-01`)
     .lte("event_date", `${year}-${m}-${String(lastDay).padStart(2, "0")}`)
     .order("event_date")
@@ -396,10 +405,10 @@ export async function getCateringEvents(year: number, month: number): Promise<Ca
 }
 
 /**
- * For the list page's ปี (year) view — same booking_type = 'catering' scope
- * as getCateringEvents() above, just spanning a full year instead of one
- * month. A separate function only because the date-range/order-by shape
- * differs; not a separate scope decision.
+ * For the list page's ปี (year) view — same unscoped booking_type as
+ * getCateringEvents() above (this page is a general table/room/catering
+ * booking log, not catering-only — see the note on getCateringEvents),
+ * just spanning a full year instead of one month.
  */
 export async function getCateringEventsForYear(year: number): Promise<CateringEvent[]> {
   await requireSales();
@@ -407,7 +416,6 @@ export async function getCateringEventsForYear(year: number): Promise<CateringEv
   const { data, error } = await supabase
     .from("catering_events")
     .select(CATERING_EVENT_SELECT)
-    .eq("booking_type", "catering")
     .gte("event_date", `${year}-01-01`)
     .lte("event_date", `${year}-12-31`)
     .order("event_date")
