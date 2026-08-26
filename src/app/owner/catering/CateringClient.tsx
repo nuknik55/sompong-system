@@ -194,7 +194,16 @@ export function CateringClient({
                     <div className="font-medium text-neutral-900">{r.event.customer_name ?? "–"}</div>
                     {r.event.customer_phone && <div className="text-xs text-neutral-400 tabular-nums">{r.event.customer_phone}</div>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{locationLabel(r.event)}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {r.event.location_type === "offsite" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        {locationLabel(r.event)}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-600">{locationLabel(r.event)}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{BOOKING_TYPE_LABEL[r.event.booking_type] ?? r.event.booking_type}</td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{r.event.food_format ? FOOD_FORMAT_LABEL[r.event.food_format] ?? r.event.food_format : "–"}</td>
                   <td className="px-3 py-2 text-center text-xs tabular-nums text-neutral-600">
@@ -213,8 +222,10 @@ export function CateringClient({
                         }).join(", ")}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <Link href={`/owner/catering/${r.event.id}`} className="text-xs text-blue-600 hover:underline">ดู</Link>
-                    <button onClick={() => setConfirmDelete(r.event)} className="ml-2 text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                    <div className="flex items-center gap-4">
+                      <Link href={`/owner/catering/${r.event.id}`} className="text-xs text-blue-600 hover:underline">ดู</Link>
+                      <button onClick={() => setConfirmDelete(r.event)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                    </div>
                   </td>
                 </tr>
               ),

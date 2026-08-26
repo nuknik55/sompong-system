@@ -33,6 +33,8 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
+type Cell = { day: number; inMonth: boolean };
+
 export function CalendarClient({
   initialEvents,
   year,
@@ -60,10 +62,26 @@ export function CalendarClient({
 
   const total = daysInMonth(year, month);
   const firstDow = new Date(year, month - 1, 1).getDay(); // 0=Sun
-  const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)];
-  const weeks: (number | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-  while (weeks[weeks.length - 1].length < 7) weeks[weeks.length - 1].push(null);
+
+  // Leading/trailing cells borrow day numbers from the adjacent months so the
+  // grid reads like a normal calendar. They're never in byDay (initialEvents
+  // only covers the current month), so they never show events — just the
+  // muted day number.
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevTotal = daysInMonth(prevYear, prevMonth);
+  const leading: Cell[] = Array.from({ length: firstDow }, (_, i) => ({
+    day: prevTotal - firstDow + 1 + i,
+    inMonth: false,
+  }));
+  const current: Cell[] = Array.from({ length: total }, (_, i) => ({ day: i + 1, inMonth: true }));
+  const withLeading = [...leading, ...current];
+  const trailingCount = (7 - (withLeading.length % 7)) % 7;
+  const trailing: Cell[] = Array.from({ length: trailingCount }, (_, i) => ({ day: i + 1, inMonth: false }));
+  const allCells: Cell[] = [...withLeading, ...trailing];
+
+  const weeks: Cell[][] = [];
+  for (let i = 0; i < allCells.length; i += 7) weeks.push(allCells.slice(i, i + 7));
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -99,14 +117,13 @@ export function CalendarClient({
         <div className="divide-y divide-neutral-100">
           {weeks.map((week, wi) => (
             <div key={wi} className="grid grid-cols-7 divide-x divide-neutral-100">
-              {week.map((day, di) => {
-                if (day === null) return <div key={di} className="min-h-[110px] bg-neutral-50/50" />;
-                const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isToday = dateStr === todayStr;
-                const dayEvents = byDay.get(day) ?? [];
+              {week.map((cell, di) => {
+                const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}`;
+                const isToday = cell.inMonth && dateStr === todayStr;
+                const dayEvents = cell.inMonth ? byDay.get(cell.day) ?? [] : [];
                 return (
-                  <div key={day} className={`min-h-[110px] space-y-1 p-1.5 ${isToday ? "bg-blue-50/60" : ""}`}>
-                    <div className={`text-xs font-medium ${isToday ? "text-blue-700" : "text-neutral-500"}`}>{day}</div>
+                  <div key={di} className={`min-h-[110px] space-y-1 p-1.5 ${isToday ? "bg-blue-50/60" : !cell.inMonth ? "bg-neutral-50/50" : ""}`}>
+                    <div className={`text-xs font-medium ${isToday ? "text-blue-700" : cell.inMonth ? "text-neutral-500" : "text-neutral-300"}`}>{cell.day}</div>
                     {dayEvents.map((e) => (
                       <Link
                         key={e.id}

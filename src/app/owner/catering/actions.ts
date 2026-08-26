@@ -711,7 +711,7 @@ export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
   const { data, error } = await supabase
     .from("catering_set_menus")
     .select("id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(count)")
-    .order("name");
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => {
     const countRow = (r.catering_set_menu_items as { count: number }[] | null)?.[0];
