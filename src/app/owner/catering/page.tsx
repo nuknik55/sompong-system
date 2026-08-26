@@ -1,23 +1,24 @@
 export const dynamic = "force-dynamic";
 
 import { requireSales, isAdminOrAbove } from "@/lib/auth";
-import { getCateringEvents, getCateringCustomers, getStaffOptions } from "./actions";
+import { getCateringEvents, getCateringEventsForYear, getCateringCustomers, getStaffOptions } from "./actions";
 import { CateringClient } from "./CateringClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
 
 export default async function CateringPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string }>;
+  searchParams: Promise<{ year?: string; month?: string; view?: string }>;
 }) {
   const profile = await requireSales();
   const sp = await searchParams;
   const today = new Date();
   const year = sp.year ? parseInt(sp.year) : today.getFullYear();
   const month = sp.month ? parseInt(sp.month) : today.getMonth() + 1;
+  const view = sp.view === "year" ? "year" : "month";
 
   const [events, customers, staffOptions] = await Promise.all([
-    getCateringEvents(year, month),
+    view === "year" ? getCateringEventsForYear(year) : getCateringEvents(year, month),
     getCateringCustomers(),
     getStaffOptions(),
   ]);
@@ -32,6 +33,7 @@ export default async function CateringPage({
         staffOptions={staffOptions}
         year={year}
         month={month}
+        view={view}
         defaultStaffId={profile.employee_id}
       />
     </div>

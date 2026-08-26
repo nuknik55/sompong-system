@@ -385,8 +385,31 @@ export async function getCateringEvents(year: number, month: number): Promise<Ca
   const { data, error } = await supabase
     .from("catering_events")
     .select(CATERING_EVENT_SELECT)
+    .eq("booking_type", "catering")
     .gte("event_date", `${year}-${m}-01`)
     .lte("event_date", `${year}-${m}-${String(lastDay).padStart(2, "0")}`)
+    .order("event_date")
+    .order("start_time", { nullsFirst: true });
+
+  if (error) throw error;
+  return (data ?? []).map((r) => mapEventRow(r as unknown as Record<string, unknown>));
+}
+
+/**
+ * For the list page's ปี (year) view — same booking_type = 'catering' scope
+ * as getCateringEvents() above, just spanning a full year instead of one
+ * month. A separate function only because the date-range/order-by shape
+ * differs; not a separate scope decision.
+ */
+export async function getCateringEventsForYear(year: number): Promise<CateringEvent[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_events")
+    .select(CATERING_EVENT_SELECT)
+    .eq("booking_type", "catering")
+    .gte("event_date", `${year}-01-01`)
+    .lte("event_date", `${year}-12-31`)
     .order("event_date")
     .order("start_time", { nullsFirst: true });
 
