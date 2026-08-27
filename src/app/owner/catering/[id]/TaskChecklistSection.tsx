@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { setCateringTaskCompletion } from "../actions";
 import type { CateringEvent, TaskCompletion } from "../actions";
 import { CHECKLIST_STEPS } from "../checklist";
-import { thDate } from "../shared";
+import { thDate } from "../shared-utils";
 
 export function TaskChecklistSection({
   event,

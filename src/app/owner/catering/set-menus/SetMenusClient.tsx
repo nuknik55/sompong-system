@@ -6,7 +6,7 @@ import {
   saveCateringSetMenu, deleteCateringSetMenu, toggleCateringSetMenuActive, getCateringSetMenuItems,
 } from "../actions";
 import type { CateringSetMenu } from "../actions";
-import { fmtBaht, toNum } from "../shared";
+import { fmtBaht, toNum } from "../shared-utils";
 
 /** Per-dish cost, computed once server-side in page.tsx — see the comment there. */
 export type DishCostOption = {

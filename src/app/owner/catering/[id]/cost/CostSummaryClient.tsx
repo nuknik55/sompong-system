@@ -4,7 +4,7 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { addCateringEventLabor, deleteCateringEventLabor } from "../../actions";
 import type { CateringEventLabor, CateringTransferCostRate } from "../../actions";
-import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum } from "../../shared";
+import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum } from "../../shared-utils";
 
 type Draft = {
   rate: CateringTransferCostRate;

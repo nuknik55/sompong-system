@@ -1,7 +1,7 @@
 "use client";
 
 import type { CateringActivityLogEntry } from "../actions";
-import { thFullDate } from "../shared";
+import { thFullDate } from "../shared-utils";
 
 /**
  * Combines thFullDate's Thai date with a local HH:MM — the log's "when" is

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { updateCateringCustomer } from "../../actions";
 import type { CateringCustomer, CateringCustomerEventSummary } from "../../actions";
-import { Field, thDate, locationLabel, fmtBaht, StatusBadge } from "../../shared";
+import { Field, thDate, locationLabel, fmtBaht, StatusBadge } from "../../shared-utils";
 
 type CustomerFormState = {
   name: string;

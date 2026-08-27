@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { CateringCustomerListItem } from "../actions";
-import { thDate } from "../shared";
+import { thDate } from "../shared-utils";
 
 export function CustomerListClient({ customers }: { customers: CateringCustomerListItem[] }) {
   const [query, setQuery] = useState("");

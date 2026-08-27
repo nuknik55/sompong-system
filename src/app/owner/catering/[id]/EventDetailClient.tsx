@@ -11,9 +11,10 @@ import type {
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
   thFullDate, timeRange, staffLabel, formToUpsertPayload,
-  StatusBadge, EventForm,
-} from "../shared";
-import type { FormState } from "../shared";
+  StatusBadge,
+} from "../shared-utils";
+import type { FormState } from "../shared-utils";
+import { EventForm } from "../shared";
 import { ChargesSection } from "./ChargesSection";
 import { TaskChecklistSection } from "./TaskChecklistSection";
 import { ActivityLogSection } from "./ActivityLogSection";

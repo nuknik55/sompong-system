@@ -7,7 +7,7 @@ import {
   toggleCateringRateActive, reorderCateringRate,
 } from "../actions";
 import type { CateringRate } from "../actions";
-import { RATE_TYPE_OPTIONS, RATE_TYPE_LABEL, fmtBaht } from "../shared";
+import { RATE_TYPE_OPTIONS, RATE_TYPE_LABEL, fmtBaht } from "../shared-utils";
 
 type RateForm = {
   rate_type: string;

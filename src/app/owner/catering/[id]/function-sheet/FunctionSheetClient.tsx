@@ -4,7 +4,7 @@ import type { CateringEvent, StaffOption } from "../../actions";
 import {
   thFullDate, timeRange, locationLabel, fmtBaht, staffLabel,
   MUSIC_TYPE_LABEL,
-} from "../../shared";
+} from "../../shared-utils";
 
 export type FunctionSheetItem = {
   id: string;

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { CateringEvent } from "../actions";
-import { MONTHS_TH, VENUE_LABEL, toTimeInput } from "../shared";
+import { MONTHS_TH, VENUE_LABEL, toTimeInput } from "../shared-utils";
 
 const DAYS_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"]; // Sun=0, matches Date.getDay()
 

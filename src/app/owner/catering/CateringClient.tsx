@@ -8,9 +8,10 @@ import type { CateringEvent, CateringCustomer, StaffOption } from "./actions";
 import {
   MONTHS_TH, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL,
   thDate, timeRange, staffLabel, locationLabel, formToUpsertPayload,
-  StatusBadge, EventFormModal,
-} from "./shared";
-import type { FormState } from "./shared";
+  StatusBadge,
+} from "./shared-utils";
+import type { FormState } from "./shared-utils";
+import { EventFormModal } from "./shared";
 
 export function CateringClient({
   initialEvents,

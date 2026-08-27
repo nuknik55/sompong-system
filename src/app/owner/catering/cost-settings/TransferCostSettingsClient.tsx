@@ -7,7 +7,7 @@ import {
   toggleCateringTransferCostRateActive, reorderCateringTransferCostRate,
 } from "../actions";
 import type { CateringTransferCostRate } from "../actions";
-import { COST_TYPE_OPTIONS, COST_TYPE_LABEL, fmtBaht } from "../shared";
+import { COST_TYPE_OPTIONS, COST_TYPE_LABEL, fmtBaht } from "../shared-utils";
 
 type CostRateForm = {
   cost_type: string;

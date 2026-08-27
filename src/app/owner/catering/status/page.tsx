@@ -5,7 +5,7 @@ import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import { getCateringPipelineEvents } from "../actions";
 import type { CateringEvent } from "../actions";
 import { CateringSubNav } from "@/components/catering-sub-nav";
-import { thDate, locationLabel, fmtBaht, STATUS_LABEL, StatusBadge } from "../shared";
+import { thDate, locationLabel, fmtBaht, STATUS_LABEL, StatusBadge } from "../shared-utils";
 
 // Order mirrors the pipeline's natural progression, not the DB enum's
 // declaration order (which happens to match already, but this is the

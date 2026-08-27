@@ -8,7 +8,7 @@ import type { CateringEvent, CateringCharge, CateringRate, CateringSetMenuOption
 import {
   RATE_TYPE_OPTIONS, CHARGE_TYPE_OPTIONS, CHARGE_TYPE_LABEL, RATE_TYPE_TO_CHARGE_TYPE,
   fmtBaht, toNum, thFullDate,
-} from "../shared";
+} from "../shared-utils";
 
 const ALL_CATEGORY = "ทั้งหมด";
 const UNCATEGORIZED = "ไม่มีหมวด";

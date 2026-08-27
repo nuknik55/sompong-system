@@ -1,7 +1,7 @@
 "use client";
 
 import type { CateringEvent, CateringCharge, CateringSettings } from "../../actions";
-import { thFullDate, timeRange, locationLabel, fmtBaht } from "../../shared";
+import { thFullDate, timeRange, locationLabel, fmtBaht } from "../../shared-utils";
 
 export function QuoteClient({
   event,
