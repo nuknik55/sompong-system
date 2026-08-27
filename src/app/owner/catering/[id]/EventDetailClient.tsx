@@ -6,7 +6,7 @@ import Link from "next/link";
 import { upsertCateringEvent, deleteCateringEvent } from "../actions";
 import type {
   CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
-  CateringEventMenu, CateringSetMenuOption, CateringDishOption, TaskCompletion, CateringActivityLogEntry,
+  CateringSetMenuOption, CateringDishOption, TaskCompletion, CateringActivityLogEntry,
 } from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
@@ -15,7 +15,6 @@ import {
 } from "../shared";
 import type { FormState } from "../shared";
 import { ChargesSection } from "./ChargesSection";
-import { EventMenusSection } from "./EventMenusSection";
 import { TaskChecklistSection } from "./TaskChecklistSection";
 import { ActivityLogSection } from "./ActivityLogSection";
 
@@ -25,7 +24,6 @@ export function EventDetailClient({
   staffOptions,
   charges,
   rates,
-  eventMenus,
   setMenuOptions,
   dishOptions,
   taskCompletions,
@@ -37,7 +35,6 @@ export function EventDetailClient({
   staffOptions: StaffOption[];
   charges: CateringCharge[];
   rates: CateringRate[];
-  eventMenus: CateringEventMenu[];
   setMenuOptions: CateringSetMenuOption[];
   dishOptions: CateringDishOption[];
   taskCompletions: TaskCompletion[];
@@ -218,11 +215,7 @@ export function EventDetailClient({
       )}
 
       <div className="mt-5">
-        <EventMenusSection eventId={event.id} initialMenus={eventMenus} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
-      </div>
-
-      <div className="mt-5">
-        <ChargesSection event={event} initialCharges={charges} rates={rates} />
+        <ChargesSection event={event} initialCharges={charges} rates={rates} setMenuOptions={setMenuOptions} dishOptions={dishOptions} />
       </div>
 
       <div className="mt-5">

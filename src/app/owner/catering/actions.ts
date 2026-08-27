@@ -89,6 +89,11 @@ export type CateringCharge = {
   /** Set only when addCateringEventMenu() created this charge; NULL for
    *  every other charge (rate picker, "+ เพิ่มรายการ", hand-typed). */
   event_menu_id: string | null;
+  /** Derived from the linked catering_event_menus row's set_menu_id/menu_id
+   *  (see getCateringCharges) — null whenever event_menu_id is null. Purely
+   *  a display tag ("ชุดเมนู"/"เมนูเดี่ยว") for the unified line-item table;
+   *  never round-tripped back through saveCateringCharges. */
+  event_menu_kind: "set" | "dish" | null;
 };
 
 export type CateringRate = {
@@ -499,11 +504,25 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_event_charges")
-    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id")
+    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, catering_event_menus(set_menu_id, menu_id)")
     .eq("event_id", eventId)
     .order("sort_order");
   if (error) throw error;
-  return (data ?? []) as CateringCharge[];
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const linked = r.catering_event_menus as { set_menu_id: string | null; menu_id: string | null } | null;
+    const event_menu_kind: "set" | "dish" | null = linked ? (linked.set_menu_id ? "set" : "dish") : null;
+    return {
+      id: r.id as string,
+      label: r.label as string,
+      charge_type: r.charge_type as string,
+      unit_price: r.unit_price as number,
+      quantity: r.quantity as number,
+      amount: r.amount as number,
+      note: r.note as string | null,
+      event_menu_id: r.event_menu_id as string | null,
+      event_menu_kind,
+    };
+  });
 }
 
 export async function getCateringRates(): Promise<CateringRate[]> {
@@ -1275,6 +1294,24 @@ export async function saveCateringCharges(
     if (error) throw error;
   }
 
+  // Keep catering_event_menus.quantity (read by the cost page and the
+  // function-sheet) in sync with whatever quantity the sales rep just saved
+  // on a menu-linked row — otherwise editing quantity here would silently
+  // desync from the "what did we actually order" record. Safe to assume at
+  // most one charge row per event_menu_id: addCateringEventMenu bumps the
+  // existing linked row in place on repeat-add rather than inserting a
+  // second one (see its comment), so there's never an ambiguous group to
+  // reconcile here.
+  for (const c of charges) {
+    if (c.event_menu_id) {
+      const { error: syncError } = await supabase
+        .from("catering_event_menus")
+        .update({ quantity: c.quantity })
+        .eq("id", c.event_menu_id);
+      if (syncError) throw syncError;
+    }
+  }
+
   // One coarse entry per save, not per line item — favors a readable log
   // over a noisy one, per your call.
   await logCateringActivity(supabase, eventId, profile.id, "charges_updated", "แก้ไขรายการค่าใช้จ่าย");
@@ -1285,15 +1322,18 @@ export async function saveCateringCharges(
 /**
  * Adds one line to catering_event_menus (the "what did we order" list) and a
  * matching line to catering_event_charges (the quotation), so the two never
- * drift apart at the moment of entry. They are NOT linked afterward — editing
- * or removing one never touches the other, since the charge may since have
- * been hand-adjusted (a different price agreed, split into two lines, etc).
+ * drift apart at the moment of entry.
  *
  * The same dish/set added twice bumps quantity on the existing
- * catering_event_menus row instead of creating a duplicate line (that table
- * has no such row to begin with, unlike charges) — but the charge line always
- * inserts fresh, same as every other line in ChargesSection, so duplicates
- * are expected to stack there.
+ * catering_event_menus row AND on its linked charge row (never inserts a
+ * second charge row for the same item) — the linked row's label/unit_price
+ * stay frozen from the first add, same snapshot-at-write-time convention
+ * used elsewhere; only quantity/amount move. This keeps a strict 1:1 between
+ * a catering_event_menus row and its charge row, which saveCateringCharges'
+ * quantity-sync relies on. Once a row exists, later charge-side edits
+ * (label/unit_price/note on a *manual* row, or quantity on any row via
+ * saveCateringCharges) are the only way those fields change — this function
+ * only ever runs at initial-add or repeat-add time.
  *
  * Resolves name/price from catering_set_menus or menus only — both already
  * sales-readable sale-price data, never touching ingredients/menu_recipe_items.
@@ -1345,6 +1385,30 @@ export async function addCateringEventMenu(
       .update({ quantity: (existingRow.quantity as number) + item.quantity })
       .eq("id", eventMenuId);
     if (error) throw error;
+
+    const { data: linkedCharge } = await supabase
+      .from("catering_event_charges")
+      .select("id, unit_price, quantity")
+      .eq("event_menu_id", eventMenuId)
+      .order("sort_order")
+      .limit(1)
+      .maybeSingle();
+
+    if (linkedCharge) {
+      const newQty = (linkedCharge.quantity as number) + item.quantity;
+      const { error: bumpError } = await supabase
+        .from("catering_event_charges")
+        .update({ quantity: newQty, amount: (linkedCharge.unit_price as number) * newQty })
+        .eq("id", linkedCharge.id);
+      if (bumpError) throw bumpError;
+
+      await logCateringActivity(supabase, eventId, profile.id, "menu_added", `เพิ่มเมนู: ${name}`);
+      revalidatePath(`/owner/catering/${eventId}`);
+      return;
+    }
+    // No linked charge found (shouldn't happen — every catering_event_menus
+    // row is created together with its charge row below) — fall through to
+    // insert one fresh, same as the brand-new-row path.
   } else {
     const { data: last } = await supabase
       .from("catering_event_menus")
