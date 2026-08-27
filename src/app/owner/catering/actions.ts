@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { CHECKLIST_STEPS } from "./checklist";
+import { calendarGridRange } from "./calendar-grid";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -382,14 +383,17 @@ export async function getStaffOptions(): Promise<StaffOption[]> {
 }
 
 /**
- * For the list page (both เดือน and ปี modes) and calendar/page.tsx.
- * Deliberately unscoped by booking_type — this is a general table/room/
- * catering booking log, not a catering-only view (new bookings created here
- * default to booking_type='table', see blankForm() in shared.tsx). Adding
- * an .eq("booking_type", "catering") filter here once hid every table/room
- * booking from production and had to be reverted (see git history) — the
- * status/customers pages are legitimately catering-scoped by purpose; this
- * one and the calendar are not. Do not add that filter here again.
+ * For the list page (both เดือน and ปี modes) only — calendar/page.tsx uses
+ * getCateringEventsForCalendar() below instead (needs a wider date range to
+ * cover the grid's muted adjacent-month days, which this month-only range
+ * can't). Deliberately unscoped by booking_type — this is a general
+ * table/room/catering booking log, not a catering-only view (new bookings
+ * created here default to booking_type='table', see blankForm() in
+ * shared.tsx). Adding an .eq("booking_type", "catering") filter here once
+ * hid every table/room booking from production and had to be reverted (see
+ * git history) — the status/customers pages are legitimately catering-
+ * scoped by purpose; this one and the calendar are not. Do not add that
+ * filter here again.
  */
 export async function getCateringEvents(year: number, month: number): Promise<CateringEvent[]> {
   await requireSales();
@@ -402,6 +406,33 @@ export async function getCateringEvents(year: number, month: number): Promise<Ca
     .select(CATERING_EVENT_SELECT)
     .gte("event_date", `${year}-${m}-01`)
     .lte("event_date", `${year}-${m}-${String(lastDay).padStart(2, "0")}`)
+    .order("event_date")
+    .order("start_time", { nullsFirst: true });
+
+  if (error) throw error;
+  return (data ?? []).map((r) => mapEventRow(r as unknown as Record<string, unknown>));
+}
+
+/**
+ * For calendar/page.tsx only. Deliberately unscoped by booking_type — same
+ * general table/room/catering log as getCateringEvents() above (see its
+ * comment; don't add that filter here either — same standing constraint).
+ * Range is widened beyond the viewed month to cover every cell the grid can
+ * render, including muted leading/trailing days from adjacent months — see
+ * calendar-grid.ts for why the fetch range and the render grid share one
+ * source of truth instead of being computed twice (that mismatch is exactly
+ * how adjacent-month days ended up unable to ever show event markers).
+ */
+export async function getCateringEventsForCalendar(year: number, month: number): Promise<CateringEvent[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { start, end } = calendarGridRange(year, month);
+
+  const { data, error } = await supabase
+    .from("catering_events")
+    .select(CATERING_EVENT_SELECT)
+    .gte("event_date", start)
+    .lte("event_date", end)
     .order("event_date")
     .order("start_time", { nullsFirst: true });
 

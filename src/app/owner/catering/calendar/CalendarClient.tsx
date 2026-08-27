@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { CateringEvent } from "../actions";
 import { MONTHS_TH, VENUE_LABEL, toTimeInput } from "../shared-utils";
+import { buildCalendarGrid } from "../calendar-grid";
+import type { CalendarCell } from "../calendar-grid";
 
 const DAYS_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"]; // Sun=0, matches Date.getDay()
 
@@ -29,12 +31,6 @@ function locationKey(e: CateringEvent): string {
   return e.location_type === "offsite" ? "offsite" : (e.venue ?? "offsite");
 }
 
-function daysInMonth(year: number, month: number) {
-  return new Date(year, month, 0).getDate();
-}
-
-type Cell = { day: number; inMonth: boolean };
-
 export function CalendarClient({
   initialEvents,
   year,
@@ -53,34 +49,18 @@ export function CalendarClient({
     router.push(`/owner/catering/calendar?year=${y}&month=${m}`);
   }
 
-  const byDay = new Map<number, CateringEvent[]>();
+  // Keyed by full date, not bare day-of-month — the grid now fetches beyond
+  // the viewed month (see getCateringEventsForCalendar in actions.ts), so a
+  // bare day number would collide between e.g. this month's 3rd and next
+  // month's 3rd.
+  const byDate = new Map<string, CateringEvent[]>();
   for (const e of initialEvents) {
-    const day = parseInt(e.event_date.split("-")[2], 10);
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day)!.push(e);
+    if (!byDate.has(e.event_date)) byDate.set(e.event_date, []);
+    byDate.get(e.event_date)!.push(e);
   }
 
-  const total = daysInMonth(year, month);
-  const firstDow = new Date(year, month - 1, 1).getDay(); // 0=Sun
-
-  // Leading/trailing cells borrow day numbers from the adjacent months so the
-  // grid reads like a normal calendar. They're never in byDay (initialEvents
-  // only covers the current month), so they never show events — just the
-  // muted day number.
-  const prevMonth = month === 1 ? 12 : month - 1;
-  const prevYear = month === 1 ? year - 1 : year;
-  const prevTotal = daysInMonth(prevYear, prevMonth);
-  const leading: Cell[] = Array.from({ length: firstDow }, (_, i) => ({
-    day: prevTotal - firstDow + 1 + i,
-    inMonth: false,
-  }));
-  const current: Cell[] = Array.from({ length: total }, (_, i) => ({ day: i + 1, inMonth: true }));
-  const withLeading = [...leading, ...current];
-  const trailingCount = (7 - (withLeading.length % 7)) % 7;
-  const trailing: Cell[] = Array.from({ length: trailingCount }, (_, i) => ({ day: i + 1, inMonth: false }));
-  const allCells: Cell[] = [...withLeading, ...trailing];
-
-  const weeks: Cell[][] = [];
+  const allCells = buildCalendarGrid(year, month);
+  const weeks: CalendarCell[][] = [];
   for (let i = 0; i < allCells.length; i += 7) weeks.push(allCells.slice(i, i + 7));
 
   const now = new Date();
@@ -118,9 +98,8 @@ export function CalendarClient({
           {weeks.map((week, wi) => (
             <div key={wi} className="grid grid-cols-7 divide-x divide-neutral-100">
               {week.map((cell, di) => {
-                const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}`;
-                const isToday = cell.inMonth && dateStr === todayStr;
-                const dayEvents = cell.inMonth ? byDay.get(cell.day) ?? [] : [];
+                const isToday = cell.inMonth && cell.dateStr === todayStr;
+                const dayEvents = byDate.get(cell.dateStr) ?? [];
                 return (
                   <div key={di} className={`min-h-[110px] space-y-1 p-1.5 ${isToday ? "bg-blue-50/60" : !cell.inMonth ? "bg-neutral-50/50" : ""}`}>
                     <div className={`text-xs font-medium ${isToday ? "text-blue-700" : cell.inMonth ? "text-neutral-500" : "text-neutral-300"}`}>{cell.day}</div>
