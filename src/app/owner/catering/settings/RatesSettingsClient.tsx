@@ -133,9 +133,18 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
             <div key={group.value} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
               <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
                 <span className="text-sm font-semibold text-neutral-800">{group.label}</span>
-                <button onClick={() => openAdd(group.value)} className="text-xs text-green-700 hover:underline">
-                  + เพิ่มรายการ
-                </button>
+                {/* food_set (โต๊ะจีน/บุฟเฟต์ packages) is no longer creatable —
+                    food quoting goes through real menus/set menus (with
+                    recipe cost) exclusively now. Existing rows below stay
+                    visible/manageable for reference or reactivation; only
+                    adding new ones is blocked. */}
+                {group.value === "food_set" ? (
+                  <span className="text-xs text-neutral-400">ปิดการเพิ่มรายการใหม่ — ใช้ชุดเมนู/เมนูจริงแทน</span>
+                ) : (
+                  <button onClick={() => openAdd(group.value)} className="text-xs text-green-700 hover:underline">
+                    + เพิ่มรายการ
+                  </button>
+                )}
               </div>
               <div>
                 {rows.length === 0 && (

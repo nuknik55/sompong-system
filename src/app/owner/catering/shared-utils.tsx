@@ -76,6 +76,14 @@ export const CHARGE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "other",     label: "อื่นๆ" },
   { value: "discount",  label: "ส่วนลด" },
 ];
+/** CHARGE_TYPE_OPTIONS minus "food" — for the manual "+ เพิ่มรายการ" row's
+ *  own <select> only. A manual row is never linked to catering_event_menus,
+ *  so it can never have real recipe cost behind it; "food" stays a valid,
+ *  displayable charge_type (menu-picker rows still carry it, and
+ *  CHARGE_TYPE_OPTIONS/CHARGE_TYPE_LABEL stay unfiltered for rendering
+ *  those), it's just not offered as a choice when hand-typing a row. Also
+ *  enforced server-side in saveCateringCharges — see its comment. */
+export const MANUAL_CHARGE_TYPE_OPTIONS = CHARGE_TYPE_OPTIONS.filter((o) => o.value !== "food");
 // Values mirror the CHECK constraint in supabase/catering_quotation_migration.sql.
 // Order here is also the group order shown in the rate picker.
 export const RATE_TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -87,11 +95,28 @@ export const RATE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "staff_bonus", label: "เบี้ยเลี้ยงพนักงาน" },
   { value: "other",       label: "อื่นๆ" },
 ];
-/** rate_type -> charge_type, applied when a charge row is inserted from the rate picker. */
+/** RATE_TYPE_OPTIONS minus "food_set" — for the quotation-side RatePicker
+ *  (ChargesSection.tsx) only. food_set rates (โต๊ะจีน/buffet packages) have
+ *  no recipe cost behind them, so quoting food goes exclusively through
+ *  MenuPicker (real menus/set menus) now — RatesSettingsClient.tsx still
+ *  uses the full RATE_TYPE_OPTIONS so admin can see/reactivate the existing
+ *  (now deactivated) food_set rows, it just blocks *creating new* ones. */
+export const RATE_PICKER_TYPE_OPTIONS = RATE_TYPE_OPTIONS.filter((o) => o.value !== "food_set");
+/**
+ * rate_type -> charge_type, applied when a charge row is inserted from the
+ * rate picker. food_set is no longer offered anywhere in the rate picker at
+ * all (see the filtered group list in ChargesSection.tsx's RatePicker, and
+ * RatesSettingsClient.tsx blocking new food_set rates) — food quoting goes
+ * through real catering_set_menus/menus (MenuPicker) exclusively now, so
+ * every "food" charge has real recipe cost behind it. This mapping entry is
+ * kept as "other" purely as a defensive backstop (never reachable through
+ * the UI as of this round) in case some future/direct path ever resolves a
+ * food_set rate anyway — it should still never silently become "food".
+ */
 export const RATE_TYPE_TO_CHARGE_TYPE: Record<string, string> = {
   room: "venue",
   delivery: "transport",
-  food_set: "food",
+  food_set: "other",
   drink: "drink",
   music: "other",
   staff_bonus: "other",

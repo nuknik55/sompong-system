@@ -1353,6 +1353,19 @@ export async function saveCateringCharges(
   const supabase = await createClient();
   await assertCostNotLocked(supabase, eventId);
 
+  // "food" without a linked menu row would claim real recipe cost behind a
+  // charge that has none — MenuPicker is the only path that both sets
+  // event_menu_id and produces charge_type "food" now: food_set rates are
+  // no longer offered anywhere in the quotation-side rate picker (see
+  // RATE_PICKER_TYPE_OPTIONS) or creatable in settings, and
+  // MANUAL_CHARGE_TYPE_OPTIONS excludes "food" from the hand-typed row's
+  // own dropdown — so a legitimate save should never hit this. Server-side
+  // because the UI restriction alone isn't a guarantee, same reasoning as
+  // assertCostNotLocked above.
+  if (charges.some((c) => c.event_menu_id === null && c.charge_type === "food")) {
+    throw new Error("รายการที่ไม่ได้เลือกจากเมนู ต้องไม่ใช้ประเภท \"อาหาร\" — ประเภทนี้ใช้ได้เฉพาะรายการที่เพิ่มผ่าน + เพิ่มเมนู เท่านั้น");
+  }
+
   // Deletes and reinserts every row, so event_menu_id MUST be threaded
   // through the caller's payload — otherwise this silently drops every link
   // to catering_event_menus on the very next unrelated charges edit. See

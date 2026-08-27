@@ -6,7 +6,7 @@ import Link from "next/link";
 import { saveCateringCharges, issueCateringQuote, addCateringEventMenu, removeCateringEventMenu } from "../actions";
 import type { CateringEvent, CateringCharge, CateringRate, CateringSetMenuOption, CateringDishOption } from "../actions";
 import {
-  RATE_TYPE_OPTIONS, CHARGE_TYPE_OPTIONS, CHARGE_TYPE_LABEL, RATE_TYPE_TO_CHARGE_TYPE,
+  RATE_PICKER_TYPE_OPTIONS, MANUAL_CHARGE_TYPE_OPTIONS, CHARGE_TYPE_LABEL, RATE_TYPE_TO_CHARGE_TYPE,
   fmtBaht, toNum, thFullDate,
 } from "../shared-utils";
 
@@ -116,7 +116,7 @@ function RatePicker({
       </button>
       {open && (
         <div className="absolute z-20 mt-1 max-h-80 w-80 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-          {RATE_TYPE_OPTIONS.map((group) => {
+          {RATE_PICKER_TYPE_OPTIONS.map((group) => {
             let rows = rates.filter((r) => r.rate_type === group.value);
             if (rows.length === 0) return null;
             if (matchId) {
@@ -537,7 +537,7 @@ export function ChargesSection({
                       <span className="block px-1 py-1 text-sm text-neutral-600">{CHARGE_TYPE_LABEL[c.charge_type] ?? c.charge_type}</span>
                     ) : (
                       <select disabled={isPending} className="charge-input" value={c.charge_type} onChange={(e) => updateRow(c._key, { charge_type: e.target.value })}>
-                        {CHARGE_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        {MANUAL_CHARGE_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     )}
                   </td>
