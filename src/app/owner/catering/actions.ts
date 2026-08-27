@@ -76,6 +76,14 @@ export type CateringEvent = {
   quote_revision: number;
   quoted_total: number | null;
   quoted_at: string | null;
+  /** Non-null once [id]/cost/actions.ts's lockCateringEventCost() has run —
+   *  a timestamp, never the cost figures themselves, so sales-facing code
+   *  (ChargesSection.tsx) can gate on "is cost locked" without needing
+   *  access to catering_event_cost_snapshots (owner/admin-only RLS). Set
+   *  and cleared ONLY by lockCateringEventCost()/unlockCateringEventCost()
+   *  — never included in upsertCateringEvent's payload below, so the
+   *  ordinary sales-facing edit form can never touch it. */
+  cost_locked_at: string | null;
   staff_ids: string[];
 };
 
@@ -174,7 +182,7 @@ const CATERING_EVENT_SELECT = `
   booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
   deposit_amount, deposit_paid_at, detail_note, kitchen_note, created_by,
-  quote_number, quote_revision, quoted_total, quoted_at,
+  quote_number, quote_revision, quoted_total, quoted_at, cost_locked_at,
   catering_customers(name, phone, company_name, address, contact_person),
   catering_event_staff(employee_id),
   profiles(full_name)
@@ -225,6 +233,7 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
     quote_revision: r.quote_revision as number,
     quoted_total: r.quoted_total as number | null,
     quoted_at: r.quoted_at as string | null,
+    cost_locked_at: r.cost_locked_at as string | null,
     staff_ids: staff.map((s) => s.employee_id),
   };
 }
@@ -694,6 +703,37 @@ async function logCateringActivity(
 }
 
 /**
+ * Throws if the event's cost has been locked (see lockCateringEventCost in
+ * [id]/cost/actions.ts) — called before any write that would change what a
+ * locked P&L was computed from (menu quantities, charges, labor entries).
+ * The UI already disables the controls that reach these functions, but that
+ * alone isn't a "permanently frozen" guarantee — this is the server-side
+ * backstop. cost_locked_at is sales-readable (see its comment on
+ * CateringEvent in the type above), so this check works under either role's
+ * RLS without needing admin access to catering_event_cost_snapshots.
+ */
+async function assertCostNotLocked(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("catering_events")
+    .select("cost_locked_at")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error) throw error;
+  // maybeSingle() returns { data: null, error: null } for zero matching
+  // rows — distinguish that from "found, but unlocked" explicitly, so a
+  // bad/stale eventId fails with a clear message instead of silently
+  // passing the guard and only failing later (or not at all, for a delete
+  // matching zero rows) inside the caller's own write.
+  if (!data) throw new Error("ไม่พบข้อมูลงาน");
+  if (data.cost_locked_at) {
+    throw new Error("ต้นทุนของงานนี้ถูกล็อกแล้ว ปลดล็อกก่อนจึงจะแก้ไขได้");
+  }
+}
+
+/**
  * Upserts a single row per (event_id, task_key) — checking sets
  * completed_at/completed_by, unchecking clears both back to NULL on the
  * same row rather than deleting it. task_key isn't validated against
@@ -1093,6 +1133,7 @@ export async function addCateringEventLabor(
 ): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
+  await assertCostNotLocked(supabase, eventId);
   const { error } = await supabase.from("catering_event_labor").insert({ event_id: eventId, ...data });
   if (error) throw error;
   revalidatePath(`/owner/catering/${eventId}/cost`);
@@ -1101,6 +1142,7 @@ export async function addCateringEventLabor(
 export async function deleteCateringEventLabor(id: string, eventId: string): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
+  await assertCostNotLocked(supabase, eventId);
   const { error } = await supabase.from("catering_event_labor").delete().eq("id", id);
   if (error) throw error;
   revalidatePath(`/owner/catering/${eventId}/cost`);
@@ -1206,6 +1248,13 @@ export async function upsertCateringEvent(data: {
     if (custUpdateError) throw custUpdateError;
   }
 
+  // Deliberately no cost_locked_at key here — this function is
+  // requireSales()-gated and reachable from the ordinary sales-facing edit
+  // form, so it must never write that column. It's set/cleared exclusively
+  // by lockCateringEventCost()/unlockCateringEventCost() in
+  // [id]/cost/actions.ts, both requireAdmin()-gated. Even setting
+  // status: "done" here has no effect on cost_locked_at — the two are
+  // deliberately decoupled (see COST_SNAPSHOT_DESIGN.md).
   const payload = {
     customer_id: customerId,
     event_date: data.event_date,
@@ -1302,6 +1351,7 @@ export async function saveCateringCharges(
 ): Promise<void> {
   const profile = await requireSales();
   const supabase = await createClient();
+  await assertCostNotLocked(supabase, eventId);
 
   // Deletes and reinserts every row, so event_menu_id MUST be threaded
   // through the caller's payload — otherwise this silently drops every link
@@ -1375,6 +1425,7 @@ export async function addCateringEventMenu(
 ): Promise<void> {
   const profile = await requireSales();
   const supabase = await createClient();
+  await assertCostNotLocked(supabase, eventId);
 
   let name: string;
   let unitPrice: number;
@@ -1501,6 +1552,7 @@ export async function addCateringEventMenu(
 export async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
   const profile = await requireSales();
   const supabase = await createClient();
+  await assertCostNotLocked(supabase, eventId);
 
   // Resolved before the delete purely for the activity-log description —
   // the row (and its name join) won't exist to read afterward.

@@ -458,19 +458,32 @@ export function ChargesSection({
 
   const total = charges.reduce((s, c) => s + (toNum(c.amount) ?? 0), 0);
   const issueLabel = event.quote_number ? `ออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "ออกใบเสนอราคา";
+  // Non-null once an admin has locked the event's cost (see
+  // [id]/cost/actions.ts) — menu-linked rows freeze on top of their
+  // existing label/price lock (quantity + delete too), and adding a new
+  // menu item is blocked entirely, so the order a locked P&L was computed
+  // from can't keep changing underneath it. Manual (non-menu) rows are
+  // untouched by this — they never fed the frozen food-cost figure.
+  const costLocked = event.cost_locked_at !== null;
 
   return (
     <section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-kanit text-base font-semibold text-neutral-900">รายการเมนู / ค่าใช้จ่าย / ใบเสนอราคา</h3>
         <div className="flex flex-wrap gap-2">
-          <MenuPicker setMenus={setMenuOptions} dishes={dishOptions} disabled={isPending} onAdd={handleAddMenu} />
+          <MenuPicker setMenus={setMenuOptions} dishes={dishOptions} disabled={isPending || costLocked} onAdd={handleAddMenu} />
           <button type="button" onClick={addBlankRow} disabled={isPending} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
             + เพิ่มรายการ
           </button>
           <RatePicker rates={rates} event={event} disabled={isPending} onInsert={insertFromRate} />
         </div>
       </div>
+
+      {costLocked && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          ต้นทุนของงานนี้ถูกล็อกแล้ว — ไม่สามารถเพิ่ม แก้ไขจำนวน หรือลบรายการเมนูได้ จนกว่าจะปลดล็อกที่หน้าต้นทุน-กำไร
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
         <table className="w-full table-fixed text-sm">
@@ -537,9 +550,13 @@ export function ChargesSection({
                     )}
                   </td>
                   <td className="px-2 py-1.5">
-                    <input disabled={isPending} type="number" min={1} className="charge-input text-right tabular-nums" value={c.quantity}
-                      onChange={(e) => updateRow(c._key, { quantity: e.target.value })}
-                      onBlur={(e) => updateRow(c._key, { quantity: clampQuantity(e.target.value) })} />
+                    {locked && costLocked ? (
+                      <span className="block px-1 py-1 text-right text-sm tabular-nums text-neutral-600">{c.quantity}</span>
+                    ) : (
+                      <input disabled={isPending} type="number" min={1} className="charge-input text-right tabular-nums" value={c.quantity}
+                        onChange={(e) => updateRow(c._key, { quantity: e.target.value })}
+                        onBlur={(e) => updateRow(c._key, { quantity: clampQuantity(e.target.value) })} />
+                    )}
                   </td>
                   <td className="px-2 py-1.5">
                     {locked ? (
@@ -556,7 +573,7 @@ export function ChargesSection({
                     <button
                       type="button"
                       onClick={() => (locked ? handleRemoveMenu(c.event_menu_id!) : removeRow(c._key))}
-                      disabled={isPending}
+                      disabled={isPending || (locked && costLocked)}
                       className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-30"
                     >
                       ลบ

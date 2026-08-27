@@ -4,7 +4,9 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { addCateringEventLabor, deleteCateringEventLabor } from "../../actions";
 import type { CateringEventLabor, CateringTransferCostRate } from "../../actions";
-import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum } from "../../shared-utils";
+import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum, thFullDate } from "../../shared-utils";
+import { lockCateringEventCost, unlockCateringEventCost } from "./actions";
+import type { CateringEventCostSnapshot } from "./actions";
 
 type Draft = {
   rate: CateringTransferCostRate;
@@ -80,27 +82,43 @@ function CostRatePicker({
 
 export function CostSummaryClient({
   eventId,
+  eventStatus,
+  quoteNumber,
   laborEntries,
   costRates,
   revenue,
   foodCost,
+  laborCost,
   hasUnknownFoodCost,
+  snapshot,
 }: {
   eventId: string;
+  eventStatus: string;
+  quoteNumber: string | null;
   laborEntries: CateringEventLabor[];
   costRates: CateringTransferCostRate[];
   revenue: number;
   foodCost: number;
+  laborCost: number;
   hasUnknownFoodCost: boolean;
+  snapshot: CateringEventCostSnapshot | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmLock, setConfirmLock] = useState(false);
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
 
-  const laborCost = laborEntries.reduce((s, l) => s + l.amount, 0);
+  const locked = snapshot !== null;
   const profit = revenue - foodCost - laborCost;
   const profitPct = revenue > 0 ? (profit / revenue) * 100 : null;
+
+  // Locking is only offered for a completed job with a real quote behind
+  // the revenue figure — see COST_SNAPSHOT_DESIGN.md decision 2. Both are
+  // re-checked server-side in lockCateringEventCost() too; this just keeps
+  // the button honest about why it's disabled.
+  const canLock = eventStatus === "done" && quoteNumber !== null;
 
   function pickRate(rate: CateringTransferCostRate) {
     setError(null);
@@ -154,12 +172,50 @@ export function CostSummaryClient({
     });
   }
 
+  function handleLock() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await lockCateringEventCost(eventId);
+        setConfirmLock(false);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "ล็อกต้นทุนไม่สำเร็จ");
+        setConfirmLock(false);
+      }
+    });
+  }
+
+  function handleUnlock() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await unlockCateringEventCost(eventId);
+        setConfirmUnlock(false);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "ปลดล็อกไม่สำเร็จ");
+        setConfirmUnlock(false);
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
+      {locked && (
+        <div className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-700">
+          {/* snapshot_at is UTC — a raw .slice(0, 10) can read a day behind
+              actual Thai calendar time for a lock made ~00:00-07:00 local
+              (UTC+7). Converting via Bangkok-local formatting first avoids
+              that. */}
+          ล็อกต้นทุนแล้วเมื่อ {thFullDate(new Date(snapshot.snapshot_at).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))} — ตัวเลขด้านล่างเป็นค่าที่บันทึกไว้ถาวร ไม่คำนวณสดอีกต่อไป
+        </div>
+      )}
+
       <section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-kanit text-base font-semibold text-neutral-900">ต้นทุนแรงงาน/รถ</h3>
-          <CostRatePicker rates={costRates} disabled={isPending} onPick={pickRate} />
+          <CostRatePicker rates={costRates} disabled={isPending || locked} onPick={pickRate} />
         </div>
 
         {draft && (
@@ -214,9 +270,11 @@ export function CostSummaryClient({
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(l.amount)}</span>
-                  <button type="button" onClick={() => handleDelete(l.id)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600">
-                    ลบ
-                  </button>
+                  {!locked && (
+                    <button type="button" onClick={() => handleDelete(l.id)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600">
+                      ลบ
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -247,7 +305,79 @@ export function CostSummaryClient({
         {hasUnknownFoodCost && (
           <p className="mt-2 text-xs text-amber-600">* มีเมนูบางรายการที่ยังไม่มีต้นทุนวัตถุดิบครบ ตัวเลขนี้อาจต่ำกว่าความจริง</p>
         )}
+
+        <div className="mt-4 border-t border-neutral-100 pt-3">
+          {locked ? (
+            <button
+              type="button"
+              onClick={() => setConfirmUnlock(true)}
+              disabled={isPending}
+              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              ปลดล็อกเพื่อแก้ไข
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmLock(true)}
+                disabled={isPending || !canLock}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+              >
+                ล็อกต้นทุนถาวร
+              </button>
+              {!canLock && (
+                <p className="mt-1.5 text-xs text-neutral-400">
+                  {eventStatus !== "done"
+                    ? "ล็อกต้นทุนได้เฉพาะงานที่มีสถานะ \"เสร็จสิ้น\" เท่านั้น"
+                    : "ต้องออกใบเสนอราคาก่อนจึงจะล็อกต้นทุนได้"}
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </section>
+
+      {confirmLock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="mb-2 font-kanit text-base font-semibold text-neutral-900">ล็อกต้นทุนถาวร?</h3>
+            <p className="mb-4 text-sm text-neutral-500">
+              จะบันทึกตัวเลขต้นทุน-กำไรปัจจุบันของงานนี้ไว้ถาวร และปิดการแก้ไขรายการเมนูในหน้าจองงาน
+              จนกว่าจะปลดล็อก
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmLock(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">
+                ยกเลิก
+              </button>
+              <button onClick={handleLock} disabled={isPending}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+                {isPending ? "กำลังล็อก…" : "ยืนยัน"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmUnlock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="mb-2 font-kanit text-base font-semibold text-neutral-900">ปลดล็อกเพื่อแก้ไข?</h3>
+            <p className="mb-4 text-sm text-neutral-500">
+              ตัวเลขที่บันทึกไว้ถาวรจะถูกลบ และหน้านี้จะกลับไปคำนวณสดอีกครั้ง — แก้ไขแล้วต้องล็อกใหม่เพื่อบันทึกตัวเลขถาวรอีกครั้ง
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmUnlock(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">
+                ยกเลิก
+              </button>
+              <button onClick={handleUnlock} disabled={isPending}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                {isPending ? "กำลังปลดล็อก…" : "ปลดล็อก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
