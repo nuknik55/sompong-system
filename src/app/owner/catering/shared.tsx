@@ -422,6 +422,20 @@ export function EventForm({
               <select className="input-base" value={form.booking_type} onChange={(e) => set("booking_type", e.target.value)}>
                 {BOOKING_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {/* booking_type isn't just a label: getCateringPipelineEvents()
+                  (the สถานะ pipeline page) and the customer detail page's
+                  booking history both filter on booking_type='catering'. A
+                  wedding tagged จองห้อง still quotes and costs correctly —
+                  nothing gates those — but silently never appears on either
+                  of those two screens, which is easy to miss. Shown only for
+                  the two at-risk values so it stays a nudge, not permanent
+                  noise. */}
+              {(form.booking_type === "table" || form.booking_type === "room") && (
+                <p className="mt-1 text-xs text-amber-600">
+                  ถ้างานนี้มีใบเสนอราคา/มัดจำ หรือเป็นงานเลี้ยง ให้เลือก &quot;จองงานจัดเลี้ยง&quot; —
+                  ไม่อย่างนั้นจะไม่ขึ้นในหน้าสถานะและประวัติการจองของลูกค้า
+                </p>
+              )}
             </Field>
             <Field label="รูปแบบอาหาร">
               <select className="input-base" value={form.food_format} onChange={(e) => set("food_format", e.target.value)}>

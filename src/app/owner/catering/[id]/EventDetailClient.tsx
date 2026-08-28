@@ -3,15 +3,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { upsertCateringEvent, deleteCateringEvent } from "../actions";
+import { upsertCateringEvent, deleteCateringEvent, updateCateringEventStatus } from "../actions";
 import type {
   CateringEvent, CateringCustomer, StaffOption, CateringCharge, CateringRate,
   CateringSetMenuOption, CateringDishOption, TaskCompletion, CateringActivityLogEntry,
 } from "../actions";
 import {
   VENUE_LABEL, ROOM_PORTION_LABEL, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL, MUSIC_TYPE_LABEL,
+  STATUS_OPTIONS, STATUS_COLOR,
   thFullDate, timeRange, staffLabel, formToUpsertPayload,
-  StatusBadge,
 } from "../shared-utils";
 import type { FormState } from "../shared-utils";
 import { EventForm } from "../shared";
@@ -48,6 +48,7 @@ export function EventDetailClient({
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const staffById = new Map(staffOptions.map((s) => [s.id, s]));
 
@@ -60,6 +61,23 @@ export function EventDetailClient({
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+      }
+    });
+  }
+
+  // Its own error state rather than the shared `error` above: that one
+  // renders near the bottom of the page (below every section), which is
+  // fine for the edit form and delete, but the status control sits at the
+  // very top — a failure there would report itself off-screen.
+  function handleStatusChange(status: string) {
+    if (status === event.status) return;
+    setStatusError(null);
+    startTransition(async () => {
+      try {
+        await updateCateringEventStatus(event.id, status);
+        router.refresh();
+      } catch (err) {
+        setStatusError(err instanceof Error ? err.message : "เปลี่ยนสถานะไม่สำเร็จ");
       }
     });
   }
@@ -131,7 +149,28 @@ export function EventDetailClient({
             </p>
           </div>
           <div className="text-right">
-            <StatusBadge status={event.status} />
+            {/* Inline status control, in the exact spot the read-only
+                StatusBadge used to occupy — status is the field that
+                changes most often over an event's life, and burying it in
+                the full แก้ไข form (one dropdown among ~20 fields) made a
+                routine update disproportionately slow. Styled to still read
+                as the badge it replaces (same STATUS_COLOR treatment), so
+                it stays scannable as status-at-a-glance. Saves immediately
+                via updateCateringEventStatus — a status-only write that
+                never touches the other fields or re-runs the room-conflict
+                check; see that action's comment. */}
+            <select
+              value={event.status}
+              disabled={isPending}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              aria-label="สถานะการจอง"
+              className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs font-medium outline-none transition-opacity hover:opacity-80 disabled:cursor-wait disabled:opacity-50 ${STATUS_COLOR[event.status] ?? ""}`}
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            {statusError && <p className="mt-1 text-xs text-red-600">{statusError}</p>}
             <p className="mt-1 text-sm text-neutral-600">{thFullDate(event.event_date)}</p>
             <p className="text-xs text-neutral-400 tabular-nums">{timeRange(event.start_time, event.end_time)}</p>
           </div>

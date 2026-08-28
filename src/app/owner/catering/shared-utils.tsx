@@ -15,6 +15,7 @@
 // file is allowed to skip "use client".
 
 import type { CateringEvent, StaffOption } from "./actions";
+import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR } from "./event-status";
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -57,14 +58,13 @@ export const MUSIC_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "own_band",     label: "วงดนตรีลูกค้านำมาเอง" },
   { value: "other",        label: "อื่นๆ" },
 ];
-export const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "inquiry",          label: "สอบถาม" },
-  { value: "awaiting_deposit", label: "รอมัดจำ" },
-  { value: "deposit_paid",     label: "มัดจำแล้ว" },
-  { value: "confirmed",        label: "คอนเฟิร์มแล้ว" },
-  { value: "done",             label: "เสร็จสิ้น" },
-  { value: "cancelled",        label: "ยกเลิก" },
-];
+// STATUS_OPTIONS/STATUS_LABEL/STATUS_COLOR live in event-status.ts (plain
+// TS, no JSX) so actions.ts — a "use server" file that can't import this
+// module — shares the same definitions instead of duplicating them.
+// Imported (not just re-exported) because StatusBadge below uses them, and
+// `export ... from` alone creates no local binding; re-exported so every
+// existing importer of this module keeps working unchanged.
+export { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR };
 // Values mirror the CHECK constraint in supabase/catering_migration.sql.
 export const CHARGE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "food",      label: "อาหาร" },
@@ -140,18 +140,10 @@ export const ROOM_PORTION_LABEL  = Object.fromEntries(ROOM_PORTION_OPTIONS.map((
 export const BOOKING_TYPE_LABEL  = Object.fromEntries(BOOKING_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const FOOD_FORMAT_LABEL   = Object.fromEntries(FOOD_FORMAT_OPTIONS.map((o) => [o.value, o.label]));
 export const MUSIC_TYPE_LABEL    = Object.fromEntries(MUSIC_TYPE_OPTIONS.map((o) => [o.value, o.label]));
-export const STATUS_LABEL        = Object.fromEntries(STATUS_OPTIONS.map((o) => [o.value, o.label]));
 export const CHARGE_TYPE_LABEL   = Object.fromEntries(CHARGE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const RATE_TYPE_LABEL     = Object.fromEntries(RATE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
-
-export const STATUS_COLOR: Record<string, string> = {
-  inquiry:          "text-neutral-600 bg-neutral-50 border-neutral-200",
-  awaiting_deposit: "text-amber-700 bg-amber-50 border-amber-200",
-  deposit_paid:     "text-blue-700 bg-blue-50 border-blue-200",
-  confirmed:        "text-green-700 bg-green-50 border-green-200",
-  done:             "text-neutral-500 bg-neutral-100 border-neutral-300",
-  cancelled:        "text-red-700 bg-red-50 border-red-200",
-};
+// STATUS_LABEL/STATUS_COLOR are defined in event-status.ts and re-exported
+// above — see the note there.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

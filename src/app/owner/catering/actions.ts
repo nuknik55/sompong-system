@@ -7,6 +7,7 @@ import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { CHECKLIST_STEPS } from "./checklist";
 import { calendarGridRange } from "./calendar-grid";
+import { STATUS_LABEL, isValidCateringStatus } from "./event-status";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -731,6 +732,39 @@ async function assertCostNotLocked(
   if (data.cost_locked_at) {
     throw new Error("ต้นทุนของงานนี้ถูกล็อกแล้ว ปลดล็อกก่อนจึงจะแก้ไขได้");
   }
+}
+
+/**
+ * Status-only update, for the inline status control on the event detail
+ * page. Deliberately NOT routed through upsertCateringEvent: that function
+ * rewrites all ~20 event fields from a full form payload and re-runs the
+ * room-conflict check, so using it here would mean a status change could
+ * fail on an unrelated pre-existing conflict, or silently rewrite fields
+ * from stale form state. requireSales() matches upsertCateringEvent's own
+ * gate exactly — same roles that can change status via the edit form can
+ * change it here, no more, no less.
+ *
+ * status is validated against event-status.ts's shared list before the
+ * write; the column has its own CHECK constraint too (see
+ * catering_migration.sql), this just fails with a readable message instead
+ * of a raw Postgres error.
+ */
+export async function updateCateringEventStatus(eventId: string, status: string): Promise<void> {
+  const profile = await requireSales();
+  const supabase = await createClient();
+
+  if (!isValidCateringStatus(status)) throw new Error("สถานะไม่ถูกต้อง");
+
+  const { error } = await supabase
+    .from("catering_events")
+    .update({ status })
+    .eq("id", eventId);
+  if (error) throw error;
+
+  await logCateringActivity(supabase, eventId, profile.id, "status_changed", `เปลี่ยนสถานะเป็น: ${STATUS_LABEL[status]}`);
+
+  revalidatePath("/owner/catering");
+  revalidatePath(`/owner/catering/${eventId}`);
 }
 
 /**
