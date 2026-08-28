@@ -33,6 +33,61 @@ function parseThaiDateSortKey(text: string): number | null {
   return Number(year) * 10000 + month * 100 + Number(day);
 }
 
+// Column layout of the receipt report. Verified against a real export
+// (NewMaterialTransferReceive_11072026133502.xls) whose header row reads:
+//   0 MaterialCode  1 MaterialName  2 DocumentNumber  3 InvoiceReference
+//   4 DocumentDate  5 VendorName    6 UnitName        7 LastCost(Exc.Vat)
+//   8 Cost          9 PricePerUnit  10 Qty            11 Discount
+//   12 TotalCost(Exc.Vat)  13 VAT   14 TotalCost(Inc.Vat)  15 Remark
+const COL = {
+  materialCode: 0,
+  materialName: 1,
+  documentNumber: 2,
+  documentDate: 4,
+  vendorName: 5,
+  unitName: 6,
+  qty: 10,
+  totalCostExcVat: 12,
+  totalCostIncVat: 14,
+} as const;
+
+/**
+ * Which cost basis unit costs are derived from. Deliberately one named
+ * switch rather than an inline field pick: whether VAT belongs in food cost
+ * depends on whether it's reclaimable for the business, which is an open
+ * business question. Flipping this to "exc" is the whole change.
+ */
+const COST_BASIS: "inc" | "exc" = "inc";
+
+/** The delivery's cost on the configured basis — see COST_BASIS. */
+function deliveryCost(d: { totalCostIncVat: number; totalCostExcVat: number }): number {
+  return COST_BASIS === "inc" ? d.totalCostIncVat : d.totalCostExcVat;
+}
+
+/** One receipt line: a single delivery of one material on one document. */
+export type PosDelivery = {
+  /** Unique per receipt line; with materialCode this is the idempotency key. */
+  documentNumber: string;
+  /** Sortable Buddhist-calendar key, e.g. 25690711. */
+  dateKey: number;
+  /** Raw Thai date string exactly as it appeared in the file. */
+  dateLabel: string;
+  vendorName: string;
+  unitName: string;
+  qty: number;
+  totalCostIncVat: number;
+  totalCostExcVat: number;
+  /** deliveryCost(this) / qty — qty is guaranteed > 0 (see the parse filter). */
+  unitCost: number;
+};
+
+/** Every delivery the report contains for one material, in file order. */
+export type PosMaterialDeliveries = {
+  materialCode: string;
+  materialName: string;
+  deliveries: PosDelivery[];
+};
+
 export type PosReceiptSummary = {
   materialCode: string;
   materialName: string;
@@ -45,43 +100,41 @@ export type PosReceiptSummary = {
 };
 
 /**
- * Parses the report and returns one summary row per material: the qty and
- * TotalCost(Inc.Vat) of its single most recent delivery date (receipts on
- * the same latest date are summed together; earlier dates are ignored
- * entirely — averaging across days is unsafe because some days have the
- * wrong unit entered).
+ * Parses the report into every delivery it contains, grouped by material and
+ * kept in file order (which summarizeLatestDelivery's fold depends on).
+ *
+ * Rows are dropped here exactly as before: header/subtotal rows (no
+ * DocumentNumber), rows before any MaterialCode has been seen, and rows with
+ * an unparseable date or qty <= 0.
+ *
+ * The report is a rolling window (its own title row states the range — the
+ * verified sample covers 01 เมษายน – 11 กรกฎาคม 2569 only), so deliveries
+ * older than that are not recoverable from a later export. That's why this
+ * returns everything rather than only what one aggregation happens to need.
  */
-export function parsePosReceiptReport(buffer: ArrayBuffer): PosReceiptSummary[] {
+export function parsePosReceiptDeliveries(buffer: ArrayBuffer): PosMaterialDeliveries[] {
   const wb = XLSX.read(buffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  // raw: true is SheetJS's default and is load-bearing here — do not set
+  // raw: false. The source is an HTML table, and ~1,259 of its rows carry
+  // comma-formatted totals ("4,302.00"). Under raw: true SheetJS coerces
+  // those to real numbers; under raw: false they come back as strings and
+  // Number("4,302.00") is NaN, which the `|| 0` below would silently turn
+  // into a zero cost or a dropped row.
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
 
-  // Per material: track the latest date seen so far, and accumulate qty/cost for that date.
-  const byMaterial = new Map<
-    string,
-    {
-      materialName: string;
-      latestDateKey: number;
-      latestDateLabel: string;
-      unitName: string;
-      mixedUnits: boolean;
-      qty: number;
-      totalCostIncVat: number;
-    }
-  >();
+  const byMaterial = new Map<string, PosMaterialDeliveries>();
 
   let currentCode: string | null = null;
   let currentName: string | null = null;
 
   for (const row of rows) {
-    const materialCode = row[0] != null ? String(row[0]).trim() : "";
-    const materialName = row[1] != null ? String(row[1]).trim() : "";
-    const documentNumber = row[2];
-    const documentDateRaw = row[4];
-    const unitNameRaw = row[6];
-    const qtyRaw = row[10];
-    const totalCostIncVatRaw = row[14];
+    const materialCode = row[COL.materialCode] != null ? String(row[COL.materialCode]).trim() : "";
+    const materialName = row[COL.materialName] != null ? String(row[COL.materialName]).trim() : "";
+    const documentNumber = row[COL.documentNumber];
+    const documentDateRaw = row[COL.documentDate];
 
+    // Code/name appear once per material, then blank on follow-up receipts.
     if (materialCode) {
       currentCode = materialCode;
       currentName = materialName;
@@ -92,48 +145,97 @@ export function parsePosReceiptReport(buffer: ArrayBuffer): PosReceiptSummary[] 
     if (!currentCode) continue;
 
     const dateKey = documentDateRaw ? parseThaiDateSortKey(String(documentDateRaw)) : null;
-    const qty = Number(qtyRaw) || 0;
-    const totalCostIncVat = Number(totalCostIncVatRaw) || 0;
-    const unitName = unitNameRaw != null ? String(unitNameRaw).trim() : "";
+    const qty = Number(row[COL.qty]) || 0;
+    const totalCostIncVat = Number(row[COL.totalCostIncVat]) || 0;
+    const totalCostExcVat = Number(row[COL.totalCostExcVat]) || 0;
+    const unitName = row[COL.unitName] != null ? String(row[COL.unitName]).trim() : "";
+    const vendorName = row[COL.vendorName] != null ? String(row[COL.vendorName]).trim() : "";
     if (dateKey == null || qty <= 0) continue;
 
-    const existing = byMaterial.get(currentCode);
-    if (!existing) {
-      byMaterial.set(currentCode, {
-        materialName: currentName ?? currentCode,
-        latestDateKey: dateKey,
-        latestDateLabel: String(documentDateRaw),
-        unitName,
-        mixedUnits: false,
-        qty,
-        totalCostIncVat,
-      });
-    } else if (dateKey > existing.latestDateKey) {
-      existing.latestDateKey = dateKey;
-      existing.latestDateLabel = String(documentDateRaw);
-      existing.unitName = unitName;
-      existing.mixedUnits = false;
-      existing.qty = qty;
-      existing.totalCostIncVat = totalCostIncVat;
-    } else if (dateKey === existing.latestDateKey) {
-      if (unitName && existing.unitName && unitName !== existing.unitName) existing.mixedUnits = true;
-      existing.qty += qty;
-      existing.totalCostIncVat += totalCostIncVat;
+    let material = byMaterial.get(currentCode);
+    if (!material) {
+      material = { materialCode: currentCode, materialName: currentName ?? currentCode, deliveries: [] };
+      byMaterial.set(currentCode, material);
     }
+    material.deliveries.push({
+      documentNumber: String(documentNumber).trim(),
+      dateKey,
+      dateLabel: String(documentDateRaw),
+      vendorName,
+      unitName,
+      qty,
+      totalCostIncVat,
+      totalCostExcVat,
+      unitCost: deliveryCost({ totalCostIncVat, totalCostExcVat }) / qty,
+    });
   }
 
-  return Array.from(byMaterial.entries())
-    .map(([materialCode, v]) => ({
-      materialCode,
-      materialName: v.materialName,
-      latestDateLabel: v.latestDateLabel,
-      unitName: v.unitName,
-      mixedUnits: v.mixedUnits,
-      qty: v.qty,
-      totalCostIncVat: v.totalCostIncVat,
-      unitCost: v.qty > 0 ? v.totalCostIncVat / v.qty : 0,
-    }))
+  return Array.from(byMaterial.values());
+}
+
+/**
+ * Reduces each material to its single most recent delivery date: receipts on
+ * that same latest date are summed together, and earlier dates are ignored
+ * entirely.
+ *
+ * Averaging across days was avoided here because some days have the wrong
+ * unit entered — a real limitation, since it also means one atypical
+ * delivery becomes the standing cost until the next import. Replacing this
+ * with a windowed weighted average is a later step and needs unit coherence
+ * first; this function is the current behaviour, preserved verbatim.
+ *
+ * Folds in file order rather than by sorting, so materials whose rows are
+ * not chronological reduce exactly as they did before.
+ */
+export function summarizeLatestDelivery(materials: PosMaterialDeliveries[]): PosReceiptSummary[] {
+  return materials
+    .map((m) => {
+      let seen = false;
+      let latestDateKey = 0;
+      let latestDateLabel = "";
+      let unitName = "";
+      let mixedUnits = false;
+      let qty = 0;
+      let cost = 0;
+
+      for (const d of m.deliveries) {
+        if (!seen || d.dateKey > latestDateKey) {
+          seen = true;
+          latestDateKey = d.dateKey;
+          latestDateLabel = d.dateLabel;
+          unitName = d.unitName;
+          mixedUnits = false;
+          qty = d.qty;
+          cost = deliveryCost(d);
+        } else if (d.dateKey === latestDateKey) {
+          if (d.unitName && unitName && d.unitName !== unitName) mixedUnits = true;
+          qty += d.qty;
+          cost += deliveryCost(d);
+        }
+      }
+
+      return {
+        materialCode: m.materialCode,
+        materialName: m.materialName,
+        latestDateLabel,
+        unitName,
+        mixedUnits,
+        qty,
+        totalCostIncVat: cost,
+        unitCost: qty > 0 ? cost / qty : 0,
+      };
+    })
     .sort((a, b) => a.materialName.localeCompare(b.materialName, "th"));
+}
+
+/**
+ * Parses the report and returns one summary row per material, using only its
+ * most recent delivery date. Unchanged in behaviour — now composed from the
+ * two functions above so the full delivery list is available to callers that
+ * need it.
+ */
+export function parsePosReceiptReport(buffer: ArrayBuffer): PosReceiptSummary[] {
+  return summarizeLatestDelivery(parsePosReceiptDeliveries(buffer));
 }
 
 // ---------------------------------------------------------------------------
