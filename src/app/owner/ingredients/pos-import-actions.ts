@@ -3,7 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireOwner } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { parsePosReceiptReport } from "@/lib/pos-import";
+import { parsePosReceiptReport, proposeYieldQty } from "@/lib/pos-import";
+
+/**
+ * How the POS delivery's unit relates to the unit the stored price is in.
+ *  - "match"   — same unit, the new price is directly comparable.
+ *  - "unset"   — the ingredient has no usable unit recorded ("-" or blank), so
+ *                there is nothing to disagree with; the POS unit is adopted.
+ *  - "changed" — genuinely different units. The price is denominated in the
+ *                POS unit while yield_qty still describes the old one, so
+ *                writing the price alone silently corrupts the derived cost
+ *                (this is what happened to ซอสพริก). Blocked until resolved.
+ */
+export type PosUnitState = "match" | "unset" | "changed";
 
 export type PosImportRow = {
   ingredientId: string;
@@ -15,7 +27,16 @@ export type PosImportRow = {
   pctChange: number | null;
   oldUnit: string | null;
   newUnit: string;
-  unitMismatch: boolean;
+  unitState: PosUnitState;
+  /** The latest delivery date carried more than one UnitName — its unit cost is unsafe either way. */
+  mixedUnits: boolean;
+  /** Current denominator, so a "changed" row can be resolved without leaving the screen. */
+  currentReceiveQty: number;
+  currentYieldQty: number | null;
+  usageUnit: string | null;
+  /** Starting point for yield_qty parsed from the POS unit label; null when it can't be derived. */
+  proposedYieldQty: number | null;
+  proposedYieldBasis: string | null;
   aliasSource?: string; // POS name that triggered this via alias
 };
 
@@ -44,7 +65,10 @@ export async function previewPosImport(formData: FormData): Promise<PosImportPre
 
   const supabase = await createClient();
   const [{ data: ingredients, error }, { data: aliases }] = await Promise.all([
-    supabase.from("ingredients").select("id, name, purchase_cost, purchase_unit_label").eq("is_prep", false),
+    supabase
+      .from("ingredients")
+      .select("id, name, purchase_cost, purchase_unit_label, receive_qty, yield_qty, usage_unit")
+      .eq("is_prep", false),
     supabase.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
   ]);
   if (error) throw new Error(error.message);
@@ -64,11 +88,37 @@ export async function previewPosImport(formData: FormData): Promise<PosImportPre
   const unmatched: { materialCode: string; materialName: string }[] = [];
   const addedIngredientIds = new Set<string>();
 
-  function buildRow(ingredient: { id: string; name: string; purchase_cost: number | null; purchase_unit_label: string | null }, unitCost: number, unitName: string, mixedUnits: boolean, latestDateLabel: string, qty: number, aliasSource?: string): PosImportRow {
+  type IngredientForImport = {
+    id: string;
+    name: string;
+    purchase_cost: number | null;
+    purchase_unit_label: string | null;
+    receive_qty: number | null;
+    yield_qty: number | null;
+    usage_unit: string | null;
+  };
+
+  function buildRow(ingredient: IngredientForImport, unitCost: number, unitName: string, mixedUnits: boolean, latestDateLabel: string, qty: number, aliasSource?: string): PosImportRow {
     const oldCost = ingredient.purchase_cost;
     const pctChange = oldCost && oldCost > 0 ? ((unitCost - oldCost) / oldCost) * 100 : null;
-    const oldUnit = ingredient.purchase_unit_label?.trim() || null;
-    const unitMismatch = mixedUnits || (!!oldUnit && oldUnit !== unitName);
+
+    // "-" is the placeholder this system uses for "no unit recorded" and is
+    // by far the most common value, so it counts as unset rather than as a
+    // unit that disagrees with the POS. Treating it as a mismatch is what
+    // made the old warning fire on ~37% of rows and get clicked through.
+    const rawOldUnit = ingredient.purchase_unit_label?.trim() || null;
+    const oldUnit = rawOldUnit === "-" ? null : rawOldUnit;
+    const posUnit = unitName.trim();
+
+    const unitState: PosUnitState = !oldUnit ? "unset" : oldUnit === posUnit ? "match" : "changed";
+
+    const receiveQty = ingredient.receive_qty ?? 1;
+    // Only worth proposing where the denominator is actually in question.
+    const proposal =
+      unitState === "changed" || unitState === "unset"
+        ? proposeYieldQty(posUnit, ingredient.usage_unit, receiveQty)
+        : null;
+
     return {
       ingredientId: ingredient.id,
       name: ingredient.name,
@@ -78,8 +128,14 @@ export async function previewPosImport(formData: FormData): Promise<PosImportPre
       latestDateLabel,
       pctChange,
       oldUnit,
-      newUnit: unitName,
-      unitMismatch,
+      newUnit: posUnit,
+      unitState,
+      mixedUnits,
+      currentReceiveQty: receiveQty,
+      currentYieldQty: ingredient.yield_qty,
+      usageUnit: ingredient.usage_unit,
+      proposedYieldQty: proposal?.qty ?? null,
+      proposedYieldBasis: proposal?.basis ?? null,
       aliasSource,
     };
   }
@@ -105,17 +161,54 @@ export async function previewPosImport(formData: FormData): Promise<PosImportPre
     }
   }
 
-  matched.sort((a, b) => Number(b.unitMismatch) - Number(a.unitMismatch) || Math.abs(b.pctChange ?? 0) - Math.abs(a.pctChange ?? 0));
+  // Blocked rows first (they need a decision), then mixed-unit deliveries,
+  // then biggest price moves.
+  const blockRank = (r: PosImportRow) => (r.unitState === "changed" ? 2 : r.mixedUnits ? 1 : 0);
+  matched.sort(
+    (a, b) => blockRank(b) - blockRank(a) || Math.abs(b.pctChange ?? 0) - Math.abs(a.pctChange ?? 0),
+  );
   return { matched, unmatched };
 }
 
-export async function applyPosImport(updates: { ingredientId: string; newCost: number }[]): Promise<number> {
+export type PosImportUpdate = {
+  ingredientId: string;
+  newCost: number;
+  /**
+   * Present only for a row that resolved a unit change or adopted a unit.
+   * Writing the label REQUIRES stating the yield in the same call — see the
+   * guard below.
+   */
+  newUnitLabel?: string;
+  /** The denominator that goes with newUnitLabel. Explicit null means "no yield conversion". */
+  newYieldQty?: number | null;
+};
+
+export async function applyPosImport(updates: PosImportUpdate[]): Promise<number> {
   await requireOwner();
   if (updates.length === 0) return 0;
   const supabase = await createClient();
 
+  // The core invariant of this import: a price is meaningless without the
+  // unit it is denominated in. Changing purchase_unit_label while leaving
+  // yield_qty describing the old unit is exactly the ซอสพริก corruption, so
+  // the two must move together. Enforced here rather than only in the UI,
+  // because the UI's blocking is client-side and this action is callable
+  // directly.
   for (const u of updates) {
-    const { error } = await supabase.from("ingredients").update({ purchase_cost: u.newCost }).eq("id", u.ingredientId);
+    if (u.newUnitLabel !== undefined && u.newYieldQty === undefined) {
+      throw new Error(
+        `ไม่สามารถเปลี่ยนหน่วยของ "${u.newUnitLabel}" โดยไม่ระบุจำนวนตัดแต่ง (yield) — ราคาและหน่วยต้องอัปเดตพร้อมกัน`,
+      );
+    }
+  }
+
+  for (const u of updates) {
+    const patch: Record<string, unknown> = { purchase_cost: u.newCost };
+    if (u.newUnitLabel !== undefined) {
+      patch.purchase_unit_label = u.newUnitLabel;
+      patch.yield_qty = u.newYieldQty;
+    }
+    const { error } = await supabase.from("ingredients").update(patch).eq("id", u.ingredientId);
     if (error) throw new Error(error.message);
   }
 

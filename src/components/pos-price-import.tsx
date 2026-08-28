@@ -25,6 +25,10 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
   const [doneCount, setDoneCount] = useState<number | null>(null);
 
   // Alias state
+  /** Per-row yield_qty entry, for rows whose unit changed or was never set. */
+  const [yieldInput, setYieldInput] = useState<Record<string, string>>({});
+  /** Rows whose unit change the user has explicitly confirmed. */
+  const [resolved, setResolved] = useState<Record<string, boolean>>({});
   const [aliases, setAliases] = useState<PriceAliasRow[]>([]);
   const [showAliases, setShowAliases] = useState(false);
   const [newPosName, setNewPosName] = useState("");
@@ -47,7 +51,36 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         formData.set("file", file);
         const result = await previewPosImport(formData);
         setPreview(result);
-        setChecked(Object.fromEntries(result.matched.map((r) => [r.ingredientId, !r.unitMismatch])));
+        // A "changed"-unit row starts unchecked and cannot be checked until
+        // resolved; mixed-unit deliveries stay unchecked as before.
+        setChecked(
+          Object.fromEntries(
+            result.matched.map((r) => [r.ingredientId, r.unitState !== "changed" && !r.mixedUnits]),
+          ),
+        );
+        // Seed each resolvable row's yield input, so the common case is
+        // "confirm" rather than "work it out".
+        //
+        // "changed": the stored yield describes the OLD unit and is therefore
+        // wrong by definition, so the proposal wins.
+        // "unset": only the label was missing — an existing yield_qty may be a
+        // real, trimmed figure someone measured, and a pack-size proposal must
+        // not silently replace it. Existing value wins; the proposal only
+        // fills a genuine blank.
+        setYieldInput(
+          Object.fromEntries(
+            result.matched
+              .filter((r) => r.unitState === "changed" || r.unitState === "unset")
+              .map((r) => {
+                const preferred =
+                  r.unitState === "changed"
+                    ? r.proposedYieldQty
+                    : r.currentYieldQty ?? r.proposedYieldQty;
+                return [r.ingredientId, preferred != null ? String(preferred) : ""];
+              }),
+          ),
+        );
+        setResolved({});
       } catch (err) {
         setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
         setPreview(null);
@@ -57,7 +90,24 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
 
   function confirmApply() {
     if (!preview) return;
-    const updates = preview.matched.filter((r) => checked[r.ingredientId]).map((r) => ({ ingredientId: r.ingredientId, newCost: r.newCost }));
+    const updates = preview.matched
+      .filter((r) => checked[r.ingredientId])
+      .map((r) => {
+        // Carry the unit through whenever the price is not already
+        // denominated in the stored unit — the whole point of this step. The
+        // server rejects a unit without a yield, so both travel together.
+        if (r.unitState === "changed" || (r.unitState === "unset" && yieldInput[r.ingredientId]?.trim())) {
+          const raw = yieldInput[r.ingredientId]?.trim();
+          const parsed = raw ? Number(raw) : NaN;
+          return {
+            ingredientId: r.ingredientId,
+            newCost: r.newCost,
+            newUnitLabel: r.newUnit,
+            newYieldQty: Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+          };
+        }
+        return { ingredientId: r.ingredientId, newCost: r.newCost };
+      });
     if (updates.length === 0) return;
     setError(null);
     startTransition(async () => {
@@ -206,7 +256,19 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setChecked(Object.fromEntries(preview.matched.map((r) => [r.ingredientId, true])))}
+                // Never bulk-select an unresolved unit change — that would
+                // defeat the block in one click, which is how the old
+                // advisory warning ended up ignored.
+                onClick={() =>
+                  setChecked(
+                    Object.fromEntries(
+                      preview.matched.map((r) => [
+                        r.ingredientId,
+                        !(r.unitState === "changed" && !resolved[r.ingredientId]),
+                      ]),
+                    ),
+                  )
+                }
                 className="text-xs text-neutral-500 underline hover:text-neutral-800"
               >
                 เลือกทั้งหมด
@@ -237,14 +299,18 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
               <tbody>
                 {preview.matched.map((r: PosImportRow) => {
                   const bigChange = r.pctChange != null && Math.abs(r.pctChange) >= 30;
+                  const isBlocked = r.unitState === "changed" && !resolved[r.ingredientId];
                   return (
+                    <>
                     <tr
                       key={r.ingredientId}
-                      className={`border-b border-neutral-100 last:border-0 ${r.unitMismatch ? "bg-red-50" : bigChange ? "bg-amber-50" : r.aliasSource ? "bg-blue-50" : ""}`}
+                      className={`border-b border-neutral-100 last:border-0 ${isBlocked ? "bg-red-50" : r.mixedUnits ? "bg-orange-50" : bigChange ? "bg-amber-50" : r.aliasSource ? "bg-blue-50" : ""}`}
                     >
                       <td className="px-2 py-1.5">
                         <input
                           type="checkbox"
+                          disabled={isBlocked}
+                          title={isBlocked ? "ต้องยืนยันหน่วยและ yield ก่อน" : undefined}
                           checked={!!checked[r.ingredientId]}
                           onChange={(e) => setChecked((prev) => ({ ...prev, [r.ingredientId]: e.target.checked }))}
                         />
@@ -262,12 +328,62 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                       <td className={`px-2 py-1.5 text-right tabular-nums ${bigChange ? "font-medium text-amber-700" : "text-neutral-500"}`}>
                         {r.pctChange != null ? `${r.pctChange > 0 ? "+" : ""}${r.pctChange.toFixed(0)}%` : "ใหม่"}
                       </td>
-                      <td className={`px-2 py-1.5 ${r.unitMismatch ? "font-medium text-red-700" : "text-neutral-500"}`}>
-                        {r.oldUnit ?? "-"} → {r.newUnit || "-"}
-                        {r.unitMismatch && " ⚠"}
+                      <td className={`px-2 py-1.5 ${r.unitState === "changed" ? "font-medium text-red-700" : "text-neutral-500"}`}>
+                        {r.oldUnit ?? "—"} → {r.newUnit || "—"}
+                        {r.unitState === "changed" && " ⚠"}
+                        {r.mixedUnits && <span className="ml-1 text-orange-700" title="วันที่ล่าสุดมีหลายหน่วย">±</span>}
                       </td>
                       <td className="px-2 py-1.5 text-neutral-500">{r.latestDateLabel}</td>
                     </tr>
+                    {r.unitState === "changed" && (
+                      <tr key={`${r.ingredientId}-resolve`} className={isBlocked ? "bg-red-50" : "bg-green-50"}>
+                        <td />
+                        <td colSpan={6} className="px-2 pb-2 text-xs">
+                          <div className="rounded border border-neutral-200 bg-white p-2">
+                            <p className="mb-1.5 text-neutral-700">
+                              หน่วยเปลี่ยนจาก <b>{r.oldUnit}</b> เป็น <b>{r.newUnit}</b> — ราคาใหม่คิดต่อ{" "}
+                              <b>{r.newUnit}</b> แต่ค่า yield เดิม ({r.currentYieldQty ?? "ไม่ได้ตั้ง"}) อ้างอิงหน่วยเก่า
+                              จึงต้องยืนยันพร้อมกัน
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <label className="text-neutral-600">
+                                จำนวนตัดแต่ง (yield) ต่อ {r.currentReceiveQty} {r.newUnit}
+                                {r.usageUnit ? ` เป็น ${r.usageUnit}` : ""}:
+                              </label>
+                              <input
+                                type="number"
+                                className="w-28 rounded border border-neutral-300 px-2 py-1"
+                                value={yieldInput[r.ingredientId] ?? ""}
+                                placeholder={r.currentYieldQty != null ? String(r.currentYieldQty) : "—"}
+                                onChange={(e) => setYieldInput((p) => ({ ...p, [r.ingredientId]: e.target.value }))}
+                              />
+                              <button
+                                type="button"
+                                className="rounded bg-neutral-900 px-2.5 py-1 font-medium text-white hover:bg-neutral-700"
+                                onClick={() => {
+                                  setResolved((p) => ({ ...p, [r.ingredientId]: true }));
+                                  setChecked((p) => ({ ...p, [r.ingredientId]: true }));
+                                }}
+                              >
+                                {resolved[r.ingredientId] ? "ยืนยันแล้ว ✓" : "ยืนยันหน่วยและ yield"}
+                              </button>
+                            </div>
+                            {r.proposedYieldBasis && (
+                              <p className="mt-1 text-neutral-500">
+                                เสนอจากชื่อหน่วย: {r.proposedYieldBasis} — ตรวจสอบก่อนยืนยัน
+                                (ของที่ต้องตัดแต่งจะได้จริงน้อยกว่านี้)
+                              </p>
+                            )}
+                            {!r.proposedYieldBasis && (
+                              <p className="mt-1 text-neutral-500">
+                                อ่านขนาดบรรจุจากชื่อหน่วยไม่ได้ — กรุณากรอกเอง
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </>
                   );
                 })}
               </tbody>

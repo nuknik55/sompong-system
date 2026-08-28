@@ -88,6 +88,106 @@ export type PosMaterialDeliveries = {
   deliveries: PosDelivery[];
 };
 
+// ── Pack-size parsing, for proposing a yield_qty when a unit changes ────────
+// Purchase-unit labels in this system encode their pack size often enough to
+// be worth reading: "แกล(4500g)", "ถุง(1000g)", "ถุง(2โล)", "ห่อ(1000g)".
+// A proposal is only ever a starting point shown to a human — see
+// proposeYieldQty's contract.
+
+/** Recognised mass units → grams. */
+const MASS_UNITS: Record<string, number> = {
+  กรัม: 1, ก: 1, g: 1, gram: 1, grams: 1,
+  ขีด: 100,
+  โล: 1000, กิโล: 1000, กิโลกรัม: 1000, กก: 1000, kg: 1000,
+};
+
+/** Recognised volume units → millilitres. */
+const VOLUME_UNITS: Record<string, number> = {
+  มล: 1, ml: 1, ซีซี: 1, cc: 1,
+  ลิตร: 1000, ล: 1000, l: 1000, litre: 1000, liter: 1000,
+};
+
+/** Strips punctuation/spaces so "กก." and "กก" compare equal. */
+function normalizeUnitToken(token: string): string {
+  return token.trim().replace(/[.\s]/g, "").toLowerCase();
+}
+
+/** The unit's dimension and its factor to that dimension's base unit, or null. */
+function unitDimension(token: string): { dim: "mass" | "volume"; factor: number } | null {
+  const t = normalizeUnitToken(token);
+  if (t in MASS_UNITS) return { dim: "mass", factor: MASS_UNITS[t] };
+  if (t in VOLUME_UNITS) return { dim: "volume", factor: VOLUME_UNITS[t] };
+  return null;
+}
+
+export type YieldProposal = {
+  /** Suggested yield_qty: usable usage-units obtained from receiveQty purchase units. */
+  qty: number;
+  /** Human-readable derivation, shown next to the input so the arithmetic is visible. */
+  basis: string;
+};
+
+/**
+ * Proposes a yield_qty from a purchase-unit label, when — and only when — the
+ * label states a pack size in a unit of the same dimension as the ingredient's
+ * usage unit.
+ *
+ * Deliberately conservative, returning null rather than guessing:
+ *   "แกล(4500g)"  + usage กรัม → 4500        (the ซอสพริก case)
+ *   "ถุง(2โล)"    + usage กรัม → 2000
+ *   "โล"          + usage กรัม → 1000        (bare unit, no pack size)
+ *   "ลัง(25ถุง)"  + usage กรัม → null        (25 bags of unknown size)
+ *   "แกลลอน4500"  + usage กรัม → null        (4500 of what?)
+ *   "หวี" / "ตัว" + usage กรัม → null        (not a mass at all)
+ *
+ * The result is a theoretical pack size, NOT a trimmed yield: for anything
+ * with waste (fish, vegetables) the real yield_qty is lower. Callers must
+ * present this as an editable starting point, never apply it silently.
+ */
+export function proposeYieldQty(
+  purchaseUnitLabel: string | null,
+  usageUnit: string | null,
+  receiveQty: number,
+): YieldProposal | null {
+  if (!purchaseUnitLabel || !usageUnit) return null;
+  const usage = unitDimension(usageUnit);
+  if (!usage) return null;
+
+  const label = purchaseUnitLabel.trim();
+  // Prefer a parenthesised pack size, e.g. "แกล(4500g)" → "4500g".
+  const inParens = label.match(/[(（]([^)）]*)[)）]/);
+  const candidate = inParens ? inParens[1] : label;
+
+  // "<number><unit>" — the unit token is required, so a bare "แกลลอน4500"
+  // (4500 of an unstated unit) is refused rather than guessed at.
+  const withNumber = candidate.match(/(\d+(?:[.,]\d+)?)\s*([^\d\s()（）]+)/);
+  let perPurchaseUnit: number | null = null;
+  let derivation = "";
+
+  if (withNumber) {
+    const packQty = Number(withNumber[1].replace(",", ""));
+    const packUnit = unitDimension(withNumber[2]);
+    if (Number.isFinite(packQty) && packQty > 0 && packUnit && packUnit.dim === usage.dim) {
+      perPurchaseUnit = (packQty * packUnit.factor) / usage.factor;
+      derivation = `${packQty} ${withNumber[2].trim()} ต่อ 1 ${label}`;
+    }
+  } else {
+    // No pack size stated — but the label may itself be a mass/volume unit
+    // ("โล"), which converts directly.
+    const bare = unitDimension(candidate);
+    if (bare && bare.dim === usage.dim) {
+      perPurchaseUnit = bare.factor / usage.factor;
+      derivation = `1 ${label}`;
+    }
+  }
+
+  if (perPurchaseUnit == null || !Number.isFinite(perPurchaseUnit) || perPurchaseUnit <= 0) return null;
+
+  const qty = perPurchaseUnit * (receiveQty > 0 ? receiveQty : 1);
+  const scaled = receiveQty > 1 ? ` × จำนวนรับ ${receiveQty}` : "";
+  return { qty, basis: `${derivation}${scaled} = ${qty} ${usageUnit}` };
+}
+
 export type PosReceiptSummary = {
   materialCode: string;
   materialName: string;
