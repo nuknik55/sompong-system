@@ -307,9 +307,15 @@ export async function reorderCoaAccount(code: string, groupCode: string, directi
 export async function deleteCoaAccount(code: string): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
-  const { count } = await supabase
+  // This count is a referential guard, so it must fail CLOSED. Previously the
+  // error was discarded and `count ?? 0` turned any failure into 0, letting
+  // the delete through even when entries existed. Note the head:true mode can
+  // return count: null with no error at all, so both are checked.
+  const { count, error: countError } = await supabase
     .from("expense_entries").select("id", { count: "exact", head: true }).eq("coa_code", code);
-  if ((count ?? 0) > 0) throw new Error(`ไม่สามารถลบได้ มีรายการบันทึกอยู่ ${count} รายการ`);
+  if (countError) throw new Error(countError.message);
+  if (count == null) throw new Error("ไม่สามารถตรวจสอบรายการที่ผูกกับผังบัญชีนี้ได้ จึงยังไม่ลบ");
+  if (count > 0) throw new Error(`ไม่สามารถลบได้ มีรายการบันทึกอยู่ ${count} รายการ`);
   const { error } = await supabase.from("coa").delete().eq("code", code);
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting/coa");
@@ -420,8 +426,16 @@ export async function addExpenseEntry(data: {
 
   // Prevent non-owners from adding sensitive account entries
   if (profile.role !== "owner") {
-    const { data: coa } = await supabase.from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coa?.is_sensitive) throw new Error("ไม่มีสิทธิ์บันทึกรายการนี้");
+    // Permission check — must fail CLOSED. A discarded error left `coa` null,
+    // so `coa?.is_sensitive` was undefined, which is falsy, and a non-owner
+    // was allowed through. An unknown coa_code has the same effect, so that
+    // is refused too: sensitivity you cannot read is not sensitivity you can
+    // assume away.
+    const { data: coa, error: coaError } = await supabase
+      .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
+    if (coaError) throw new Error(`ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}`);
+    if (!coa) throw new Error("ไม่พบผังบัญชีนี้");
+    if (coa.is_sensitive) throw new Error("ไม่มีสิทธิ์บันทึกรายการนี้");
   }
 
   const { error } = await supabase.from("expense_entries").insert({
@@ -452,8 +466,12 @@ export async function updateExpenseEntry(
   const supabase = await createClient();
 
   if (profile.role !== "owner") {
-    const { data: coa } = await supabase.from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coa?.is_sensitive) throw new Error("ไม่มีสิทธิ์แก้ไขรายการนี้");
+    // Fails CLOSED — same reasoning as addExpenseEntry above.
+    const { data: coa, error: coaError } = await supabase
+      .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
+    if (coaError) throw new Error(`ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}`);
+    if (!coa) throw new Error("ไม่พบผังบัญชีนี้");
+    if (coa.is_sensitive) throw new Error("ไม่มีสิทธิ์แก้ไขรายการนี้");
   }
 
   const { error } = await supabase

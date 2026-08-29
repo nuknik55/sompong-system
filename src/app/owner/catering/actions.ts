@@ -906,7 +906,14 @@ export async function saveCateringSetMenu(data: {
   // The picker on the client already dedupes by menu_id (bumps quantity
   // instead of adding a second row), which catering_set_menu_items requires
   // anyway via its UNIQUE (set_menu_id, menu_id) constraint.
-  await supabase.from("catering_set_menu_items").delete().eq("set_menu_id", setMenuId);
+  // Checked, not fire-and-forget: this is a replace, so if the delete fails
+  // silently and the insert below succeeds, the set ends up with the new rows
+  // ON TOP of the old ones rather than instead of them. Duplication is worse
+  // than the save failing outright — it looks like success.
+  {
+    const { error } = await supabase.from("catering_set_menu_items").delete().eq("set_menu_id", setMenuId);
+    if (error) throw error;
+  }
   if (data.items.length > 0) {
     const { error } = await supabase.from("catering_set_menu_items").insert(
       data.items.map((it, i) => ({
@@ -1346,7 +1353,13 @@ export async function upsertCateringEvent(data: {
 
   // Replace the staff assignment set wholesale — simpler than diffing, and the
   // row count per event is tiny.
-  await supabase.from("catering_event_staff").delete().eq("event_id", eventId);
+  // Checked for the same reason as the set-menu items above: an unchecked
+  // delete before an insert turns a replace into an append, so the event
+  // would show every assigned staff member twice.
+  {
+    const { error } = await supabase.from("catering_event_staff").delete().eq("event_id", eventId);
+    if (error) throw error;
+  }
   if (data.staff_ids.length > 0) {
     const { error } = await supabase.from("catering_event_staff").insert(
       data.staff_ids.map((employee_id) => ({ event_id: eventId, employee_id, role: "taker" })),
@@ -1404,7 +1417,15 @@ export async function saveCateringCharges(
   // through the caller's payload — otherwise this silently drops every link
   // to catering_event_menus on the very next unrelated charges edit. See
   // ChargeRow/rowFromCharge/toPayload in ChargesSection.tsx.
-  await supabase.from("catering_event_charges").delete().eq("event_id", eventId);
+  // Checked: this is the money-affecting one. saveCateringCharges' whole
+  // contract is "replace the charge list wholesale", so an unchecked delete
+  // that silently fails leaves the old lines in place and the insert adds the
+  // new ones alongside them — a quotation with every line item twice, and a
+  // quoted_total to match. Absence would be noticed; duplication might not.
+  {
+    const { error } = await supabase.from("catering_event_charges").delete().eq("event_id", eventId);
+    if (error) throw error;
+  }
   if (charges.length > 0) {
     const { error } = await supabase.from("catering_event_charges").insert(
       charges.map((c, i) => ({
