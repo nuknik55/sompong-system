@@ -133,10 +133,20 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
     .single();
   if (insertError || !newPrep) throw new Error(insertError?.message ?? "คัดลอกของเตรียมไม่สำเร็จ");
 
-  await supabase.from("ingredients").insert({ name: newName.trim(), category: newCategory.trim() || "prep", is_prep: true, usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id });
-  const { data: items } = await supabase.from("prep_recipe_items").select("ingredient_id, quantity, unit, note, sort_order").eq("prep_recipe_id", prepId);
+  // Checked: without this row the new prep recipe has no matching ingredient
+  // and can never be used in any menu — the same failure prep_create has in
+  // approve/actions.ts.
+  {
+    const { error } = await supabase.from("ingredients").insert({ name: newName.trim(), category: newCategory.trim() || "prep", is_prep: true, usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id });
+    if (error) throw new Error(error.message);
+  }
+  const { data: items, error: itemsError } = await supabase.from("prep_recipe_items").select("ingredient_id, quantity, unit, note, sort_order").eq("prep_recipe_id", prepId);
+  if (itemsError) throw new Error(itemsError.message);
   if (items && items.length > 0) {
-    await supabase.from("prep_recipe_items").insert(items.map((it) => ({ ...it, prep_recipe_id: newPrep.id })));
+    // Checked: a silent failure here produced a copied prep with ZERO
+    // ingredients, whose batch cost then computes as 0.
+    const { error } = await supabase.from("prep_recipe_items").insert(items.map((it) => ({ ...it, prep_recipe_id: newPrep.id })));
+    if (error) throw new Error(error.message);
   }
   return newPrep.id;
 }

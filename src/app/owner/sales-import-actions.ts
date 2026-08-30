@@ -107,9 +107,10 @@ export async function applyPosSalesImport(
   }
 
   // Store import date range metadata (single row, upserted on fixed key).
-  await supabase
+  const { error: metaError } = await supabase
     .from("pos_import_meta")
     .upsert({ id: "last", date_from: dateFrom || null, date_to: dateTo || null, imported_at: new Date().toISOString() }, { onConflict: "id" });
+  if (metaError) throw new Error(metaError.message);
 
   revalidatePath("/owner");
   return updates.length;

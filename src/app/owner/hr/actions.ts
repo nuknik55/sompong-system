@@ -873,9 +873,15 @@ export async function upsertScheduleNote(
   // so every call here already fails and is swallowed. ScheduleClient updates
   // its local state optimistically, so the note appears and then vanishes on
   // reload. Adding the check would replace a silent no-op with a hard error on
-  // a page people use daily, without making the feature work. The fix is to
-  // create the table or delete the feature — pending that decision, this stays.
+  // a page people use daily, without making the feature work.
+  //
+  // TEMPORARY. The decision is made: the table gets created (Nik wants the
+  // feature available even though nobody uses it yet). When that migration
+  // lands, DELETE this whole comment and the disable below, and check the
+  // error like every other write in this file. getScheduleWeek's discarded
+  // read error above goes at the same time.
   {
+    // eslint-disable-next-line local/no-unchecked-supabase-write -- table does not exist yet; see above
     await supabase
       .from("schedule_notes")
       .upsert(

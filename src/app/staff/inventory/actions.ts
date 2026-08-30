@@ -73,7 +73,14 @@ export async function createOrderSession(
   );
 
   if (itemsErr) {
-    await supabase.from("order_sessions").delete().eq("id", session.id);
+    // Compensating delete for the session we just created. It can fail too —
+    // and if it does, silently swallowing it strands an empty order session
+    // that nobody knows to clean up. Say so in the message rather than
+    // reporting only the original failure.
+    const { error: rollbackErr } = await supabase.from("order_sessions").delete().eq("id", session.id);
+    if (rollbackErr) {
+      return { error: `${itemsErr.message} (และลบรอบสั่งซื้อที่ค้างไม่สำเร็จ: ${rollbackErr.message})` };
+    }
     return { error: itemsErr.message };
   }
 

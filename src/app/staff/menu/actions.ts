@@ -76,9 +76,14 @@ export async function duplicateMenu(menuId: string, newName: string, newCategory
     .single();
   if (insertError || !newMenu) throw new Error(insertError?.message ?? "คัดลอกเมนูไม่สำเร็จ");
 
-  const { data: items } = await supabase.from("menu_recipe_items").select("ingredient_id, quantity, unit, sort_order").eq("menu_id", menuId);
+  const { data: items, error: itemsError } = await supabase.from("menu_recipe_items").select("ingredient_id, quantity, unit, sort_order").eq("menu_id", menuId);
+  if (itemsError) throw new Error(itemsError.message);
   if (items && items.length > 0) {
-    await supabase.from("menu_recipe_items").insert(items.map((it) => ({ ...it, menu_id: newMenu.id })));
+    // Checked: a silent failure here produced a copied menu with ZERO recipe
+    // items, whose food cost then computes as 0 — a costing error that looks
+    // like a successful duplicate.
+    const { error } = await supabase.from("menu_recipe_items").insert(items.map((it) => ({ ...it, menu_id: newMenu.id })));
+    if (error) throw new Error(error.message);
   }
   return newMenu.id;
 }
