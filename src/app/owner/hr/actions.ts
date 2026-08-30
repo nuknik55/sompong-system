@@ -168,18 +168,18 @@ export async function getDepartments(): Promise<Department[]> {
 export async function upsertDepartment(d: { id?: string; name: string }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  if (d.id) {
-    await supabase.from("departments").update({ name: d.name }).eq("id", d.id);
-  } else {
-    await supabase.from("departments").insert({ name: d.name });
-  }
+  const { error } = d.id
+    ? await supabase.from("departments").update({ name: d.name }).eq("id", d.id)
+    : await supabase.from("departments").insert({ name: d.name });
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr");
 }
 
 export async function setDepartmentActive(id: string, is_active: boolean): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("departments").update({ is_active }).eq("id", id);
+  const { error } = await supabase.from("departments").update({ is_active }).eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr");
 }
 
@@ -283,11 +283,10 @@ export async function upsertEmployee(e: {
     al_quota_override: e.al_quota_override ?? null,
     probation_end_date: e.probation_end_date || null,
   };
-  if (e.id) {
-    await supabase.from("employees").update(payload).eq("id", e.id);
-  } else {
-    await supabase.from("employees").insert(payload);
-  }
+  const { error } = e.id
+    ? await supabase.from("employees").update(payload).eq("id", e.id)
+    : await supabase.from("employees").insert(payload);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/employees");
 }
 
@@ -296,8 +295,14 @@ export async function updateEmployeeSortOrders(
 ): Promise<void> {
   await requireHR();
   const supabase = await createClient();
+  // N separate writes, so a failure part-way leaves the list half-reordered.
+  // That is recoverable in a way the swap-a-pair reorders elsewhere are not:
+  // every sort_order here is an ABSOLUTE assignment from a complete ordering,
+  // so re-running the same reorder from the same list repairs it. Failing
+  // loudly is what makes that retry possible.
   for (const u of updates) {
-    await supabase.from("employees").update({ sort_order: u.sort_order }).eq("id", u.id);
+    const { error } = await supabase.from("employees").update({ sort_order: u.sort_order }).eq("id", u.id);
+    if (error) throw new Error(error.message);
   }
   revalidatePath("/owner/hr");
 }
@@ -359,11 +364,10 @@ export async function upsertLeaveType(lt: {
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  if (lt.id) {
-    await supabase.from("leave_types").update(lt).eq("id", lt.id);
-  } else {
-    await supabase.from("leave_types").insert(lt);
-  }
+  const { error } = lt.id
+    ? await supabase.from("leave_types").update(lt).eq("id", lt.id)
+    : await supabase.from("leave_types").insert(lt);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/settings");
 }
 
@@ -430,16 +434,23 @@ export async function upsertLeaveRequest(data: {
   let oldDateTo: string | null = null;
   if (data.id) {
     const { id, ...rest } = data;
-    const { data: old } = await supabase
+    // This read gates the cleanup at the bottom of the function. Discarding
+    // its error left oldDateFrom/oldDateTo null, which silently skipped that
+    // cleanup and stranded attendance_daily "leave" rows on dates the request
+    // no longer covers — days the employee is then paid as leave.
+    const { data: old, error: oldErr } = await supabase
       .from("leave_requests")
       .select("date_from,date_to")
       .eq("id", id)
       .single();
+    if (oldErr) throw new Error(oldErr.message);
     oldDateFrom = old?.date_from ?? null;
     oldDateTo = old?.date_to ?? null;
-    await supabase.from("leave_requests").update(rest).eq("id", id);
+    const { error } = await supabase.from("leave_requests").update(rest).eq("id", id);
+    if (error) throw new Error(error.message);
   } else {
-    await supabase.from("leave_requests").insert({ ...data, status: "approved" });
+    const { error } = await supabase.from("leave_requests").insert({ ...data, status: "approved" });
+    if (error) throw new Error(error.message);
   }
 
   // Mirror every date in the leave range to attendance_daily (source of truth for payroll/quota/schedule).
@@ -478,7 +489,15 @@ export async function upsertLeaveRequest(data: {
       source: "leave_request",
     };
   });
-  await supabase.from("attendance_daily").upsert(dailyRows, { onConflict: "employee_id,work_date" });
+  // NOT ATOMIC with the leave_requests write above. attendance_daily is the
+  // source of truth for payroll, quota and the schedule, so a silent failure
+  // here produced a leave request that every downstream calculation ignored.
+  {
+    const { error } = await supabase
+      .from("attendance_daily")
+      .upsert(dailyRows, { onConflict: "employee_id,work_date" });
+    if (error) throw new Error(error.message);
+  }
 
   // On edit: delete attendance_daily rows for dates that dropped out of the new range.
   if (oldDateFrom && oldDateTo) {
@@ -492,12 +511,13 @@ export async function upsertLeaveRequest(data: {
       c2.setDate(c2.getDate() + 1);
     }
     if (toDelete.length > 0) {
-      await supabase
+      const { error } = await supabase
         .from("attendance_daily")
         .delete()
         .eq("employee_id", data.employee_id)
         .eq("source", "leave_request")
         .in("work_date", toDelete);
+      if (error) throw new Error(error.message);
     }
   }
 
@@ -509,7 +529,8 @@ export async function upsertLeaveRequest(data: {
 export async function updateLeaveStatus(id: string, status: "approved" | "rejected"): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("leave_requests").update({ status }).eq("id", id);
+  const { error } = await supabase.from("leave_requests").update({ status }).eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/leave");
   revalidatePath("/owner/hr/schedule");
   revalidatePath("/owner/hr/attendance");
@@ -518,12 +539,20 @@ export async function updateLeaveStatus(id: string, status: "approved" | "reject
 export async function deleteLeaveRequest(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  const { data: lr } = await supabase
+  // Read first and insist on it: it is the only record of which dates to
+  // un-mirror. A discarded error here left `lr` null, so the request was
+  // deleted while its attendance_daily rows stayed behind — the employee
+  // remains on paid leave for those days with nothing left to explain why.
+  const { data: lr, error: lrErr } = await supabase
     .from("leave_requests")
     .select("employee_id,date_from,date_to")
     .eq("id", id)
     .single();
-  await supabase.from("leave_requests").delete().eq("id", id);
+  if (lrErr) throw new Error(lrErr.message);
+  {
+    const { error } = await supabase.from("leave_requests").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
   if (lr) {
     const toDelete: string[] = [];
     const cur = new Date(lr.date_from + "T00:00:00");
@@ -533,12 +562,13 @@ export async function deleteLeaveRequest(id: string): Promise<void> {
       cur.setDate(cur.getDate() + 1);
     }
     if (toDelete.length > 0) {
-      await supabase
+      const { error } = await supabase
         .from("attendance_daily")
         .delete()
         .eq("employee_id", lr.employee_id)
         .eq("source", "leave_request")
         .in("work_date", toDelete);
+      if (error) throw new Error(error.message);
     }
   }
   revalidatePath("/owner/hr/leave");
@@ -570,18 +600,18 @@ export async function upsertHoliday(h: {
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  if (h.id) {
-    await supabase.from("holidays").update(h).eq("id", h.id);
-  } else {
-    await supabase.from("holidays").insert({ ...h, is_active: true });
-  }
+  const { error } = h.id
+    ? await supabase.from("holidays").update(h).eq("id", h.id)
+    : await supabase.from("holidays").insert({ ...h, is_active: true });
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/settings");
 }
 
 export async function deleteHoliday(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("holidays").delete().eq("id", id);
+  const { error } = await supabase.from("holidays").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/settings");
 }
 
@@ -620,14 +650,18 @@ export async function createPayrollPeriod(p: {
 export async function closePayrollPeriod(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("payroll_periods").update({ is_closed: true }).eq("id", id);
+  // A close that silently failed left the period editable while the UI showed
+  // it locked — the exact state the lock exists to prevent.
+  const { error } = await supabase.from("payroll_periods").update({ is_closed: true }).eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/payroll");
 }
 
 export async function reopenPayrollPeriod(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("payroll_periods").update({ is_closed: false }).eq("id", id);
+  const { error } = await supabase.from("payroll_periods").update({ is_closed: false }).eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/payroll");
 }
 
@@ -833,6 +867,14 @@ export async function upsertScheduleNote(
   const supabase = await createClient();
   // Always upsert — note text is optional, note_type alone is meaningful.
   // Use clearNote (DELETE) when the user explicitly wants to remove a cell.
+  //
+  // DELIBERATELY LEFT UNCHECKED, unlike every other write in this file.
+  // public.schedule_notes DOES NOT EXIST in production (verified: PGRST205),
+  // so every call here already fails and is swallowed. ScheduleClient updates
+  // its local state optimistically, so the note appears and then vanishes on
+  // reload. Adding the check would replace a silent no-op with a hard error on
+  // a page people use daily, without making the feature work. The fix is to
+  // create the table or delete the feature — pending that decision, this stays.
   {
     await supabase
       .from("schedule_notes")
@@ -1068,11 +1110,10 @@ export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" |
     gross_total: gross,
     net_total: net,
   };
-  if (e.id) {
-    await supabase.from("payroll_entries").update(payload).eq("id", e.id);
-  } else {
-    await supabase.from("payroll_entries").insert(payload);
-  }
+  const { error } = e.id
+    ? await supabase.from("payroll_entries").update(payload).eq("id", e.id)
+    : await supabase.from("payroll_entries").insert(payload);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/payroll");
 }
 
@@ -1124,10 +1165,11 @@ export async function upsertAttendanceDaily(r: {
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("attendance_daily").upsert(
+  const { error } = await supabase.from("attendance_daily").upsert(
     { ...r, source: "manual" },
     { onConflict: "employee_id,work_date" },
   );
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/attendance");
 }
 
@@ -1137,11 +1179,12 @@ export async function deleteAttendanceDailyRecord(
 ): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase
+  const { error } = await supabase
     .from("attendance_daily")
     .delete()
     .eq("employee_id", employeeId)
     .eq("work_date", workDate);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/attendance");
 }
 
@@ -1176,19 +1219,22 @@ export async function upsertAttendancePunch(p: {
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
+  let error: { message: string } | null;
   if (p.id) {
     const { id, ...rest } = p;
-    await supabase.from("attendance_punches").update({ ...rest, source: "manual" }).eq("id", id);
+    ({ error } = await supabase.from("attendance_punches").update({ ...rest, source: "manual" }).eq("id", id));
   } else {
-    await supabase.from("attendance_punches").insert({ ...p, source: "manual" });
+    ({ error } = await supabase.from("attendance_punches").insert({ ...p, source: "manual" }));
   }
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/attendance");
 }
 
 export async function deleteAttendancePunch(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("attendance_punches").delete().eq("id", id);
+  const { error } = await supabase.from("attendance_punches").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/attendance");
 }
 
@@ -1475,11 +1521,10 @@ export async function upsertDaySwapRequest(r: {
     note: r.note || null,
     holiday_id: r.holiday_id || null,
   };
-  if (r.id) {
-    await supabase.from("day_swap_requests").update(payload).eq("id", r.id);
-  } else {
-    await supabase.from("day_swap_requests").insert(payload);
-  }
+  const { error } = r.id
+    ? await supabase.from("day_swap_requests").update(payload).eq("id", r.id)
+    : await supabase.from("day_swap_requests").insert(payload);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/dayswap");
   revalidatePath("/owner/hr/employees");
 }
@@ -1487,7 +1532,8 @@ export async function upsertDaySwapRequest(r: {
 export async function deleteDaySwapRequest(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
-  await supabase.from("day_swap_requests").delete().eq("id", id);
+  const { error } = await supabase.from("day_swap_requests").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/dayswap");
   revalidatePath("/owner/hr/employees");
 }
