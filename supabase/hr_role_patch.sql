@@ -82,16 +82,6 @@ CREATE POLICY "hr_all" ON public.holidays FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('owner','hr'))
 );
 
--- ── ot_rules (owner + hr manage) ─────────────────────────────────────────────
-DO $$ DECLARE p record; BEGIN
-  FOR p IN SELECT policyname FROM pg_policies WHERE tablename='ot_rules' AND schemaname='public'
-  LOOP EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(p.policyname) || ' ON public.ot_rules'; END LOOP;
-END $$;
-
-CREATE POLICY "hr_all" ON public.ot_rules FOR ALL USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('owner','hr'))
-);
-
 -- ── payroll_periods (owner + hr ONLY — salary data) ──────────────────────────
 DO $$ DECLARE p record; BEGIN
   FOR p IN SELECT policyname FROM pg_policies WHERE tablename='payroll_periods' AND schemaname='public'

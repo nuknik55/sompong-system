@@ -124,30 +124,13 @@ CREATE POLICY "hol_all"    ON public.holidays FOR ALL    TO authenticated
   USING      ((SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('owner','admin'))
   WITH CHECK ((SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('owner','admin'));
 
--- ─── 6. OT Rules ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.ot_rules (
-  id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        TEXT    NOT NULL,
-  applies_to  TEXT    NOT NULL DEFAULT 'weekday'
-              CHECK (applies_to IN ('weekday','weekend','holiday')),
-  multiplier  NUMERIC NOT NULL DEFAULT 1.5,
-  is_active   BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-ALTER TABLE public.ot_rules ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "ot_select" ON public.ot_rules;
-DROP POLICY IF EXISTS "ot_all"    ON public.ot_rules;
-CREATE POLICY "ot_select" ON public.ot_rules FOR SELECT TO authenticated USING (true);
-CREATE POLICY "ot_all"    ON public.ot_rules FOR ALL    TO authenticated
-  USING      ((SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('owner','admin'))
-  WITH CHECK ((SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('owner','admin'));
-
--- Seed default OT rules
-INSERT INTO public.ot_rules (name, applies_to, multiplier) VALUES
-  ('OT วันธรรมดา',       'weekday', 1.5),
-  ('OT เสาร์-อาทิตย์',  'weekend', 2.0),
-  ('OT วันนักขัตฤกษ์',  'holiday', 3.0)
-ON CONFLICT DO NOTHING;
+-- ─── 6. OT Rules — REMOVED ──────────────────────────────────────────────────
+-- public.ot_rules was declared here but never applied to production, and no
+-- code in src/ has ever referenced it. Rather than run a migration for a table
+-- nothing reads, the declaration, its RLS policies and its seed rows were
+-- deleted. The matching policy block in hr_role_patch.sql went with it — that
+-- block would have errored on re-run against a database where the table does
+-- not exist. If OT rules become a real feature, add them back deliberately.
 
 -- ─── 7. Payroll Periods ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.payroll_periods (
