@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { swapSortOrder } from "@/lib/reorder";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { CHECKLIST_STEPS } from "./checklist";
@@ -1031,10 +1032,11 @@ export async function reorderCateringRate(id: string, rateType: string, directio
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
   if (swapIdx < 0 || swapIdx >= siblings.length) return {};
 
-  const current = siblings[idx]!;
-  const swap = siblings[swapIdx]!;
-  await supabase.from("catering_rates").update({ sort_order: swap.sort_order }).eq("id", current.id);
-  await supabase.from("catering_rates").update({ sort_order: current.sort_order }).eq("id", swap.id);
+  try {
+    await swapSortOrder(supabase, "catering_rates", "id", siblings[idx]!.id, siblings[swapIdx]!.id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "สลับลำดับไม่สำเร็จ" };
+  }
 
   revalidatePath("/owner/catering/settings");
   return {};
@@ -1130,10 +1132,11 @@ export async function reorderCateringTransferCostRate(id: string, costType: stri
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
   if (swapIdx < 0 || swapIdx >= siblings.length) return {};
 
-  const current = siblings[idx]!;
-  const swap = siblings[swapIdx]!;
-  await supabase.from("catering_transfer_cost_rates").update({ sort_order: swap.sort_order }).eq("id", current.id);
-  await supabase.from("catering_transfer_cost_rates").update({ sort_order: current.sort_order }).eq("id", swap.id);
+  try {
+    await swapSortOrder(supabase, "catering_transfer_cost_rates", "id", siblings[idx]!.id, siblings[swapIdx]!.id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "สลับลำดับไม่สำเร็จ" };
+  }
 
   revalidatePath("/owner/catering/cost-settings");
   return {};

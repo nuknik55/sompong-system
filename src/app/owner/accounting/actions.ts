@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { swapSortOrder } from "@/lib/reorder";
 
 export type CoaAccount = {
   code: string;
@@ -129,19 +130,7 @@ export async function reorderSupplier(id: string, direction: "up" | "down", allI
   const idx = allIds.indexOf(id);
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
   if (swapIdx < 0 || swapIdx >= allIds.length) return;
-  const [idA, idB] = [allIds[idx]!, allIds[swapIdx]!];
-  const { data, error: fetchErr } = await supabase
-    .from("suppliers").select("id,sort_order").in("id", [idA, idB]);
-  if (fetchErr) throw new Error(fetchErr.message);
-  const [rowA, rowB] = [data!.find((r) => r.id === idA)!, data!.find((r) => r.id === idB)!];
-  const { error } = await supabase.rpc("swap_supplier_order", {
-    id_a: idA, sort_a: rowB.sort_order, id_b: idB, sort_b: rowA.sort_order,
-  });
-  if (error) {
-    // fallback: update individually
-    await supabase.from("suppliers").update({ sort_order: rowB.sort_order }).eq("id", idA);
-    await supabase.from("suppliers").update({ sort_order: rowA.sort_order }).eq("id", idB);
-  }
+  await swapSortOrder(supabase, "suppliers", "id", allIds[idx]!, allIds[swapIdx]!);
   revalidatePath("/owner/accounting/suppliers");
 }
 
@@ -293,11 +282,11 @@ export async function reorderCoaAccount(code: string, groupCode: string, directi
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
   if (swapIdx < 0 || swapIdx >= siblings.length) return {};
 
-  // Swap sort_orders between the two items
-  const current = siblings[idx];
-  const swap = siblings[swapIdx];
-  await supabase.from("coa").update({ sort_order: swap.sort_order }).eq("code", current.code);
-  await supabase.from("coa").update({ sort_order: current.sort_order }).eq("code", swap.code);
+  try {
+    await swapSortOrder(supabase, "coa", "code", siblings[idx]!.code, siblings[swapIdx]!.code);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "สลับลำดับไม่สำเร็จ" };
+  }
 
   revalidatePath("/owner/accounting/coa");
   revalidatePath("/owner/accounting/daily");
