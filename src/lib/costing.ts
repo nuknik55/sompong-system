@@ -37,7 +37,6 @@ export type MenuRow = {
   name: string;
   category: string | null;
   selling_price: number;
-  fuel_cost: number;
   last_period_qty_sold: number;
   staff_visible: boolean;
 };
@@ -143,8 +142,8 @@ export type MenuCost = {
 /**
  * qFactorPct: a flat % uplift applied to every menu's ingredient cost to cover
  * incidentals (gas, spices, packaging) instead of tracking gas usage per dish —
- * tracking it per dish badly distorts cheap, quick-cook items (see fuel_cost
- * column, now unused).
+ * tracking it per dish badly distorts cheap, quick-cook items. The old
+ * per-dish menus.fuel_cost column was dropped once this replaced it.
  */
 export function computeMenuCost(
   menu: MenuRow,

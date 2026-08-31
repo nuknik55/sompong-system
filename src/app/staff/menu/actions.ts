@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, requireAdminOrEditor, requireOwner } from "@/lib/auth";
+import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
 
@@ -40,7 +40,7 @@ export async function createMenu(name: string, category: string, sellingPrice: n
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("menus")
-    .insert({ name: name.trim(), category: category.trim() || null, selling_price: sellingPrice, fuel_cost: 0 })
+    .insert({ name: name.trim(), category: category.trim() || null, selling_price: sellingPrice })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "สร้างเมนูไม่สำเร็จ");
@@ -71,7 +71,7 @@ export async function duplicateMenu(menuId: string, newName: string, newCategory
 
   const { data: newMenu, error: insertError } = await supabase
     .from("menus")
-    .insert({ name: newName.trim(), category: newCategory.trim() || null, selling_price: original.selling_price, fuel_cost: original.fuel_cost, last_period_qty_sold: 0 })
+    .insert({ name: newName.trim(), category: newCategory.trim() || null, selling_price: original.selling_price, last_period_qty_sold: 0 })
     .select("id")
     .single();
   if (insertError || !newMenu) throw new Error(insertError?.message ?? "คัดลอกเมนูไม่สำเร็จ");

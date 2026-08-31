@@ -132,7 +132,7 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       case "menu_create": {
         await run(
           "สร้างเมนูใหม่",
-          supabase.from("menus").insert({ name: p.name, category: p.category || null, selling_price: p.sellingPrice ?? 0, fuel_cost: 0 }),
+          supabase.from("menus").insert({ name: p.name, category: p.category || null, selling_price: p.sellingPrice ?? 0 }),
         );
         revalidatePath("/staff");
         break;
