@@ -76,6 +76,29 @@ deliberately rather than downgraded to manufacture a green run.
 Until they are fixed, the rule protects only what someone remembers to look
 at. Do not add `--quiet` or lower the rule severity to get around this.
 
+## Ceilings this system runs into
+
+Written down because the last one — Vercel's request-body limit — cost a day
+of debugging that a note would have saved.
+
+| ceiling | value | where it bites | status |
+|---|---|---|---|
+| Vercel request body | **4.5 MB**, not raisable by tier or config | a POS `.xls` posted to a Server Action. Rejected *before* the function runs, so it surfaces as "An unexpected response was received from the server" with nothing in the logs | being fixed: parse in the browser, upload validated rows in chunks |
+| `serverActions.bodySizeLimit` | 15 MB (set in `next.config.ts`) | Next's own limit. **Not** the one that bit us — it is well above Vercel's | fine |
+| Vercel function duration | **90 s** | `buildPosImportPreview` reads a delivery window and recomputes the preview. Bounded today by `pos_import_settings.window_days` (90), so a few thousand rows | fine, but this is the next wall of this kind. If the window grows, move the aggregation into SQL rather than raising anything |
+| `npm run lint` not green | 9 `react-hooks/set-state-in-effect` | blocks CI enforcement of `local/no-unchecked-supabase-write` | open, see below |
+
+## Where two changes actually landed
+
+Two pieces of work were folded into commits whose messages do not mention
+them, because whole files were staged that already carried pending edits.
+Recorded here so searching for them finds something:
+
+| change | landed in | commit subject |
+|---|---|---|
+| **POS 4dp** — `newCost` rounded to 4 decimals instead of 2, paired with `purchase_cost_4dp_migration.sql` | `c6ea9a7` | "Let admins run the POS price import, and stop silent logouts" |
+| **schedule_notes cleanup** — removed the `eslint-disable`, checked `upsertScheduleNote`'s write and `getScheduleWeek`'s read | `3df70cd` | "Delete the leave approve/reject path that was never wired up" |
+
 ## Verifying applied status yourself
 
 A table or column: request it and read the error code.
