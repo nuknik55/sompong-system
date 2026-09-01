@@ -27,6 +27,21 @@
 -- those rows did not come from a browser batch and pretending otherwise would
 -- make the column lie.
 --
+-- STATUS 2026-09-01: APPLIED in production, but the code that used it was
+-- REVERTED (a304262, reverted because the chunked ingest wrote nothing — see
+-- below). The column is nullable and unused, so it is harmless where it is;
+-- this file stays tracked because the column really does exist and an untracked
+-- applied migration is the exact problem supabase/README.md documents.
+--
+-- WHY THE CODE WAS REVERTED. ingestPosDeliveries upserted with
+-- ignoreDuplicates: true on UNIQUE (document_number, material_code) — ON
+-- CONFLICT DO NOTHING. The backfill had already loaded every delivery from the
+-- same export files, so every uploaded row conflicted, nothing was written, and
+-- import_batch_id was never set on any row. buildPosImportPreview then found
+-- zero rows for the batch and failed. Batch-scoped preview and
+-- ignoreDuplicates are incompatible; whatever replaces this must not rely on
+-- an insert happening for rows that already exist.
+--
 -- Safe to re-run.
 
 BEGIN;

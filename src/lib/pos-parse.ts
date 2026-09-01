@@ -1,12 +1,4 @@
-// NO "server-only" here, deliberately. Every export below is a pure function
-// over an ArrayBuffer — no I/O, no env, no Supabase. The marker used to be on
-// this file and was inherited rather than earned, which meant the browser could
-// not parse a POS export even though nothing stopped it from doing so.
-//
-// It is imported from BOTH sides now: server actions, and pos-price-import.tsx
-// in the browser. The client side loads it with a dynamic import() so SheetJS
-// (~800 KB minified) stays out of the shared bundle — it is only needed on one
-// admin-only tab. Do not add a static client-side import of this module.
+import "server-only";
 import * as XLSX from "xlsx";
 
 // The POS "ใบรับสินค้าตรง" report is exported as an HTML table saved with a
@@ -450,37 +442,4 @@ export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesReport {
     .sort((a, b) => b.qtySold - a.qtySold);
 
   return { rows: salesRows, dateFrom, dateTo };
-}
-
-// ─── Round-tripping a delivery through the database ────────────────────────
-// pos_receipt_deliveries stores document_date as a real DATE and deliberately
-// does NOT persist dateKey or dateLabel — dateKey is an in-memory ordering
-// detail, and dateLabel is the report's own Buddhist-era string. Both have to
-// be regenerated when deliveries are read back out of the table to build a
-// preview, and the label must match the file's format exactly or the UI text
-// silently changes.
-
-const THAI_MONTH_NAMES = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-];
-
-/** "2026-08-30" -> "30 สิงหาคม 2569". Inverse of the parser's date handling. */
-export function isoToThaiDateLabel(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  const [, y, mm, dd] = m;
-  const monthName = THAI_MONTH_NAMES[Number(mm) - 1] ?? mm;
-  // Day is NOT zero-padded in the report ("01 เมษายน" is, but the parser only
-  // reads the number, and the label is display-only), so keep the file's
-  // two-digit form to match what previously reached the UI.
-  return `${dd} ${monthName} ${Number(y) + 543}`;
-}
-
-/** "2026-08-30" -> 25690830, the same numeric ordering key the parser builds. */
-export function isoToDateKey(iso: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return 0;
-  const [, y, mm, dd] = m;
-  return (Number(y) + 543) * 10000 + Number(mm) * 100 + Number(dd);
 }
