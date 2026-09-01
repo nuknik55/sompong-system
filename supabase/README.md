@@ -52,7 +52,7 @@ and `menus.fuel_cost` was dropped on the same day.
 
 | object | file | status |
 |---|---|---|
-| `pos_receipt_deliveries` backfill | `scripts/backfill-pos-deliveries.mjs` | The table and `pos_import_settings` exist and are empty. Nothing in `src/` reads or writes them yet — the Path 2 persistence is still unimplemented. |
+| *(nothing)* | — | Every migration in this directory has been applied. |
 
 ### Removed rather than applied
 
@@ -83,7 +83,7 @@ of debugging that a note would have saved.
 
 | ceiling | value | where it bites | status |
 |---|---|---|---|
-| Vercel request body | **4.5 MB**, not raisable by tier or config | a POS `.xls` posted to a Server Action. Rejected *before* the function runs, so it surfaces as "An unexpected response was received from the server" with nothing in the logs | being fixed: parse in the browser, upload validated rows in chunks |
+| Vercel request body | **4.5 MB**, not raisable by tier or config | a POS `.xls` posted to a Server Action. Rejected *before* the function runs, so it surfaces as "An unexpected response was received from the server" with nothing in the logs | **fixed** — the browser parses and uploads validated rows 2,000 at a time, so the request never carries the file |
 | `serverActions.bodySizeLimit` | 15 MB (set in `next.config.ts`) | Next's own limit. **Not** the one that bit us — it is well above Vercel's | fine |
 | Vercel function duration | **90 s** | `buildPosImportPreview` reads a delivery window and recomputes the preview. Bounded today by `pos_import_settings.window_days` (90), so a few thousand rows | fine, but this is the next wall of this kind. If the window grows, move the aggregation into SQL rather than raising anything |
 | `npm run lint` not green | 9 `react-hooks/set-state-in-effect` | blocks CI enforcement of `local/no-unchecked-supabase-write` | open, see below |
@@ -98,6 +98,19 @@ Recorded here so searching for them finds something:
 |---|---|---|
 | **POS 4dp** — `newCost` rounded to 4 decimals instead of 2, paired with `purchase_cost_4dp_migration.sql` | `c6ea9a7` | "Let admins run the POS price import, and stop silent logouts" |
 | **schedule_notes cleanup** — removed the `eslint-disable`, checked `upsertScheduleNote`'s write and `getScheduleWeek`'s read | `3df70cd` | "Delete the leave approve/reject path that was never wired up" |
+
+## SheetJS is still in one client bundle
+
+`pos-price-import.tsx` loads `pos-parse.ts` with a dynamic `import()` so
+SheetJS (~800 KB minified) is fetched only when someone actually picks a file
+on `/owner/ingredients`.
+
+That does **not** mean SheetJS is out of the client bundle generally:
+`src/app/owner/hr/schedule/ScheduleClient.tsx:5` has a static
+`import * as XLSX from "xlsx"`, so the HR schedule page ships it to every
+visitor of that page regardless. Pre-existing, not introduced by the POS work,
+and left alone deliberately — it is a bundle-size item to look at on its own,
+not something to change while fixing an upload path.
 
 ## Verifying applied status yourself
 

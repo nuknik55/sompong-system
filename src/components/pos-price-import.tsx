@@ -3,7 +3,8 @@
 import { useState, useTransition, useEffect } from "react";
 import {
   applyPosImport,
-  previewPosImport,
+  ingestPosDeliveries,
+  buildPosImportPreview,
   getPosPriceAliases,
   addPosPriceAlias,
   deletePosPriceAlias,
@@ -11,6 +12,18 @@ import {
   type PosImportRow,
   type PriceAliasRow,
 } from "@/app/owner/ingredients/pos-import-actions";
+
+/** Rows per request. ~180 KB of JSON — far under any limit, and 22,700 rows
+ *  of full history is then ~12 sequential requests. */
+const CHUNK_SIZE = 2000;
+
+/** 25690830 -> "2026-08-30". The parser's key is Buddhist-era yyyymmdd. */
+function dateKeyToIso(dateKey: number): string {
+  const y = Math.floor(dateKey / 10000) - 543;
+  const m = Math.floor((dateKey % 10000) / 100);
+  const d = dateKey % 100;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
 
 function formatBaht(n: number | null) {
   if (n == null) return "-";
@@ -23,6 +36,8 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [doneCount, setDoneCount] = useState<number | null>(null);
+  /** Rows sent / rows total, while a file is uploading. null when idle. */
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
 
   // Alias state
   /** Per-row yield_qty entry, for rows whose unit changed or was never set. */
@@ -47,9 +62,47 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setDoneCount(null);
     startTransition(async () => {
       try {
-        const formData = new FormData();
-        formData.set("file", file);
-        const result = await previewPosImport(formData);
+        // Parse in the browser. The raw .xls used to be posted to the server,
+        // but Vercel rejects request bodies over 4.5 MB before the function
+        // runs and a 5-month export is now 4.69 MB. Parsed rows are ~38.5% of
+        // the file's size and go up in chunks, so the ceiling is gone rather
+        // than moved.
+        //
+        // Dynamic import so SheetJS (~800 KB) is fetched only when someone
+        // actually picks a file, not by every page that ships this bundle.
+        const { parsePosReceiptDeliveries } = await import("@/lib/pos-parse");
+        const materials = parsePosReceiptDeliveries(await file.arrayBuffer());
+
+        const rows = materials.flatMap((m) =>
+          m.deliveries.map((d) => ({
+            materialCode: m.materialCode,
+            materialName: m.materialName,
+            documentNumber: d.documentNumber,
+            // Buddhist era -> CE, and to the DATE format the column stores.
+            documentDate: dateKeyToIso(d.dateKey),
+            vendorName: d.vendorName,
+            unitName: d.unitName,
+            qty: d.qty,
+            totalCostIncVat: d.totalCostIncVat,
+            totalCostExcVat: d.totalCostExcVat,
+          })),
+        );
+        if (rows.length === 0) {
+          throw new Error(
+            'อ่านไฟล์ไม่พบรายการรับสินค้าเลย ตรวจสอบว่าเป็นไฟล์รายงาน "ใบรับสินค้าตรง" ที่ export มาจาก POS หรือไม่',
+          );
+        }
+
+        // Sequential, not parallel: the server counts rows per batch to bound
+        // it, and concurrent chunks would race that check.
+        const batchId = crypto.randomUUID();
+        setProgress({ sent: 0, total: rows.length });
+        for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+          await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE));
+          setProgress({ sent: Math.min(i + CHUNK_SIZE, rows.length), total: rows.length });
+        }
+
+        const result = await buildPosImportPreview(batchId);
         setPreview(result);
         // A "changed"-unit row starts unchecked and cannot be checked until
         // resolved; mixed-unit deliveries stay unchecked as before.
@@ -84,6 +137,8 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
       } catch (err) {
         setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
         setPreview(null);
+      } finally {
+        setProgress(null);
       }
     });
   }
@@ -162,6 +217,10 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           <b>ไม่ติ๊กเลือกให้อัตโนมัติ</b> เพราะคำนวณราคาต่อหน่วยผิดได้ — ให้ตรวจสอบ แก้หน่วยซื้อ/จำนวนตัดแต่งในหน้านี้ให้ตรงกับหน่วยใหม่ก่อน
           แล้วจึงนำเข้าราคาอีกครั้ง
         </p>
+        <p className="mb-3 text-xs text-neutral-400">
+          เมื่ออัปโหลด ระบบจะ<b>บันทึกประวัติการรับของจากไฟล์นี้ไว้ทันที</b> (ก่อนกดยืนยันราคา) เพราะรายงาน POS
+          ย้อนหลังได้จำกัด — ข้อมูลที่ไม่เก็บตอนนี้จะหายไปถาวร การกดยืนยันด้านล่างมีผลเฉพาะ<b>การอัปเดตราคาวัตถุดิบ</b>เท่านั้น
+        </p>
         <input
           type="file"
           accept=".xls,.xlsx,.csv"
@@ -169,6 +228,11 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           disabled={isPending}
           className="block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
+        {progress && (
+          <p className="mt-2 text-xs text-neutral-500">
+            กำลังส่งข้อมูล {progress.sent.toLocaleString("th-TH")} / {progress.total.toLocaleString("th-TH")} แถว…
+          </p>
+        )}
       </div>
 
       {/* Alias management */}

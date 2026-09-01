@@ -3,7 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { parsePosReceiptReport, proposeYieldQty } from "@/lib/pos-parse";
+import {
+  proposeYieldQty,
+  summarizeLatestDelivery,
+  isoToDateKey,
+  isoToThaiDateLabel,
+  type PosMaterialDeliveries,
+} from "@/lib/pos-parse";
+import { validateChunk, MAX_ROWS_PER_BATCH } from "@/lib/pos-delivery-validation";
+
+/** Batch ids are client-generated, so they are checked rather than trusted. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * How the POS delivery's unit relates to the unit the stored price is in.
@@ -52,29 +62,140 @@ export type PriceAliasRow = {
   ingredientName: string;
 };
 
-export async function previewPosImport(formData: FormData): Promise<PosImportPreview> {
-  // requireAdmin, not requireOwner: the POS import tab renders whenever
-  // isAdmin (admin OR owner) in owner/ingredients/page.tsx, so gating the
-  // action on owner alone made every admin upload redirect to /owner with no
-  // error — the tab was visible and the action refused. The alias functions
-  // below already used requireAdmin, so this file disagreed with itself.
-  await requireAdmin();
-  const file = formData.get("file");
-  if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
+/**
+ * Ingests one chunk of browser-parsed deliveries.
+ *
+ * WHY CHUNKS. The .xls used to be posted whole to a Server Action, but Vercel
+ * rejects request bodies over 4.5 MB before the function runs — a 5-month
+ * export is now 4.69 MB, and the rejection surfaces as an unparseable
+ * "unexpected response" with nothing in the logs. Parsing moved to the
+ * browser; these rows are ~38.5% of the file's size, and they arrive 2,000 at
+ * a time so the ceiling is gone rather than pushed out a year.
+ *
+ * NOT ATOMIC ACROSS CHUNKS, on purpose. Chunk 7 failing leaves chunks 1-6 in
+ * the table. That is safe here and nowhere else in this codebase: the table is
+ * an append-only log of POS facts keyed on UNIQUE (document_number,
+ * material_code), so a half-uploaded batch is a SUBSET of true deliveries, not
+ * corruption, and resending fills the gap as a no-op for what already landed.
+ * import_batch_id makes a partial batch findable and removable.
+ *
+ * Every row is validated before it is written — see pos-delivery-validation.ts
+ * for why that is required rather than defensive.
+ */
+export async function ingestPosDeliveries(
+  batchId: string,
+  rows: unknown,
+): Promise<{ accepted: number }> {
+  const profile = await requireAdmin();
+  if (!UUID_RE.test(batchId)) throw new Error("รหัสชุดข้อมูลไม่ถูกต้อง");
 
-  const buffer = await file.arrayBuffer();
-  const parsed = parsePosReceiptReport(buffer);
-  if (parsed.length === 0) {
-    throw new Error("อ่านไฟล์ไม่พบรายการรับสินค้าเลย ตรวจสอบว่าเป็นไฟล์รายงาน \"ใบรับสินค้าตรง\" ที่ export มาจาก POS หรือไม่");
-  }
+  const check = validateChunk(rows);
+  if (!check.ok) throw new Error(check.error);
 
   const supabase = await createClient();
+
+  // Guard the batch total as well as the chunk size, so a client loop cannot
+  // write unbounded rows one valid chunk at a time.
+  const { count, error: countError } = await supabase
+    .from("pos_receipt_deliveries")
+    .select("id", { count: "exact", head: true })
+    .eq("import_batch_id", batchId);
+  if (countError) throw new Error(countError.message);
+  if (count == null) throw new Error("ตรวจสอบขนาดชุดข้อมูลไม่สำเร็จ จึงยังไม่บันทึก");
+  if (count + check.rows.length > MAX_ROWS_PER_BATCH) {
+    throw new Error(`ชุดข้อมูลนี้เกิน ${MAX_ROWS_PER_BATCH} แถว`);
+  }
+
+  const { error } = await supabase.from("pos_receipt_deliveries").upsert(
+    check.rows.map((r) => ({
+      material_code: r.materialCode,
+      material_name: r.materialName,
+      document_number: r.documentNumber,
+      document_date: r.documentDate,
+      vendor_name: r.vendorName,
+      unit_name: r.unitName,
+      qty: r.qty,
+      total_cost_inc_vat: r.totalCostIncVat,
+      total_cost_exc_vat: r.totalCostExcVat,
+      imported_by: profile.id,
+      import_batch_id: batchId,
+    })),
+    // Same key the backfill uses. ignoreDuplicates so re-sending a chunk is a
+    // no-op rather than rewriting imported_at/imported_by on real history.
+    { onConflict: "document_number,material_code", ignoreDuplicates: true },
+  );
+  if (error) throw new Error(error.message);
+
+  return { accepted: check.rows.length };
+}
+
+/**
+ * Builds the preview from the rows of one batch, read back OUT OF THE TABLE.
+ *
+ * Reading from the table rather than from anything the browser still holds is
+ * the point: it is the same source applyPosImport recomputes from, so what the
+ * admin approves and what gets applied cannot drift.
+ *
+ * Scoped to this batch, NOT to the 90-day window, so which price wins is
+ * exactly what it was when the server parsed the file itself. Widening this to
+ * the window is the held (b)/(c) work and would change costing, not transport.
+ */
+export async function buildPosImportPreview(batchId: string): Promise<PosImportPreview> {
+  await requireAdmin();
+  if (!UUID_RE.test(batchId)) throw new Error("รหัสชุดข้อมูลไม่ถูกต้อง");
+  const supabase = await createClient();
+
+  const { data: rows, error: readError } = await supabase
+    .from("pos_receipt_deliveries")
+    .select("material_code, material_name, document_number, document_date, vendor_name, unit_name, qty, total_cost_inc_vat, total_cost_exc_vat")
+    .eq("import_batch_id", batchId)
+    // Deterministic, because the table cannot preserve the file's row order
+    // (id is a random uuid). summarizeLatestDelivery takes the MAX dateKey and
+    // sums that date's rows, so its result is order-independent; the only
+    // order-sensitive field is which unit label shows on a mixed-unit row, and
+    // those are flagged and blocked from being ticked either way.
+    .order("material_code")
+    .order("document_date")
+    .order("document_number")
+    .limit(MAX_ROWS_PER_BATCH);
+  if (readError) throw new Error(readError.message);
+  if (!rows || rows.length === 0) {
+    throw new Error("ไม่พบข้อมูลของชุดนี้ กรุณาอัปโหลดไฟล์ใหม่");
+  }
+
+  // Rebuild the parser's in-memory shape. dateKey and dateLabel are not
+  // persisted (see pos-parse.ts), so both are regenerated from document_date.
+  const byMaterial = new Map<string, PosMaterialDeliveries>();
+  for (const r of rows) {
+    let m = byMaterial.get(r.material_code);
+    if (!m) {
+      m = { materialCode: r.material_code, materialName: r.material_name, deliveries: [] };
+      byMaterial.set(r.material_code, m);
+    }
+    m.deliveries.push({
+      documentNumber: r.document_number,
+      dateKey: isoToDateKey(r.document_date),
+      dateLabel: isoToThaiDateLabel(r.document_date),
+      vendorName: r.vendor_name,
+      unitName: r.unit_name,
+      qty: Number(r.qty),
+      totalCostIncVat: Number(r.total_cost_inc_vat),
+      totalCostExcVat: Number(r.total_cost_exc_vat),
+      // Derived, not stored. qty > 0 is guaranteed by the validator and by the
+      // parser before it, so this matches what parsePosReceiptDeliveries built.
+      unitCost: Number(r.total_cost_inc_vat) / Number(r.qty),
+    });
+  }
+
+  const parsed = summarizeLatestDelivery([...byMaterial.values()]);
+
+  const supabaseRead = supabase;
   const [{ data: ingredients, error }, { data: aliases }] = await Promise.all([
-    supabase
+    supabaseRead
       .from("ingredients")
       .select("id, name, purchase_cost, purchase_unit_label, receive_qty, yield_qty, usage_unit")
       .eq("is_prep", false),
-    supabase.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
+    supabaseRead.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
   ]);
   if (error) throw new Error(error.message);
 
