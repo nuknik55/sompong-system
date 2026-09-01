@@ -18,11 +18,20 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  // maybeSingle, and the error is checked. Two outcomes that used to look
+  // identical must not:
+  //   - no row for this user  -> null, and requireProfile sends them to /login.
+  //     Legitimate: some auth users have no profile row.
+  //   - the query FAILED      -> throw. Previously the error was discarded, so
+  //     a broken profiles read (RLS change, outage, typo in a column) returned
+  //     null and presented to the user as a silent logout, on every guarded
+  //     page in the app. Failing loudly is the only way that is diagnosable.
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("id, full_name, role, employee_id")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+  if (error) throw new Error(`อ่านข้อมูลผู้ใช้ไม่สำเร็จ: ${error.message}`);
 
   return profile ?? null;
 }

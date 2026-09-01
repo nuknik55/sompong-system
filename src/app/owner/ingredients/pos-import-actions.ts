@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, requireOwner } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parsePosReceiptReport, proposeYieldQty } from "@/lib/pos-import";
 
@@ -53,7 +53,12 @@ export type PriceAliasRow = {
 };
 
 export async function previewPosImport(formData: FormData): Promise<PosImportPreview> {
-  await requireOwner();
+  // requireAdmin, not requireOwner: the POS import tab renders whenever
+  // isAdmin (admin OR owner) in owner/ingredients/page.tsx, so gating the
+  // action on owner alone made every admin upload redirect to /owner with no
+  // error — the tab was visible and the action refused. The alias functions
+  // below already used requireAdmin, so this file disagreed with itself.
+  await requireAdmin();
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
 
@@ -123,7 +128,12 @@ export async function previewPosImport(formData: FormData): Promise<PosImportPre
       ingredientId: ingredient.id,
       name: ingredient.name,
       oldCost,
-      newCost: Math.round(unitCost * 100) / 100,
+      // 4dp, not 2. This is a cost per PURCHASE unit that rawUnitCost() then
+      // divides by yield_qty (commonly 1000), so rounding here is magnified
+      // into a systematic per-dish error that does not average out. Requires
+      // purchase_cost_4dp_migration.sql — while the column is numeric(12,2)
+      // Postgres re-rounds on write and this has no effect.
+      newCost: Math.round(unitCost * 10000) / 10000,
       qty,
       latestDateLabel,
       pctChange,
@@ -184,7 +194,9 @@ export type PosImportUpdate = {
 };
 
 export async function applyPosImport(updates: PosImportUpdate[]): Promise<number> {
-  await requireOwner();
+  // Must match previewPosImport. Relaxing only preview would move the bounce
+  // here — after the admin has reviewed the preview and ticked rows.
+  await requireAdmin();
   if (updates.length === 0) return 0;
   const supabase = await createClient();
 
