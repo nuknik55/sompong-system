@@ -526,16 +526,6 @@ export async function upsertLeaveRequest(data: {
   revalidatePath("/owner/hr/attendance");
 }
 
-export async function updateLeaveStatus(id: string, status: "approved" | "rejected"): Promise<void> {
-  await requireHR();
-  const supabase = await createClient();
-  const { error } = await supabase.from("leave_requests").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
-  revalidatePath("/owner/hr/leave");
-  revalidatePath("/owner/hr/schedule");
-  revalidatePath("/owner/hr/attendance");
-}
-
 export async function deleteLeaveRequest(id: string): Promise<void> {
   await requireHR();
   const supabase = await createClient();
@@ -849,11 +839,15 @@ export async function getScheduleWeek(weekStart: string): Promise<ScheduleNote[]
   const supabase = await createClient();
   const end = new Date(weekStart + "T00:00:00");
   end.setDate(end.getDate() + 6);
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("schedule_notes")
     .select("id,employee_id,note_date,note,note_type")
     .gte("note_date", weekStart)
     .lte("note_date", toDateStr(end));
+  // Checked rather than falling back to []: an empty grid and a failed read
+  // look identical on screen, and this table was missing entirely in
+  // production for months without anyone noticing precisely because of that.
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
@@ -866,29 +860,15 @@ export async function upsertScheduleNote(
   await requireHR();
   const supabase = await createClient();
   // Always upsert — note text is optional, note_type alone is meaningful.
-  // Use clearNote (DELETE) when the user explicitly wants to remove a cell.
-  //
-  // DELIBERATELY LEFT UNCHECKED, unlike every other write in this file.
-  // public.schedule_notes DOES NOT EXIST in production (verified: PGRST205),
-  // so every call here already fails and is swallowed. ScheduleClient updates
-  // its local state optimistically, so the note appears and then vanishes on
-  // reload. Adding the check would replace a silent no-op with a hard error on
-  // a page people use daily, without making the feature work.
-  //
-  // TEMPORARY. The decision is made: the table gets created (Nik wants the
-  // feature available even though nobody uses it yet). When that migration
-  // lands, DELETE this whole comment and the disable below, and check the
-  // error like every other write in this file. getScheduleWeek's discarded
-  // read error above goes at the same time.
-  {
-    // eslint-disable-next-line local/no-unchecked-supabase-write -- table does not exist yet; see above
-    await supabase
-      .from("schedule_notes")
-      .upsert(
-        { employee_id: employeeId, note_date: noteDate, note: note.trim(), note_type: noteType },
-        { onConflict: "employee_id,note_date" },
-      );
-  }
+  // ScheduleClient's "clear" also comes through here with an empty string; it
+  // blanks the note rather than deleting the row.
+  const { error } = await supabase
+    .from("schedule_notes")
+    .upsert(
+      { employee_id: employeeId, note_date: noteDate, note: note.trim(), note_type: noteType },
+      { onConflict: "employee_id,note_date" },
+    );
+  if (error) throw new Error(error.message);
   revalidatePath("/owner/hr/schedule");
 }
 
@@ -1272,10 +1252,6 @@ function yearsOfServiceAt(hireDateStr: string | null, refDateStr: string): numbe
   const anniversary = new Date(ref.getFullYear(), hire.getMonth(), hire.getDate());
   if (ref < anniversary) y--;
   return Math.max(0, y);
-}
-
-function yearsOfService(hireDateStr: string | null, year: number): number {
-  return yearsOfServiceAt(hireDateStr, `${year}-12-31`);
 }
 
 function alQuotaDays(years: number): number {

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { upsertLeaveRequest, updateLeaveStatus, deleteLeaveRequest } from "../actions";
+import { useRouter, unstable_rethrow } from "next/navigation";
+import { upsertLeaveRequest, deleteLeaveRequest } from "../actions";
 import type { LeaveRequest, Employee, LeaveType, LeaveQuotaRow } from "../actions";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -55,6 +55,7 @@ export function LeaveClient({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showQuota, setShowQuota] = useState(false);
 
@@ -70,42 +71,51 @@ export function LeaveClient({
     if (form.date_to < form.date_from) return;
     const total_days = calcDays(form.date_from, form.date_to);
     startTransition(async () => {
-      await upsertLeaveRequest({ ...form, total_days });
-      const emp = employees.find((e) => e.id === form.employee_id);
-      const lt = leaveTypes.find((l) => l.id === form.leave_type_id);
-      const newReq: LeaveRequest = {
-        id: crypto.randomUUID(),
-        employee_id: form.employee_id,
-        employee_name: emp?.full_name ?? "",
-        employee_nickname: emp?.nickname ?? null,
-        leave_type_id: form.leave_type_id,
-        leave_type_code: lt?.code ?? "",
-        leave_type_name: lt?.name_th ?? "",
-        date_from: form.date_from,
-        date_to: form.date_to,
-        total_days,
-        reason: form.reason || null,
-        status: "approved",
-        submitted_at: new Date().toISOString(),
-      };
-      setRequests((prev) => [newReq, ...prev]);
-      setForm(BLANK);
-      setShowForm(false);
-    });
-  }
-
-  function handleStatus(id: string, status: "approved" | "rejected") {
-    startTransition(async () => {
-      await updateLeaveStatus(id, status);
-      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+      setError(null);
+      try {
+        await upsertLeaveRequest({ ...form, total_days });
+        const emp = employees.find((e) => e.id === form.employee_id);
+        const lt = leaveTypes.find((l) => l.id === form.leave_type_id);
+        const newReq: LeaveRequest = {
+          id: crypto.randomUUID(),
+          employee_id: form.employee_id,
+          employee_name: emp?.full_name ?? "",
+          employee_nickname: emp?.nickname ?? null,
+          leave_type_id: form.leave_type_id,
+          leave_type_code: lt?.code ?? "",
+          leave_type_name: lt?.name_th ?? "",
+          date_from: form.date_from,
+          date_to: form.date_to,
+          total_days,
+          reason: form.reason || null,
+          status: "approved",
+          submitted_at: new Date().toISOString(),
+        };
+        setRequests((prev) => [newReq, ...prev]);
+        setForm(BLANK);
+        setShowForm(false);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกการลาไม่สำเร็จ");
+      }
     });
   }
 
   function handleDelete(id: string) {
     startTransition(async () => {
-      await deleteLeaveRequest(id);
-      setRequests((prev) => prev.filter((r) => r.id !== id));
-      setConfirmDelete(null);
+      setError(null);
+      try {
+        await deleteLeaveRequest(id);
+        setRequests((prev) => prev.filter((r) => r.id !== id));
+        setConfirmDelete(null);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกการลาไม่สำเร็จ");
+      }
     });
   }
 
@@ -129,6 +139,11 @@ export function LeaveClient({
 
   return (
     <>
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
