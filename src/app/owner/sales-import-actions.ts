@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { parsePosSalesReport } from "@/lib/pos-import";
+import { parsePosSalesReport } from "@/lib/pos-parse";
 
 export type SalesImportRow = {
   menuId: string;

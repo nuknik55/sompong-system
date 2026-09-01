@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { parsePosReceiptReport, proposeYieldQty } from "@/lib/pos-import";
+import { parsePosReceiptReport, proposeYieldQty } from "@/lib/pos-parse";
 
 /**
  * How the POS delivery's unit relates to the unit the stored price is in.
