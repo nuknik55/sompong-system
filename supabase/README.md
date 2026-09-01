@@ -38,23 +38,43 @@ as-is rather than renamed, because the numbers appear in commit messages and
 
 ## Applied status
 
-Verified against production on 2026-08-30 by probing every table, column, view
+Verified against production on 2026-08-31 by probing every table, column, view
 and function declared across all 42 files.
 
-**Applied: everything except the two below.** All tables, columns and views exist.
+**Applied: everything.** All tables, columns, views and functions declared
+across the 42 files exist in production.
+
+`app_settings` and `schedule_notes`, listed here as unapplied until
+2026-08-31, have both landed. `purchase_cost` was widened to numeric(12,4)
+and `menus.fuel_cost` was dropped on the same day.
 
 ### Not applied
 
 | object | file | status |
 |---|---|---|
-| `app_settings` | `migrations/0002_q_factor.sql` | **Live bug.** `getQFactorPct()` in `src/lib/data.ts` silently falls back to a hardcoded 3; `updateQFactor()` throws. Waiting on the real kitchen q-factor figure before running. |
-| `schedule_notes` | `schedule_notes_migration.sql` | Reviewed, ready to run. The schedule-notes feature does not work until it lands, and `upsertScheduleNote` carries the codebase's only `eslint-disable` for `local/no-unchecked-supabase-write` until then. |
+| `pos_receipt_deliveries` backfill | `scripts/backfill-pos-deliveries.mjs` | The table and `pos_import_settings` exist and are empty. Nothing in `src/` reads or writes them yet — the Path 2 persistence is still unimplemented. |
 
 ### Removed rather than applied
 
 `ot_rules` was declared in `hr_migration.sql`, never applied, and referenced by
 no code. The declaration, its policies, its seed rows, and the matching policy
 block in `hr_role_patch.sql` were deleted rather than run.
+
+## Lint is not green, so the write-check rule is not CI-enforced
+
+`local/no-unchecked-supabase-write` (in `eslint-rules/`) catches the class of
+bug behind most of this file's history: a Supabase write whose error is
+discarded. It works, and reports zero violations today.
+
+It cannot gate CI yet. `npm run lint` still reports **9**
+`react-hooks/set-state-in-effect` problems across 7 components — the catering
+charges editor, the daily accounting entry, the ingredient manager and others.
+Those are the prop-resync pattern; fixing them properly changes real UI
+behaviour and needs someone clicking through each screen, so they were left
+deliberately rather than downgraded to manufacture a green run.
+
+Until they are fixed, the rule protects only what someone remembers to look
+at. Do not add `--quiet` or lower the rule severity to get around this.
 
 ## Verifying applied status yourself
 

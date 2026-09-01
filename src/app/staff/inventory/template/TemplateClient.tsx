@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Template, TemplateItem, IngredientForOrder } from "@/lib/inventory-data";
 import {
   createTemplate, renameTemplate, deleteTemplate,
@@ -282,7 +283,7 @@ export function TemplateClient({
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <a href="/staff/inventory" className="text-sm text-neutral-400 hover:text-neutral-700">← กลับ</a>
+        <Link href="/staff/inventory" className="text-sm text-neutral-400 hover:text-neutral-700">← กลับ</Link>
         <button type="button" onClick={() => { setShowCreate(true); setCreateName(""); }}
           className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800">
           + สร้าง Template
@@ -448,7 +449,7 @@ export function TemplateClient({
                   <input type="checkbox" checked={addSelected.has(ing.id)}
                     onChange={(e) => setAddSelected((prev) => {
                       const n = new Set(prev);
-                      e.target.checked ? n.add(ing.id) : n.delete(ing.id);
+                      if (e.target.checked) n.add(ing.id); else n.delete(ing.id);
                       return n;
                     })}
                     className="h-4 w-4 rounded border-neutral-300 text-blue-600" />

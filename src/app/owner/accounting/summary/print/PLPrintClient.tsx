@@ -49,7 +49,7 @@ function exportExcel(
 
     // Revenue section
     rows.push(["รายได้", "", "จำนวน (฿)", "% ของรายได้"]);
-    let revenueRowStart = rows.length;
+    const revenueRowStart = rows.length;
     for (const key of REVENUE_KEYS) {
       const amt = revenueMap[key] ?? 0;
       if (amt > 0) {

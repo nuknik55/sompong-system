@@ -208,12 +208,12 @@ export function DailyEntryClient({
   coa,
   initialEntries,
   date,
-  isOwner,
   suppliers,
 }: {
   coa: CoaAccount[];
   initialEntries: ExpenseEntry[];
   date: string;
+    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isOwner: boolean;
   suppliers: Supplier[];
 }) {

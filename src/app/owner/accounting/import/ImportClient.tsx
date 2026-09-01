@@ -66,7 +66,6 @@ export function ImportClient() {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [yearMonth, setYearMonth] = useState("");
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -118,7 +117,7 @@ export function ImportClient() {
           let category: string | null = null;
           let amount: number | null = null;
           let dateStr: string | null = null;
-          let note: string | null = null;
+          const note: string | null = null;
 
           for (let i = 0; i < cells.length; i++) {
             const cell = cells[i];
@@ -176,8 +175,6 @@ export function ImportClient() {
 
       setPreview(rows);
       setUnmapped([...missing]);
-      // Guess yearMonth from first row
-      if (rows.length > 0) setYearMonth(rows[0]!.date.slice(0, 7));
     } catch (err) {
       setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
     }

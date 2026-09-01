@@ -208,7 +208,10 @@ export function IngredientManager({
     });
   }
 
-  const PaginationControls = () =>
+  // A JSX value, not a component: declaring a component inside render gives
+  // React a new type every render, which remounts the subtree and resets its
+  // state. Used once, so a plain element is all that is needed.
+  const paginationControls =
     totalPages > 1 ? (
       <div className="flex items-center justify-between">
         <button
@@ -660,7 +663,7 @@ export function IngredientManager({
         })}
       </div>
 
-      <PaginationControls />
+      {paginationControls}
     </div>
   );
 }

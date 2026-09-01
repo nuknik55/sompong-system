@@ -243,7 +243,7 @@ export function TemplateClient({
   function toggleCheck(id: string, val: boolean) {
     setChecked((prev) => {
       const next = new Set(prev);
-      val ? next.add(id) : next.delete(id);
+      if (val) next.add(id); else next.delete(id);
       return next;
     });
   }
@@ -659,7 +659,7 @@ export function TemplateClient({
                       onChange={(e) =>
                         setAddSelected((prev) => {
                           const next = new Set(prev);
-                          e.target.checked ? next.add(ing.id) : next.delete(ing.id);
+                          if (e.target.checked) next.add(ing.id); else next.delete(ing.id);
                           return next;
                         })
                       }

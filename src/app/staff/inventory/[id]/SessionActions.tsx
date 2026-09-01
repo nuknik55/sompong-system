@@ -41,11 +41,11 @@ export function SessionActions({
   session,
   canReview,
   canSend,
-  isCreator,
 }: {
   session: OrderSessionDetail;
   canReview: boolean;
   canSend: boolean;
+    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isCreator: boolean;
 }) {
   const router = useRouter();
@@ -65,7 +65,7 @@ export function SessionActions({
   function toggleCheck(itemId: string) {
     setCheckedItems((prev) => {
       const next = new Set(prev);
-      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
       return next;
     });
   }

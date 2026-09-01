@@ -5,10 +5,6 @@ import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
-}
-
 export default async function ReviewQueuePage() {
   const profile = await requireProfile();
   if (!["owner", "admin", "editor"].includes(profile.role)) redirect("/staff/inventory");

@@ -382,7 +382,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
               <h2 className="text-base font-semibold text-neutral-900">ยืนยันการลบ</h2>
             </div>
             <p className="mt-2 text-sm text-neutral-600">
-              ต้องการลบ <strong className="text-neutral-900">"{confirmDelete.name}"</strong> ออกจากระบบถาวร?
+              ต้องการลบ <strong className="text-neutral-900">&ldquo;{confirmDelete.name}&rdquo;</strong> ออกจากระบบถาวร?
             </p>
             <p className="mt-1 text-xs text-neutral-400">
               รายการบันทึกรายวันที่เชื่อมกับซัพนี้จะยังอยู่ แต่ชื่อซัพจะหายไป

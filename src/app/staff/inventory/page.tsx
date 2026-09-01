@@ -1,13 +1,12 @@
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
-import { getOrderSessions, getStations, getTemplates } from "@/lib/inventory-data";
+import { getOrderSessions, getTemplates } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { InventoryListClient } from "./InventoryListClient";
 
 export default async function InventoryListPage() {
-  const [profile, allSessions, stations, templates] = await Promise.all([
+  const [profile, allSessions, templates] = await Promise.all([
     requireProfile(),
     getOrderSessions(),
-    getStations(),
     getTemplates(),
   ]);
 

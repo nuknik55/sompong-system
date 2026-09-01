@@ -138,7 +138,6 @@ export default async function SchedulePrintPage({
               {weekDates.map((ds) => {
                 const dow = new Date(ds + "T00:00:00").getDay();
                 const isHol = holidaySet.has(ds);
-                const d = new Date(ds + "T00:00:00");
                 return (
                   <th key={ds} className={isHol ? "hol-head" : dow === 0 ? "sun-head" : dow === 6 ? "sat-head" : ""} style={{ minWidth: 80 }}>
                     {DAYS_LONG[dow]}<br/>

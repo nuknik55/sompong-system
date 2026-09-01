@@ -43,10 +43,10 @@ function highlight(text: string, query: string) {
 export function AccountingEntryClient({
   initialEntries,
   yearMonth,
-  isOwner,
 }: {
   initialEntries: ExpenseEntry[];
   yearMonth: string;
+    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isOwner: boolean;
 }) {
   const [isPending, startTransition] = useTransition();

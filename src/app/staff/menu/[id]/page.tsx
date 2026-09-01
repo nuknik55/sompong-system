@@ -23,7 +23,8 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
   const { data: menu } = menuResult;
   if (!menu) notFound();
 
-  const isOwner = profile?.role === "owner";
+  // NOTE: an owner-only gate was intended here and never applied.
+  // See UNWIRED_FEATURES.md before deleting or wiring this up.
   const isAdmin = profile?.role === "admin" || profile?.role === "owner";
   const isEditor = profile?.role === "editor";
   const isStaff = profile?.role === "staff";

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle, Camera } from "lucide-react";
+import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle } from "lucide-react";
 import { SopPhotoUpload } from "@/components/sop-photo-upload";
 import { updateReportStatus } from "@/app/maintenance/actions";
 import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
