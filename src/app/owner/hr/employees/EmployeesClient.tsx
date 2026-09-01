@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import { upsertEmployee } from "../actions";
 import type { Employee, Department, CompDayBalance, ProbationAlert } from "../actions";
@@ -55,12 +56,12 @@ export function EmployeesClient({
   departments,
   balances,
   probationAlerts,
-  isOwner,
 }: {
   initialEmployees: Employee[];
   departments: Department[];
   balances: CompDayBalance[];
   probationAlerts: ProbationAlert[];
+    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isOwner: boolean;
 }) {
   const [employees, setEmployees] = useState(initialEmployees);
@@ -70,6 +71,7 @@ export function EmployeesClient({
   const [form, setForm] = useState<Omit<Employee, "id" | "department_name">>(BLANK_EMP);
   const [filterActive, setFilterActive] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const deptColorMap = new Map(departments.map((d, i) => [d.id, DEPT_COLORS[i % DEPT_COLORS.length]!]));
 
@@ -107,23 +109,31 @@ export function EmployeesClient({
 
   function handleSave() {
     startTransition(async () => {
-      await upsertEmployee({
-        ...(editing ? { id: editing.id } : {}),
-        ...form,
-        probation_end_date: form.employment_type === "probation" ? (form.probation_end_date ?? null) : null,
-      } as Parameters<typeof upsertEmployee>[0]);
-      setShowModal(false);
-      // optimistic update
-      const dept = departments.find((d) => d.id === form.department_id);
-      const updated: Employee = {
-        id: editing?.id ?? crypto.randomUUID(),
-        ...form,
-        department_name: dept?.name ?? null,
-      };
-      if (editing) {
-        setEmployees((prev) => prev.map((e) => (e.id === editing.id ? updated : e)));
-      } else {
-        setEmployees((prev) => [...prev, updated]);
+      setError(null);
+      try {
+        await upsertEmployee({
+          ...(editing ? { id: editing.id } : {}),
+          ...form,
+          probation_end_date: form.employment_type === "probation" ? (form.probation_end_date ?? null) : null,
+        } as Parameters<typeof upsertEmployee>[0]);
+        setShowModal(false);
+        // optimistic update
+        const dept = departments.find((d) => d.id === form.department_id);
+        const updated: Employee = {
+          id: editing?.id ?? crypto.randomUUID(),
+          ...form,
+          department_name: dept?.name ?? null,
+        };
+        if (editing) {
+          setEmployees((prev) => prev.map((e) => (e.id === editing.id ? updated : e)));
+        } else {
+          setEmployees((prev) => [...prev, updated]);
+        }
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกข้อมูลพนักงานไม่สำเร็จ");
       }
     });
   }
@@ -144,6 +154,11 @@ export function EmployeesClient({
 
   return (
     <>
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       {/* Probation alerts */}
       {probationAlerts.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">

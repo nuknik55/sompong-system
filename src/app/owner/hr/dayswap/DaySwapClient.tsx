@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertDaySwapRequest, deleteDaySwapRequest } from "../actions";
 import type { Employee, DaySwapRequest, CompDayBalance, Holiday } from "../actions";
 
@@ -43,6 +43,7 @@ export function DaySwapClient({
   const [form, setForm] = useState(BLANK);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const year = defaultYear;
 
   const balanceMap = new Map(balances.map((b) => [b.employee_id, b]));
@@ -72,27 +73,43 @@ export function DaySwapClient({
     if (form.swap_type === "work_first" && !form.work_date) return;
     if (form.swap_type === "off_first" && !form.off_date) return;
     startTransition(async () => {
-      await upsertDaySwapRequest({
-        id: editId ?? undefined,
-        employee_id: form.employee_id,
-        work_date: form.work_date || null,
-        off_date: form.off_date || null,
-        swap_type: form.swap_type,
-        compensation: form.swap_type === "off_first" ? "bank_day" : form.compensation,
-        note: form.note || null,
-        holiday_id: form.swap_type === "work_first" ? (form.holiday_id || null) : null,
-      });
-      // optimistic: re-fetch by navigating (server action revalidates)
-      setShowForm(false);
-      router.refresh();
+      setError(null);
+      try {
+        await upsertDaySwapRequest({
+          id: editId ?? undefined,
+          employee_id: form.employee_id,
+          work_date: form.work_date || null,
+          off_date: form.off_date || null,
+          swap_type: form.swap_type,
+          compensation: form.swap_type === "off_first" ? "bank_day" : form.compensation,
+          note: form.note || null,
+          holiday_id: form.swap_type === "work_first" ? (form.holiday_id || null) : null,
+        });
+        // optimistic: re-fetch by navigating (server action revalidates)
+        setShowForm(false);
+        router.refresh();
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกการสลับวันไม่สำเร็จ");
+      }
     });
   }
 
   function handleDelete(id: string) {
     startTransition(async () => {
-      await deleteDaySwapRequest(id);
-      setSwaps((prev) => prev.filter((s) => s.id !== id));
-      setConfirmDelete(null);
+      setError(null);
+      try {
+        await deleteDaySwapRequest(id);
+        setSwaps((prev) => prev.filter((s) => s.id !== id));
+        setConfirmDelete(null);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกการสลับวันไม่สำเร็จ");
+      }
     });
   }
 
@@ -128,6 +145,11 @@ export function DaySwapClient({
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
@@ -311,7 +333,7 @@ export function DaySwapClient({
                 </Field>
               </div>
               {form.swap_type === "work_first" && !form.off_date && (
-                <p className="text-xs text-neutral-400">หากยังไม่กำหนดวันหยุด ปล่อยว่างไว้ได้ — ระบบจะนับเป็น "วันหยุดค้าง"</p>
+                <p className="text-xs text-neutral-400">หากยังไม่กำหนดวันหยุด ปล่อยว่างไว้ได้ — ระบบจะนับเป็น &ldquo;วันหยุดค้าง&rdquo;</p>
               )}
               {form.swap_type === "off_first" && !form.work_date && (
                 <p className="text-xs text-neutral-400">หากยังไม่ได้นัดวันมาทดแทน ปล่อยว่างไว้ได้</p>

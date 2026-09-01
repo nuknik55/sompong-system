@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import { createPayrollPeriod, closePayrollPeriod, reopenPayrollPeriod, upsertPayrollEntry } from "../actions";
 import type { PayrollPeriod, PayrollEntry } from "../actions";
 
@@ -39,6 +39,7 @@ export function PayrollClient({
   const [editCell, setEditCell] = useState<EditCell | null>(null);
   const [cellValue, setCellValue] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   // New period form
   const today = new Date();
@@ -68,32 +69,48 @@ export function PayrollClient({
     setEditCell(null);
 
     startTransition(async () => {
-      await upsertPayrollEntry({
-        id: updated.id,
-        payroll_period_id: selectedPeriodId,
-        employee_id: updated.employee_id,
-        base_salary: updated.base_salary,
-        position_allowance: updated.position_allowance,
-        special_bonus: updated.special_bonus,
-        holiday_pay: updated.holiday_pay,
-        ot_pay: updated.ot_pay,
-        social_security_deduction: updated.social_security_deduction,
-        leave_deduction: updated.leave_deduction,
-        advance_deduction: updated.advance_deduction,
-        adjustment: updated.adjustment,
-        other_amount: updated.other_amount,
-        meal_allowance: updated.meal_allowance,
-        tip_amount: updated.tip_amount,
-        note: updated.note,
-      });
+      setError(null);
+      try {
+        await upsertPayrollEntry({
+          id: updated.id,
+          payroll_period_id: selectedPeriodId,
+          employee_id: updated.employee_id,
+          base_salary: updated.base_salary,
+          position_allowance: updated.position_allowance,
+          special_bonus: updated.special_bonus,
+          holiday_pay: updated.holiday_pay,
+          ot_pay: updated.ot_pay,
+          social_security_deduction: updated.social_security_deduction,
+          leave_deduction: updated.leave_deduction,
+          advance_deduction: updated.advance_deduction,
+          adjustment: updated.adjustment,
+          other_amount: updated.other_amount,
+          meal_allowance: updated.meal_allowance,
+          tip_amount: updated.tip_amount,
+          note: updated.note,
+        });
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเงินเดือนไม่สำเร็จ");
+      }
     });
   }
 
   function handleCreatePeriod() {
     startTransition(async () => {
-      const id = await createPayrollPeriod(newPeriod);
-      setShowNewPeriod(false);
-      router.push(`/owner/hr/payroll?period=${id}`);
+      setError(null);
+      try {
+        const id = await createPayrollPeriod(newPeriod);
+        setShowNewPeriod(false);
+        router.push(`/owner/hr/payroll?period=${id}`);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเงินเดือนไม่สำเร็จ");
+      }
     });
   }
 
@@ -101,8 +118,16 @@ export function PayrollClient({
     if (!selectedPeriodId) return;
     if (!confirm("ปิดงวดนี้? หลังปิดแล้วแก้ไขได้โดยกด \"ปลดล็อก\"")) return;
     startTransition(async () => {
-      await closePayrollPeriod(selectedPeriodId);
-      router.refresh();
+      setError(null);
+      try {
+        await closePayrollPeriod(selectedPeriodId);
+        router.refresh();
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเงินเดือนไม่สำเร็จ");
+      }
     });
   }
 
@@ -110,8 +135,16 @@ export function PayrollClient({
     if (!selectedPeriodId) return;
     if (!confirm("ปลดล็อกงวดนี้เพื่อแก้ไขได้? เมื่อแก้เสร็จอย่าลืมกด \"ปิดงวด\" อีกครั้ง")) return;
     startTransition(async () => {
-      await reopenPayrollPeriod(selectedPeriodId);
-      router.refresh();
+      setError(null);
+      try {
+        await reopenPayrollPeriod(selectedPeriodId);
+        router.refresh();
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเงินเดือนไม่สำเร็จ");
+      }
     });
   }
 
@@ -172,6 +205,11 @@ export function PayrollClient({
 
   return (
     <>
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       {/* Period list + controls */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-1">

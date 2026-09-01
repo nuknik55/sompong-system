@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import * as XLSX from "xlsx";
 import { upsertScheduleNote } from "../actions";
 import type { Employee, Department, Holiday, ScheduleNote, NoteType, LeaveDay } from "../actions";
@@ -86,6 +86,7 @@ export function ScheduleClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [noteMap, setNoteMap] = useState<Map<string, ScheduleNote>>(() => {
     const m = new Map<string, ScheduleNote>();
     for (const n of notes) m.set(`${n.employee_id}_${n.note_date}`, n);
@@ -152,26 +153,51 @@ export function ScheduleClient({
       note: edit.note.trim(),
       note_type: edit.noteType,
     };
-    setNoteMap((prev) => new Map(prev).set(key, updated));
+    // Optimistic, so keep the previous value to put back if the write fails.
+    // Until schedule_notes existed this always failed and the note simply
+    // vanished on the next reload with nothing said.
+    const prev = noteMap.get(key);
+    setNoteMap((m) => new Map(m).set(key, updated));
     const snap = { ...edit };
     setEdit(null);
     setSaving(true);
+    setError(null);
     startTransition(async () => {
-      await upsertScheduleNote(snap.empId, snap.date, snap.note.trim(), snap.noteType);
-      setSaving(false);
+      try {
+        await upsertScheduleNote(snap.empId, snap.date, snap.note.trim(), snap.noteType);
+      } catch (err) {
+        unstable_rethrow(err);
+        setNoteMap((m) => {
+          const next = new Map(m);
+          if (prev) next.set(key, prev); else next.delete(key);
+          return next;
+        });
+        setError(err instanceof Error ? err.message : "บันทึกโน้ตไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
   function clearNote() {
     if (!edit) return;
     const key = `${edit.empId}_${edit.date}`;
-    setNoteMap((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    const prev = noteMap.get(key);
+    setNoteMap((m) => { const next = new Map(m); next.delete(key); return next; });
     const snap = { ...edit };
     setEdit(null);
     setSaving(true);
+    setError(null);
     startTransition(async () => {
-      await upsertScheduleNote(snap.empId, snap.date, "", snap.noteType);
-      setSaving(false);
+      try {
+        await upsertScheduleNote(snap.empId, snap.date, "", snap.noteType);
+      } catch (err) {
+        unstable_rethrow(err);
+        if (prev) setNoteMap((m) => new Map(m).set(key, prev));
+        setError(err instanceof Error ? err.message : "ลบโน้ตไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -291,6 +317,7 @@ export function ScheduleClient({
         </div>
 
         {saving && <span className="text-xs text-neutral-400">กำลังบันทึก…</span>}
+        {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
 
       {/* Legend */}

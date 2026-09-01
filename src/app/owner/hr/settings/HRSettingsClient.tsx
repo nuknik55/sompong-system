@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import {
   upsertDepartment, setDepartmentActive,
   upsertLeaveType,
@@ -9,7 +9,6 @@ import {
 } from "../actions";
 import type { Department, LeaveType, Holiday } from "../actions";
 
-const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const MONTHS_LONG = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const DAYS_SHORT = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"]; // Mon=0
 
@@ -33,6 +32,7 @@ export function HRSettingsClient({
   const router = useRouter();
   const [tab, setTab] = useState<"dept" | "leave" | "holiday">("dept");
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   // Departments
   const [departments, setDepartments] = useState(initialDepartments);
@@ -61,21 +61,37 @@ export function HRSettingsClient({
   function saveDept(id?: string) {
     if (!deptName.trim()) return;
     startTransition(async () => {
-      await upsertDepartment({ ...(id ? { id } : {}), name: deptName });
-      if (id) {
-        setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, name: deptName } : d)));
-      } else {
-        setDepartments((prev) => [...prev, { id: crypto.randomUUID(), name: deptName, is_active: true, sort_order: 999 }]);
+      setError(null);
+      try {
+        await upsertDepartment({ ...(id ? { id } : {}), name: deptName });
+        if (id) {
+          setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, name: deptName } : d)));
+        } else {
+          setDepartments((prev) => [...prev, { id: crypto.randomUUID(), name: deptName, is_active: true, sort_order: 999 }]);
+        }
+        setEditingDept(null);
+        setDeptName("");
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
       }
-      setEditingDept(null);
-      setDeptName("");
     });
   }
 
   function toggleDeptActive(d: Department) {
     startTransition(async () => {
-      await setDepartmentActive(d.id, !d.is_active);
-      setDepartments((prev) => prev.map((x) => (x.id === d.id ? { ...x, is_active: !x.is_active } : x)));
+      setError(null);
+      try {
+        await setDepartmentActive(d.id, !d.is_active);
+        setDepartments((prev) => prev.map((x) => (x.id === d.id ? { ...x, is_active: !x.is_active } : x)));
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+      }
     });
   }
 
@@ -84,13 +100,21 @@ export function HRSettingsClient({
   function openEditLT(lt: LeaveType) { setEditingLT(lt); setLtForm({ code: lt.code, name_th: lt.name_th, annual_quota_days: lt.annual_quota_days, is_paid: lt.is_paid, is_subject_to_day_multiplier: lt.is_subject_to_day_multiplier, requires_medical_cert: lt.requires_medical_cert, is_active: lt.is_active }); setShowLTForm(true); }
   function saveLT() {
     startTransition(async () => {
-      await upsertLeaveType({ ...(editingLT ? { id: editingLT.id } : {}), ...ltForm });
-      if (editingLT) {
-        setLeaveTypes((prev) => prev.map((x) => (x.id === editingLT.id ? { ...x, ...ltForm } : x)));
-      } else {
-        setLeaveTypes((prev) => [...prev, { id: crypto.randomUUID(), ...ltForm }]);
+      setError(null);
+      try {
+        await upsertLeaveType({ ...(editingLT ? { id: editingLT.id } : {}), ...ltForm });
+        if (editingLT) {
+          setLeaveTypes((prev) => prev.map((x) => (x.id === editingLT.id ? { ...x, ...ltForm } : x)));
+        } else {
+          setLeaveTypes((prev) => [...prev, { id: crypto.randomUUID(), ...ltForm }]);
+        }
+        setShowLTForm(false);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
       }
-      setShowLTForm(false);
     });
   }
 
@@ -104,27 +128,43 @@ export function HRSettingsClient({
   function saveHoliday() {
     if (!holidayModal) return;
     startTransition(async () => {
-      await upsertHoliday({ ...(holidayModal.existing ? { id: holidayModal.existing.id } : {}), holiday_date: holidayModal.date, ...hForm });
-      const updated: Holiday = {
-        id: holidayModal.existing?.id ?? crypto.randomUUID(),
-        holiday_date: holidayModal.date,
-        ...hForm,
-        is_active: true,
-      };
-      setHolidays((prev) => {
-        const filtered = prev.filter((h) => h.holiday_date !== holidayModal.date);
-        return [...filtered, updated].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date));
-      });
-      setHolidayModal(null);
+      setError(null);
+      try {
+        await upsertHoliday({ ...(holidayModal.existing ? { id: holidayModal.existing.id } : {}), holiday_date: holidayModal.date, ...hForm });
+        const updated: Holiday = {
+          id: holidayModal.existing?.id ?? crypto.randomUUID(),
+          holiday_date: holidayModal.date,
+          ...hForm,
+          is_active: true,
+        };
+        setHolidays((prev) => {
+          const filtered = prev.filter((h) => h.holiday_date !== holidayModal.date);
+          return [...filtered, updated].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date));
+        });
+        setHolidayModal(null);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+      }
     });
   }
 
   function removeHoliday() {
     if (!holidayModal?.existing) return;
     startTransition(async () => {
-      await deleteHoliday(holidayModal.existing!.id);
-      setHolidays((prev) => prev.filter((h) => h.holiday_date !== holidayModal.date));
-      setHolidayModal(null);
+      setError(null);
+      try {
+        await deleteHoliday(holidayModal.existing!.id);
+        setHolidays((prev) => prev.filter((h) => h.holiday_date !== holidayModal.date));
+        setHolidayModal(null);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+      }
     });
   }
 
@@ -136,6 +176,11 @@ export function HRSettingsClient({
 
   return (
     <>
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       <div className="mb-4 flex gap-1 border-b border-neutral-200">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}

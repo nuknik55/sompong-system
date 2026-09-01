@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertAttendanceDaily, deleteAttendanceDailyRecord, upsertDaySwapRequest } from "../actions";
 import type { Employee, Department, LeaveType, Holiday, AttendanceDaily, LeaveDay } from "../actions";
 
@@ -67,6 +67,7 @@ export function AttendanceClient({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [records, setRecords] = useState<Map<string, AttendanceDaily>>(() => {
@@ -189,24 +190,42 @@ export function AttendanceClient({
       note: edit.note || null,
       source: "manual",
     };
-    setRecords((prev) => new Map(prev).set(`${edit.empId}_${edit.date}`, rec));
-    const snapshot = { ...edit };
+    // Optimistic, so hold the previous record to put back if the write fails.
+    // (A `snapshot` of `edit` used to be taken here and never used — it was the
+    // wrong data for a rollback anyway; the previous RECORD is what is needed.)
+    const key = `${edit.empId}_${edit.date}`;
+    const prevRec = records.get(key);
+    setRecords((prev) => new Map(prev).set(key, rec));
     setEdit(null);
     setSaving(true);
     startTransition(async () => {
-      await upsertAttendanceDaily({
-        employee_id: rec.employee_id,
-        work_date: rec.work_date,
-        status: rec.status,
-        late_minutes: rec.late_minutes,
-        late_excused: rec.late_excused,
-        ot_hours: rec.ot_hours,
-        ot_paid: rec.ot_paid,
-        leave_type_id: rec.leave_type_id,
-        leave_fraction: rec.leave_fraction,
-        note: rec.note,
-      });
-      setSaving(false);
+      setError(null);
+      try {
+        await upsertAttendanceDaily({
+          employee_id: rec.employee_id,
+          work_date: rec.work_date,
+          status: rec.status,
+          late_minutes: rec.late_minutes,
+          late_excused: rec.late_excused,
+          ot_hours: rec.ot_hours,
+          ot_paid: rec.ot_paid,
+          leave_type_id: rec.leave_type_id,
+          leave_fraction: rec.leave_fraction,
+          note: rec.note,
+        });
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setRecords((prev) => {
+          const next = new Map(prev);
+          if (prevRec) next.set(key, prevRec); else next.delete(key);
+          return next;
+        });
+        setError(err instanceof Error ? err.message : "บันทึกเวลาทำงานไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -215,12 +234,23 @@ export function AttendanceClient({
     const key = `${edit.empId}_${edit.date}`;
     const empId = edit.empId;
     const date = edit.date;
+    const prevRec = records.get(key);
     setRecords((prev) => { const m = new Map(prev); m.delete(key); return m; });
     setEdit(null);
     setSaving(true);
     startTransition(async () => {
-      await deleteAttendanceDailyRecord(empId, date);
-      setSaving(false);
+      setError(null);
+      try {
+        await deleteAttendanceDailyRecord(empId, date);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        if (prevRec) setRecords((prev) => new Map(prev).set(key, prevRec));
+        setError(err instanceof Error ? err.message : "บันทึกเวลาทำงานไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -241,15 +271,24 @@ export function AttendanceClient({
     setEdit(null);
     setSaving(true);
     startTransition(async () => {
-      await upsertDaySwapRequest({
-        employee_id: empId,
-        work_date: workDate,
-        off_date: offDate,
-        swap_type: "work_first",
-        compensation,
-        note,
-      });
-      setSaving(false);
+      setError(null);
+      try {
+        await upsertDaySwapRequest({
+          employee_id: empId,
+          work_date: workDate,
+          off_date: offDate,
+          swap_type: "work_first",
+          compensation,
+          note,
+        });
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเวลาทำงานไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -335,8 +374,17 @@ export function AttendanceClient({
     if (toClear.length === 0) return;
     setSaving(true);
     startTransition(async () => {
-      for (const ds of toClear) await deleteAttendanceDailyRecord(empId, ds);
-      setSaving(false);
+      setError(null);
+      try {
+        for (const ds of toClear) await deleteAttendanceDailyRecord(empId, ds);
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเวลาทำงานไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -367,28 +415,42 @@ export function AttendanceClient({
     setBulk(null);
     setSaving(true);
     startTransition(async () => {
-      await Promise.all(
-        newRecs.map((r) =>
-          upsertAttendanceDaily({
-            employee_id: r.employee_id,
-            work_date: r.work_date,
-            status: r.status,
-            late_minutes: r.late_minutes,
-            late_excused: r.late_excused,
-            ot_hours: r.ot_hours,
-            ot_paid: r.ot_paid,
-            leave_type_id: r.leave_type_id,
-            leave_fraction: r.leave_fraction,
-            note: r.note,
-          })
-        )
-      );
-      setSaving(false);
+      setError(null);
+      try {
+        await Promise.all(
+          newRecs.map((r) =>
+            upsertAttendanceDaily({
+              employee_id: r.employee_id,
+              work_date: r.work_date,
+              status: r.status,
+              late_minutes: r.late_minutes,
+              late_excused: r.late_excused,
+              ot_hours: r.ot_hours,
+              ot_paid: r.ot_paid,
+              leave_type_id: r.leave_type_id,
+              leave_fraction: r.leave_fraction,
+              note: r.note,
+            })
+          )
+        );
+      } catch (err) {
+        // requireHR() redirects, and Next signals a redirect by throwing —
+        // unstable_rethrow lets that through instead of showing it as an error.
+        unstable_rethrow(err);
+        setError(err instanceof Error ? err.message : "บันทึกเวลาทำงานไม่สำเร็จ");
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
   return (
     <div className="space-y-3">
+      {error && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <select
