@@ -4,6 +4,27 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
+import { daysInMonth } from "@/app/owner/catering/calendar-grid";
+
+/**
+ * Last calendar day of a "YYYY-MM" string, as "YYYY-MM-DD".
+ *
+ * Both month queries below used to hardcode a literal day 31. Postgres does
+ * not clamp an impossible date — it raises
+ *   date/time field value out of range: "2026-09-31"
+ * so /owner/accounting returned a 500 for the WHOLE of every 30-day month and
+ * February. It stayed invisible because 7 months of the year do have 31 days;
+ * it fired on 1 September.
+ *
+ * daysInMonth is reused from calendar-grid rather than recomputed. That module
+ * is deliberately plain date math with no "use client"/"use server" (its own
+ * header says so), so it is safe to import from a server action.
+ */
+function monthEnd(yearMonth: string): string {
+  const [y, m] = yearMonth.split("-").map(Number);
+  if (!y || !m || m < 1 || m > 12) throw new Error(`รูปแบบเดือนไม่ถูกต้อง: ${yearMonth}`);
+  return `${yearMonth}-${String(daysInMonth(y, m)).padStart(2, "0")}`;
+}
 
 export type CoaAccount = {
   code: string;
@@ -373,7 +394,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
     .from("expense_entries")
     .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
     .gte("entry_date", `${yearMonth}-01`)
-    .lte("entry_date", `${yearMonth}-31`)
+    .lte("entry_date", monthEnd(yearMonth))
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(500);
@@ -608,7 +629,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
       .from("expense_entries")
       .select("coa_code,amount")
       .filter("entry_date", "gte", `${yearMonth}-01`)
-      .filter("entry_date", "lte", `${yearMonth}-31`),
+      .filter("entry_date", "lte", monthEnd(yearMonth)),
     supabase.from("coa").select("*").order("sort_order"),
     supabase.from("monthly_revenue").select("revenue_type,amount").eq("year_month", yearMonth),
   ]);
