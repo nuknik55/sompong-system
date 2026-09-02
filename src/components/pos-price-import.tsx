@@ -3,7 +3,8 @@
 import { useState, useTransition, useEffect } from "react";
 import {
   applyPosImport,
-  previewPosImport,
+  ingestPosDeliveries,
+  buildPosImportPreview,
   getPosPriceAliases,
   addPosPriceAlias,
   deletePosPriceAlias,
@@ -11,6 +12,23 @@ import {
   type PosImportRow,
   type PriceAliasRow,
 } from "@/app/owner/ingredients/pos-import-actions";
+
+/** Rows per request. ~180 KB of JSON; a full history is ~12 sequential calls. */
+const CHUNK_SIZE = 2000;
+
+/** 25690830 -> "2026-08-30". The parser's key is Buddhist-era yyyymmdd. */
+function dateKeyToIso(dateKey: number): string {
+  const y = Math.floor(dateKey / 10000) - 543;
+  const m = Math.floor((dateKey % 10000) / 100);
+  const d = dateKey % 100;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+const RULE_LABEL: Record<string, string> = {
+  "dominant-vendor": "ราคากลาง (ผู้ขายหลัก)",
+  "all-vendor": "ราคากลาง (ทุกผู้ขาย)",
+  "latest-delivery": "ล่าสุด (ข้อมูลน้อย)",
+};
 
 function formatBaht(n: number | null) {
   if (n == null) return "-";
@@ -23,6 +41,10 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [doneCount, setDoneCount] = useState<number | null>(null);
+  /** Rows sent / total, while uploading. null when idle. */
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
+  /** Deliveries newly stored by the last upload — rows actually inserted, not sent. */
+  const [storedCount, setStoredCount] = useState<number | null>(null);
 
   // Alias state
   /** Per-row yield_qty entry, for rows whose unit changed or was never set. */
@@ -47,15 +69,60 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setDoneCount(null);
     startTransition(async () => {
       try {
-        const formData = new FormData();
-        formData.set("file", file);
-        const result = await previewPosImport(formData);
+        // Parse in the browser. Posting the .xls hit Vercel's 4.5 MB request
+        // limit, which rejects before the function runs and surfaces as an
+        // unparseable "unexpected response". Parsed rows are ~38.5% of the
+        // file's size and go up in chunks, so the ceiling is gone.
+        //
+        // Dynamic import so SheetJS (~800 KB) is fetched only when a file is
+        // actually chosen, not by every page that ships this bundle.
+        const { parsePosReceiptDeliveries } = await import("@/lib/pos-parse");
+        const materials = parsePosReceiptDeliveries(await file.arrayBuffer());
+
+        const rows = materials.flatMap((m) =>
+          m.deliveries.map((d) => ({
+            materialCode: m.materialCode,
+            materialName: m.materialName,
+            documentNumber: d.documentNumber,
+            documentDate: dateKeyToIso(d.dateKey),
+            vendorName: d.vendorName,
+            unitName: d.unitName,
+            qty: d.qty,
+            totalCostIncVat: d.totalCostIncVat,
+            totalCostExcVat: d.totalCostExcVat,
+          })),
+        );
+        if (rows.length === 0) {
+          throw new Error(
+            'อ่านไฟล์ไม่พบรายการรับสินค้าเลย ตรวจสอบว่าเป็นไฟล์รายงาน "ใบรับสินค้าตรง" ที่ export มาจาก POS หรือไม่',
+          );
+        }
+
+        // Sequential: the server bounds rows per batch, and concurrent chunks
+        // would race that check.
+        const batchId = crypto.randomUUID();
+        setProgress({ sent: 0, total: rows.length });
+        let stored = 0;
+        for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+          const res = await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE), file.name);
+          stored += res.inserted;
+          setProgress({ sent: Math.min(i + CHUNK_SIZE, rows.length), total: rows.length });
+        }
+        setStoredCount(stored);
+
+        // The preview reads the delivery WINDOW, not this upload. Re-importing
+        // a file whose rows are already stored is a legitimate no-op that
+        // still produces a full preview.
+        const result = await buildPosImportPreview();
         setPreview(result);
         // A "changed"-unit row starts unchecked and cannot be checked until
         // resolved; mixed-unit deliveries stay unchecked as before.
         setChecked(
           Object.fromEntries(
-            result.matched.map((r) => [r.ingredientId, r.unitState !== "changed" && !r.mixedUnits]),
+            result.matched.map((r) => [
+              r.ingredientId,
+              r.unitState !== "changed" && !r.mixedUnits && !r.unitRedefinitionSuspected,
+            ]),
           ),
         );
         // Seed each resolvable row's yield input, so the common case is
@@ -84,6 +151,8 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
       } catch (err) {
         setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
         setPreview(null);
+      } finally {
+        setProgress(null);
       }
     });
   }
@@ -145,6 +214,17 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
 
   const checkedCount = preview ? preview.matched.filter((r) => checked[r.ingredientId]).length : 0;
 
+  // Headline numbers for the review. The point is that a reviewer should not
+  // have to assume every price is now median-backed — a fifth are not.
+  const summary = {
+    unchanged: preview?.matched.filter((r) => r.pctChange != null && Math.abs(r.pctChange) < 0.5).length ?? 0,
+    bigMove: preview?.matched.filter((r) => r.pctChange != null && Math.abs(r.pctChange) > 20).length ?? 0,
+    thinData: preview?.matched.filter((r) => r.rule === "latest-delivery").length ?? 0,
+    firstPrice: preview?.matched.filter((r) => r.oldCost == null).length ?? 0,
+    blocked:
+      preview?.matched.filter((r) => r.unitState === "changed" || r.unitRedefinitionSuspected).length ?? 0,
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm">
@@ -162,6 +242,10 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           <b>ไม่ติ๊กเลือกให้อัตโนมัติ</b> เพราะคำนวณราคาต่อหน่วยผิดได้ — ให้ตรวจสอบ แก้หน่วยซื้อ/จำนวนตัดแต่งในหน้านี้ให้ตรงกับหน่วยใหม่ก่อน
           แล้วจึงนำเข้าราคาอีกครั้ง
         </p>
+        <p className="mb-3 text-xs text-neutral-400">
+          เมื่ออัปโหลด ระบบจะ<b>บันทึกประวัติการรับของจากไฟล์นี้ไว้ทันที</b> (ก่อนกดยืนยันราคา) เพราะรายงาน POS ย้อนหลังได้จำกัด —
+          ข้อมูลที่ไม่เก็บตอนนี้จะหายไปถาวร การกดยืนยันด้านล่างมีผลเฉพาะ<b>การอัปเดตราคาวัตถุดิบ</b>เท่านั้น
+        </p>
         <input
           type="file"
           accept=".xls,.xlsx,.csv"
@@ -169,6 +253,17 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           disabled={isPending}
           className="block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
+        {progress && (
+          <p className="mt-2 text-xs text-neutral-500">
+            กำลังส่งข้อมูล {progress.sent.toLocaleString("th-TH")} / {progress.total.toLocaleString("th-TH")} แถว…
+          </p>
+        )}
+        {storedCount != null && !progress && (
+          <p className="mt-2 text-xs text-neutral-500">
+            บันทึกประวัติการรับของใหม่ {storedCount.toLocaleString("th-TH")} รายการ
+            {storedCount === 0 && " (ข้อมูลในไฟล์นี้มีอยู่แล้วทั้งหมด)"}
+          </p>
+        )}
       </div>
 
       {/* Alias management */}
@@ -250,9 +345,19 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
       {preview && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-600">
-              พบวัตถุดิบตรงกัน {preview.matched.length} รายการ (เลือกไว้ {checkedCount}) — ไม่พบในระบบ {preview.unmatched.length} รายการ
-            </p>
+            <div className="text-sm text-neutral-600">
+              <p>
+                พบวัตถุดิบตรงกัน {preview.matched.length} รายการ (เลือกไว้ {checkedCount}) — ไม่พบในระบบ{" "}
+                {preview.unmatched.length} รายการ
+              </p>
+              {/* Say what the run actually does, including what it does NOT do. */}
+              <p className="mt-1 text-xs text-neutral-500">
+                ราคาไม่เปลี่ยน {summary.unchanged} รายการ · เปลี่ยนเกิน 20% {summary.bigMove} รายการ ·{" "}
+                คิดจากการรับของครั้งเดียว {summary.thinData} รายการ
+                {summary.firstPrice > 0 && ` · ตั้งราคาครั้งแรก ${summary.firstPrice} รายการ (เมนูที่ใช้จะเปลี่ยนจาก "ไม่ทราบต้นทุน" เป็นต้นทุนจริง)`}
+                {summary.blocked > 0 && ` · ต้องแก้หน่วยก่อน ${summary.blocked} รายการ`}
+              </p>
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -264,7 +369,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                     Object.fromEntries(
                       preview.matched.map((r) => [
                         r.ingredientId,
-                        !(r.unitState === "changed" && !resolved[r.ingredientId]),
+                        !((r.unitState === "changed" || r.unitRedefinitionSuspected) && !resolved[r.ingredientId]),
                       ]),
                     ),
                   )
@@ -293,13 +398,18 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                   <th className="px-2 py-2 text-right">ราคาใหม่</th>
                   <th className="px-2 py-2 text-right">เปลี่ยน</th>
                   <th className="px-2 py-2">หน่วย (เดิม → POS)</th>
+                  <th className="px-2 py-2">ที่มาของราคา</th>
                   <th className="px-2 py-2">วันที่ล่าสุด</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.matched.map((r: PosImportRow) => {
                   const bigChange = r.pctChange != null && Math.abs(r.pctChange) >= 30;
-                  const isBlocked = r.unitState === "changed" && !resolved[r.ingredientId];
+                  // A suspected unit redefinition blocks exactly like a changed
+                  // unit: same problem (price and unit out of step), same fix
+                  // (price + unit + yield together), so it must not be a checkbox.
+                  const isBlocked =
+                    (r.unitState === "changed" || r.unitRedefinitionSuspected) && !resolved[r.ingredientId];
                   return (
                     <>
                     <tr
@@ -328,9 +438,29 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                       <td className={`px-2 py-1.5 text-right tabular-nums ${bigChange ? "font-medium text-amber-700" : "text-neutral-500"}`}>
                         {r.pctChange != null ? `${r.pctChange > 0 ? "+" : ""}${r.pctChange.toFixed(0)}%` : "ใหม่"}
                       </td>
+                      <td className="px-2 py-1.5 text-neutral-500">
+                        {RULE_LABEL[r.rule] ?? r.rule}
+                        <span className="ml-1 text-neutral-400">
+                          ({r.poolSize === 1 ? "ครั้งเดียว" : `${r.poolSize} ครั้ง`})
+                        </span>
+                        {r.vendorUnsettled && (
+                          <span className="ml-1 text-amber-700" title="ผู้ขายหลักยังไม่ชัดเจน — อาจสลับในรอบถัดไป">⚠</span>
+                        )}
+                        {r.outliersDropped > 0 && (
+                          <span className="ml-1 text-neutral-400" title={`ตัดรายการผิดปกติออก ${r.outliersDropped} รายการ`}>
+                            ↯{r.outliersDropped}
+                          </span>
+                        )}
+                        <div className="text-[10px] text-neutral-400">{r.vendorName || "(ไม่ระบุผู้ขาย)"}</div>
+                      </td>
                       <td className={`px-2 py-1.5 ${r.unitState === "changed" ? "font-medium text-red-700" : "text-neutral-500"}`}>
                         {r.oldUnit ?? "—"} → {r.newUnit || "—"}
                         {r.unitState === "changed" && " ⚠"}
+                        {r.unitRedefinitionSuspected && (
+                          <div className="text-[10px] font-medium text-red-700">
+                            หน่วยเดิมกับ POS ชื่อเหมือนกัน แต่ราคาต่างกัน {r.suspectedPackCount}× พอดี — น่าจะเป็นคนละขนาดบรรจุ ต้องแก้ราคา+หน่วย+ปริมาณพร้อมกัน
+                          </div>
+                        )}
                         {r.mixedUnits && <span className="ml-1 text-orange-700" title="วันที่ล่าสุดมีหลายหน่วย">±</span>}
                       </td>
                       <td className="px-2 py-1.5 text-neutral-500">{r.latestDateLabel}</td>

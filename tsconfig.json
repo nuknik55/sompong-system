@@ -6,6 +6,10 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // node:test runs the .test.ts files directly via Node's native TS
+    // type-stripping, and Node requires the explicit .ts extension on relative
+    // imports. Safe here because noEmit is on — nothing is compiled out.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
