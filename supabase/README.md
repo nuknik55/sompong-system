@@ -113,10 +113,39 @@ of debugging that a note would have saved.
 
 | ceiling | value | where it bites | status |
 |---|---|---|---|
-| Vercel request body | **4.5 MB**, not raisable by tier or config | a POS `.xls` posted to a Server Action. Rejected *before* the function runs, so it surfaces as "An unexpected response was received from the server" with nothing in the logs | being fixed: parse in the browser, upload validated rows in chunks |
+| Vercel request body | **4.5 MB**, not raisable by tier or config | a POS `.xls` posted to a Server Action. Rejected *before* the function runs, so it surfaces as "An unexpected response was received from the server" with nothing in the logs | **fixed** — the browser parses and uploads validated rows 2,000 at a time, so the request never carries the file |
 | `serverActions.bodySizeLimit` | 15 MB (set in `next.config.ts`) | Next's own limit. **Not** the one that bit us — it is well above Vercel's | fine |
 | Vercel function duration | **90 s** | `buildPosImportPreview` reads a delivery window and recomputes the preview. Bounded today by `pos_import_settings.window_days` (90), so a few thousand rows | fine, but this is the next wall of this kind. If the window grows, move the aggregation into SQL rather than raising anything |
+| **PostgREST response rows** | **1,000**, and `.limit()` does NOT lift it | any `select()` over a table with more than 1,000 rows. It returns **200 with a short body** and no error, so a truncated read is indistinguishable from a complete one | `lib/data.ts` exports `fetchAllRows` — use it. See below |
 | `npm run lint` not green | 9 `react-hooks/set-state-in-effect` | blocks CI enforcement of `local/no-unchecked-supabase-write` | open, see below |
+
+### The 1,000-row cap, and which reads are near it
+
+This one is worth its own section because it lies quietly. A capped read is a
+`200` with fewer rows than exist — nothing throws, nothing logs, and the
+caller cannot tell. It cost a review screen that showed 58 of 251 materials
+and looked complete.
+
+**Any read of a table that can exceed 1,000 rows must page**, via
+`fetchAllRows` in `lib/data.ts`. Do not add a `.limit()` and assume it helps:
+the cap is enforced by the server, above whatever the client asks for.
+
+Tables currently over the cap:
+
+| table | rows | how it is read |
+|---|---:|---|
+| `pos_receipt_deliveries` | 22,805 | paged in `buildPosImportPreview`; counted with `head: true` elsewhere |
+| `menu_recipe_items` | 1,777 | paged by `getMenuRecipeItems`; elsewhere only `.eq("menu_id")`, so one menu at a time |
+| `expense_entries` | 1,368 | only bounded month/week ranges — see the known limit below |
+
+**Known limit, not currently reachable:** `getRecentEntries` and
+`getMonthlySummary` in `owner/accounting/actions.ts` read `expense_entries` for
+one month without paging (the first also carries an explicit `.limit(500)`).
+At roughly 80 entries a month they are nowhere near either bound. They would
+begin truncating silently — a short P&L with no error — if a single month ever
+passed 500, and again at 1,000. Recorded rather than fixed, because changing
+them today would be churn; the point is that it is written down before anyone
+has to rediscover it from a wrong total.
 
 ## Where two changes actually landed
 
