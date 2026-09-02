@@ -38,3 +38,31 @@ in its message. `9d9219f` began tracking `scripts/backfill-pos-deliveries.mjs`
 without mentioning it — deliberate, but the same shape of problem: something
 riding along in a commit that does not describe it.
 <!-- END:git-staging-rules -->
+
+<!-- BEGIN:baseline-rules -->
+# Comparing a change against current behaviour
+
+The baseline must be **the shipped code path**, not a reconstruction of it.
+Reimplementing the current rule "just for the comparison" measures the
+reimplementation. This happened twice in one session, two rounds apart:
+
+- A cross-check confirmed a new pricing module reproduced a reviewed report
+  exactly — 238 rows, 0 differences. It compared the module's **pricing** and
+  never exercised the server action's **query**, which was silently truncating
+  at 1,000 rows and showing 58 of 251 materials. A cross-check that does not
+  touch the differing layer proves nothing about that layer.
+- A model comparing four vendor-weighting options against a hand-written copy of
+  the current rule reported a material as changing. The copy had omitted a
+  tiebreak; the real rule already produced the proposed value and nothing there
+  changed at all.
+
+So:
+
+1. **Import the real function.** If it cannot be imported, that is a reason to
+   extract it, not to retype it.
+2. **State which layer the comparison covers**, and assume every layer it does
+   not touch is unverified. Pricing verified is not query verified.
+3. **Prefer a check that would fail** if the thing you believe were untrue. A
+   test that passes under both the old and new behaviour has told you nothing
+   about the change.
+<!-- END:baseline-rules -->

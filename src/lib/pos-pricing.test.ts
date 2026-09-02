@@ -224,3 +224,69 @@ test("the denylist covers every catch-all found in the data", () => {
   }
   assert.equal(NON_FOOD_MATERIALS.has("ปลากระพง (ญ)"), false);
 });
+
+// ── vendor dominance by volume, not delivery count ──────────────────────────
+// These would all FAIL under the previous count-based rule.
+
+test("กะทิ: the bulk supplier wins over more frequent top-ups", () => {
+  // ป้อม delivers rarely and large; ทรัพย์บุญชัย delivers often and small.
+  const rows = [
+    ...Array.from({ length: 4 }, (_, i) => d(`2026-08-0${i + 1}`, "ป้อม กะทิ", "โล", 85, 85 * 70)),
+    ...Array.from({ length: 13 }, (_, i) => d(`2026-07-${10 + i}`, "ทรัพย์บุญชัย", "โล", 2, 2 * 60)),
+  ];
+  const r = priceFromDeliveries(rows)!;
+  assert.equal(r.vendorName, "ป้อม กะทิ", "count would have picked ทรัพย์บุญชัย");
+  assert.equal(r.price, 70);
+  assert.ok(r.vendorShare > 0.8, `expected >80% volume share, got ${r.vendorShare}`);
+});
+
+test("หมึกหอม: an exact count tie is settled by volume, not by recency", () => {
+  // 3 deliveries each, so count ties; วิยะดา supplies 4x the volume.
+  const rows = [
+    ...Array.from({ length: 3 }, (_, i) => d(`2026-07-0${i + 1}`, "วิยะดา", "โล", 40, 40 * 330)),
+    ...Array.from({ length: 3 }, (_, i) => d(`2026-08-0${i + 1}`, "พี่แจ๋ว", "โล", 10, 10 * 350)),
+  ];
+  const r = priceFromDeliveries(rows)!;
+  // Recency would have picked พี่แจ๋ว — the later deliveries.
+  assert.equal(r.vendorName, "วิยะดา");
+  assert.equal(r.price, 330);
+  assert.equal(r.vendorUnsettled, false, "80/20 by volume is not ambiguous");
+});
+
+test("vendorShare is share of VOLUME, not of deliveries", () => {
+  const rows = [
+    d("2026-08-01", "BULK", "โล", 90, 900),
+    d("2026-08-02", "BULK", "โล", 90, 900),
+    d("2026-08-03", "BULK", "โล", 90, 900),
+    d("2026-07-01", "SMALL", "โล", 5, 50),
+    d("2026-07-02", "SMALL", "โล", 5, 50),
+    d("2026-07-03", "SMALL", "โล", 5, 50),
+    d("2026-07-04", "SMALL", "โล", 5, 50),
+  ];
+  const r = priceFromDeliveries(rows)!;
+  assert.equal(r.vendorName, "BULK"); // 3 deliveries vs 4, but 270 โล vs 20
+  assert.ok(Math.abs(r.vendorShare - 270 / 290) < 1e-9, `got ${r.vendorShare}`);
+});
+
+test("a near-equal volume split stays unsettled and does NOT favour the dearer vendor", () => {
+  // มะม่วงดิบ in miniature: spend weighting would pick DEAR; volume must not.
+  const rows = [
+    ...Array.from({ length: 3 }, (_, i) => d(`2026-08-0${i + 1}`, "DEAR", "โล", 3.5, 3.5 * 90)),
+    ...Array.from({ length: 3 }, (_, i) => d(`2026-07-0${i + 1}`, "CHEAP", "โล", 3.7, 3.7 * 60)),
+  ];
+  const r = priceFromDeliveries(rows)!;
+  assert.equal(r.vendorName, "CHEAP", "volume leader, despite lower spend");
+  assert.equal(r.vendorUnsettled, true, "10.5 vs 11.1 โล is genuinely close");
+});
+
+test("the unit is chosen BEFORE the vendor, so volumes are never added across units", () => {
+  // GRAM ships a huge number of กรัม; the material is mostly bought in โล.
+  const rows = [
+    d("2026-08-01", "GRAM", "กรัม", 50000, 50000),
+    ...Array.from({ length: 3 }, (_, i) => d(`2026-08-0${i + 2}`, "KILO", "โล", 10, 10 * 75)),
+  ];
+  const r = priceFromDeliveries(rows)!;
+  assert.equal(r.unitName, "โล", "โล has more deliveries, so it is the chosen unit");
+  assert.equal(r.vendorName, "KILO", "50,000 กรัม must not outweigh 30 โล");
+  assert.equal(r.price, 75);
+});

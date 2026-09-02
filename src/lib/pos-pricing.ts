@@ -117,32 +117,60 @@ function dominantBy<T>(items: T[], key: (t: T) => string): { value: string; coun
 }
 
 /**
- * Picks the vendor we actually buy this material from.
+ * Picks the vendor we actually buy this material from — by QUANTITY, within a
+ * unit that has already been chosen.
  *
- * By delivery count, tie-broken on the most recent delivery — "who we buy from
- * now" is the question. Without a tiebreak, 5 of 251 materials had an undefined
- * winner and their price would flip between imports for no visible reason.
+ * Counting deliveries treats a 3 kg top-up as equal evidence to a 57 kg bulk
+ * drop. For กะทิ that picked กะทิ ทรัพย์บุญชัย, who supplied 7% of the coconut
+ * milk across 45% of the deliveries, over ป้อม กะทิ at 87% of the volume in 14%
+ * of the deliveries. The restaurant's answer is ป้อม; the rule said otherwise.
+ *
+ * Quantity, NOT spend. Weighting by baht looks equivalent and is not:
+ *
+ *   - Spend is price x quantity, so at similar volume the DEARER vendor always
+ *     wins. มะม่วงดิบ splits 49/51 by volume, and spend hands it to the vendor
+ *     charging 50% more, moving the price +30% on what is really a coin-flip.
+ *   - Worse, spend weighting amplifies exactly the rows the gap filter exists
+ *     to suppress. A mis-key is almost always UPWARD, so a wrong row carries
+ *     more weight than the correct ones. น้ำจิ้มไก่ has three deliveries at
+ *     ~฿61 and one mis-keyed at ฿601, and that single row outweighs all three
+ *     combined: a spend-weighted median returns ฿601.
+ *
+ * Do not "improve" this to spend. It has been measured and it is worse.
+ *
+ * Quantity is only summable once the unit is fixed — 5 กล่อง + 3 โล is not 8 of
+ * anything, and 14 of 244 materials carry more than one unit in the window.
+ * That is why the caller chooses the unit first and passes same-unit rows here.
+ *
+ * Ties are broken on the most recent delivery: without it, materials with an
+ * exact tie would flip between imports for no visible reason.
  */
-function dominantVendor(deliveries: PricingDelivery[]) {
-  const counts = new Map<string, { n: number; newest: string }>();
-  for (const d of deliveries) {
-    const e = counts.get(d.vendorName) ?? { n: 0, newest: "" };
-    e.n++;
+function dominantVendorByVolume(sameUnit: PricingDelivery[]) {
+  const totals = new Map<string, { qty: number; newest: string }>();
+  for (const d of sameUnit) {
+    const e = totals.get(d.vendorName) ?? { qty: 0, newest: "" };
+    e.qty += d.qty;
     if (d.documentDate > e.newest) e.newest = d.documentDate;
-    counts.set(d.vendorName, e);
+    totals.set(d.vendorName, e);
   }
-  const ranked = [...counts.entries()].sort((a, b) =>
-    b[1].n !== a[1].n ? b[1].n - a[1].n : b[1].newest.localeCompare(a[1].newest),
+  const ranked = [...totals.entries()].sort((a, b) =>
+    b[1].qty !== a[1].qty ? b[1].qty - a[1].qty : b[1].newest.localeCompare(a[1].newest),
   );
-  return { value: ranked[0]![0], count: ranked[0]![1].n, runnerUp: ranked[1]?.[1].n ?? 0 };
+  const totalQty = sameUnit.reduce((t, d) => t + d.qty, 0);
+  return {
+    value: ranked[0]![0],
+    qty: ranked[0]![1].qty,
+    runnerUpQty: ranked[1]?.[1].qty ?? 0,
+    share: totalQty > 0 ? ranked[0]![1].qty / totalQty : 0,
+  };
 }
 
 /**
  * Prices one material from its deliveries inside the window.
  *
  * Escalating fallback, because a flat min-3 would freeze ~23% of the catalogue:
- *   1. dominant vendor + that vendor's dominant unit
- *   2. all vendors + the overall dominant unit
+ *   1. the dominant unit, then the vendor supplying most VOLUME in it
+ *   2. the dominant unit, all vendors
  *   3. latest delivery — today's rule, and the UI must not tick it by default
  *
  * The gap filter runs BEFORE each pool-size test. Running it after let a pool
@@ -155,11 +183,24 @@ export function priceFromDeliveries(deliveries: PricingDelivery[]): PricingResul
   const usable = deliveries.filter((d) => d.qty > 0 && Number.isFinite(d.totalCostIncVat));
   if (usable.length === 0) return null;
 
-  const vendor = dominantVendor(usable);
+  // UNIT FIRST. Quantity is only comparable inside one unit, and choosing the
+  // unit up front is what makes volume-based vendor selection well defined.
+  const unit = dominantBy(usable, (d) => d.unitName).value;
+  const sameUnit = usable.filter((d) => d.unitName === unit);
+
+  const vendor = dominantVendorByVolume(sameUnit.length > 0 ? sameUnit : usable);
   const base = {
     vendorName: vendor.value,
-    vendorShare: vendor.count / usable.length,
-    vendorUnsettled: vendor.runnerUp > 0 && (vendor.count - vendor.runnerUp) / vendor.count <= VENDOR_AMBIGUITY,
+    // Share of VOLUME in the chosen unit, not share of deliveries. The UI says
+    // so explicitly; a percentage that quietly changed meaning would be worse
+    // than no percentage.
+    vendorShare: vendor.share,
+    // Unsettled compares volume too. หมึกหอม is 24 deliveries each way — an
+    // exact count tie, previously resolved by recency and flagged ambiguous —
+    // but 80/20 by volume, which is not ambiguous at all. Comparing volume
+    // makes the flag both quieter and more accurate.
+    vendorUnsettled:
+      vendor.runnerUpQty > 0 && (vendor.qty - vendor.runnerUpQty) / vendor.qty <= VENDOR_AMBIGUITY,
     catchAllVendor: vendor.value === CATCH_ALL_VENDOR,
   };
 
@@ -177,13 +218,12 @@ export function priceFromDeliveries(deliveries: PricingDelivery[]): PricingResul
     };
   };
 
-  const vendorRows = usable.filter((d) => d.vendorName === vendor.value);
-  const vendorUnit = dominantBy(vendorRows, (d) => d.unitName).value;
-  const step1 = tryPool(vendorRows.filter((d) => d.unitName === vendorUnit), "dominant-vendor");
+  // Step 1 — the volume-dominant vendor's deliveries, in the chosen unit.
+  const step1 = tryPool(sameUnit.filter((d) => d.vendorName === vendor.value), "dominant-vendor");
   if (step1) return step1;
 
-  const overallUnit = dominantBy(usable, (d) => d.unitName).value;
-  const step2 = tryPool(usable.filter((d) => d.unitName === overallUnit), "all-vendor");
+  // Step 2 — every vendor, same unit.
+  const step2 = tryPool(sameUnit, "all-vendor");
   if (step2) return step2;
 
   const newestDate = usable.reduce((m, d) => (d.documentDate > m ? d.documentDate : m), "");

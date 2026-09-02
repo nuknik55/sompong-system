@@ -451,7 +451,15 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                             ↯{r.outliersDropped}
                           </span>
                         )}
-                        <div className="text-[10px] text-neutral-400">{r.vendorName || "(ไม่ระบุผู้ขาย)"}</div>
+                        {/* Volume share, not delivery-count share. Spelling it out
+                            matters: the number used to mean "% of deliveries" and
+                            now means "% of the quantity bought", and a percentage
+                            that changes meaning without saying so is worse than
+                            no percentage. */}
+                        <div className="text-[10px] text-neutral-400">
+                          {r.vendorName || "(ไม่ระบุผู้ขาย)"}
+                          {r.vendorShare > 0 && ` · ส่งของ ${Math.round(r.vendorShare * 100)}% ของปริมาณ`}
+                        </div>
                       </td>
                       <td className={`px-2 py-1.5 ${r.unitState === "changed" ? "font-medium text-red-700" : "text-neutral-500"}`}>
                         {r.oldUnit ?? "—"} → {r.newUnit || "—"}
