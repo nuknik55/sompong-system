@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/data";
 import { proposeYieldQty, summarizeLatestDelivery, isoToDateKey, isoToThaiDateLabel, type PosMaterialDeliveries } from "@/lib/pos-parse";
 import { validateChunk, MAX_ROWS_PER_BATCH } from "@/lib/pos-delivery-validation";
 import {
@@ -120,10 +121,13 @@ export async function ingestPosDeliveries(
     throw new Error(`ชุดข้อมูลนี้เกิน ${MAX_ROWS_PER_BATCH} แถว`);
   }
 
-  // return=representation so the count reported back is the rows ACTUALLY
-  // inserted, not the rows sent. The reverted version returned the sent count
-  // and called it success while writing nothing.
-  const { data, error } = await supabase
+  // Report the rows ACTUALLY inserted, not the rows sent — the reverted attempt
+  // returned the sent count and called it success while writing nothing.
+  //
+  // count: "exact" rather than .select("id"): a returned BODY is capped at
+  // 1,000 rows by the server, so a 2,000-row chunk could report at most 1,000
+  // inserted. The count header has no such cap. Verified against production.
+  const { count: insertedCount, error } = await supabase
     .from("pos_receipt_deliveries")
     .upsert(
       check.rows.map((r) => ({
@@ -140,12 +144,11 @@ export async function ingestPosDeliveries(
         import_batch_id: batchId,
         source_file: sourceFile ?? null,
       })),
-      { onConflict: "document_number,material_code", ignoreDuplicates: true },
-    )
-    .select("id");
+      { onConflict: "document_number,material_code", ignoreDuplicates: true, count: "exact" },
+    );
   if (error) throw new Error(error.message);
 
-  return { received: check.rows.length, inserted: data?.length ?? 0 };
+  return { received: check.rows.length, inserted: insertedCount ?? 0 };
 }
 
 /**
@@ -170,24 +173,38 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
   const windowDays = settings?.window_days ?? 90;
   const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
 
-  const [deliveriesRes, ingredientsRes, aliasesRes] = await Promise.all([
-    supabase
-      .from("pos_receipt_deliveries")
-      .select("material_code, material_name, document_date, vendor_name, unit_name, qty, total_cost_inc_vat")
-      .gte("document_date", windowStart)
-      .order("material_code")
-      .limit(MAX_ROWS_PER_BATCH),
+  const [deliveries, ingredientsRes, aliasesRes] = await Promise.all([
+    // PAGED. A plain select() here returned 1,000 of 4,489 window deliveries —
+    // .limit() does not lift the server's row cap — so the review screen showed
+    // 58 of 251 materials, ordered by material_code, and 193 materials could
+    // never be repriced no matter how often anyone imported. The truncation is
+    // a 200 with a short body, so nothing looked wrong.
+    fetchAllRows<{
+      material_code: string;
+      material_name: string;
+      document_date: string;
+      vendor_name: string;
+      unit_name: string;
+      qty: number;
+      total_cost_inc_vat: number;
+    }>(({ from, to }) =>
+      supabase
+        .from("pos_receipt_deliveries")
+        .select("material_code, material_name, document_date, vendor_name, unit_name, qty, total_cost_inc_vat")
+        .gte("document_date", windowStart)
+        .order("material_code")
+        .order("document_date")
+        .range(from, to),
+    ),
     supabase
       .from("ingredients")
       .select("id, name, purchase_cost, purchase_unit_label, receive_qty, yield_qty, usage_unit")
       .eq("is_prep", false),
     supabase.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
   ]);
-  if (deliveriesRes.error) throw new Error(deliveriesRes.error.message);
   if (ingredientsRes.error) throw new Error(ingredientsRes.error.message);
   if (aliasesRes.error) throw new Error(aliasesRes.error.message);
 
-  const deliveries = deliveriesRes.data ?? [];
   if (deliveries.length === 0) {
     throw new Error(`ไม่พบข้อมูลการรับของใน ${windowDays} วันที่ผ่านมา กรุณาอัปโหลดไฟล์จาก POS ก่อน`);
   }

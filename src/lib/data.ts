@@ -16,8 +16,15 @@ const PAGE_SIZE = 1000;
  * This app already has ~1,770 menu_recipe_items, so a plain unbounded
  * select() silently truncates — loop with .range() until a page comes
  * back short to fetch every row.
+ *
+ * EXPORTED because it was needed twice and only used once. The POS import
+ * preview read pos_receipt_deliveries (22,805 rows) with a plain select and
+ * a .limit() — which does NOT lift the server cap — so it saw 1,000 rows,
+ * 58 of 251 materials, and silently offered a fifth of the catalogue for
+ * repricing. Any read of a table that can exceed 1,000 rows goes through
+ * this.
  */
-async function fetchAllRows<T>(
+export async function fetchAllRows<T>(
   query: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
   const all: T[] = [];
