@@ -76,6 +76,36 @@ deliberately rather than downgraded to manufacture a green run.
 Until they are fixed, the rule protects only what someone remembers to look
 at. Do not add `--quiet` or lower the rule severity to get around this.
 
+## Known limits of the POS pricing rule
+
+`src/lib/pos-pricing.ts` prices each ingredient from a median over deliveries
+from its dominant vendor. Two limits are structural rather than bugs, and both
+are invisible from the review screen.
+
+**The `⚠` unsettled flag cannot see the window itself.** It fires when the top
+two vendors inside the 90-day window are within 10% of each other. It cannot
+fire when the *choice of window* is what decides the answer.
+
+`พริกขี้หนูสวน` is the worked example: over full history พี่แจ๋ว leads
+ตลาดสี่มุมเมือง 130–120, but inside the 90-day window ตลาดสี่มุมเมือง holds 63%
+and wins comfortably — so no flag appears, and the attribution looks settled
+when a different window would answer differently. Anyone reading an unflagged
+vendor should read it as "dominant in this window", not "the vendor we buy
+from".
+
+**Month-precision dates will make this worse.** Recovered dates (see the date
+recovery round) carry a month but no day, so a delivery near the window
+boundary is inside or outside depending on which day is assumed. That makes
+window membership itself fuzzy for those rows, on top of the window already
+being the deciding factor for some materials. Settle the day convention before
+recovered rows are allowed into the pricing window, not after.
+
+**21% of prices come from a single delivery.** The escalating fallback ends at
+`latest-delivery` when the pool is thin, which was 52 of 242 ingredients when
+last modelled. The preview labels those `ล่าสุด (ข้อมูลน้อย)` and shows the
+pool size, and the run summary states the count — nobody should assume every
+price is median-backed.
+
 ## Ceilings this system runs into
 
 Written down because the last one — Vercel's request-body limit — cost a day
