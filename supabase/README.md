@@ -137,6 +137,24 @@ In order. Nothing here is started unless it says so.
    decides whether this is a grouping change or needs a coarser
    course-level mapping first.
 
+6. **Quote-number prefix may not branch on location.** Not started, raised by
+   Nik.
+
+   Quote numbers use a `QSP-IN` / `QSP-OUT` convention — `IN` for in-house
+   events, `OUT` for offsite. Nik confirms that is the intended meaning.
+
+   The only live quote number is `QSP-IN6908-003`, so the `OUT` branch has
+   never been observed. **Investigate whether `next_catering_quote_seq` or
+   `issueCateringQuote` actually branches on `location_type` to choose the
+   prefix, or whether `IN` is hardcoded.** If it is hardcoded, every offsite
+   quotation issued so far carries the wrong prefix on a customer-facing
+   document.
+
+   Read the function definition in this directory first — do NOT probe
+   `next_catering_quote_seq` against production to find out. It allocates and
+   returns a sequence number; an earlier probe wrote a junk row that had to be
+   deleted. See "Verifying applied status yourself" below.
+
 ## Known limits of the POS pricing rule
 
 `src/lib/pos-pricing.ts` prices each ingredient from a median over deliveries
