@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -60,10 +60,13 @@ export function CategoryFilterList({
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [page, setPage] = useState(0);
 
-  // Reset to first page whenever filters or sort change.
-  useEffect(() => {
-    setPage(0);
-  }, [search, category, sortMode]);
+  // Filter changes reset the page in the handler that causes them, not in an
+  // effect. An effect would render once with the new filter and the old page —
+  // briefly slicing past the end of a shorter list and showing "no results" —
+  // before correcting on a second render. Setting both in one handler batches
+  // them into a single render, so that intermediate state never exists.
+  //
+  // `items` changing does not reset the page, matching the previous behaviour.
 
   const filtered = useMemo(() => {
     const base = items.filter((item) => {
@@ -104,14 +107,14 @@ export function CategoryFilterList({
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             placeholder={placeholder}
             className="w-full rounded-md border border-neutral-300 py-2 pl-9 pr-3 text-sm"
           />
         </div>
         <select
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={(e) => { setCategory(e.target.value); setPage(0); }}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-48"
         >
           {categories.map((c) => (
@@ -122,7 +125,7 @@ export function CategoryFilterList({
         </select>
         <select
           value={sortMode}
-          onChange={(e) => setSortMode(e.target.value as SortMode)}
+          onChange={(e) => { setSortMode(e.target.value as SortMode); setPage(0); }}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-52"
         >
           <option value="name">เรียงตามชื่อ (ก–ฮ)</option>
