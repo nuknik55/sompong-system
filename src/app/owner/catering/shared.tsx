@@ -258,8 +258,31 @@ export function EventForm({
   const isRoomConflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue];
   const [conflictCandidates, setConflictCandidates] = useState<RoomConflictCandidate[]>([]);
 
+  // This effect synchronises with an external system — it fetches room-conflict
+  // candidates from the server — which is precisely what effects are for, and
+  // the rule does not object to the two setConflictCandidates calls inside the
+  // async callbacks below. It objects only to the synchronous clear in the
+  // early-return branch, and the suppression sits on that one line for that
+  // reason rather than wrapping the effect.
+  //
+  // WHY THE CLEAR STAYS. It is not initialisation; it is invalidation. When the
+  // form becomes ineligible (venue switched away from a room) or loses its date,
+  // any candidates already fetched describe a different query. Leaving them in
+  // state would let findRoomConflict() below evaluate the new form against stale
+  // rows and hard-block saving on a conflict that does not exist. Clearing them
+  // is the whole point.
+  //
+  // WHY NOT DERIVE IT INSTEAD. The condition changes as the user edits the form,
+  // not on any single event this component can hook — set() is generic across
+  // every form key, so clearing there would mean special-casing three keys
+  // inside a helper that deliberately knows about none. That is a worse trade
+  // than one suppressed line, and it would put the debounce and the cancelled
+  // flag at risk for no behavioural gain.
+  //
+  // Do not "fix" this by deleting the clear. Read the paragraph above first.
   useEffect(() => {
     if (!isRoomConflictEligible || !form.event_date) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- invalidation, not initialisation; see above
       setConflictCandidates([]);
       return;
     }

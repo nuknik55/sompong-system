@@ -77,6 +77,38 @@ export function ReceiptClient({
   const [approverName, setApproverName] = useState("นางสาวพรเพ็ญ เกียรติวีระกุล");
   const [rowNotes, setRowNotes] = useState<Record<string, string>>({});
 
+  // react-hooks/set-state-in-effect is suppressed for this effect, and this is
+  // the reason. Read it before removing the suppression.
+  //
+  // WHAT THE RULE WANTS. State that can be computed from something available at
+  // render time should be computed there — in a useState initialiser — not
+  // written by an effect after the first paint. For almost every case in this
+  // codebase that is correct: four other components were fixed rather than
+  // suppressed, one of them (OrderForm) by exactly this move.
+  //
+  // WHY IT CANNOT APPLY HERE. The source is localStorage, which exists only in
+  // the browser. This component is server-rendered first. A useState
+  // initialiser runs on the server, where localStorage is undefined, and again
+  // on the client during hydration, where it is not — so the two renders would
+  // disagree and React would report a hydration mismatch. Reading browser-only
+  // state during render is exactly what breaks SSR, so the effect is not a
+  // workaround here; it is the correct place for this read.
+  //
+  // The visible cost is one frame of the built-in defaults before the saved
+  // values replace them. On a print-preview screen that is acceptable.
+  //
+  // WHAT WOULD MAKE IT FIXABLE. useSyncExternalStore with a server snapshot is
+  // React's sanctioned way to read a browser-only store without a hydration
+  // mismatch: the server snapshot returns the defaults, the client snapshot
+  // reads localStorage, and React reconciles them without complaining. That is
+  // a real fix rather than a suppression, and it is worth doing if this pattern
+  // appears a third time. It was not worth it for one print screen.
+  //
+  // The disable covers the whole effect rather than one line because every
+  // setState in it is the same suppressed pattern for the same reason. If you
+  // add a setState here for a DIFFERENT reason, it will be silently permitted —
+  // so don't; put it in its own effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const saved = localStorage.getItem("receipt_settings");
@@ -89,6 +121,7 @@ export function ReceiptClient({
       }
     } catch {}
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function saveAndPrint() {
     try {
