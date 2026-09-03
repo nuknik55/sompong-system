@@ -77,7 +77,8 @@ run it.
 So there are two separate pieces of work, and finishing the first does not
 deliver the second:
 
-1. **Get `npm run lint` to exit 0.** In progress — see the queue below.
+1. **Get `npm run lint` to exit 0.** DONE. All nine are fixed or documented;
+   the run is 0 errors, 0 warnings.
 2. **Add a workflow that runs it.** Not started. Until it exists, the rule
    protects only what someone remembers to check.
 
@@ -85,7 +86,8 @@ Do not add `--quiet` or lower the rule severity to get a green run.
 
 ### The `set-state-in-effect` problems
 
-Started at 9 across 7 components. They are **not** one repeated pattern — an
+All nine are now resolved and `npm run lint` exits 0. Started at 9 across 7
+components. They are **not** one repeated pattern — an
 earlier note here called them all "the prop-resync pattern" and that was wrong.
 They are five distinct shapes, each needing its own fix:
 
@@ -108,8 +110,9 @@ lint and silently regressed paging on the category-delete path.
 
 In order. Nothing here is started unless it says so.
 
-1. **Finish the `set-state-in-effect` fixes** (in progress — see above).
-2. **Add a CI workflow that runs `npm run lint`.** Not started. Without it,
+1. ~~Finish the `set-state-in-effect` fixes~~ — DONE.
+2. **Add a CI workflow that runs `npm run lint`.** Not started, and now the
+   blocker is gone — lint is green, so a gate would pass today. Without it,
    item 1 buys nothing enforceable. See the section above for why this is a
    separate item rather than the tail of item 1.
 3. **The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.
@@ -154,6 +157,28 @@ In order. Nothing here is started unless it says so.
    `next_catering_quote_seq` against production to find out. It allocates and
    returns a sequence number; an earlier probe wrote a junk row that had to be
    deleted. See "Verifying applied status yourself" below.
+
+7. **Two more `initialEntries` mirrors that lint cannot see.** Not started, and
+   **not verified** — see the warning below.
+
+   `AccountingEntryClient.tsx:53` and `PayrollClient.tsx:38` both do
+   `useState(initialEntries)` with **no resync effect**. That absence is exactly
+   why `react-hooks/set-state-in-effect` never flagged them: the rule objects to
+   the resync, not to the mirror.
+
+   If real, the failure mode is the **inverse** of everything fixed in the nine:
+   not lost input, but a list that is permanently stale after a refresh — the
+   symptom `SetMenusClient`'s original comment described before that effect was
+   added. Lower urgency for exactly that reason: stale data is recoverable by
+   reloading the page, lost input is not.
+
+   **This is a grep-level guess, not a finding.** Neither component was read.
+   The two lines matched a pattern; nothing was checked about whether either
+   list is actually re-rendered from a refreshed prop, whether the parent
+   remounts it with a `key`, or whether anything on those pages refreshes at
+   all. `DailyEntryPage` passes `key={date}`, which remounts on date change and
+   would mask the whole problem — the same may well be true here. Do not cite
+   this entry as evidence that a bug exists. Read both components first.
 
 ## Known limits of the POS pricing rule
 
