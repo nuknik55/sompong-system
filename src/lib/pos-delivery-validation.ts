@@ -30,6 +30,12 @@ export type PosDeliveryInput = {
   qty: number;
   totalCostIncVat: number;
   totalCostExcVat: number;
+  /**
+   * "month" means documentDate's day is a placeholder of 1 (the report had
+   * no DocumentDate; only the month was recoverable from the document
+   * number). Absent is treated as "day".
+   */
+  datePrecision?: "day" | "month";
 };
 
 export const MAX_ROWS_PER_CHUNK = 2000;
@@ -86,6 +92,15 @@ export function validateDeliveryRow(row: unknown, today = new Date()): string | 
   const tomorrow = new Date(today.getTime() + 86400000).toISOString().slice(0, 10);
   if (r.documentDate < EARLIEST_DATE) return `วันที่เอกสารเก่ากว่า ${EARLIEST_DATE}`;
   if (r.documentDate > tomorrow) return "วันที่เอกสารอยู่ในอนาคต";
+
+  if (r.datePrecision !== undefined && r.datePrecision !== "day" && r.datePrecision !== "month") {
+    return "ความละเอียดของวันที่ไม่ถูกต้อง";
+  }
+  // A month-precision row must carry the placeholder day, or something has
+  // invented a date it does not have.
+  if (r.datePrecision === "month" && !String(r.documentDate).endsWith("-01")) {
+    return "แถวที่ทราบแค่เดือนต้องมีวันที่เป็นวันที่ 1";
+  }
 
   // qty > 0: the parser already drops zero/negative quantities, so one here
   // means the payload did not come from the parser.

@@ -65,6 +65,24 @@ function thaiDateToISO(text) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/**
+ * Recovers month+year from the document number for a row whose DocumentDate
+ * cell is empty. 001DR042568/000323 -> April 2025.
+ *
+ * Verified: the document number's period agrees with DocumentDate on 22,715
+ * of 22,715 dated rows, i.e. 100.0%. The month is exact; the day is not
+ * recoverable at all, so the returned date carries a PLACEHOLDER day of 1 and
+ * the caller must store date_precision = 'month' beside it.
+ */
+function recoverPeriodISO(documentNumber) {
+  const m = /^\d+DR(\d{2})(\d{4})\//.exec(String(documentNumber).trim());
+  if (!m) return null;
+  const month = Number(m[1]);
+  const year = Number(m[2]) - 543;
+  if (month < 1 || month > 12 || year < 2000 || year > 2200) return null;
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
 function readSheet(path) {
   const b = readFileSync(path);
   const ab = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
@@ -97,6 +115,7 @@ function classify(path) {
 function extract(rows, sourceFile) {
   const out = [];
   const skipped = { noDate: 0, badQty: 0 };
+  let recoveredCount = 0;
   let code = null, name = null;
   for (const row of rows) {
     if (!Array.isArray(row)) continue;
@@ -108,16 +127,23 @@ function extract(rows, sourceFile) {
     if (doc == null || String(doc).trim() === "") continue;   // group/subtotal rows
     if (!code) continue;
 
-    const iso = row[COL.documentDate] ? thaiDateToISO(row[COL.documentDate]) : null;
+    const exact = row[COL.documentDate] ? thaiDateToISO(row[COL.documentDate]) : null;
+    // A dateless row used to be dropped. 1,647 deliveries were lost that way,
+    // and the POS export is a rolling window so they exist nowhere else.
+    const recovered = exact == null ? recoverPeriodISO(doc) : null;
+    const iso = exact ?? recovered;
+    const datePrecision = exact != null ? "day" : "month";
     const qty = Number(row[COL.qty]) || 0;
     if (iso == null) { skipped.noDate++; continue; }
     if (qty <= 0) { skipped.badQty++; continue; }
+    if (datePrecision === "month") recoveredCount++;
 
     out.push({
       material_code: code,
       material_name: name ?? code,
       document_number: String(doc).trim(),
       document_date: iso,
+      date_precision: datePrecision,
       vendor_name: row[COL.vendorName] != null ? String(row[COL.vendorName]).trim() : "",
       unit_name: row[COL.unitName] != null ? String(row[COL.unitName]).trim() : "",
       qty,
@@ -126,7 +152,7 @@ function extract(rows, sourceFile) {
       source_file: sourceFile,
     });
   }
-  return { out, skipped };
+  return { out, skipped, recoveredCount };
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -153,7 +179,7 @@ let totalRows = 0;
 const skippedTotals = { noDate: 0, badQty: 0 };
 console.log("");
 for (const { path, rows } of usable) {
-  const { out, skipped } = extract(rows, basename(path));
+  const { out, skipped, recoveredCount } = extract(rows, basename(path));
   let added = 0;
   for (const r of out) {
     const k = r.document_number + "|" + r.material_code;
@@ -162,7 +188,7 @@ for (const { path, rows } of usable) {
   totalRows += out.length;
   skippedTotals.noDate += skipped.noDate;
   skippedTotals.badQty += skipped.badQty;
-  console.log(`  ${basename(path).padEnd(46)} parsed ${String(out.length).padStart(5)}  new ${String(added).padStart(5)}  skipped(date ${skipped.noDate}, qty ${skipped.badQty})`);
+  console.log(`  ${basename(path).padEnd(46)} parsed ${String(out.length).padStart(5)}  new ${String(added).padStart(5)}  skipped(date ${skipped.noDate}, qty ${skipped.badQty})  recovered-month ${recoveredCount}`);
 }
 
 let records = [...seen.values()];

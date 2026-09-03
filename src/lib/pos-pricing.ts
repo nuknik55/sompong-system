@@ -13,6 +13,12 @@
 /** One delivery, as read back out of pos_receipt_deliveries. */
 export type PricingDelivery = {
   documentDate: string; // "YYYY-MM-DD"
+  /**
+   * "month" means the day in documentDate is a PLACEHOLDER of 1 — the POS
+   * report had no DocumentDate and only the month was recoverable. Defaults
+   * to "day" when absent so existing callers are unaffected.
+   */
+  datePrecision?: "day" | "month";
   vendorName: string; // "" is a real vendor identity — never coalesce it
   unitName: string;
   qty: number;
@@ -71,6 +77,37 @@ export function median(values: number[]): number {
   return n % 2 ? s[(n - 1) / 2]! : (s[n / 2 - 1]! + s[n / 2]!) / 2;
 }
 
+
+/**
+ * Decides whether a month-precision delivery may join the pricing window.
+ *
+ * ONLY when its entire month lies inside the window. Not because that is
+ * conservative, but because it makes the fabricated day structurally
+ * incapable of deciding anything: a row whose whole month is inside is
+ * inside under ANY day, so the placeholder cannot change membership.
+ *
+ * A future reader will see rows excluded at the window edge and be tempted
+ * to 'fix' it by choosing a day — the 1st, the 15th, the last. Do not. Any
+ * chosen day is still a guess; this rule means the guess never matters.
+ * Measured: picking the 15th admits 22 more rows and moves one extra price
+ * by 1.4%, in exchange for a fabricated value that decides an answer.
+ *
+ * Day-precision rows are always admitted on their own date.
+ */
+export function admittedToWindow(
+  delivery: PricingDelivery,
+  windowStart: string,
+  today: string,
+): boolean {
+  if ((delivery.datePrecision ?? "day") === "day") return delivery.documentDate >= windowStart;
+  const [y, m] = delivery.documentDate.split("-").map(Number);
+  if (!y || !m) return false;
+  const firstOfMonth = `${y}-${String(m).padStart(2, "0")}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lastOfMonth = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return firstOfMonth >= windowStart && lastOfMonth <= today;
+}
+
 const unitCost = (d: PricingDelivery) => d.totalCostIncVat / d.qty;
 
 /**
@@ -103,10 +140,25 @@ export function dropOutliers(pool: PricingDelivery[]): { kept: PricingDelivery[]
   let keep = bySize[0]!;
   // Genuine tie on size: prefer the cluster containing the most recent delivery.
   if (bySize[1] && bySize[1].length === keep.length) {
-    const newest = pool.reduce((m, d) => (d.documentDate > m.documentDate ? d : m), pool[0]!);
+    const newest = pool.reduce((m, d) => (newerForTiebreak(d, m) < 0 ? d : m), pool[0]!);
     keep = clusters.find((c) => c.includes(newest)) ?? keep;
   }
   return { kept: keep, dropped: pool.length - keep.length };
+}
+
+
+/**
+ * Orders two deliveries by recency for TIEBREAK purposes only.
+ *
+ * At an equal date, a day-precision row beats a month-precision one. The
+ * month row's day is a placeholder, so letting it win a recency tiebreak
+ * would be deciding on a value we invented.
+ */
+function newerForTiebreak(a: PricingDelivery, b: PricingDelivery): number {
+  if (a.documentDate !== b.documentDate) return a.documentDate > b.documentDate ? -1 : 1;
+  const ap = (a.datePrecision ?? "day") === "day" ? 0 : 1;
+  const bp = (b.datePrecision ?? "day") === "day" ? 0 : 1;
+  return ap - bp;
 }
 
 function dominantBy<T>(items: T[], key: (t: T) => string): { value: string; count: number; runnerUp: number } {
@@ -146,15 +198,16 @@ function dominantBy<T>(items: T[], key: (t: T) => string): { value: string; coun
  * exact tie would flip between imports for no visible reason.
  */
 function dominantVendorByVolume(sameUnit: PricingDelivery[]) {
-  const totals = new Map<string, { qty: number; newest: string }>();
+  const totals = new Map<string, { qty: number; newest: PricingDelivery | null }>();
   for (const d of sameUnit) {
-    const e = totals.get(d.vendorName) ?? { qty: 0, newest: "" };
+    const e = totals.get(d.vendorName) ?? { qty: 0, newest: null };
     e.qty += d.qty;
-    if (d.documentDate > e.newest) e.newest = d.documentDate;
+    // Placeholder dates must not win this tiebreak — see newerForTiebreak.
+    if (!e.newest || newerForTiebreak(d, e.newest) < 0) e.newest = d;
     totals.set(d.vendorName, e);
   }
   const ranked = [...totals.entries()].sort((a, b) =>
-    b[1].qty !== a[1].qty ? b[1].qty - a[1].qty : b[1].newest.localeCompare(a[1].newest),
+    b[1].qty !== a[1].qty ? b[1].qty - a[1].qty : newerForTiebreak(a[1].newest!, b[1].newest!),
   );
   const totalQty = sameUnit.reduce((t, d) => t + d.qty, 0);
   return {
@@ -227,6 +280,7 @@ export function priceFromDeliveries(deliveries: PricingDelivery[]): PricingResul
   if (step2) return step2;
 
   const newestDate = usable.reduce((m, d) => (d.documentDate > m ? d.documentDate : m), "");
+  // (Precision only breaks ties at an equal date, which the filter below keeps.)
   const latest = usable.filter((d) => d.documentDate === newestDate);
   const qty = latest.reduce((s, d) => s + d.qty, 0);
   const cost = latest.reduce((s, d) => s + d.totalCostIncVat, 0);

@@ -90,6 +90,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
             qty: d.qty,
             totalCostIncVat: d.totalCostIncVat,
             totalCostExcVat: d.totalCostExcVat,
+            datePrecision: d.datePrecision,
           })),
         );
         if (rows.length === 0) {
@@ -445,6 +446,14 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                         </span>
                         {r.vendorUnsettled && (
                           <span className="ml-1 text-amber-700" title="ผู้ขายหลักยังไม่ชัดเจน — อาจสลับในรอบถัดไป">⚠</span>
+                        )}
+                        {r.monthPrecisionSeen > 0 && (
+                          <span
+                            className="ml-1 text-sky-700"
+                            title={`${r.monthPrecisionSeen} รายการทราบแค่เดือน (วันที่เป็นค่าประมาณ) — นับเข้าเฉพาะเดือนที่อยู่ในช่วงทั้งเดือน`}
+                          >
+                            ~{r.monthPrecisionSeen}
+                          </span>
                         )}
                         {r.outliersDropped > 0 && (
                           <span className="ml-1 text-neutral-400" title={`ตัดรายการผิดปกติออก ${r.outliersDropped} รายการ`}>

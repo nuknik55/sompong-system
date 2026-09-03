@@ -10,6 +10,7 @@ import {
   priceFromDeliveries,
   detectUnitRedefinition,
   NON_FOOD_MATERIALS,
+  admittedToWindow,
   type PricingDelivery,
   type PricingRule,
 } from "@/lib/pos-pricing";
@@ -67,6 +68,12 @@ export type PosImportRow = {
    */
   unitRedefinitionSuspected: boolean;
   suspectedPackCount: number | null;
+  /**
+   * Deliveries in this material's window whose date is month-precision only
+   * — recovered rows whose day is a placeholder. Surfaced so a reviewer can
+   * see the pool is not entirely built from exact dates.
+   */
+  monthPrecisionSeen: number;
 };
 
 export type PosImportPreview = {
@@ -140,6 +147,7 @@ export async function ingestPosDeliveries(
         qty: r.qty,
         total_cost_inc_vat: r.totalCostIncVat,
         total_cost_exc_vat: r.totalCostExcVat,
+        date_precision: r.datePrecision ?? "day",
         imported_by: profile.id,
         import_batch_id: batchId,
         source_file: sourceFile ?? null,
@@ -172,6 +180,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
   if (settingsError) throw new Error(settingsError.message);
   const windowDays = settings?.window_days ?? 90;
   const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
 
   const [deliveries, ingredientsRes, aliasesRes] = await Promise.all([
     // PAGED. A plain select() here returned 1,000 of 4,489 window deliveries —
@@ -183,6 +192,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       material_code: string;
       material_name: string;
       document_date: string;
+      date_precision: "day" | "month" | null;
       vendor_name: string;
       unit_name: string;
       qty: number;
@@ -190,7 +200,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
     }>(({ from, to }) =>
       supabase
         .from("pos_receipt_deliveries")
-        .select("material_code, material_name, document_date, vendor_name, unit_name, qty, total_cost_inc_vat")
+        .select("material_code, material_name, document_date, date_precision, vendor_name, unit_name, qty, total_cost_inc_vat")
         .gte("document_date", windowStart)
         .order("material_code")
         .order("document_date")
@@ -220,7 +230,10 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
 
   // Group the window by material, and keep a parser-shaped copy so the existing
   // latestDateLabel / mixedUnits display logic still works unchanged.
-  const grouped = new Map<string, { name: string; pricing: PricingDelivery[]; parsed: PosMaterialDeliveries }>();
+  const grouped = new Map<
+    string,
+    { name: string; pricing: PricingDelivery[]; parsed: PosMaterialDeliveries; monthPrecisionSeen: number }
+  >();
   for (const d of deliveries) {
     const key = d.material_code;
     let e = grouped.get(key);
@@ -228,19 +241,26 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       e = {
         name: d.material_name,
         pricing: [],
+        monthPrecisionSeen: 0,
         parsed: { materialCode: d.material_code, materialName: d.material_name, deliveries: [] },
       };
       grouped.set(key, e);
     }
     const qty = Number(d.qty);
     const inc = Number(d.total_cost_inc_vat);
-    e.pricing.push({
+    const precision = d.date_precision ?? "day";
+    const pricingRow = {
       documentDate: d.document_date,
+      datePrecision: precision,
       vendorName: d.vendor_name,
       unitName: d.unit_name,
       qty,
       totalCostIncVat: inc,
-    });
+    };
+    // A month-precision row joins the pool only when its WHOLE month lies
+    // inside the window, so its placeholder day cannot decide membership.
+    if (admittedToWindow(pricingRow, windowStart, today)) e.pricing.push(pricingRow);
+    if (precision === "month") e.monthPrecisionSeen++;
     e.parsed.deliveries.push({
       documentNumber: "",
       dateKey: isoToDateKey(d.document_date),
@@ -251,6 +271,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       totalCostIncVat: inc,
       totalCostExcVat: inc,
       unitCost: qty > 0 ? inc / qty : 0,
+      datePrecision: precision,
     });
   }
 
@@ -276,7 +297,8 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       continue;
     }
 
-    const priced = priceFromDeliveries(group.pricing);
+    // Every delivery may have been excluded at the window edge.
+    const priced = group.pricing.length > 0 ? priceFromDeliveries(group.pricing) : null;
     if (!priced) continue;
     // Kept for latestDateLabel and the mixed-unit warning, which describe the
     // most recent delivery rather than the pool.
@@ -286,7 +308,13 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       if (seen.has(ingredient.id)) continue;
       seen.add(ingredient.id);
       matched.push(
-        buildRow(ingredient, priced, summary, posName === ingredient.name.trim() ? undefined : posName),
+        buildRow(
+          ingredient,
+          priced,
+          summary,
+          group.monthPrecisionSeen,
+          posName === ingredient.name.trim() ? undefined : posName,
+        ),
       );
     }
   }
@@ -315,6 +343,7 @@ function buildRow(
   ingredient: IngredientForImport,
   priced: NonNullable<ReturnType<typeof priceFromDeliveries>>,
   summary: { latestDateLabel: string; mixedUnits: boolean; qty: number },
+  monthPrecisionSeen: number,
   aliasSource?: string,
 ): PosImportRow {
   const oldCost = ingredient.purchase_cost == null ? null : Number(ingredient.purchase_cost);
@@ -367,6 +396,7 @@ function buildRow(
     vendorName: priced.vendorName,
     vendorShare: priced.vendorShare,
     vendorUnsettled: priced.vendorUnsettled,
+    monthPrecisionSeen,
     unitRedefinitionSuspected: redef.suspected,
     suspectedPackCount: redef.suspected ? redef.packCount : null,
   };

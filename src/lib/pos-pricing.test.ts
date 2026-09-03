@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   priceFromDeliveries,
   dropOutliers,
+  admittedToWindow,
   detectUnitRedefinition,
   median,
   NON_FOOD_MATERIALS,
@@ -289,4 +290,61 @@ test("the unit is chosen BEFORE the vendor, so volumes are never added across un
   assert.equal(r.unitName, "โล", "โล has more deliveries, so it is the chosen unit");
   assert.equal(r.vendorName, "KILO", "50,000 กรัม must not outweigh 30 โล");
   assert.equal(r.price, 75);
+});
+
+// ── month-precision dates ───────────────────────────────────────────────────
+// Recovered rows carry datePrecision "month" and a placeholder day of 1. The
+// rules below exist so that placeholder can never decide an outcome.
+
+const WIN = "2026-06-04";
+const TODAY = "2026-09-02";
+const m = (documentDate: string, vendorName: string, unitName: string, qty: number, cost: number): PricingDelivery =>
+  ({ documentDate, vendorName, unitName, qty, totalCostIncVat: cost, datePrecision: "month" });
+
+test("admits a month row only when its WHOLE month is inside the window", () => {
+  // July is wholly inside 4 Jun -> 2 Sep.
+  assert.equal(admittedToWindow(m("2026-07-01", "v", "โล", 1, 10), WIN, TODAY), true);
+  // June straddles the start (window opens on the 4th), so the unknown day
+  // would decide membership — excluded.
+  assert.equal(admittedToWindow(m("2026-06-01", "v", "โล", 1, 10), WIN, TODAY), false);
+  // September straddles the end.
+  assert.equal(admittedToWindow(m("2026-09-01", "v", "โล", 1, 10), WIN, TODAY), false);
+  // Wholly before the window.
+  assert.equal(admittedToWindow(m("2026-03-01", "v", "โล", 1, 10), WIN, TODAY), false);
+});
+
+test("a day-precision row is admitted on its own date, straddling or not", () => {
+  assert.equal(admittedToWindow(d("2026-06-05", "v", "โล", 1, 10), WIN, TODAY), true);
+  assert.equal(admittedToWindow(d("2026-06-01", "v", "โล", 1, 10), WIN, TODAY), false);
+  // Missing datePrecision is treated as "day".
+  assert.equal(admittedToWindow({ documentDate: "2026-07-15", vendorName: "v", unitName: "โล", qty: 1, totalCostIncVat: 10 }, WIN, TODAY), true);
+});
+
+test("a month row never wins a vendor recency tiebreak against a day row", () => {
+  // Equal qty, equal date: the day-precision vendor must win.
+  const r = priceFromDeliveries([
+    m("2026-07-01", "PLACEHOLDER", "โล", 5, 5 * 100),
+    d("2026-07-01", "EXACT", "โล", 5, 5 * 200),
+  ])!;
+  assert.equal(r.vendorName, "EXACT");
+});
+
+test("a month row never wins the gap filter's newest-cluster tiebreak", () => {
+  // Two clusters of equal size; the newest date is shared, so precision decides.
+  const { kept } = dropOutliers([
+    m("2026-07-01", "v", "โล", 1, 10),
+    m("2026-06-01", "v", "โล", 1, 10),
+    d("2026-07-01", "v", "โล", 1, 100),
+    d("2026-06-01", "v", "โล", 1, 100),
+  ]);
+  assert.equal(kept[0]!.totalCostIncVat, 100, "the day-precision cluster should win");
+});
+
+test("recovered rows still price normally once admitted", () => {
+  const r = priceFromDeliveries([
+    m("2026-07-01", "v", "โล", 1, 60),
+    m("2026-07-01", "v", "โล", 1, 62),
+    m("2026-07-01", "v", "โล", 1, 64),
+  ])!;
+  assert.equal(r.price, 62);
 });

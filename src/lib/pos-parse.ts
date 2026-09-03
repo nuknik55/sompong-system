@@ -16,6 +16,11 @@ import * as XLSX from "xlsx";
 // always have an empty DocumentNumber, which is how we tell them apart from
 // real receipt lines.
 
+const THAI_MONTH_NAMES = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
 const THAI_MONTHS: Record<string, number> = {
   มกราคม: 1,
   กุมภาพันธ์: 2,
@@ -72,6 +77,8 @@ function deliveryCost(d: { totalCostIncVat: number; totalCostExcVat: number }): 
   return COST_BASIS === "inc" ? d.totalCostIncVat : d.totalCostExcVat;
 }
 
+export type DatePrecision = "day" | "month";
+
 /** One receipt line: a single delivery of one material on one document. */
 export type PosDelivery = {
   /** Unique per receipt line; with materialCode this is the idempotency key. */
@@ -87,6 +94,13 @@ export type PosDelivery = {
   totalCostExcVat: number;
   /** deliveryCost(this) / qty — qty is guaranteed > 0 (see the parse filter). */
   unitCost: number;
+  /**
+   * "day"   — dateKey/dateLabel came from the report's DocumentDate cell.
+   * "month" — that cell was empty and only the month is known, recovered
+   *           from the document number. The DAY IS A PLACEHOLDER of 1, not
+   *           an estimate. See recoverPeriodFromDocumentNumber.
+   */
+  datePrecision: DatePrecision;
 };
 
 /** Every delivery the report contains for one material, in file order. */
@@ -220,6 +234,42 @@ export type PosReceiptSummary = {
  * older than that are not recoverable from a later export. That's why this
  * returns everything rather than only what one aggregation happens to need.
  */
+/**
+ * Recovers the month of a delivery whose DocumentDate cell is empty.
+ *
+ * The document number encodes the period:
+ *
+ *     001DR042568/000323
+ *          ||||||
+ *          ++++++-- month 04, Buddhist year 2568  ->  April 2025
+ *
+ * Verified against every dated row in the table: the document number's month
+ * and year agree with DocumentDate on 22,715 of 22,715 rows — 100.0%. So the
+ * month is exact. The day is not recoverable at all: 3,312 of 3,322 dateless
+ * raw rows have a genuinely empty cell, with nothing to parse.
+ *
+ * Returns the FIRST of the month as a placeholder day. Callers must carry
+ * datePrecision: "month" alongside it so nothing downstream mistakes the 1st
+ * for a real date.
+ */
+export function recoverPeriodFromDocumentNumber(
+  documentNumber: string,
+): { dateKey: number; dateLabel: string; iso: string } | null {
+  const m = /^\d+DR(\d{2})(\d{4})\//.exec(documentNumber.trim());
+  if (!m) return null;
+  const month = Number(m[1]);
+  const buddhistYear = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  const year = buddhistYear - 543;
+  if (year < 2000 || year > 2200) return null;
+  const mm = String(month).padStart(2, "0");
+  return {
+    dateKey: buddhistYear * 10000 + month * 100 + 1,
+    dateLabel: `${THAI_MONTH_NAMES[month - 1]} ${buddhistYear} (ทราบแค่เดือน)`,
+    iso: `${year}-${mm}-01`,
+  };
+}
+
 export function parsePosReceiptDeliveries(buffer: ArrayBuffer): PosMaterialDeliveries[] {
   const wb = XLSX.read(buffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -252,7 +302,14 @@ export function parsePosReceiptDeliveries(buffer: ArrayBuffer): PosMaterialDeliv
     if (documentNumber == null || String(documentNumber).trim() === "") continue;
     if (!currentCode) continue;
 
-    const dateKey = documentDateRaw ? parseThaiDateSortKey(String(documentDateRaw)) : null;
+    const exactKey = documentDateRaw ? parseThaiDateSortKey(String(documentDateRaw)) : null;
+    // A dateless row used to be dropped outright — 1,647 deliveries, of which
+    // 435 are real food once the non-food buckets are excluded. They exist
+    // nowhere else: the POS export is a rolling window, so anything not
+    // captured now ages out of the source permanently.
+    const recovered = exactKey == null ? recoverPeriodFromDocumentNumber(String(documentNumber).trim()) : null;
+    const dateKey = exactKey ?? recovered?.dateKey ?? null;
+    const datePrecision: DatePrecision = exactKey != null ? "day" : "month";
     const qty = Number(row[COL.qty]) || 0;
     const totalCostIncVat = Number(row[COL.totalCostIncVat]) || 0;
     const totalCostExcVat = Number(row[COL.totalCostExcVat]) || 0;
@@ -268,13 +325,14 @@ export function parsePosReceiptDeliveries(buffer: ArrayBuffer): PosMaterialDeliv
     material.deliveries.push({
       documentNumber: String(documentNumber).trim(),
       dateKey,
-      dateLabel: String(documentDateRaw),
+      dateLabel: exactKey != null ? String(documentDateRaw) : recovered!.dateLabel,
       vendorName,
       unitName,
       qty,
       totalCostIncVat,
       totalCostExcVat,
       unitCost: deliveryCost({ totalCostIncVat, totalCostExcVat }) / qty,
+      datePrecision,
     });
   }
 
@@ -460,10 +518,6 @@ export function parsePosSalesReport(buffer: ArrayBuffer): PosSalesReport {
 // preview, and the label must match the file's format exactly or the UI text
 // silently changes.
 
-const THAI_MONTH_NAMES = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-];
 
 /** "2026-08-30" -> "30 สิงหาคม 2569". Inverse of the parser's date handling. */
 export function isoToThaiDateLabel(iso: string): string {
