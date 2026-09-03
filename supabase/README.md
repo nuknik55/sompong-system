@@ -140,23 +140,46 @@ In order. Nothing here is started unless it says so.
    decides whether this is a grouping change or needs a coarser
    course-level mapping first.
 
-6. **Quote-number prefix may not branch on location.** Not started, raised by
-   Nik.
+6. **Quote-number prefix is hardcoded to `IN`.** Investigated 2026-09-03,
+   confirmed, fix on hold pending one decision from Nik.
 
-   Quote numbers use a `QSP-IN` / `QSP-OUT` convention — `IN` for in-house
-   events, `OUT` for offsite. Nik confirms that is the intended meaning.
+   Quote numbers use a `QSP-IN` / `QSP-OUT` convention — `IN` for in-house,
+   `OUT` for offsite. `IN` is a string literal in `issueCateringQuote`
+   (`src/app/owner/catering/actions.ts`, the `QSP-IN${yymm}` template) and
+   `next_catering_quote_seq(p_yymm TEXT)` takes only the year-month, so neither
+   layer can branch. `issueCateringQuote` does not even SELECT `location_type`
+   — the data needed to choose a prefix is not in scope of the function, which
+   reads as an omission rather than a decision.
 
-   The only live quote number is `QSP-IN6908-003`, so the `OUT` branch has
-   never been observed. **Investigate whether `next_catering_quote_seq` or
-   `issueCateringQuote` actually branches on `location_type` to choose the
-   prefix, or whether `IN` is hardcoded.** If it is hardcoded, every offsite
-   quotation issued so far carries the wrong prefix on a customer-facing
-   document.
+   **Every offsite quote issued so far is mislabelled — 2 of 2.** Of 8 events,
+   5 have a quote_number: 3 in-house (correct) and 2 offsite
+   (`QSP-IN6908-003`, `QSP-IN6908-005`) carrying `IN`. Both were already
+   `offsite` when issued, not changed afterwards: `updated_at` equals
+   `quoted_at` to the millisecond on both, and neither activity log contains an
+   event-edit action.
 
-   Read the function definition in this directory first — do NOT probe
-   `next_catering_quote_seq` against production to find out. It allocates and
-   returns a sequence number; an earlier probe wrote a junk row that had to be
-   deleted. See "Verifying applied status yourself" below.
+   (An earlier version of this entry said the only live quote number was
+   `QSP-IN6908-003`. That was wrong — there are five.)
+
+   **Nothing parses the prefix.** Every consumer either displays `quote_number`
+   verbatim (quote print route, function sheet, status page, customer detail,
+   charges header) or null-checks it for existence. No `slice`/`split`/
+   `startsWith`/`match` anywhere. It is a pure human-readable label, so no code
+   breaks whichever way this goes.
+
+   **BLOCKED ON NIK — the counter question.** `catering_quote_sequences` has PK
+   `yymm` and holds `{yymm: '6908', last_seq: 5}`. Adding an `OUT` branch forces
+   a choice, and it determines whether a migration is needed at all:
+
+   - *Shared counter per month* — the next offsite becomes `QSP-OUT6908-006`.
+     Numbers stay globally unique; each prefix's own run has gaps. No schema
+     change.
+   - *Counter per prefix* — `OUT` restarts at `001`. Needs a composite-key
+     migration on `catering_quote_sequences`.
+
+   All 5 existing quotes are TEST DATA — Nik confirms none was sent to a
+   customer — so the retroactive-correction question is moot, and clearing them
+   out is an option. See the reset note below.
 
 7. **Two more `initialEntries` mirrors that lint cannot see.** Not started, and
    **not verified** — see the warning below.
