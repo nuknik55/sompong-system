@@ -206,12 +206,12 @@ type EditState = {
 
 export function DailyEntryClient({
   coa,
-  initialEntries,
+  entries,
   date,
   suppliers,
 }: {
   coa: CoaAccount[];
-  initialEntries: ExpenseEntry[];
+  entries: ExpenseEntry[];
   date: string;
     // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isOwner: boolean;
@@ -219,7 +219,12 @@ export function DailyEntryClient({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [entries, setEntries] = useState<ExpenseEntry[]>(initialEntries);
+  // The entries list is rendered straight from the server prop, deliberately NOT
+  // mirrored into state. Unsaved user input lives in pending (rows typed but
+  // not yet saved) and editing (the row currently being edited); neither is
+  // derived from this prop, so a refresh cannot destroy typed work here the way
+  // it could in ChargesSection. Every mutation goes server action ->
+  // router.refresh() -> new prop.
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [editing, setEditing] = useState<EditState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -237,9 +242,28 @@ export function DailyEntryClient({
     }
   }, [isPending]);
 
-  useEffect(() => { setEntries(initialEntries); }, [initialEntries]);
+  // react-hooks/set-state-in-effect is suppressed on the line below. This is
+  // the second instance of this exact exception in the codebase; the first,
+  // with the full reasoning, is in
+  // src/app/owner/accounting/daily/receipt/ReceiptClient.tsx.
+  //
+  // Short version: localStorage exists only in the browser, this component is
+  // server-rendered first, and a useState initialiser would run on the server
+  // (no localStorage) and again on the client during hydration (localStorage
+  // present) — the two renders disagree and React reports a hydration
+  // mismatch. The effect is the correct place for a browser-only read, not a
+  // workaround for one.
+  //
+  // The cost is one frame showing the "40000" default before the saved value
+  // replaces it.
+  //
+  // ReceiptClient's note says useSyncExternalStore with a server snapshot
+  // becomes worth doing if this pattern appears a third time. This is the
+  // second. If you are here writing the third, do that instead of adding
+  // another disable.
   useEffect(() => {
     const stored = localStorage.getItem("daily-fix-cost");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only read; see above
     if (stored !== null) setFixCost(stored);
   }, []);
 
@@ -427,7 +451,7 @@ export function DailyEntryClient({
     startTransition(async () => {
       try {
         await deleteExpenseEntry(id);
-        setEntries((prev) => prev.filter((e) => e.id !== id));
+        router.refresh();
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");

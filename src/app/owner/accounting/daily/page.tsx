@@ -39,7 +39,7 @@ export default async function DailyEntryPage({
       <DailyEntryClient
         key={date}
         coa={coa}
-        initialEntries={entries}
+        entries={entries}
         date={date}
         isOwner={profile.role === "owner"}
         suppliers={suppliers}
