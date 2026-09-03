@@ -325,14 +325,55 @@ export function ChargesSection({
   const [error, setError] = useState<string | null>(null);
   const [confirmIssue, setConfirmIssue] = useState(false);
 
-  // useState(() => ...) only seeds state on mount — router.refresh() after a
-  // save delivers a fresh initialCharges prop, but the already-mounted
-  // component never picks it up on its own, so the table looked unchanged
-  // until a manual browser reload. Resyncing on every prop change is only
-  // safe because every row input below is disabled while isPending: without
-  // that, a keystroke made in the gap between "saved" and the refreshed
-  // props landing would get silently overwritten by this effect.
+  // Set immediately before each router.refresh() this component issues, and
+  // consumed by the effect below. It is what separates "the server data
+  // changed because I just saved" from "the server data changed because
+  // something else on this page refreshed".
+  const awaitingRefresh = useRef(false);
+
+  // THIS EFFECT IS DELIBERATE AND THE GUARD ABOVE IS LOAD-BEARING. Removing
+  // either one silently destroys a sales person's unsaved work on the screen
+  // that produces customer-facing quotations. Read both halves before editing.
+  //
+  // HALF ONE — why it must be an effect. useState(() => ...) only seeds on
+  // mount. After saveCateringCharges / issueCateringQuote / addCateringEventMenu
+  // / removeCateringEventMenu, the server holds rows this component must adopt:
+  // the menu add/remove paths in particular INSERT and DELETE charge rows
+  // server-side, so local state that ignored them would be wrong, not merely
+  // stale. The refreshed prop arrives after render, by construction, so there
+  // is nowhere earlier to read it.
+  //
+  // No eslint suppression is needed, and that is not an accident: the early
+  // return below makes the setState conditional, which is what
+  // react-hooks/set-state-in-effect actually objects to. Guarding the resync
+  // correctly and satisfying the rule turned out to be the same change. If you
+  // simplify this back to an unconditional setState, the rule will start
+  // failing again — treat that as the warning it is, not as something to
+  // suppress.
+  //
+  // HALF TWO — why the guard exists. The previous version resynced on EVERY
+  // change of initialCharges. Its comment argued that was safe because every
+  // row input is disabled while isPending — which is true, and which was
+  // verified. The flaw was the unstated assumption that this component is the
+  // only thing that can refresh the page. It is not. Three other places do,
+  // and ChargesSection is mounted the whole time:
+  //
+  //   EventDetailClient.tsx:61   saving the event edit form
+  //   EventDetailClient.tsx:78   changing status (control at the top)
+  //   TaskChecklistSection.tsx:34  ticking a checklist item
+  //
+  // isPending here comes from THIS component's own useTransition, so during
+  // all three it is false and the row inputs are enabled. Confirmed by test:
+  // type a quantity, tick a checklist item, and the typed value was gone —
+  // no error, no warning, and the total silently reverted.
+  //
+  // So the guard is not redundant belt-and-braces. It is the only thing
+  // distinguishing a resync this component asked for from one it must ignore.
+  // If you delete it, that data loss comes straight back, with a comment above
+  // it implying the effect was always fine.
   useEffect(() => {
+    if (!awaitingRefresh.current) return;
+    awaitingRefresh.current = false;
     setCharges(initialCharges.map(rowFromCharge));
   }, [initialCharges]);
 
@@ -400,6 +441,7 @@ export function ChargesSection({
     startTransition(async () => {
       try {
         await saveCateringCharges(event.id, toPayload());
+        awaitingRefresh.current = true;
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "บันทึกรายการไม่สำเร็จ");
@@ -417,6 +459,7 @@ export function ChargesSection({
         await saveCateringCharges(event.id, toPayload());
         await issueCateringQuote(event.id);
         setConfirmIssue(false);
+        awaitingRefresh.current = true;
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ออกใบเสนอราคาไม่สำเร็จ");
@@ -437,6 +480,7 @@ export function ChargesSection({
     startTransition(async () => {
       try {
         await addCateringEventMenu(event.id, { ...item, note: null });
+        awaitingRefresh.current = true;
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "เพิ่มเมนูไม่สำเร็จ");
@@ -449,6 +493,7 @@ export function ChargesSection({
     startTransition(async () => {
       try {
         await removeCateringEventMenu(eventMenuId, event.id);
+        awaitingRefresh.current = true;
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
