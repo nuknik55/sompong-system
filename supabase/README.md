@@ -60,21 +60,82 @@ and `menus.fuel_cost` was dropped on the same day.
 no code. The declaration, its policies, its seed rows, and the matching policy
 block in `hr_role_patch.sql` were deleted rather than run.
 
-## Lint is not green, so the write-check rule is not CI-enforced
+## The write-check rule is enforced locally, but nothing runs it
 
 `local/no-unchecked-supabase-write` (in `eslint-rules/`) catches the class of
 bug behind most of this file's history: a Supabase write whose error is
-discarded. It works, and reports zero violations today.
+discarded. It is set to `"error"` in `eslint.config.mjs` and reports **zero**
+violations today.
 
-It cannot gate CI yet. `npm run lint` still reports **9**
-`react-hooks/set-state-in-effect` problems across 7 components — the catering
-charges editor, the daily accounting entry, the ingredient manager and others.
-Those are the prop-resync pattern; fixing them properly changes real UI
-behaviour and needs someone clicking through each screen, so they were left
-deliberately rather than downgraded to manufacture a green run.
+**Correction to what this section used to say.** It claimed the rule was "not
+CI-enforced" because lint was not green, which implied a CI gate existed and was
+being held back. There is no CI at all — no `.github/workflows` directory, and
+`lint` is not wired into `build`. The rule fires only when someone runs
+`npm run lint` by hand. Green lint enforces nothing on its own; something has to
+run it.
 
-Until they are fixed, the rule protects only what someone remembers to look
-at. Do not add `--quiet` or lower the rule severity to get around this.
+So there are two separate pieces of work, and finishing the first does not
+deliver the second:
+
+1. **Get `npm run lint` to exit 0.** In progress — see the queue below.
+2. **Add a workflow that runs it.** Not started. Until it exists, the rule
+   protects only what someone remembers to check.
+
+Do not add `--quiet` or lower the rule severity to get a green run.
+
+### The `set-state-in-effect` problems
+
+Started at 9 across 7 components. They are **not** one repeated pattern — an
+earlier note here called them all "the prop-resync pattern" and that was wrong.
+They are five distinct shapes, each needing its own fix:
+
+| shape | components | fix |
+|---|---|---|
+| reset paging on filter change | `category-filter-list`, `ingredient-manager` | move the reset into the handlers that change the filter |
+| one-shot init from props | `OrderForm` | lazy `useState` initialiser |
+| mirror a prop into state | `SetMenusClient` | render the prop; drop the mirror |
+| async fetch into state | `catering/shared.tsx` | documented disable — the effect is correct |
+| `localStorage` read on mount | `accounting/daily/receipt/ReceiptClient` | documented disable — cannot read storage during render under SSR |
+| genuinely behaviour-changing | catering charges editor, daily accounting entry | one at a time, reviewed individually |
+
+A property worth remembering, because it nearly bit during the
+`ingredient-manager` fix: **the lint rule only confirms the effect is gone. It
+has no opinion about whether the behaviour that effect provided was carried
+over.** Patching the two obvious `onChange` handlers there would have passed
+lint and silently regressed paging on the category-delete path.
+
+## Queued work
+
+In order. Nothing here is started unless it says so.
+
+1. **Finish the `set-state-in-effect` fixes** (in progress — see above).
+2. **Add a CI workflow that runs `npm run lint`.** Not started. Without it,
+   item 1 buys nothing enforceable. See the section above for why this is a
+   separate item rather than the tail of item 1.
+3. **The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.
+   Investigation first: for each, what it was evidently meant to gate and what
+   wiring it would change, so the decision is informed rather than guessed.
+4. **`ScheduleClient.tsx:5` static `xlsx` import** — bundle size only, no
+   correctness stake. And **retry-from-here on POS chunk failure**.
+5. **Menu Engineering should classify within category, not across all menus.**
+   Not started, raised by Nik.
+
+   Star / Plow Horse / Puzzle / Dog is currently computed against a single
+   global average of popularity and margin, mixing food, drinks and desserts in
+   one pool. Drinks sell on nearly every table at a lower margin per unit, which
+   lifts the popularity average and pushes ordinary food dishes toward "sells
+   poorly". Desserts sell far less than mains and would classify as Dogs almost
+   by construction. Standard menu-engineering practice analyses within
+   course/category, because an average is only meaningful among items that
+   actually compete with each other.
+
+   `menus` already carries a `category` column, so the data is probably there.
+   **Start the investigation with the data, not the code:** what distinct values
+   does `menus.category` hold, how many menus per category, and are those
+   categories granular enough to be meaningful groups — or too granular, leaving
+   categories of two or three items where an average means nothing. That answer
+   decides whether this is a grouping change or needs a coarser
+   course-level mapping first.
 
 ## Known limits of the POS pricing rule
 
