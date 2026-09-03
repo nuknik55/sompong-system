@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, useEffect, useRef } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderSession } from "../actions";
 import type { Station, IngredientForOrder, TemplateItem } from "@/lib/inventory-data";
@@ -27,37 +27,46 @@ const EMPTY_ROW: RowState = {
   packCount: "", qtyPerPack: "", usePack: false, orderUnit: "",
 };
 
+// Seed values for arriving via "สั่งของจาก Template". Pure, so it can run as a
+// useState initialiser instead of an effect.
+function buildTemplatePrefill(
+  prefillFromTemplate: boolean,
+  templateItems: TemplateItem[],
+  allIngredients: IngredientForOrder[],
+): { rows: Record<string, RowState>; cats: Set<string> } {
+  const rows: Record<string, RowState> = {};
+  const cats = new Set<string>();
+  if (!prefillFromTemplate || !templateItems.length) return { rows, cats };
+
+  const baseById = new Map(allIngredients.map((i) => [i.id, i]));
+  for (const t of templateItems) {
+    const base = baseById.get(t.ingredientId);
+    cats.add(t.customGroup ?? base?.category ?? "ไม่ระบุหมวด");
+    if (t.defaultQty !== null) {
+      const orderUnit = t.orderUnit ?? base?.purchaseUnitLabel ?? base?.usageUnit ?? "";
+      rows[t.ingredientId] = { ...EMPTY_ROW, qty: String(t.defaultQty), orderUnit };
+    }
+  }
+  return { rows, cats };
+}
+
 export function OrderForm({ stations, allIngredients, templateItems, prefillFromTemplate = false }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [stationId, setStationId] = useState("");
   const [note, setNote] = useState("");
-  const [rows, setRows] = useState<Record<string, RowState>>({});
-  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
+  // The template prefill is initial state, not a post-mount update, so it is
+  // computed in the useState initialisers. The old effect had an empty dep
+  // array and a ref guard, so it too only ever read the mount-time props —
+  // seeding directly is equivalent, and drops the render that showed an empty
+  // form with every category collapsed before the effect filled it in.
+  const [prefill] = useState(() =>
+    buildTemplatePrefill(prefillFromTemplate, templateItems, allIngredients),
+  );
+  const [rows, setRows] = useState<Record<string, RowState>>(prefill.rows);
+  const [openCategories, setOpenCategories] = useState<Set<string>>(prefill.cats);
   const [error, setError] = useState<string | null>(null);
-
-  // Auto-fill rows from template when arriving via "สั่งของจาก Template"
-  const prefillDone = useRef(false);
-  useEffect(() => {
-    if (!prefillFromTemplate || !templateItems.length || prefillDone.current) return;
-    prefillDone.current = true;
-    const baseById = new Map(allIngredients.map((i) => [i.id, i]));
-    const newRows: Record<string, RowState> = {};
-    const cats = new Set<string>();
-    for (const t of templateItems) {
-      const base = baseById.get(t.ingredientId);
-      const cat = t.customGroup ?? base?.category ?? "ไม่ระบุหมวด";
-      cats.add(cat);
-      if (t.defaultQty !== null) {
-        const orderUnit = t.orderUnit ?? base?.purchaseUnitLabel ?? base?.usageUnit ?? "";
-        newRows[t.ingredientId] = { ...EMPTY_ROW, qty: String(t.defaultQty), orderUnit };
-      }
-    }
-    if (Object.keys(newRows).length > 0) setRows(newRows);
-    setOpenCategories(cats);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Derive effective ingredient list: use template order if provided, else all ingredients
   const ingredients = useMemo<IngredientForOrder[]>(() => {
