@@ -127,10 +127,13 @@ export function IngredientManager({
     return true;
   });
 
-  // Reset to page 0 whenever filters change.
-  useEffect(() => {
-    setPage(0);
-  }, [search, filterCategory]);
+  // Filter changes reset the page in the handlers that cause them, not in an
+  // effect. An effect renders once with the new filter and the old page —
+  // slicing past the end of a shorter list and painting "no rows" — before
+  // correcting on a second render. Setting both together is one render.
+  //
+  // Four sites: the search box, the category select, and the two branches of
+  // the category-delete flow that reset the filter to "ทั้งหมด".
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -248,7 +251,7 @@ export function IngredientManager({
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(0); }}
               placeholder="พิมพ์ค้นหาชื่อวัตถุดิบ..."
               className="w-full rounded-md border border-neutral-300 py-2 pl-9 pr-3 text-sm"
             />
@@ -256,7 +259,7 @@ export function IngredientManager({
           <div className="flex items-center gap-2">
             <select
               value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
+              onChange={(e) => { setFilterCategory(e.target.value); setPage(0); }}
               className="rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-48"
             >
               {filterOptions.map((c) => (
@@ -281,10 +284,12 @@ export function IngredientManager({
                       if (result.status === "pending") {
                         setCategoryDeletePending(true);
                         setFilterCategory("ทั้งหมด");
+                        setPage(0);
                         return;
                       }
                       setRows((prev) => prev.map((r) => r.category === filterCategory ? { ...r, category: null } : r));
                       setFilterCategory("ทั้งหมด");
+                      setPage(0);
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "ลบหมวดไม่สำเร็จ");
                     }
