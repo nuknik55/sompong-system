@@ -48,7 +48,7 @@ export default async function SetMenusPage() {
       <CateringSubNav isAdmin={true} />
 
       <h1 className="font-kanit text-lg font-semibold text-neutral-900">จัดการชุดเมนู</h1>
-      <SetMenusClient initialSetMenus={setMenus} dishOptions={dishOptions} />
+      <SetMenusClient setMenus={setMenus} dishOptions={dishOptions} />
     </div>
   );
 }

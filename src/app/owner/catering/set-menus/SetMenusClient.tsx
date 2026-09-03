@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveCateringSetMenu, deleteCateringSetMenu, toggleCateringSetMenuActive, getCateringSetMenuItems,
@@ -161,29 +161,39 @@ function DishPicker({
   );
 }
 
+// The list is rendered straight from the server prop — it is deliberately NOT
+// mirrored into state.
+//
+// It used to be, seeded once by useState and resynced by an effect. The comment
+// on that effect blamed Next.js for not propagating the refreshed prop. That
+// diagnosis was wrong: the prop propagated fine, and the component simply
+// rendered its own stale mirror instead of it. If you hit a symptom like
+// "the list does not update after saving", the mirror is the first suspect,
+// not the router.
+//
+// Every mutation therefore goes: server action -> router.refresh() -> new prop.
+// Delete and toggle used to patch the local array instead, which made the UI
+// claim success before the write was confirmed; a failed or concurrent write
+// left the screen disagreeing with the database until a manual reload. The
+// round-trip is slower on an admin screen that is used occasionally, and worth
+// it for showing only what the database actually holds.
+//
+// Both actions already call revalidatePath() server-side. Whether that alone
+// re-renders the client without an explicit router.refresh() is NOT something
+// we verified against the docs, so the refresh here is deliberate belt-and-
+// braces. Do not delete these three refreshes as redundant without testing
+// that revalidatePath alone updates a mounted client component.
 export function SetMenusClient({
-  initialSetMenus,
+  setMenus,
   dishOptions,
 }: {
-  initialSetMenus: CateringSetMenu[];
+  setMenus: CateringSetMenu[];
   dishOptions: DishCostOption[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [setMenus, setSetMenus] = useState(initialSetMenus);
   const [modal, setModal] = useState<{ editingId: string | null; form: SetMenuForm } | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // useState(initialSetMenus) only seeds state on mount — router.refresh()
-  // after saveModal() delivers a fresh initialSetMenus prop, but without this
-  // the already-mounted component never picks it up, so the list looked
-  // unchanged until a manual browser reload. Safe to resync unconditionally
-  // here: the modal form is a separate state snapshot (see openEdit) that
-  // this never touches, and the list rows themselves have no inline editable
-  // fields to clobber.
-  useEffect(() => {
-    setSetMenus(initialSetMenus);
-  }, [initialSetMenus]);
 
   const dishById = new Map(dishOptions.map((d) => [d.id, d]));
 
@@ -280,7 +290,7 @@ export function SetMenusClient({
     startTransition(async () => {
       try {
         await deleteCateringSetMenu(sm.id);
-        setSetMenus((prev) => prev.filter((x) => x.id !== sm.id));
+        router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
       }
@@ -288,9 +298,17 @@ export function SetMenusClient({
   }
 
   function handleToggleActive(sm: CateringSetMenu) {
+    setError(null);
     startTransition(async () => {
-      await toggleCateringSetMenuActive(sm.id, !sm.is_active);
-      setSetMenus((prev) => prev.map((x) => (x.id === sm.id ? { ...x, is_active: !x.is_active } : x)));
+      try {
+        await toggleCateringSetMenuActive(sm.id, !sm.is_active);
+        router.refresh();
+      } catch (err) {
+        // Previously unhandled: the local array was patched regardless of
+        // whether the write succeeded, so a failure showed the row toggled
+        // and told the user nothing.
+        setError(err instanceof Error ? err.message : "เปลี่ยนสถานะไม่สำเร็จ");
+      }
     });
   }
 
