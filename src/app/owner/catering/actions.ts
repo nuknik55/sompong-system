@@ -1668,7 +1668,7 @@ export async function issueCateringQuote(eventId: string): Promise<void> {
 
   const { data: event, error: eventError } = await supabase
     .from("catering_events")
-    .select("quote_number, quote_revision")
+    .select("quote_number, quote_revision, location_type")
     .eq("id", eventId)
     .single();
   if (eventError) throw eventError;
@@ -1683,9 +1683,31 @@ export async function issueCateringQuote(eventId: string): Promise<void> {
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const yymm = `${beYY}${mm}`;
 
+    // IN for in-house, OUT for offsite. This used to be a hardcoded "IN", and
+    // the select above did not even fetch location_type — the data needed to
+    // choose was not in scope of the function, which is why this read as an
+    // omission rather than a decision. Every offsite quote issued before the
+    // fix (2 of 2) carried the wrong prefix.
+    //
+    // Deliberately no default. location_type is NOT NULL with
+    // CHECK (location_type IN ('in_house','offsite')), so a third value cannot
+    // exist without a migration — and if someone adds one, they must decide
+    // what prefix it takes rather than inheriting whichever branch happened to
+    // be the else. Silently falling back to "IN" is precisely the bug being
+    // fixed here, so an unknown value stops the issue instead.
+    const location = event.location_type as string;
+    let prefix: string;
+    if (location === "in_house") prefix = "IN";
+    else if (location === "offsite") prefix = "OUT";
+    else throw new Error(`ไม่รู้จักประเภทสถานที่ "${location}" — ไม่สามารถออกเลขที่ใบเสนอราคาได้`);
+
+    // One shared counter per yymm, both prefixes drawing from it (Nik's call).
+    // Numbers stay unique within the month; each prefix's own run has gaps,
+    // e.g. an offsite quote after IN-005 is OUT-006. That is why
+    // next_catering_quote_seq still takes only p_yymm and needs no migration.
     const { data: seq, error: seqError } = await supabase.rpc("next_catering_quote_seq", { p_yymm: yymm });
     if (seqError) throw seqError;
-    quoteNumber = `QSP-IN${yymm}-${String(seq as number).padStart(3, "0")}`;
+    quoteNumber = `QSP-${prefix}${yymm}-${String(seq as number).padStart(3, "0")}`;
   }
 
   const { error: updateError } = await supabase
