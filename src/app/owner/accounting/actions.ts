@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
+import { fetchAllRows } from "@/lib/data";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
 
 /**
@@ -390,18 +391,45 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
   const profile = await requireAdmin();
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("expense_entries")
-    .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
-    .gte("entry_date", `${yearMonth}-01`)
-    .lte("entry_date", monthEnd(yearMonth))
-    .order("entry_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(500);
+  // This used to be a plain select with .limit(500), and August 2026 has 990
+  // entries — so the "whole month" view showed 500 of them, cut off at
+  // 2026-08-15, and the monthly total on that page (a reduce over these rows)
+  // read 1,219,498 against the summary page's 2,308,065. A 1,088,567 baht
+  // difference between two screens for the same month, with nothing on either
+  // one indicating a truncation.
+  //
+  // The number looked entirely plausible, which is what made it dangerous:
+  // nobody reading it had a reason to doubt it.
+  //
+  // .limit() would not have saved this even if raised — PostgREST caps a single
+  // response at 1000 rows server-side regardless. Paging is the only fix.
+  type RecentRow = {
+    id: string;
+    entry_date: string;
+    coa_code: string;
+    amount: number;
+    note: string | null;
+    bill_ref: string | null;
+    payment_method: string;
+    created_at: string;
+    display_order: number | null;
+    // PostgREST types an embedded join as an array; the existing code below
+    // narrows it with a cast, so keep it opaque here rather than fighting it.
+    coa: unknown;
+  };
 
-  if (error) throw new Error(error.message);
+  const data = await fetchAllRows<RecentRow>(({ from, to }) =>
+    supabase
+      .from("expense_entries")
+      .select("id,entry_date,coa_code,amount,note,bill_ref,payment_method,created_at,display_order,coa(name,group_name,is_sensitive)")
+      .gte("entry_date", `${yearMonth}-01`)
+      .lte("entry_date", monthEnd(yearMonth))
+      .order("entry_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to),
+  );
 
-  return (data ?? [])
+  return data
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
     .map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
@@ -624,21 +652,31 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   const profile = await requireAdmin();
   const supabase = await createClient();
 
-  const [entriesRes, coaRes, revenueRes] = await Promise.all([
-    supabase
-      .from("expense_entries")
-      .select("coa_code,amount")
-      .filter("entry_date", "gte", `${yearMonth}-01`)
-      .filter("entry_date", "lte", monthEnd(yearMonth)),
+  // Paged, not a plain select: this had no .limit() and so inherited
+  // PostgREST's 1000-row server cap. August 2026 holds 990 entries — ten more
+  // and the month's expenses would have quietly come back short, understating
+  // every group total and the profit line with no error anywhere.
+  const [entries, coaRes, revenueRes] = await Promise.all([
+    fetchAllRows<{ coa_code: string; amount: number }>(({ from, to }) =>
+      supabase
+        .from("expense_entries")
+        .select("coa_code,amount")
+        .filter("entry_date", "gte", `${yearMonth}-01`)
+        .filter("entry_date", "lte", monthEnd(yearMonth))
+        .range(from, to),
+    ),
     supabase.from("coa").select("*").order("sort_order"),
     supabase.from("monthly_revenue").select("revenue_type,amount").eq("year_month", yearMonth),
   ]);
 
-  if (entriesRes.error) throw new Error(entriesRes.error.message);
   if (coaRes.error) throw new Error(coaRes.error.message);
+  // Previously unchecked. A failed revenue read left revenueRows empty, so
+  // totalRevenue became 0, every pct_of_revenue became null, and the page
+  // rendered a full month of expenses against no income — a plausible-looking
+  // catastrophic loss, produced by a query failure rather than by the numbers.
+  if (revenueRes.error) throw new Error(revenueRes.error.message);
 
   const allCoa = (coaRes.data ?? []) as CoaAccount[];
-  const entries = entriesRes.data ?? [];
   const revenueRows = revenueRes.data ?? [];
 
   const totalRevenue = revenueRows.reduce((s, r) => s + (r.amount ?? 0), 0);
