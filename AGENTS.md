@@ -104,3 +104,74 @@ before and separately from whatever task it interrupted. A leaked credential
 does not become safe because the command that leaked it was well intentioned,
 and the person who can revoke it needs to know first, not as a footnote.
 <!-- END:secret-printing-rules -->
+
+<!-- BEGIN:editing-and-verification-rules -->
+# Editing files, and checking that you edited them correctly
+
+Three traps, all hit in one round of work.
+
+## 1. Deleting by boundary takes the NEXT symbol's comment
+
+Removing a function by slicing from its start to `export async function <next>`
+also removes the doc comment that belongs to `<next>`, because that comment sits
+*above* the boundary. In a diff it looks like ordinary deleted lines — nothing
+marks it as collateral.
+
+This happened deleting `resubmitOrderSession`: `markOrderSent`'s
+`/** Admin+ ... */` went with it.
+
+**Check it deliberately.** After a deletion, list the removed comment lines and
+confirm each belongs to the thing you meant to remove:
+
+```
+git diff -- <file> | grep "^-/\*\*"
+```
+
+Every hit should be a comment on the deleted symbol. One that is not is
+collateral damage — restore it. Prefer ending the slice at the *next symbol's
+comment* rather than at its `export`.
+
+## 2. A verification check that matches text will match your own prose
+
+Twice now:
+
+- `s.includes("resubmitOrderSession")` failed after a correct deletion, because
+  the *comment explaining where the rule went* names the function.
+- Counting occurrences of `router.refresh()` reported five calls when there were
+  four, because a new comment mentioned it.
+
+Both times the postcondition was right to run and wrong in how it looked. **Match
+structure, not text**, and assert the number you expect rather than "none":
+
+```
+if (s.includes("export async function resubmitOrderSession")) throw ...
+if ((s.split("resubmitOrderSession").length - 1) !== 2) throw ...   // 2 comment refs, by design
+```
+
+Counting statement lines beats counting substrings:
+
+```
+lines.filter((l) => l.trim() === "router.refresh();")
+```
+
+A check that can false-positive on documentation gets disabled or ignored, which
+is worse than not having it.
+
+## 3. Line endings are mixed in this repo — do not assume `\n`
+
+`src/app/owner/hr/actions.ts` is CRLF while the files around it are LF. Three
+anchor-based edits failed with an unhelpful "anchor not found" before the cause
+was visible.
+
+Detect and match, per file, rather than assuming:
+
+```
+const nl = s.includes("\r\n") ? "\r\n" : "\n";
+```
+
+and normalise inserted blocks with `.replace(/\r?\n/g, nl)`. When an anchor you
+copied out of the file "obviously matches" but does not, check the line endings
+before rewriting the anchor. Long box-drawing rules (`─────`) are the other
+common cause: the count rarely matches what you typed, so anchor on the code
+instead.
+<!-- END:editing-and-verification-rules -->
