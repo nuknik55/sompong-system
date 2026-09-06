@@ -39,6 +39,10 @@ export default async function SessionDetailPage({
 
   const canReview = ["owner", "admin", "editor"].includes(profile.role);
   const canSend = isAdminOrAbove(profile.role);
+  // Same value as canSend today, deliberately a separate prop: "may mark an
+  // order sent" and "may override creator-only on a returned order" are
+  // different rules that currently coincide.
+  const canOverrideCreator = isAdminOrAbove(profile.role);
   const isCreator = profile.id === session.createdBy;
   const shortId = session.id.slice(0, 8).toUpperCase();
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
@@ -210,7 +214,7 @@ export default async function SessionDetailPage({
         </div>
       )}
 
-      <SessionActions session={session} canReview={canReview} canSend={canSend} isCreator={isCreator} />
+      <SessionActions session={session} canReview={canReview} canSend={canSend} isCreator={isCreator} canOverrideCreator={canOverrideCreator} />
     </div>
   );
 }

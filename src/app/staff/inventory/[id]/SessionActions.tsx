@@ -41,12 +41,14 @@ export function SessionActions({
   session,
   canReview,
   canSend,
+  isCreator,
+  canOverrideCreator,
 }: {
   session: OrderSessionDetail;
   canReview: boolean;
   canSend: boolean;
-    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
   isCreator: boolean;
+  canOverrideCreator: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -57,6 +59,11 @@ export function SessionActions({
   const [editRows, setEditRows] = useState<Record<string, EditRow>>(() => initEditRows(session.items));
   const [editingQty, setEditingQty] = useState<string | null>(null);
   const [editQtyVal, setEditQtyVal] = useState("");
+
+  // Who may fix and resubmit a returned order. Mirrors the server check in
+  // updateItemsAndResubmit() — this is the convenience half; that one is the
+  // enforcement. Changing this alone changes nothing about what is permitted.
+  const canFixReturned = isCreator || canOverrideCreator;
 
   function patchEdit(id: string, patch: Partial<EditRow>) {
     setEditRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -155,7 +162,20 @@ export function SessionActions({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {/* ตีกลับ — edit form */}
-      {session.status === "returned" && (
+      {/* Non-editors get the status and the reason, but no form. Without this
+          branch the panel would render empty for them, which reads as a broken
+          page rather than as a permission boundary. */}
+      {session.status === "returned" && !canFixReturned && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+          <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
+          {session.note && <p className="text-sm text-amber-700">{session.note}</p>}
+          <p className="text-xs text-amber-600">
+            รอ {session.createdByName} แก้ไขและส่งใหม่
+          </p>
+        </div>
+      )}
+
+      {session.status === "returned" && canFixReturned && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
           <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
           {session.note && <p className="text-sm text-amber-700">{session.note}</p>}

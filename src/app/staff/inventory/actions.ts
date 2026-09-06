@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireProfile, requireAdminOrEditor, requireAdmin } from "@/lib/auth";
+import { requireProfile, requireAdminOrEditor, requireAdmin, isAdminOrAbove } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -158,7 +158,12 @@ export async function updateItemsAndResubmit(
   sessionId: string,
   items: OrderItemUpdate[]
 ): Promise<ActionResult> {
-  await requireProfile();
+  const profile = await requireProfile();
+
+  // NOTE: createAdminClient() is the SERVICE ROLE client and bypasses RLS
+  // entirely. The permission check below is therefore the ONLY thing
+  // protecting these writes — there is no database-level backstop behind it.
+  // If you refactor this function, that check is not optional cleanup.
   const supabase = createAdminClient();
 
   const { data: session } = await supabase
@@ -169,6 +174,24 @@ export async function updateItemsAndResubmit(
 
   if (!session || session.status !== "returned") {
     return { error: "ไม่สามารถแก้ไขได้ (สถานะไม่ใช่ 'ตีกลับ')" };
+  }
+
+  // Creator, or an admin/owner overriding.
+  //
+  // This function previously selected created_by and never compared it, so any
+  // authenticated user could rewrite and resubmit anyone's returned order. The
+  // rule did exist — it was written and enforced in resubmitOrderSession(),
+  // which nothing ever called. That function has been deleted and its rule
+  // lives here now.
+  //
+  // The admin override is a DELIBERATE RELAXATION of the original written
+  // intent, not an oversight — do not "restore" creator-only. resubmitOrderSession
+  // admitted nobody but the creator. Nik's call: a restaurant supply order has a
+  // same-day deadline, so creator-only leaves a returned order blocked until that
+  // staff member's next shift. He judged the operational cost higher than the
+  // accountability gain, and admins are already trusted with cost data and pricing.
+  if (session.created_by !== profile.id && !isAdminOrAbove(profile.role)) {
+    return { error: "เฉพาะผู้กรอกเดิมหรือผู้ดูแลระบบเท่านั้นที่แก้ไขและส่งใหม่ได้" };
   }
 
   for (const item of items) {
@@ -193,42 +216,6 @@ export async function updateItemsAndResubmit(
     .eq("id", sessionId);
   if (error) return { error: error.message };
 
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
-  return {};
-}
-
-/** Staff resubmits a returned session after editing */
-export async function resubmitOrderSession(sessionId: string): Promise<ActionResult> {
-  const profile = await requireProfile();
-  const supabase = await createClient();
-
-  const { data: session } = await supabase
-    .from("order_sessions")
-    .select("created_by, status")
-    .eq("id", sessionId)
-    .single();
-
-  if (!session || session.status !== "returned") {
-    return { error: "ไม่สามารถส่งซ้ำได้ (สถานะไม่ใช่ 'ตีกลับ')" };
-  }
-  if (session.created_by !== profile.id) {
-    return { error: "เฉพาะผู้กรอกเดิมเท่านั้นที่ส่งซ้ำได้" };
-  }
-
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({
-      status: "submitted",
-      submitted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId);
-  if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
   revalidatePath("/staff/inventory/review");
   revalidatePath("/staff/inventory/purchase");
@@ -273,7 +260,11 @@ export async function saveReviewerItemEdit(
   const { error } = await supabase
     .from("order_items")
     .update({ reviewer_qty_ordered: reviewerQtyOrdered })
-    .eq("id", itemId);
+    .eq("id", itemId)
+    // Scoped to the session in the URL, not just the item id: the admin client
+    // bypasses RLS, so without this any item in the database could be edited by
+    // passing its id. saveEditorItemEdit below had the identical hole.
+    .eq("session_id", sessionId);
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
   revalidatePath(`/staff/inventory/${sessionId}`);
@@ -291,7 +282,10 @@ export async function saveEditorItemEdit(
   const { error } = await supabase
     .from("order_items")
     .update({ editor_qty_ordered: editorQtyOrdered })
-    .eq("id", itemId);
+    .eq("id", itemId)
+    // See saveReviewerItemEdit above — same scoping, same reason. This one is
+    // only requireProfile(), so ANY authenticated user could reach it.
+    .eq("session_id", sessionId);
   if (error) return { error: error.message };
   revalidatePath("/staff/inventory");
   revalidatePath(`/staff/inventory/${sessionId}`);
