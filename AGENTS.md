@@ -66,3 +66,41 @@ So:
    test that passes under both the old and new behaviour has told you nothing
    about the change.
 <!-- END:baseline-rules -->
+
+<!-- BEGIN:secret-printing-rules -->
+# Commands that print secrets, not configuration
+
+`git remote -v` printed a Personal Access Token in full. The remote was
+`https://user:ghp_...@github.com/...`, the command was run to check the remote's
+shape before a push, and the token landed in the transcript. It had to be
+revoked and rotated.
+
+**Treat `git remote -v` as a secret-printing command, not a diagnostic one.**
+When you need the remote's shape rather than its credential:
+
+```
+git remote get-url origin | sed 's|//.*@|//***@|'
+```
+
+or read the structure of `.git/config` without echoing credential fields.
+
+The general shape, which is worth recognising before it happens rather than
+after: **a command whose output looks like configuration but is partly a
+secret, run in a context where every byte of output is transcribed.** The
+output being "just settings" is exactly why it does not feel like a disclosure
+while you are typing it. Others in this family:
+
+- `env` / `printenv` / `Get-ChildItem Env:` — API keys, service-role keys
+- `cat .env`, `.env.local`, `.npmrc`, `~/.aws/credentials`, `~/.netrc`
+- `docker inspect`, `kubectl describe` — injected env and mounted secrets
+- `curl -v` — Authorization headers echoed back
+- any `psql`/`mysql` connection string with an inline password
+
+When a value is needed, read it into a variable and use it; do not echo it. When
+only its presence matters, print a boolean or a masked prefix, never the value.
+
+And if one does get printed: **say so immediately and recommend rotating**,
+before and separately from whatever task it interrupted. A leaked credential
+does not become safe because the command that leaked it was well intentioned,
+and the person who can revoke it needs to know first, not as a footnote.
+<!-- END:secret-printing-rules -->
