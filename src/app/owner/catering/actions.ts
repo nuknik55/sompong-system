@@ -1683,6 +1683,24 @@ export async function issueCateringQuote(eventId: string): Promise<void> {
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const yymm = `${beYY}${mm}`;
 
+    // The prefix reflects location_type AT ISSUE TIME and is deliberately NOT
+    // recomputed afterwards. This whole block sits inside if (!quoteNumber),
+    // so re-issuing an already-numbered event skips it entirely: the same
+    // number is written back and only quote_revision increments. Changing an
+    // event from offsite to in-house therefore leaves QSP-OUT... in place
+    // while the event itself correctly reads in-house, and that is correct.
+    //
+    // A quote number is a document reference, not a live status label. It is
+    // printed on paper the customer holds; renaming it would mean a customer
+    // quoting OUT-001 back at you finds nothing. Standard practice for
+    // quotations and invoices is that an issued number is immutable — if the
+    // job changes enough to matter, issue a new document. It is also why the
+    // two legacy mislabelled numbers were not renamed.
+    //
+    // Do not "fix" this into staying in sync with the event. Note also that
+    // the sequence RPC below is inside the same guard, so a re-issue does not
+    // burn a counter value — moving the prefix logic out would break that too.
+    //
     // IN for in-house, OUT for offsite. This used to be a hardcoded "IN", and
     // the select above did not even fetch location_type — the data needed to
     // choose was not in scope of the function, which is why this read as an

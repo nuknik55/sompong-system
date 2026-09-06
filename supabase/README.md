@@ -48,11 +48,22 @@ across the 42 files exist in production.
 2026-08-31, have both landed. `purchase_cost` was widened to numeric(12,4)
 and `menus.fuel_cost` was dropped on the same day.
 
+### Applied since, with dates
+
+| file | ran | effect |
+|---|---|---|
+| `pos_date_precision_migration.sql` | 2026-09-03 | Added `pos_receipt_deliveries.date_precision` (`day`/`month`) with its CHECK and index. Constraint verified live: rejects `'week'` with 23514. |
+| `reset_catering_test_data.sql` | 2026-09-06 | Deleted all 8 test catering events and the 104 cascaded child rows; deleted the `catering_quote_sequences` row so the counter restarts at 1. Customers (9), set menus (3) and set menu items (14) kept. Ran clean — the exactly-8 guard did not fire. **One-off. Do not re-run:** it would delete whatever real events exist by then, and only the guard's count stands between it and that. |
+| `fix_quote_number_column_comment.sql` | 2026-09-06 | Corrected the `quote_number` column comment, which still described the format as `QSP-IN{YYMM}` after the prefix became `IN`/`OUT`. Documentation only, safe to re-run. |
+
+The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
+(22,805 `day`-precision from the original load, 1,646 `month`-precision
+recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
+2026-09-01. 11 rows remain unparseable — repeated header artefacts.
+
 ### Not applied
 
-| object | file | status |
-|---|---|---|
-| `pos_receipt_deliveries` backfill | `scripts/backfill-pos-deliveries.mjs` | The table and `pos_import_settings` exist and are empty. Nothing in `src/` reads or writes them yet — the Path 2 persistence is still unimplemented. |
+Nothing outstanding.
 
 ### Removed rather than applied
 
@@ -140,46 +151,33 @@ In order. Nothing here is started unless it says so.
    decides whether this is a grouping change or needs a coarser
    course-level mapping first.
 
-6. **Quote-number prefix is hardcoded to `IN`.** Investigated 2026-09-03,
-   confirmed, fix on hold pending one decision from Nik.
+6. ~~Quote-number prefix is hardcoded to `IN`~~ — **DONE 2026-09-06.**
 
-   Quote numbers use a `QSP-IN` / `QSP-OUT` convention — `IN` for in-house,
-   `OUT` for offsite. `IN` is a string literal in `issueCateringQuote`
-   (`src/app/owner/catering/actions.ts`, the `QSP-IN${yymm}` template) and
-   `next_catering_quote_seq(p_yymm TEXT)` takes only the year-month, so neither
-   layer can branch. `issueCateringQuote` does not even SELECT `location_type`
-   — the data needed to choose a prefix is not in scope of the function, which
-   reads as an omission rather than a decision.
+   `issueCateringQuote` now branches on `location_type`: `IN` for `in_house`,
+   `OUT` for `offsite`, and it throws rather than defaulting if it ever sees
+   another value. It also selects `location_type`, which it previously did not
+   — the data needed to choose was not in scope of the function, which is why
+   the hardcoded `IN` read as an omission rather than a decision.
 
-   **Every offsite quote issued so far is mislabelled — 2 of 2.** Of 8 events,
-   5 have a quote_number: 3 in-house (correct) and 2 offsite
-   (`QSP-IN6908-003`, `QSP-IN6908-005`) carrying `IN`. Both were already
-   `offsite` when issued, not changed afterwards: `updated_at` equals
-   `quoted_at` to the millisecond on both, and neither activity log contains an
-   event-edit action.
+   Nik chose a **shared counter per Buddhist YYMM**, both prefixes drawing from
+   it, so `next_catering_quote_seq` kept its signature and no migration was
+   needed. Numbers stay unique within a month; each prefix's own run has gaps.
 
-   (An earlier version of this entry said the only live quote number was
-   `QSP-IN6908-003`. That was wrong — there are five.)
+   Verified in production: an offsite event issued `QSP-OUT6909-001`.
 
-   **Nothing parses the prefix.** Every consumer either displays `quote_number`
-   verbatim (quote print route, function sheet, status page, customer detail,
-   charges header) or null-checks it for existence. No `slice`/`split`/
-   `startsWith`/`match` anywhere. It is a pure human-readable label, so no code
-   breaks whichever way this goes.
+   The 5 pre-existing quotes (2 of them offsite and mislabelled `IN`) were all
+   test data and were deleted by `reset_catering_test_data.sql` rather than
+   renamed, which removed the retroactive-correction question entirely.
 
-   **BLOCKED ON NIK — the counter question.** `catering_quote_sequences` has PK
-   `yymm` and holds `{yymm: '6908', last_seq: 5}`. Adding an `OUT` branch forces
-   a choice, and it determines whether a migration is needed at all:
-
-   - *Shared counter per month* — the next offsite becomes `QSP-OUT6908-006`.
-     Numbers stay globally unique; each prefix's own run has gaps. No schema
-     change.
-   - *Counter per prefix* — `OUT` restarts at `001`. Needs a composite-key
-     migration on `catering_quote_sequences`.
-
-   All 5 existing quotes are TEST DATA — Nik confirms none was sent to a
-   customer — so the retroactive-correction question is moot, and clearing them
-   out is an option. See the reset note below.
+   **A quote number is frozen at issue and this is deliberate.** The prefix
+   reflects `location_type` at issue time and is never recomputed: the branch
+   sits inside `if (!quoteNumber)`, so a re-issue skips it and only bumps
+   `quote_revision`. Changing an event from offsite to in-house afterwards
+   correctly leaves `QSP-OUT...` in place — the number is a document reference
+   printed on paper a customer holds, not a live status label. The same guard
+   means a re-issue does not burn a sequence value. `issueCateringQuote` is the
+   only writer of `quote_number` anywhere in `src/`; `upsertCateringEvent`
+   never touches it.
 
 7. **Two more `initialEntries` mirrors that lint cannot see.** Not started, and
    **not verified** — see the warning below.
