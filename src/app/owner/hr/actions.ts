@@ -185,6 +185,30 @@ export async function setDepartmentActive(id: string, is_active: boolean): Promi
 
 // ─── Employees ────────────────────────────────────────────────────────────────
 
+//
+// SALARY FIELDS ARE NOT ROLE-FILTERED HERE, AND THAT IS INTENTIONAL.
+//
+// getEmployees() and getEmployee() below select base_salary,
+// position_allowance and social_security_monthly with no role branch. If you
+// are auditing this and it looks like a missing gate: it is not. Do not add a
+// filter and do not restrict these to owner — payroll runs on these fields, and
+// hiding them from hr breaks it.
+//
+// What actually controls access is PAGE ACCESS. Every route reaching these
+// functions is behind requireHR(), which admits "owner" and "hr" and redirects
+// everyone else. The audience is exactly the two roles whose job this is.
+//
+// Decided explicitly by Nik on 2026-09-06: hr SHOULD see salaries, because
+// payroll is their work. An isOwner prop was previously passed to
+// EmployeesClient and never read — it was reaching for an owner-vs-hr
+// distinction that had never been implemented anywhere. That prop is now
+// deleted rather than wired, because the distinction was decided against.
+//
+// UNWIRED_FEATURES.md used to claim these fields were "gated server-side".
+// They are not, and never were. That claim being wrong is why this comment is
+// long: the next person to check should find the decision here rather than
+// infer an oversight from the code and "fix" it.
+
 export async function getEmployees(): Promise<Employee[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

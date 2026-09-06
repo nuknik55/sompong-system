@@ -41,7 +41,6 @@ export default async function AccountingPage({
       <AccountingEntryClient
         initialEntries={entries}
         yearMonth={yearMonth}
-        isOwner={profile.role === "owner"}
       />
     </div>
   );

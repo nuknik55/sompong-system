@@ -61,8 +61,6 @@ export function EmployeesClient({
   departments: Department[];
   balances: CompDayBalance[];
   probationAlerts: ProbationAlert[];
-    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
-  isOwner: boolean;
 }) {
   const [employees, setEmployees] = useState(initialEmployees);
   const balanceMap = new Map(balances.map((b) => [b.employee_id, b]));

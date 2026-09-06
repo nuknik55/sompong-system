@@ -213,8 +213,6 @@ export function DailyEntryClient({
   coa: CoaAccount[];
   entries: ExpenseEntry[];
   date: string;
-    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
-  isOwner: boolean;
   suppliers: Supplier[];
 }) {
   const router = useRouter();

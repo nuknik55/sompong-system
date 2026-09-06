@@ -46,8 +46,6 @@ export function AccountingEntryClient({
 }: {
   initialEntries: ExpenseEntry[];
   yearMonth: string;
-    // Passed by the parent but never applied — see UNWIRED_FEATURES.md.
-  isOwner: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
   const [entries, setEntries] = useState<ExpenseEntry[]>(initialEntries);

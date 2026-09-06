@@ -18,7 +18,6 @@ export default async function EmployeesPage() {
       departments={departments}
       balances={balances}
       probationAlerts={probationAlerts}
-      isOwner={profile.role === "owner"}
     />
   );
 }

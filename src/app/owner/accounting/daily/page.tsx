@@ -41,7 +41,6 @@ export default async function DailyEntryPage({
         coa={coa}
         entries={entries}
         date={date}
-        isOwner={profile.role === "owner"}
         suppliers={suppliers}
       />
     </div>
