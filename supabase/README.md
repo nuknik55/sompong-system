@@ -217,6 +217,148 @@ In order. Nothing here is started unless it says so.
    to `<Link>` for a faster transition would silently create the PayrollClient
    bug.** Needs a comment saying so; no code change.
 
+8. **POS-vs-accounting reconciliation.** Not started, deferred — but the
+   CONSTRAINT below matters more than the item.
+
+   The system records ingredient purchases twice, in `pos_receipt_deliveries`
+   and in accounting `G100`, and nothing compares them. Measured 2026-09-06:
+
+   | month | POS deliveries | accounting G100 | gap |
+   |---|---:|---:|---:|
+   | 2026-07 | ฿1,396,440 | ฿518,957 | −฿877,483 |
+   | 2026-08 | ฿1,864,404 | ฿1,788,631 | −฿75,773 |
+   | 2026-09 | ฿81,650 | ฿263,871 | +฿182,221 |
+
+   **DO NOT build this as a monthly-total comparison.** The two sides cover
+   different scopes by construction — see "What the accounting module is" above
+   — so totals can never agree. A total-vs-total screen would show a permanent
+   unexplained gap, and everyone would learn within a week to ignore it. That is
+   worse than not building it.
+
+   It must compare **only what flows through the same path**, which realistically
+   means **per-vendor or per-account, and per-day rather than per-month**. That
+   localises a discrepancy to something actionable instead of confirming one
+   exists. Monthly totals are the blurriest possible view of this.
+
+   Nik's hesitation was that the receiving screen is entered inconsistently, so
+   he doubts the two sides can be compared. Worth recording the counter-argument
+   because it is the reason to build it eventually: **if the POS side were
+   reliable, a comparison would be pointless.** It is precisely because one side
+   is unreliable that a comparison is the only way to find where. That is how
+   the ฿4,320 mango and the 10x mussel error were found.
+
+9. **The ฿20,000 CapEx rule exists nowhere in the system.** Not started.
+
+   The restaurant has a written-down-nowhere rule: a newly purchased asset over
+   ฿20,000 is coded to CapEx (`G990`). The bookkeeper coded a ฿29,853 vacuum
+   sealer to `810 Supply ครัว` instead — the only miscode of its kind.
+
+   **A naive amount threshold on the entry form would be actively harmful.**
+   There are 17 entries ≥ ฿20,000 in the whole database and only one is
+   miscoded; the rest are consulting fees, social security, vegetable oil, crab,
+   and security-guard invoices. A hint firing on amount alone would be wrong 16
+   times out of 17 and be dismissed reflexively within a week.
+
+   The operative words in the rule are *newly purchased asset* — "asset" is the
+   part a form cannot infer from a number. If a hint is built, scope it to
+   non-food, non-payroll groups (realistically `G400`, `G800`), where it would
+   have fired exactly once, correctly.
+
+   Recording the rule somewhere visible matters more than the hint.
+
+## What the accounting module is — and deliberately is not
+
+**Read this before auditing `/owner/accounting`.** Without it, the module's
+scope reads as a list of defects. It is not one.
+
+This is an **internal management ledger for finding leaks and structural
+problems**. It is not a complete set of books and does not try to be. Statutory
+accounting is done by an outsourced firm and filed separately.
+
+### Three money paths, only one of which lands here
+
+| path | recorded in this app? |
+|---|---|
+| through the in-house bookkeeper | **yes** |
+| paid directly by a director (utilities, accounting fees) — the bookkeeper sees the amount but the money never passes through them | **no** — goes straight to the outsourced firm |
+| director salaries — nobody in the restaurant sees these, including the bookkeeper | **no** — straight to the outsourced firm |
+
+Nik also exports from this app and combines it in Excel, deliberately keeping
+some costs outside the system entirely.
+
+### What follows from that, and what NOT to build
+
+**No month in this system is a complete P&L, by design.** Not July (which was
+also the trial period and is partial for that reason too), and not August
+(whose correct sales figure has not been entered yet). **Treat no month
+currently present as a trustworthy P&L.**
+
+- **Do NOT build a per-month completeness signal** that compares entry counts
+  against a rolling average. Every month would trip it. A warning that always
+  fires is noise, and worse than none — it teaches people to dismiss warnings.
+  If completeness is ever wanted it has to be **per-path**, not per-month.
+
+- **Do NOT reconcile POS against accounting on monthly totals.** The two sides
+  cover different scopes by construction, so a total-vs-total comparison
+  produces a permanent unexplained gap and teaches everyone to ignore the
+  screen. Any reconciliation must compare **only what flows through the same
+  path** — realistically per-vendor or per-account, which also localises a
+  discrepancy instead of merely proving one exists. See the queue.
+
+### The ceiling, framed against this scope
+
+A cashbook records **flows**, not **balances**. Everything asked of it so far is
+flow-shaped or presentational — CapEx separation, period close, a scoped
+reconciliation — and fits without strain. Four things sit above that line, and
+they are **consequences of scope, not defects**:
+
+| | why it does not fit |
+|---|---|
+| depreciation | needs an asset register — an object with state across periods, not an expense row |
+| accounts payable | expenses appear when money moves, so unpaid invoices are invisible |
+| cash position | cash vs transfer is recorded per entry but never accumulates to a balance |
+| **true COGS** | `G100` is *what was bought*, not *what was consumed*. Real COGS is opening stock + purchases − closing stock. With no inventory valuation these diverge exactly when stock swings — which is when the number matters most |
+
+**Recommendation on direction: do not convert this to double-entry.** Its value
+is the self-checking property, and that only exists if *everything* flows
+through it consistently. Nobody at the restaurant has accounting knowledge, and
+a half-adopted double-entry system is worse than a well-kept cashbook because it
+looks authoritative while being unbalanced. When a balance concept is genuinely
+needed, add one narrow table for that one thing and keep the cashbook as the
+spine.
+
+The one thing that would change that answer: statutory financial statements. A
+cashbook cannot produce them, and that is not an increment — it is different
+software. This system's job is management insight; keep it pointed there.
+
+### Findings recorded but not fixed
+
+- **Negative and ungrouped accounts vanish from totals.** In
+  `getMonthlySummary`, `accounts.filter((a) => a.total > 0)` runs *before* the
+  group total is summed, so an account with a net-negative total (a refund or
+  correction) is dropped from the display **and** excluded from the group total,
+  silently understating expenses. Same for an account whose `group_code` matches
+  no `G*` header. **Latent:** production has 0 negative amounts and 0 orphans.
+  Not fixed because changing what a total includes is a modelling decision, not
+  a bug fix. Recommendation when it comes up: show negative totals rather than
+  hiding them — a refund that vanishes is worse than a refund that looks odd.
+
+- **`coa_select` is `USING (true)`.** Any authenticated user, including `staff`,
+  can read the whole `coa` table via PostgREST — including the row flagged
+  `is_sensitive` (`790 เงินเดือนเจ้าของร้าน`). Only the **name** leaks; amounts
+  are protected by `expense_select`, which requires owner/admin. The
+  application-level filter is applied consistently across all four read paths.
+  **Zero impact today** — that account has 0 entries — but the first time a
+  salary is recorded there, owner and admin will see different profit for the
+  same month with nothing on screen explaining why. Worth tightening the RLS to
+  match the app filter eventually; separate migration, not urgent.
+
+- **No audit trail and no period locking.** `expense_entries` has `updated_at`
+  but no history table, so any amount can be changed after the fact with no
+  record of what it was — while the system *does* keep price history and recipe
+  history elsewhere. And unlike payroll, which has `is_closed`, no accounting
+  month is ever final. Both are additions rather than corrections.
+
 ## Known limits of the POS pricing rule
 
 `src/lib/pos-pricing.ts` prices each ingredient from a median over deliveries
