@@ -50,8 +50,12 @@ export default async function AccountingSummaryPage({
   const nextMonth = new Date(y!, m!, 1).toISOString().slice(0, 7);
   const isCurrentMonth = yearMonth === today;
 
-  const profit = totalRevenue - summary.totalExpense;
-  const profitPct = totalRevenue > 0 ? (profit / totalRevenue) * 100 : null;
+  // Operating profit: CapEx and Tax are deliberately NOT subtracted, so that a
+  // month containing a large capital purchase stays comparable with the month
+  // before it. Both are displayed below the line instead. See
+  // NON_OPERATING_GROUPS in ../actions.ts for the full reasoning.
+  const operatingProfit = totalRevenue - summary.operatingExpense;
+  const profitPct = totalRevenue > 0 ? (operatingProfit / totalRevenue) * 100 : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
@@ -97,14 +101,14 @@ export default async function AccountingSummaryPage({
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="รายได้รวม" value={`${formatBaht(totalRevenue)} ฿`} />
-        <KpiCard label="รายจ่ายรวม" value={`${formatBaht(summary.totalExpense)} ฿`} />
+        <KpiCard label="ค่าใช้จ่ายดำเนินงาน" value={`${formatBaht(summary.operatingExpense)} ฿`} />
         <KpiCard
-          label="% ต้นทุนรวม"
-          value={totalRevenue > 0 ? `${((summary.totalExpense / totalRevenue) * 100).toFixed(1)}%` : "—"}
+          label="% ต้นทุนดำเนินงาน"
+          value={totalRevenue > 0 ? `${((summary.operatingExpense / totalRevenue) * 100).toFixed(1)}%` : "—"}
         />
         <KpiCard
-          label="กำไร (ก่อนภาษี)"
-          value={totalRevenue > 0 ? `${formatBaht(profit)} ฿` : "—"}
+          label="กำไรจากการดำเนินงาน"
+          value={totalRevenue > 0 ? `${formatBaht(operatingProfit)} ฿` : "—"}
           highlight={profitPct !== null ? (profitPct < 10 ? "red" : profitPct < 15 ? "amber" : "green") : undefined}
         />
       </div>
@@ -159,25 +163,41 @@ export default async function AccountingSummaryPage({
           </tbody>
           <tfoot className="border-t-2 border-neutral-300 bg-neutral-50">
             <tr>
-              <td className="px-4 py-2 font-semibold text-neutral-900">รวมค่าใช้จ่ายทั้งหมด</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold">{formatBaht(summary.totalExpense)}</td>
+              <td className="px-4 py-2 font-semibold text-neutral-900">รวมค่าใช้จ่ายดำเนินงาน</td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold">{formatBaht(summary.operatingExpense)}</td>
               <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                {totalRevenue > 0 ? `${((summary.totalExpense / totalRevenue) * 100).toFixed(1)}%` : "—"}
+                {totalRevenue > 0 ? `${((summary.operatingExpense / totalRevenue) * 100).toFixed(1)}%` : "—"}
               </td>
               <td colSpan={2} />
             </tr>
             {totalRevenue > 0 && (
               <tr className="border-t border-neutral-200">
-                <td className="px-4 py-2 font-semibold text-neutral-900">กำไร (ก่อนภาษี)</td>
-                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${profit < 0 ? "text-red-600" : "text-brand-green"}`}>
-                  {formatBaht(profit)}
+                <td className="px-4 py-2 font-semibold text-neutral-900">กำไรจากการดำเนินงาน</td>
+                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${operatingProfit < 0 ? "text-red-600" : "text-brand-green"}`}>
+                  {formatBaht(operatingProfit)}
                 </td>
-                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${profit < 0 ? "text-red-600" : "text-brand-green"}`}>
+                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${operatingProfit < 0 ? "text-red-600" : "text-brand-green"}`}>
                   {profitPct != null ? `${profitPct.toFixed(1)}%` : "—"}
                 </td>
                 <td colSpan={2} />
               </tr>
             )}
+            {/* Below the line: shown, never subtracted. A capital purchase or a
+                tax payment is not a trading result, and folding either into the
+                profit line makes months incomparable. */}
+            {summary.nonOperating.map((g) => (
+              <tr key={g.group_code} className="border-t border-neutral-200 text-neutral-500">
+                <td className="px-4 py-2">
+                  {g.group_name}
+                  <span className="ml-2 text-xs text-neutral-400">(ไม่หักจากกำไรดำเนินงาน)</span>
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{formatBaht(g.total)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-neutral-400">
+                  {totalRevenue > 0 ? `${((g.total / totalRevenue) * 100).toFixed(1)}%` : "—"}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            ))}
           </tfoot>
         </table>
       </div>

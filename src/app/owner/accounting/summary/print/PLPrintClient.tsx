@@ -34,7 +34,14 @@ function fmtPct(n: number | null) {
 function exportExcel(
   yearMonth: string,
   revenueMap: Record<string, number>,
-  summary: { groups: MonthlySummaryGroup[]; totalRevenue: number; totalExpense: number }
+  summary: {
+    groups: MonthlySummaryGroup[];
+    nonOperating: MonthlySummaryGroup[];
+    totalRevenue: number;
+    operatingExpense: number;
+    capex: number;
+    tax: number;
+  }
 ) {
   // Lazy-load xlsx (already in package.json)
   import("xlsx").then((XLSX) => {
@@ -68,14 +75,27 @@ function exportExcel(
         rows.push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""]);
       }
     }
-    rows.push(["รวมค่าใช้จ่าย", "", summary.totalExpense,
-      summary.totalRevenue > 0 ? (summary.totalExpense / summary.totalRevenue) * 100 : 0, ""]);
+    rows.push(["รวมค่าใช้จ่ายดำเนินงาน", "", summary.operatingExpense,
+      summary.totalRevenue > 0 ? (summary.operatingExpense / summary.totalRevenue) * 100 : 0, ""]);
     rows.push([]);
 
-    // Profit
-    const profit = summary.totalRevenue - summary.totalExpense;
-    const profitPct = summary.totalRevenue > 0 ? (profit / summary.totalRevenue) * 100 : 0;
-    rows.push(["กำไรก่อนภาษี", "", profit, profitPct]);
+    // Operating profit. CapEx and tax are listed below it and never subtracted,
+    // so an exported month stays comparable with the month beside it in a
+    // spreadsheet. This file and the on-screen summary must agree — they are
+    // two renderings of one figure, and the export is the one that leaves the
+    // building.
+    const operatingProfit = summary.totalRevenue - summary.operatingExpense;
+    const profitPct = summary.totalRevenue > 0 ? (operatingProfit / summary.totalRevenue) * 100 : 0;
+    rows.push(["กำไรจากการดำเนินงาน", "", operatingProfit, profitPct]);
+    rows.push([]);
+
+    rows.push(["รายการที่ไม่หักจากกำไรดำเนินงาน", "", "จำนวน (฿)", "% ของรายได้", ""]);
+    for (const g of summary.nonOperating) {
+      rows.push([g.group_name, "", g.total, g.pct_of_revenue ?? 0, ""]);
+      for (const a of g.accounts) {
+        rows.push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""]);
+      }
+    }
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
 
@@ -104,13 +124,20 @@ export function PLPrintClient({
   revenueMap,
 }: {
   yearMonth: string;
-  summary: { groups: MonthlySummaryGroup[]; totalRevenue: number; totalExpense: number };
+  summary: {
+    groups: MonthlySummaryGroup[];
+    nonOperating: MonthlySummaryGroup[];
+    totalRevenue: number;
+    operatingExpense: number;
+    capex: number;
+    tax: number;
+  };
   revenueMap: Record<string, number>;
 }) {
   const thaiMonth = getThaiMonth(yearMonth);
-  const profit = summary.totalRevenue - summary.totalExpense;
-  const profitPct = summary.totalRevenue > 0 ? (profit / summary.totalRevenue) * 100 : null;
-  const profitColor = profit < 0 ? "#dc2626" : "#16a34a";
+  const operatingProfit = summary.totalRevenue - summary.operatingExpense;
+  const profitPct = summary.totalRevenue > 0 ? (operatingProfit / summary.totalRevenue) * 100 : null;
+  const profitColor = operatingProfit < 0 ? "#dc2626" : "#16a34a";
 
   const backHref = `/owner/accounting/summary?month=${yearMonth}`;
 
@@ -245,27 +272,41 @@ export function PLPrintClient({
           </tbody>
           <tfoot>
             <tr style={{ background: "#f3f4f6", borderTop: "2px solid #999" }}>
-              <td style={{ ...cellStyle, fontWeight: 700 }}>รวมค่าใช้จ่าย</td>
-              <td style={{ ...numStyle, fontWeight: 700 }}>{fmt(summary.totalExpense)}</td>
+              <td style={{ ...cellStyle, fontWeight: 700 }}>รวมค่าใช้จ่ายดำเนินงาน</td>
+              <td style={{ ...numStyle, fontWeight: 700 }}>{fmt(summary.operatingExpense)}</td>
               <td style={pctStyle}>
                 {summary.totalRevenue > 0
-                  ? `${((summary.totalExpense / summary.totalRevenue) * 100).toFixed(1)}%`
+                  ? `${((summary.operatingExpense / summary.totalRevenue) * 100).toFixed(1)}%`
                   : "—"}
               </td>
               <td style={pctStyle} />
             </tr>
+            {summary.nonOperating.map((g) => (
+              <tr key={g.group_code} style={{ color: "#6b7280" }}>
+                <td style={cellStyle}>
+                  {g.group_name} <span style={{ fontSize: "0.85em" }}>(ไม่หักจากกำไรดำเนินงาน)</span>
+                </td>
+                <td style={numStyle}>{fmt(g.total)}</td>
+                <td style={pctStyle}>
+                  {summary.totalRevenue > 0
+                    ? `${((g.total / summary.totalRevenue) * 100).toFixed(1)}%`
+                    : "—"}
+                </td>
+                <td style={pctStyle} />
+              </tr>
+            ))}
           </tfoot>
         </table>
 
         {/* Profit row */}
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
-            <tr style={{ background: profit < 0 ? "#fef2f2" : "#f0fdf4", borderTop: "2px solid #333" }}>
+            <tr style={{ background: operatingProfit < 0 ? "#fef2f2" : "#f0fdf4", borderTop: "2px solid #333" }}>
               <td style={{ ...cellStyle, fontWeight: 700, fontSize: 16, color: profitColor }}>
-                กำไรก่อนภาษี
+                กำไรจากการดำเนินงาน
               </td>
               <td style={{ ...numStyle, fontWeight: 700, fontSize: 16, color: profitColor }}>
-                {fmt(profit)}
+                {fmt(operatingProfit)}
               </td>
               <td style={{ ...pctStyle, fontWeight: 700, color: profitColor }}>
                 {profitPct != null ? `${profitPct.toFixed(1)}%` : "—"}
