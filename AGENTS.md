@@ -175,3 +175,32 @@ before rewriting the anchor. Long box-drawing rules (`─────`) are the 
 common cause: the count rarely matches what you typed, so anchor on the code
 instead.
 <!-- END:editing-and-verification-rules -->
+
+<!-- BEGIN:local-gate-rules -->
+# `tsc` + `lint` is NOT enough before pushing
+
+`npm run build` catches a class of error that neither typecheck nor eslint
+reports. Both passed cleanly on a change that failed the build outright:
+
+```
+export const NON_OPERATING_GROUPS = ["G950", "G990"] as const;   // in a "use server" file
+-> Error: A "use server" file can only export async functions, found object.
+```
+
+A `"use server"` file may export **only async functions**. A `const`, a type
+object, a class, a plain value — all legal TypeScript, all accepted by eslint,
+all fatal at build. The failure surfaces as `Failed to collect configuration
+for /route` at page-data collection, once per affected route, which reads as a
+routing problem rather than an export problem.
+
+**So run `npm run build` before pushing**, not just `tsc --noEmit` and
+`npm run lint`. The CI notifier deliberately does not run the build — Vercel
+already gates it on deploy — which means an error of this class is caught
+*after* the push, by a failed deployment, rather than before it.
+
+Other things only the build catches: `"use client"` boundary violations,
+invalid route segment config exports, and server/client import mixing.
+
+Rule of thumb: **if a change touches a file with `"use server"` or
+`"use client"` at the top, the build is part of the local gate**, not optional.
+<!-- END:local-gate-rules -->
