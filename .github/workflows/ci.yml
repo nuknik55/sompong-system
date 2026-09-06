@@ -1,0 +1,100 @@
+# This is a NOTIFIER, not a gate. It does not block anything.
+#
+# Nik pushes straight to main and Vercel deploys on that push, so this job runs
+# ALONGSIDE the deploy and cannot stop it. When it fails, the commit gets a red
+# X on GitHub and GitHub emails whoever pushed. That is the whole mechanism.
+# Do not describe it as "CI protects main", because it does not.
+#
+# ── Why a non-blocking notifier is still worth having ───────────────────────
+#
+# Because of what it catches. A type error already blocks the deploy — Vercel's
+# build fails and production keeps serving the previous version — so it needs
+# no notifier; you find out because the deploy went red.
+#
+# A `local/no-unchecked-supabase-write` violation is the opposite. The page
+# renders. The build succeeds. The deploy succeeds. Everything looks fine, and
+# a Supabase write silently failed. Nothing anywhere would ever mention it.
+# That is the exact failure class this repo spent four rounds of work removing,
+# and until this file existed the rule was enforced ONLY when a human
+# remembered to type `npm run lint`.
+#
+# So the value here is not blocking. It is that a latent, invisible bug becomes
+# a red X within about a minute, instead of being found months later from wrong
+# data.
+#
+# ── Why lint and tests, but NOT build or tsc ────────────────────────────────
+#
+# Vercel already hard-gates types and build on every deploy, so running them
+# here duplicates an existing check and adds ~3.5 minutes. A slow job is an
+# ignored job, and an ignored job is worse than none.
+#
+# Both halves were verified rather than assumed, on 2026-09-06:
+#
+#   type errors  GATED by Vercel. A deliberate `const x: number = "str"` was
+#                added to src/lib/reorder.ts and `npm run build` exited 1 with
+#                "Type error: Type 'string' is not assignable to type
+#                'number'". Reverted immediately.
+#   build        GATED by Vercel. That is what a deploy is.
+#   ESLint       NOT GATED. Next 16 removed it — see
+#                node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md
+#                "The `next lint` command has been removed. ... `next build` no
+#                longer runs linting."
+#   tests        NOT GATED. Nothing anywhere runs `node --test`.
+#
+# Lint (~15s) and tests (~0.4s) cover exactly the gap and nothing else. If you
+# are tempted to add `tsc --noEmit` here: it takes over two minutes in this
+# repo and tells you nothing the deploy would not.
+#
+# ── Node 24 is REQUIRED, not a preference ──────────────────────────────────
+#
+# `npm test` is `node --test "src/**/*.test.ts"` — it runs TypeScript source
+# directly using Node's native type-stripping, with no build or loader step.
+# On an older Node the tests do not fail, they fail to PARSE, which reads as a
+# baffling syntax error rather than a version problem. The pin below and the
+# "engines" field in package.json exist to make that requirement visible in the
+# two places someone would look.
+#
+# ── If you ever want this to actually block ────────────────────────────────
+#
+# This file needs no changes. Adopt pull requests, then in GitHub under
+# Settings > Branches add a protection rule for main with "Require status
+# checks to pass before merging" and select this job.
+#
+# Tick "Include administrators" as well. Without it the rule does not apply to
+# repo owners — which is the one person who actually pushes here, so the
+# protection would stop nobody.
+#
+# Deliberately not done today: imposing a PR process on a two-person team to
+# gain enforcement nobody has asked for is the wrong trade. The upgrade path is
+# recorded so it stays a choice rather than a rewrite.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    name: lint + tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The reason this file exists. Includes
+      # local/no-unchecked-supabase-write, which nothing else runs, and
+      # reportUnusedDisableDirectives: "error", which catches a suppression
+      # that suppresses nothing.
+      - name: ESLint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
