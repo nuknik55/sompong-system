@@ -1,0 +1,52 @@
+-- Clear the percent-of-revenue target on G950 (ภาษี / Tax).
+--
+-- Documentation-grade data change. One row, reversible, safe to re-run.
+--
+-- WHY. Tax and CapEx are no longer subtracted from the headline profit figure.
+-- The summary now shows:
+--
+--     รายได้                     revenue
+--     หัก ค่าใช้จ่ายดำเนินงาน      operating expenses
+--     = กำไรจากการดำเนินงาน       operating profit   <- the comparable line
+--     CapEx                      shown, NOT subtracted
+--     ภาษี                        shown, NOT subtracted
+--
+-- The reason is comparability. With CapEx inside operating expenses, any month
+-- containing a large purchase reads as a bad trading month even though nothing
+-- about the business changed — a fridge makes the month look worse than the one
+-- before it. This system exists to spot margin drift and cost creep, and that
+-- only works if months can be laid beside each other. Both figures stay
+-- visible; they are just kept out of the trend line.
+--
+-- G990 (CapEx) needs no change here: it already has target_pct = NULL, and it
+-- is the ONLY group in the COA that does — every one of the other eleven groups
+-- carries a percent target. Whoever built this chart of accounts already
+-- treated CapEx as non-operating; the application simply did not honour it.
+--
+-- G950 is the opposite case. It shipped with target_pct = 1, so it WAS modelled
+-- as an operating cost worth 1% of revenue. Moving it below the line is a real
+-- change of intent, and leaving the target behind would strand a number that is
+-- no longer measured against anything — a stale figure waiting to be read as
+-- meaningful. That is why this file exists rather than the change being
+-- code-only.
+--
+-- NOT a statement about tax being unimportant. G950 holds ภพ.30 (VAT) and
+-- ภงด.1,3,53 (withholding) — transactional taxes, not income tax on profit.
+-- This system has no income-tax line at all, which is why the headline is
+-- "operating profit" and deliberately NOT labelled ก่อนภาษี.
+
+UPDATE public.coa
+   SET target_pct = NULL
+ WHERE code = 'G950';
+
+-- ─── Verification (run separately) ─────────────────────────────────────────
+-- Expect exactly two rows, G950 and G990, both NULL:
+--   SELECT code, name, target_pct
+--     FROM public.coa
+--    WHERE group_code IS NULL AND target_pct IS NULL
+--    ORDER BY code;
+--
+-- Expect the other ten group headers to still have targets:
+--   SELECT count(*) FROM public.coa
+--    WHERE group_code IS NULL AND code LIKE 'G%' AND target_pct IS NOT NULL;
+--   -- expect 10
