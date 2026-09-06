@@ -179,27 +179,43 @@ In order. Nothing here is started unless it says so.
    only writer of `quote_number` anywhere in `src/`; `upsertCateringEvent`
    never touches it.
 
-7. **Two more `initialEntries` mirrors that lint cannot see.** Not started, and
-   **not verified** — see the warning below.
+7. **PayrollClient shows the previous period's data after switching periods.**
+   **CONFIRMED BUG**, not started. Paused by Nik 2026-09-06 pending the
+   accounting audit.
 
-   `AccountingEntryClient.tsx:53` and `PayrollClient.tsx:38` both do
-   `useState(initialEntries)` with **no resync effect**. That absence is exactly
-   why `react-hooks/set-state-in-effect` never flagged them: the rule objects to
-   the resync, not to the mirror.
+   This entry used to be a grep-level guess covering two components. It has now
+   been investigated and the two split apart.
 
-   If real, the failure mode is the **inverse** of everything fixed in the nine:
-   not lost input, but a list that is permanently stale after a refresh — the
-   symptom `SetMenusClient`'s original comment described before that effect was
-   added. Lower urgency for exactly that reason: stale data is recoverable by
-   reloading the page, lost input is not.
+   **`PayrollClient.tsx:38` — real and reachable.** It mirrors `initialEntries`
+   into state, the period switcher is `<button onClick={router.push(...)}>`
+   (client-side, same route, different `?period=`), and the parent passes no
+   `key`. So the component never remounts, `entries` keeps the previous
+   period's rows, while the period pills and header — which read props directly
+   — update correctly. Production has 2 payroll periods, so this path is live.
 
-   **This is a grep-level guess, not a finding.** Neither component was read.
-   The two lines matched a pattern; nothing was checked about whether either
-   list is actually re-rendered from a refreshed prop, whether the parent
-   remounts it with a `key`, or whether anything on those pages refreshes at
-   all. `DailyEntryPage` passes `key={date}`, which remounts on date change and
-   would mask the whole problem — the same may well be true here. Do not cite
-   this entry as evidence that a bug exists. Read both components first.
+   The table is the least of it. `entries` also feeds `totalNet`/`totalGross`
+   and **the xlsx export**, so the export writes the previous period's salary
+   figures under the newly-selected period's name. A wrong number in a file
+   that leaves the system is worse than a wrong number on screen.
+
+   Fix is one line and the pattern is already used here: `key={selectedPeriodId}`
+   on `<PayrollClient>`, exactly as `DailyEntryPage` does with `key={date}`.
+   Removing the mirror instead is the WRONG trade — `handleCellSave` edits cells
+   optimistically, and a server round-trip per cell on a spreadsheet-style grid
+   would be worse than the bug.
+
+   **Also found, separate decision:** `handleCellSave` writes state before
+   awaiting the server with no rollback on failure, so a failed
+   `upsertPayrollEntry` leaves the cell showing a value the database does not
+   have. Same class as the old `SetMenusClient` toggle, on payroll figures.
+
+   **`AccountingEntryClient.tsx:51` — NOT a bug, but fragile.** Same mirror, no
+   stale data, because its month switcher is a plain
+   `<a href="/owner/accounting?month=...">` rather than `<Link>` — a full
+   browser navigation that unmounts the component and re-seeds the state. There
+   is no `router.refresh()` in the file either. **Converting those two anchors
+   to `<Link>` for a faster transition would silently create the PayrollClient
+   bug.** Needs a comment saying so; no code change.
 
 ## Known limits of the POS pricing rule
 
