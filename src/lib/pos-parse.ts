@@ -538,3 +538,262 @@ export function isoToDateKey(iso: string): number {
   const [, y, mm, dd] = m;
   return (Number(y) + 543) * 10000 + Number(mm) * 100 + Number(dd);
 }
+
+// ─── The whole monthly POS export, all five sheets ─────────────────────────
+//
+// The POS "รายงานการขายตามสินค้า" export is a five-sheet workbook, and until
+// now only Sheet1 was ever read (parsePosSalesReport above, which powers the
+// Menu Engineering import). The other four sheets carry the entire monthly
+// accounting data-entry job that was being done by hand in Excel:
+//
+//   Sheet1  per item, nested sale mode -> group :: category
+//   Sheet2  payment split, AND the delivery platforms' commission
+//   Sheet3  discount broken down by named type; gross total in its header
+//   Sheet4  customer and bill counts
+//   Sheet5  bill counts including cancellations
+//
+// parsePosSalesReport is deliberately left untouched. It merges (Grab)/(LM)/
+// (ห่อ) variants into their base dish and aggregates across every sale mode,
+// which is right for "how many of this dish sold" and destroys exactly the
+// dimensions revenue needs. Rather than change it and risk an import that
+// works today, this is a second read of the same rows keeping what that one
+// discards.
+
+export type PosSalesLine = {
+  /** "Eat In" | "อาหารห่อ" | "Grab" | "Lineman" */
+  saleMode: string;
+  /** Left of "::" — อาหาร, เครื่องดื่ม, ร้านกาแฟ, ตรุษจีน, ... */
+  group: string;
+  /** Right of "::" */
+  category: string;
+  /** Channel prefix stripped, so it matches menus.name and pos_coffee_items. */
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  /** รวมราคา — BEFORE discount. This is the basis the restaurant books revenue on. */
+  gross: number;
+  /** ส่วนลด on this line. */
+  discount: number;
+  /** ราคาสุทธิ */
+  net: number;
+};
+
+export type PosDiscountLine = { name: string; amount: number };
+
+export type PosPaymentLine = {
+  method: string;
+  amount: number;
+  /**
+   * Sheet2's ส่วนลด column. For Grab and LineMan this is the platform's
+   * commission, and the two rates GENUINELY DIFFER — August 2569 measured
+   * Grab 30.00% and LineMan 26.75%. Do not simplify them into one constant:
+   * a rate hardcoded in code is a rate that silently goes stale the first
+   * time a platform renegotiates. Read per month, per platform, from here.
+   */
+  platformFee: number;
+  actual: number;
+};
+
+export type PosMonthlyExport = {
+  dateFrom: string;
+  dateTo: string;
+  lines: PosSalesLine[];
+  grossTotal: number;
+  discountTotal: number;
+  netTotal: number;
+  discounts: PosDiscountLine[];
+  payments: PosPaymentLine[];
+  customerCount: number;
+  billCount: number;
+  cancelledBills: number;
+  cancelledAmount: number;
+};
+
+function posNum(v: unknown): number {
+  if (v == null) return 0;
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function posCell(v: unknown): string {
+  return v == null ? "" : String(v).trim();
+}
+
+/** Subtotal and summary rows, whose totals we recompute from the lines instead. */
+function isAggregateRow(label: string): boolean {
+  return (
+    label.startsWith("ยอดรวม") ||
+    label.startsWith("Summary for Sale Mode") ||
+    label.startsWith("รวมส่วนลด") ||
+    label.startsWith("ยอดชำระ")
+  );
+}
+
+export function parsePosMonthlyExport(buffer: ArrayBuffer): PosMonthlyExport {
+  const wb = XLSX.read(buffer, { type: "array" });
+  const sheet = (i: number): unknown[][] =>
+    wb.SheetNames[i]
+      ? XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[i]], { header: 1, defval: null })
+      : [];
+
+  const s1 = sheet(0);
+  const { dateFrom, dateTo } = extractDatesFromHeader(s1);
+
+  // ── Sheet1: items, tracking the two nesting levels from column 0 ─────────
+  const lines: PosSalesLine[] = [];
+  let saleMode = "";
+  let group = "";
+  let category = "";
+
+  for (const row of s1) {
+    const label = posCell(row[0]);
+    const name = posCell(row[2]);
+
+    if (label && !/^\d+\)$/.test(label)) {
+      if (isAggregateRow(label)) continue;
+      if (label.includes("::")) {
+        const parts = label.split("::");
+        group = parts[0].trim();
+        category = parts[1].trim();
+      } else if (!label.startsWith("รายงานการขาย") && !label.startsWith("วันที่สร้างรายงาน")) {
+        // A bare label is a sale mode. Note "Lineman" appears BOTH as a sale
+        // mode (bare) and as a group name ("Lineman :: ปลา") inside other sale
+        // modes — the "::" test above is what keeps them apart.
+        saleMode = label;
+        group = "";
+        category = "";
+      }
+      continue;
+    }
+
+    if (!name || name === "ชื่อสินค้า") continue;
+
+    lines.push({
+      saleMode,
+      group,
+      category,
+      productName: name.replace(/^\((?:Grab|LM|ห่อ)\)\s*/i, "").replace(/\*+$/, "").trim(),
+      qty: posNum(row[4]),
+      unitPrice: posNum(row[3]),
+      gross: posNum(row[6]),
+      discount: posNum(row[8]),
+      net: posNum(row[9]),
+    });
+  }
+
+  // ── Sheet3: discounts by type; its header carries the gross total ────────
+  const discounts: PosDiscountLine[] = [];
+  let grossTotal = 0;
+  let discountTotal = 0;
+  for (const row of sheet(2)) {
+    const label = posCell(row[0]);
+    if (!label) continue;
+    if (label.startsWith("สรุปส่วนลด")) {
+      const m = label.match(/[\d,]+\.\d\d/);
+      grossTotal = posNum(m ? m[0] : 0);
+      continue;
+    }
+    if (label.startsWith("รวมส่วนลด")) {
+      discountTotal = posNum(row[1]);
+      continue;
+    }
+    if (label === "ส่วนลด") continue;
+    discounts.push({ name: label, amount: posNum(row[1]) });
+  }
+
+  // ── Sheet2: payment split ────────────────────────────────────────────────
+  const payments: PosPaymentLine[] = [];
+  let netTotal = 0;
+  for (const row of sheet(1)) {
+    const label = posCell(row[0]);
+    if (!label || label === "สรุปการชำระเงิน" || label === "ชนิดการชำระเงิน") continue;
+    if (label.startsWith("ยอดชำระ")) {
+      netTotal = posNum(row[1]);
+      continue;
+    }
+    payments.push({
+      method: label,
+      amount: posNum(row[1]),
+      platformFee: posNum(row[3]),
+      actual: posNum(row[4]),
+    });
+  }
+
+  // ── Sheet4: covers ───────────────────────────────────────────────────────
+  let customerCount = 0;
+  let billCount = 0;
+  for (const row of sheet(3)) {
+    const label = posCell(row[0]);
+    if (label.startsWith("ค่าเฉลี่ยต่อหัว")) customerCount = posNum(row[1]);
+    if (label.startsWith("ค่าเฉลี่ยต่อบิล")) billCount = posNum(row[1]);
+  }
+
+  // ── Sheet5: cancellations ────────────────────────────────────────────────
+  let cancelledBills = 0;
+  let cancelledAmount = 0;
+  for (const row of sheet(4)) {
+    if (posCell(row[0]).startsWith("ยกเลิกบิล")) {
+      cancelledBills = posNum(row[1]);
+      cancelledAmount = posNum(row[2]);
+    }
+  }
+
+  return {
+    dateFrom,
+    dateTo,
+    lines,
+    grossTotal,
+    discountTotal,
+    netTotal,
+    discounts,
+    payments,
+    customerCount,
+    billCount,
+    cancelledBills,
+    cancelledAmount,
+  };
+}
+
+/**
+ * Split the discount lines the way the restaurant books them.
+ *
+ * ส่วนลด      genuine percentage discounts to customers — booked in full
+ * คะแนน CRM   point redemptions and freebies — booked at HALF, Nik's rule
+ * excluded    staff coffee, platform GP, uncategorised — not booked at all
+ *
+ * The halving is deliberate and the import will DISAGREE with Nik's own
+ * spreadsheet because of it: budget69 cell AN136 holds July's CRM at 3,642
+ * un-halved and should read 1,821. Surface the halved figure clearly so that
+ * discrepancy reads as intended rather than as a bug.
+ *
+ * Anything unrecognised lands in `unclassified` rather than a bucket. New
+ * promotion names appear over time, and a wrong default would be invisible;
+ * an unclassified line is visible in the preview and forces a decision.
+ * Verified against both months: July and August each reconcile to the baht
+ * with zero unclassified lines.
+ */
+export function splitPosDiscounts(discounts: PosDiscountLine[]): {
+  discount: number;
+  crmRaw: number;
+  crmBooked: number;
+  excluded: number;
+  unclassified: PosDiscountLine[];
+  total: number;
+} {
+  const EXCLUDED = ["น้ำร้านกาแฟพนักงาน(50%)", "GPLineMan", "Other Discount"];
+  let discount = 0;
+  let crmRaw = 0;
+  let excluded = 0;
+  let total = 0;
+  const unclassified: PosDiscountLine[] = [];
+
+  for (const d of discounts) {
+    total += d.amount;
+    if (/^ส่วนลด/.test(d.name)) discount += d.amount;
+    else if (/พ้อยท์|พอยท์|^ฟรี|Birthday/i.test(d.name)) crmRaw += d.amount;
+    else if (EXCLUDED.indexOf(d.name) >= 0) excluded += d.amount;
+    else unclassified.push(d);
+  }
+
+  return { discount, crmRaw, crmBooked: crmRaw / 2, excluded, unclassified, total };
+}
