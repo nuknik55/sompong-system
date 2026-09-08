@@ -327,6 +327,33 @@ In order. Nothing here is started unless it says so.
     table nobody remembers the purpose of is exactly the kind of thing that
     survives for years.
 
+12. **Coffee-items screen, Defects B and C, one commit.** Not started. Agreed
+    scope after `77877f9` (the six-way selector):
+
+    - **Defect C — expected errors as return values.** Next.js redacts a
+      thrown Server Action message in production; the client sees "An error
+      occurred in the Server Components render" instead of the Thai text. The
+      preview action was converted in `77877f9`. **25 throws remain across the
+      other `"use server"` files** — each one that a user can trigger with a
+      wrong file, a stale form, or an empty input needs to become a
+      `{ ok: false, error }` return.
+
+      Carry-over from the review of `77877f9`: `saveItemClassification` in
+      `coffee-items/actions.ts` still throws on an invalid category, and its
+      comment claims the message "names the value". It cannot — a throw is
+      redacted, so the value is never seen. It is an unexpected-input path
+      (the client only ever sends the six values), so the throw itself is
+      defensible; the comment is what overpromises. Either return it as a
+      value with the others or reword the comment. Do one of the two here.
+
+    - **Defect B — plausibility guard on the parse.** Refuse an export that
+      parses "successfully" into nonsense: zero lines, all-zero qty or gross,
+      or a Sheet1 total that disagrees with the Sheet3 gross header. Today a
+      corrupt or truncated file can produce an empty, confident preview.
+
+    After this: the nav link to `/owner/accounting/coffee-items` (URL-only
+    today), then item 11's DROP, then the unified revenue import.
+
 ## Item categories — what survives each month, and what does not
 
 `pos_item_categories` holds one row per POS product: which of six revenue
