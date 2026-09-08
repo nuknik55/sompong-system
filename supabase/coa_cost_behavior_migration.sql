@@ -1,8 +1,15 @@
--- Add coa.cost_behavior (fixed / variable), and correct G100's target.
+-- Add coa.cost_behavior (fixed / variable).
 --
--- Additive plus one target change. Safe to re-run. No expense_entries touched —
--- August 2569 is the first month recorded in this app and nothing here alters
--- a recorded amount.
+-- Purely additive, and genuinely safe to re-run: one new column, one CHECK, and
+-- UPDATEs that write the same classification every time. No expense_entries
+-- touched — August 2569 is the first month recorded in this app and nothing
+-- here alters a recorded amount.
+--
+-- This file DELIBERATELY does not change coa.target_pct. An earlier draft set
+-- G100's target to 43 here, which would have made "safe to re-run" false:
+-- target_pct is user-editable at /owner/accounting/coa, so a re-run would have
+-- silently reset a figure someone had since tuned. A migration should not
+-- re-assert a value the application lets a human change.
 --
 -- WHY. Break-even analysis needs every cost classified fixed or variable.
 -- Nik's own Cost Structure workbook already does this per line, and this brings
@@ -74,14 +81,6 @@ UPDATE public.coa SET cost_behavior = 'fixed'
 -- spend that does not.
 UPDATE public.coa SET cost_behavior = 'variable' WHERE code IN ('650','630');
 
--- ── G100's target was wrong ────────────────────────────────────────────────
--- Shipped at 38%. Nik confirms the restaurant actually runs 43-45%, and
--- August measured 46.3% against correct revenue. pctBar() colours a group red
--- once actual exceeds target + 3, so at 38 the COGS bar was red EVERY month —
--- an indicator that always fires carries no information, which is the same
--- failure as a warning that always fires.
-UPDATE public.coa SET target_pct = 43 WHERE code = 'G100';
-
 -- ─── Verification (run separately) ─────────────────────────────────────────
 -- Every group header classified except the two non-operating ones:
 --   SELECT code, name, cost_behavior FROM public.coa
@@ -92,5 +91,5 @@ UPDATE public.coa SET target_pct = 43 WHERE code = 'G100';
 --   SELECT code, name, cost_behavior FROM public.coa
 --    WHERE group_code = 'G200' ORDER BY code;
 --
--- Expect 43:
---   SELECT code, target_pct FROM public.coa WHERE code = 'G100';
+-- target_pct is NOT touched by this file. G100's COGS target is changed
+-- through the app at /owner/accounting/coa, not here.

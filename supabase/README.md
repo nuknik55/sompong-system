@@ -389,6 +389,40 @@ software. This system's job is management insight; keep it pointed there.
   history elsewhere. And unlike payroll, which has `is_closed`, no accounting
   month is ever final. Both are additions rather than corrections.
 
+### `coa.target_pct` — one source of truth, and it is user-editable
+
+The percent-of-revenue target on each COA group lives in **`coa.target_pct` and
+nowhere else that the application reads.** It is not hardcoded in any TypeScript
+file; every consumer — the entry form, `getMonthlySummary`, the printed P&L —
+reads the column.
+
+**It is changed through the app, at `/owner/accounting/coa`.** The CoA manager
+screen has a target field wired to `updateCoaAccount`. No SQL is needed and none
+should be written.
+
+**Do not set `target_pct` from a migration.** An earlier draft of
+`coa_cost_behavior_migration.sql` carried
+`UPDATE public.coa SET target_pct = 43 WHERE code = 'G100'`, and that line was
+removed before the file was ever run. The reason is worth keeping: the file
+declares itself safe to re-run, and re-running it would have silently reset a
+figure someone had since tuned through the UI. **A migration must not re-assert
+a value the application lets a human change** — the two are then in a race that
+the migration wins invisibly.
+
+Two places still hold the number and are NOT the source of truth:
+
+| where | value | why it is left alone |
+|---|---|---|
+| `accounting_migration.sql` seed line for `G100` | 38 | Already applied. Editing an applied migration makes the file stop describing what actually ran, which is the divergence this whole README exists to prevent. It only matters if someone seeds a fresh database, and this note is the mitigation. |
+| Nik's `budget69.xlsx` / Cost Structure workbook | 43-45 stated as the real range | Outside the system entirely. Reconciled by decision, not by code. |
+
+**G100's COGS target was shipped at 38% and the restaurant actually runs 43-45%
+(August 2569 measured 46.3% against corrected revenue).** `pctBar()` colours a
+group red once actual exceeds target + 3, so at 38 the COGS bar was red every
+single month — an indicator that always fires carries no information, the same
+failure as a warning that always fires. Nik changes it to 43 through the CoA
+screen.
+
 ## Known limits of the POS pricing rule
 
 `src/lib/pos-pricing.ts` prices each ingredient from a median over deliveries
