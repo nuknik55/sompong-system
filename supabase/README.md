@@ -327,6 +327,117 @@ In order. Nothing here is started unless it says so.
     table nobody remembers the purpose of is exactly the kind of thing that
     survives for years.
 
+## Item categories — what survives each month, and what does not
+
+`pos_item_categories` holds one row per POS product: which of six revenue
+categories it belongs to. It was seeded once from Nik's hand-built August
+split, and Nik's own question about it is the right one: *will it get confused
+when things change?* The honest shape:
+
+### What is live every month
+
+| | |
+|---|---|
+| the table (523 seeded rows, growing as items are reviewed) | live |
+| the screen at `/owner/accounting/coffee-items` | live |
+| the "no row = not yet reviewed" check | live |
+
+### What was one-time seed machinery and never runs again
+
+The 11-group POS mapping, the named exception list, the four-step precedence,
+the seven-sheet reading — **all of it lives in `scripts/seed-item-categories.mjs`
+and nowhere in `src/`.** Verified: a grep for `categoryFromRaw`, `EXCEPTIONS`,
+`CARVE_OUT`, `SHEET_CATEGORY` and `กลุ่มของฝาก` across `src/` returns nothing.
+The application never imports the script. **Nothing from the seed survives into
+the app.**
+
+This was a deliberate decision, not an accident. The screen does **not**
+suggest a category for a new item from its POS group — that would have copied
+the group mapping into the monthly path as a second thing to keep in sync. A
+new item arrives with nothing selected; the POS group column is visible and is
+all the hint needed.
+
+### The seed is one-time, and the file enforces it
+
+`seed_pos_item_categories.sql` refuses to run if the table holds any row. This
+is not caution for its own sake: `ON CONFLICT DO NOTHING` protects rows that
+already exist, but a re-run against a later month would insert every product
+new since August with a category decided by the seed's rules rather than by a
+person — silently bypassing the review the screen exists for. New products are
+classified on the screen, never by re-seeding.
+
+**Provenance:** the seed does not set `reviewed_by`, so a seeded row is
+`reviewed_by IS NULL` while a human decision carries a UUID. It is the only
+way to tell the two apart. Never backfill it.
+
+### The three realistic futures
+
+- **50 new items next month** — they have no row, surface as `ใหม่`, Nik picks
+  a category for each. ~50 dropdowns, not 523.
+- **An item is in the wrong category** — change it on the screen; `touched`
+  makes it a real review event and the seed can never overwrite it. The screen
+  has a product-name search for exactly this.
+- **A second carve-out** — the `coffee_share_per_unit` box is editable on the
+  screen, with help text stating the direction (below), because the rule is
+  the thing most likely to be misread.
+
+### The thing most likely to be misunderstood: `coffee_share_per_unit`
+
+A row reads `category='dessert', coffee_share_per_unit=15` for an item that
+is *partly coffee*. Three wrong readings are all natural, and the right one is
+the least obvious:
+
+> **The category is where the money goes. The carve-out is what LEAVES for the
+> coffee shop.** ไอติมข้าวเหนียวมะม่วง sells at ฿129 → ฿114 stays in dessert,
+> ฿15 goes to coffee.
+
+Not "coffee with a ฿15 share" — that would strand the other ฿114. The CHECK
+forbids a carve-out on a row whose category is already `coffee`, because
+carving coffee out of coffee is meaningless. Written in the column comment,
+the migration header, and the screen's help text.
+
+## Reconciliation baselines against Nik's August split — read the axis first
+
+**His sheets and the category split are on different axes, and comparing them
+directly gives a wrong answer that looks like a bug.** His `อาหาร` sheet is
+*food sold dine-in* (Eat In + อาหารห่อ); his delivery food lives in the
+separate LM and Grab sheets. Category-food spans every channel. Set them side
+by side without knowing this and food disagrees by **฿202,056** — purely the
+axis. Someone recomputing this without the axis in mind will get that wrong
+answer again; it happened once already, with full context.
+
+Measured from the August 2569 raw export
+(`SaleData_20260908_194017.xls`, 777 lines, 523 products). **Every line values
+out to exactly ฿3,989,129, the export's own gross** — nothing dropped or
+double-counted. That check would have failed loudly if the classification
+were wrong.
+
+| category | dine-in | delivery | total |
+|---|---:|---:|---:|
+| food | **3,136,226** | 200,196 | 3,336,422 |
+| drink | 303,092 | 90 | 303,182 |
+| dessert | 188,199 | 10,640 | 198,839 |
+| coffee | 126,982 | 1,530 | 128,512 |
+| souvenir | 3,024 | 0 | 3,024 |
+| other | 19,150 | 0 | 19,150 |
+
+**Three expected differences from his sheets — deliberate, with reasons, so
+nobody chases them as reconciliation failures:**
+
+- **Dine-in food ฿3,136,226 is ฿4,279 below his `อาหาร` ฿3,140,505.** That is
+  souvenir (฿3,024) and the บ้าบิ่น lines leaving food — both moved out on
+  purpose. All 15 `กลุ่มของฝาก` products sat inside his food sheet, so this is a
+  correction to his COGS denominator, not a discrepancy.
+- **Delivery ฿212,456 is ฿12,170 above his LM+Grab ฿200,286.** His delivery
+  sheets exclude desserts and coffee, which he pulls into `ของหวาน`/`กาแฟ`. The
+  category split keeps them as dessert and coffee *in the delivery channel*.
+  Same money, different axis: ฿10,640 delivery dessert + ฿1,530 delivery
+  coffee = ฿12,170 exactly.
+- **Coffee ฿128,512 is pre-carve-out.** Add the ไอติม carve-out (฿15 × 51 =
+  ฿765) → **฿129,277**, his `กาแฟ` sheet gross. Less ฿193 discount and ฿459
+  platform GP → **฿128,625**, the figure he enters. Three numbers, three bases,
+  all correct.
+
 ## What the accounting module is — and deliberately is not
 
 **Read this before auditing `/owner/accounting`.** Without it, the module's
