@@ -586,9 +586,16 @@ export type PosPaymentLine = {
   /**
    * Sheet2's ส่วนลด column. For Grab and LineMan this is the platform's
    * commission, and the two rates GENUINELY DIFFER — August 2569 measured
-   * Grab 30.00% and LineMan 26.75%. Do not simplify them into one constant:
-   * a rate hardcoded in code is a rate that silently goes stale the first
-   * time a platform renegotiates. Read per month, per platform, from here.
+   * Grab 30.00% and LineMan 26.75%. Do not simplify them into one constant.
+   *
+   * This is read from the file on EVERY import, and that property is the
+   * whole point: when a platform renegotiates its commission, the next
+   * export simply carries the new rate. No code change, no migration, and
+   * nobody has to remember the rate changed — which is exactly how the
+   * 20,000 baht CapEx rule went wrong. That rule lived only in the owner's
+   * head, so a bookkeeper who had never been told it coded a 29,853 baht
+   * vacuum sealer as a consumable. A number the file already knows should
+   * never be copied into code.
    */
   platformFee: number;
   actual: number;
@@ -758,13 +765,29 @@ export function parsePosMonthlyExport(buffer: ArrayBuffer): PosMonthlyExport {
  * Split the discount lines the way the restaurant books them.
  *
  * ส่วนลด      genuine percentage discounts to customers — booked in full
- * คะแนน CRM   point redemptions and freebies — booked at HALF, Nik's rule
+ * คะแนน CRM   point redemptions and freebies — booked at HALF
  * excluded    staff coffee, platform GP, uncategorised — not booked at all
  *
- * The halving is deliberate and the import will DISAGREE with Nik's own
- * spreadsheet because of it: budget69 cell AN136 holds July's CRM at 3,642
- * un-halved and should read 1,821. Surface the halved figure clearly so that
- * discrepancy reads as intended rather than as a bug.
+ * THE 50% IS A DELIBERATE APPROXIMATION, NOT A MEASURED FIGURE. A redeemed
+ * point costs the restaurant the ingredient cost of whatever was given away,
+ * not its menu price, and that true cost could be computed per item from the
+ * recipe engine this codebase already has. Nik chose the flat half instead,
+ * and the reason is sound: CRM redemptions run 3,000-6,000 baht a month, so
+ * the difference between an estimate and an exact figure cannot change any
+ * decision this system exists to support. A stable, auditable estimate beats
+ * precision nobody acts on.
+ *
+ * So do NOT "improve" this into a per-item recipe-cost lookup. It would add a
+ * dependency from discount accounting to the costing engine, make the figure
+ * move whenever a recipe is edited, and buy nothing. If redemptions ever grow
+ * to where the approximation matters, that is the moment to revisit — and the
+ * test suite pins both the raw and halved figures, so the change would be
+ * visible rather than silent.
+ *
+ * The halving means the import will DISAGREE with Nik's own spreadsheet:
+ * budget69 cell AN136 holds July's CRM at 3,642 un-halved and should read
+ * 1,821. Surface the halved figure clearly so that discrepancy reads as
+ * intended rather than as a bug.
  *
  * Anything unrecognised lands in `unclassified` rather than a bucket. New
  * promotion names appear over time, and a wrong default would be invisible;
