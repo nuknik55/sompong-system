@@ -9,7 +9,7 @@ export default async function DailyEntryPage({
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
-  const profile = await requireAdmin();
+  await requireAdmin();
 
   const { date: rawDate } = await searchParams;
   const today = new Date().toISOString().slice(0, 10);

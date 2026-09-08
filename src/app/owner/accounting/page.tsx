@@ -10,7 +10,7 @@ export default async function AccountingPage({
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
-  const profile = await requireAdmin();
+  await requireAdmin();
 
   const { month: rawMonth } = await searchParams;
   const today = new Date();

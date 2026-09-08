@@ -5,7 +5,7 @@ import { getEmployees, getDepartments, getCompDayBalances, getProbationAlerts } 
 import { EmployeesClient } from "./EmployeesClient";
 
 export default async function EmployeesPage() {
-  const profile = await requireHR();
+  await requireHR();
   const [employees, departments, balances, probationAlerts] = await Promise.all([
     getEmployees(),
     getDepartments(),
