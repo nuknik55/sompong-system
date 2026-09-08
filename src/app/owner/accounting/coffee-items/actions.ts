@@ -3,7 +3,47 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/data";
 import { parsePosMonthlyExport } from "@/lib/pos-parse";
+
+type StoredCoffeeRow = {
+  pos_product_name: string;
+  is_coffee: boolean;
+  share_per_unit: number | string | null;
+};
+
+/**
+ * Every stored classification, paged.
+ *
+ * PostgREST caps a response at 1,000 rows server-side and a plain .select()
+ * inherits that cap silently. This table holds one row per distinct product
+ * ever reviewed — August alone carries about 1,047 — so an unpaged read starts
+ * truncating on the first real classification.
+ *
+ * A truncated read here is not a display bug. A stored item that falls off the
+ * end comes back with no `prior`, so the preview reports it as never reviewed
+ * AND pre-ticks it from its POS category. One click of "accept all suggestions"
+ * would then overwrite a human's decision with a category guess, in the table
+ * that decides how much revenue is subtracted from the restaurant.
+ */
+async function loadStoredCoffeeRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<StoredCoffeeRow[]> {
+  return fetchAllRows<StoredCoffeeRow>(({ from, to }) =>
+    supabase
+      .from("pos_coffee_items")
+      .select("pos_product_name, is_coffee, share_per_unit")
+      .order("pos_product_name")
+      .range(from, to),
+  );
+}
+
+/** NUMERIC(12,2) can come back as string or number; compare at the stored scale. */
+function sameShare(a: number | string | null, b: number | null): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Math.round(Number(a) * 100) === Math.round(b * 100);
+}
 
 export type CoffeeCandidate = {
   productName: string;
@@ -60,15 +100,12 @@ export async function previewCoffeeClassification(
   }
 
   const supabase = await createClient();
-  const { data: existing, error } = await supabase
-    .from("pos_coffee_items")
-    .select("pos_product_name, is_coffee, share_per_unit");
-  if (error) throw new Error(error.message);
+  const existing = await loadStoredCoffeeRows(supabase);
 
   const byName = new Map(
-    (existing ?? []).map((r) => [
-      r.pos_product_name as string,
-      { isCoffee: r.is_coffee as boolean, sharePerUnit: r.share_per_unit as number | null },
+    existing.map((r) => [
+      r.pos_product_name,
+      { isCoffee: r.is_coffee, sharePerUnit: r.share_per_unit == null ? null : Number(r.share_per_unit) },
     ]),
   );
 
@@ -109,13 +146,39 @@ export async function previewCoffeeClassification(
  * would drift by an amount nobody is looking at.
  */
 export async function saveCoffeeClassification(
-  items: { productName: string; isCoffee: boolean; sharePerUnit: number | null }[],
-): Promise<number> {
+  items: { productName: string; isCoffee: boolean; sharePerUnit: number | null; touched: boolean }[],
+): Promise<{ written: number; skipped: number }> {
   const profile = await requireAdmin();
-  if (items.length === 0) return 0;
+  if (items.length === 0) return { written: 0, skipped: 0 };
   const supabase = await createClient();
 
-  const rows = items.map((i) => ({
+  // The client already filters to decided rows, but this guard is repeated
+  // server-side on purpose. reviewed_at/reviewed_by are the only audit evidence
+  // this table has, and this table feeds a figure subtracted from restaurant
+  // revenue — that is not a property to leave to whatever the browser sent.
+  const stored = new Map(
+    (await loadStoredCoffeeRows(supabase)).map((r) => [
+      r.pos_product_name,
+      { isCoffee: r.is_coffee, sharePerUnit: r.share_per_unit },
+    ]),
+  );
+
+  const toWrite = items.filter((i) => {
+    const prior = stored.get(i.productName);
+    if (!prior) return true;                    // (a) never stored
+    if (i.touched) return true;                 // (c) a human looked at it
+    const share = i.isCoffee ? i.sharePerUnit : null;
+    return prior.isCoffee !== i.isCoffee || !sameShare(prior.sharePerUnit, share); // (b)
+  });
+
+  const skipped = items.length - toWrite.length;
+  if (toWrite.length === 0) {
+    // Nothing changed. Deliberately no UPSERT at all, so every untouched row
+    // keeps the reviewed_at it earned.
+    return { written: 0, skipped };
+  }
+
+  const rows = toWrite.map((i) => ({
     pos_product_name: i.productName,
     is_coffee: i.isCoffee,
     // The CHECK constraint rejects a share on a non-coffee row, so normalise
@@ -138,7 +201,7 @@ export async function saveCoffeeClassification(
   }
 
   revalidatePath("/owner/accounting/coffee-items");
-  return rows.length;
+  return { written: rows.length, skipped };
 }
 
 export type CoffeeItemRow = {
@@ -148,20 +211,38 @@ export type CoffeeItemRow = {
   reviewedAt: string;
 };
 
-/** Current stored classification, coffee items first. */
+/**
+ * Current stored classification, coffee items only.
+ *
+ * Paged for the same reason as loadStoredCoffeeRows. The `is_coffee` filter
+ * makes truncation unlikely in practice — this returns classified coffee items
+ * (expected ~100-150), not the whole table — but "unlikely" is not a property
+ * worth relying on for a count shown on screen, and leaving one unpaged read in
+ * a file whose commit claims to have fixed truncation would force the next
+ * reader to re-audit it.
+ */
 export async function listCoffeeItems(): Promise<CoffeeItemRow[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("pos_coffee_items")
-    .select("pos_product_name, is_coffee, share_per_unit, reviewed_at")
-    .eq("is_coffee", true)
-    .order("pos_product_name");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({
-    productName: r.pos_product_name as string,
-    isCoffee: r.is_coffee as boolean,
-    sharePerUnit: r.share_per_unit as number | null,
-    reviewedAt: r.reviewed_at as string,
+  const data = await fetchAllRows<{
+    pos_product_name: string;
+    is_coffee: boolean;
+    share_per_unit: number | string | null;
+    reviewed_at: string;
+  }>(({ from, to }) =>
+    supabase
+      .from("pos_coffee_items")
+      .select("pos_product_name, is_coffee, share_per_unit, reviewed_at")
+      .eq("is_coffee", true)
+      .order("pos_product_name")
+      .range(from, to),
+  );
+  return data.map((r) => ({
+    productName: r.pos_product_name,
+    isCoffee: r.is_coffee,
+    // NUMERIC arrives as string or number depending on the driver; normalise
+    // once here rather than letting both shapes reach the UI.
+    sharePerUnit: r.share_per_unit == null ? null : Number(r.share_per_unit),
+    reviewedAt: r.reviewed_at,
   }));
 }

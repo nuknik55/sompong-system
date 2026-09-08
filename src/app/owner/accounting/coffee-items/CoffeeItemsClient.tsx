@@ -42,7 +42,27 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
   const [target, setTarget] = useState("128625");
   const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<number | null>(null);
+  const [saved, setSaved] = useState<{ written: number; skipped: number } | null>(null);
+
+  // Product names the user actually interacted with in this session — a
+  // checkbox toggled or a share amount edited. Keyed exactly as `drafts` is.
+  //
+  // Re-confirming a row you looked at IS a review event and earns a fresh
+  // reviewed_at, even when the value ends up unchanged. Being auto-marked
+  // decided at load time is not, and neither is bulk-accepting a suggestion.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+
+  function markTouched(productName: string) {
+    setTouched((prev) => {
+      const next = new Set(prev);
+      next.add(productName);
+      return next;
+    });
+    // Any edit invalidates the previous save result. Without this, the grey
+    // "ไม่มีการเปลี่ยนแปลง — ไม่ได้บันทึกอะไร" notice would sit next to genuinely
+    // unsaved work and claim the opposite of what is now true.
+    setSaved(null);
+  }
 
   function handleUpload(formData: FormData) {
     setError(null);
@@ -76,7 +96,7 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
     setError(null);
     startTransition(async () => {
       try {
-        const n = await saveCoffeeClassification(
+        const result = await saveCoffeeClassification(
           preview.candidates
             .filter((c) => drafts[c.productName]?.decided)
             .map((c) => {
@@ -86,10 +106,25 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
                 productName: c.productName,
                 isCoffee: d.isCoffee,
                 sharePerUnit: d.isCoffee && share !== "" && Number.isFinite(Number(share)) ? Number(share) : null,
+                touched: touched.has(c.productName),
               };
             }),
         );
-        setSaved(n);
+        setSaved(result);
+
+        // Clear the ใหม่ badge without re-parsing the file. Every decided item
+        // now has a row — written this time, or already present and skipped —
+        // so marking them reviewed is a statement of fact, not an optimism.
+        // `preview` is client state derived from the upload, so router.refresh()
+        // alone would never touch it and the badge would persist until re-upload.
+        setPreview((p) => {
+          if (!p) return p;
+          const candidates = p.candidates.map((c) =>
+            drafts[c.productName]?.decided ? { ...c, reviewed: true } : c,
+          );
+          return { ...p, candidates, unreviewedCount: candidates.filter((c) => !c.reviewed).length };
+        });
+        setTouched(new Set());
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
@@ -115,8 +150,47 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
 
   const decidedCount = (preview?.candidates.length ?? 0) - undecidedCount;
 
-  /** Turn every outstanding suggestion into a decision, in one deliberate act. */
+  /**
+   * Turn every outstanding suggestion into a decision, in one deliberate act.
+   *
+   * Bulk-accepting does NOT mark rows touched, so an unchanged existing row
+   * keeps its reviewed_at. But rows with no stored row are written anyway —
+   * they are new — which means one click can classify hundreds of items nobody
+   * inspected, from a POS-category guess.
+   *
+   * That is the original problem arriving through a different door. The door is
+   * meant to be there; what it must not be is quiet. So the confirmation names
+   * the number of items this click would classify FOR THE FIRST TIME, and
+   * counts only those — re-confirming rows that already have a decision is not
+   * the risk and padding the number with them would blunt the warning.
+   */
   function acceptAllSuggestions() {
+    if (!preview) return;
+    const firstTime = preview.candidates.filter(
+      (c) => !c.reviewed && !drafts[c.productName]?.decided,
+    ).length;
+
+    if (firstTime > 0) {
+      // The wording must match what the click actually does. This only marks
+      // drafts as decided — nothing reaches the database until "บันทึก" is
+      // pressed. Saying "saved immediately" would be the same claim-vs-effect
+      // mismatch this screen exists to avoid, and worse in this direction: a
+      // user who believes it already saved may never press save at all.
+      const ok = window.confirm(
+        `จะตั้งค่าสินค้า ${firstTime} รายการที่ยังไม่เคยตรวจ ` +
+          `โดยใช้หมวดจาก POS เป็นตัวตั้ง (ร้านกาแฟ = ใช่, นอกนั้น = ไม่ใช่)\n\n` +
+          `ยังไม่บันทึกลงระบบตอนนี้ — จะบันทึกเมื่อกดปุ่ม "บันทึก" ` +
+          `หลังบันทึกแล้วรายการเหล่านี้จะไม่ขึ้นเป็น "ใหม่" อีก ` +
+          `ถ้ามีรายการที่ POS จัดหมวดไว้ผิด จะไม่มีใครเห็นอีกจนกว่าจะมาแก้เอง\n\n` +
+          `ยืนยันหรือไม่?`,
+      );
+      if (!ok) return;
+    }
+
+    // A stale "nothing was saved" notice sitting next to freshly-decided rows
+    // reads as though this click did nothing.
+    setSaved(null);
+
     setDrafts((p) => {
       const next = { ...p };
       for (const k of Object.keys(next)) next[k] = { ...next[k], decided: true };
@@ -163,9 +237,24 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
           </button>
         </form>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        {saved !== null && (
-          <p className="text-sm text-green-700">บันทึกแล้ว {saved} รายการ ✓</p>
-        )}
+        {/* Three states, never a success tick on a write that did not happen.
+            "บันทึกแล้ว 0 รายการ ✓" reads as either a bug or a lie depending on
+            the reader, and it is the same apparent-success-with-no-effect shape
+            this project keeps finding. */}
+        {saved !== null &&
+          (saved.written > 0 ? (
+            <p className="text-sm text-green-700">
+              บันทึกแล้ว {saved.written} รายการ ✓
+              {saved.skipped > 0 && (
+                <span className="text-neutral-500"> — ข้าม {saved.skipped} รายการที่ไม่มีการเปลี่ยนแปลง</span>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm text-neutral-500">
+              ไม่มีการเปลี่ยนแปลง — ไม่ได้บันทึกอะไร
+              {saved.skipped > 0 && ` (ตรวจแล้ว ${saved.skipped} รายการ ค่าเดิมทั้งหมด)`}
+            </p>
+          ))}
       </div>
 
       {preview && (
@@ -236,12 +325,13 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
                             type="checkbox"
                             checked={d.isCoffee}
                             disabled={isPending}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              markTouched(c.productName);
                               setDrafts((p) => ({
                                 ...p,
                                 [c.productName]: { ...d, isCoffee: e.target.checked, decided: true },
-                              }))
-                            }
+                              }));
+                            }}
                             className="h-4 w-4"
                           />
                         </td>
@@ -266,12 +356,13 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
                               placeholder="ทั้งรายการ"
                               value={d.sharePerUnit}
                               disabled={isPending}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                markTouched(c.productName);
                                 setDrafts((p) => ({
                                   ...p,
                                   [c.productName]: { ...d, sharePerUnit: e.target.value, decided: true },
-                                }))
-                              }
+                                }));
+                              }}
                               className="w-28 rounded border border-neutral-300 px-2 py-1 text-right text-xs tabular-nums"
                             />
                           ) : (
