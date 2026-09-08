@@ -266,6 +266,36 @@ In order. Nothing here is started unless it says so.
 
    Recording the rule somewhere visible matters more than the hint.
 
+10. **`fetchAllRows` callers that order by a non-unique column.** Not started,
+    not currently biting.
+
+    `fetchAllRows` issues no `ORDER BY` of its own — it takes a query callback
+    and pages it with `.range()`, so a deterministic sort is the caller's
+    responsibility ([`src/lib/data.ts:27`](../src/lib/data.ts)). A ranged read
+    without a total order can **skip or duplicate rows at page boundaries**,
+    and the result looks like a partial read rather than an error — the same
+    symptom as the 1,000-row cap, from a different cause.
+
+    Two callers order by a column that is not unique:
+
+    | caller | orders by | risk |
+    |---|---|---|
+    | `getIngredients` — `src/lib/data.ts:49` | `.order("name")` | two ingredients sharing a name have undefined relative order |
+    | prep recipes — `src/lib/data.ts:57` | `.order("name")` | same |
+
+    **Why it is not biting today:** both tables are under 1,000 rows, so
+    `fetchAllRows` returns on its first page and no boundary is ever crossed.
+    The defect only appears once a table crosses the page size, and then it
+    appears silently.
+
+    The fix is to order by the primary key, or to add it as a tiebreak after
+    `name` where the display order matters. `pos_coffee_items` already does
+    this correctly — it orders by `pos_product_name`, which is its PK.
+
+    Found while reviewing the coffee-item paging fix in `dc0b798`; recorded
+    rather than fixed because that round was scoped to one module and this
+    touches shared data-access code used by the costing engine.
+
 ## What the accounting module is — and deliberately is not
 
 **Read this before auditing `/owner/accounting`.** Without it, the module's
