@@ -148,6 +148,38 @@ if (s.includes("export async function resubmitOrderSession")) throw ...
 if ((s.split("resubmitOrderSession").length - 1) !== 2) throw ...   // 2 comment refs, by design
 ```
 
+### Strip comments before asserting on file contents
+
+This has now happened three times, which makes it a missing rule rather than a
+mistake. A check that greps a file will match the comment you just wrote
+explaining the thing you are checking for:
+
+- `s.includes("resubmitOrderSession")` failed after a correct deletion — the
+  comment saying where the rule went names the function.
+- Counting `router.refresh()` reported five calls when there were four.
+- A migration check counted `WHERE category IS NULL` three times when the SQL
+  contained two: the file header quoted the clause while explaining that the
+  backfill uses it.
+
+The first two were caught. The third **false-passed two assertions** and was
+only noticed because the numbers looked wrong.
+
+So strip comments first, then assert on what actually executes:
+
+```
+// SQL
+const sql = raw.split(/?
+/).filter((l) => !/^s*--/.test(l)).join("
+");
+// TS/JS — line comments
+const code = raw.split(/?
+/).filter((l) => !/^s*(//|*|/*)/.test(l)).join("
+");
+```
+
+Better still, assert on parsed structure — statements, declarations, matched
+lines — rather than on substrings anywhere in the file.
+
 Counting statement lines beats counting substrings:
 
 ```
