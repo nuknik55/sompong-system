@@ -296,6 +296,37 @@ In order. Nothing here is started unless it says so.
     rather than fixed because that round was scoped to one module and this
     touches shared data-access code used by the costing engine.
 
+11. **Drop the orphaned `pos_coffee_items` table.** Not started. One line, but
+    it needs to happen or an empty table with a misleading name lives forever.
+
+    `pos_coffee_items` was created for a single boolean question — "is this item
+    the coffee shop's?" — and the domain turned out to need five categories.
+    It was replaced by `pos_item_categories`
+    (`pos_item_categories_migration.sql`).
+
+    **It was replaced rather than renamed on purpose.** Renaming plus widening
+    would have been a rename AND four schema changes, which forces a choice
+    between a window where deployed code points at a table that no longer
+    exists, or code that tolerates both schemas in the revenue path. `RENAME`
+    exists to preserve data and this table had ZERO rows, so creating the new
+    one fresh removed the choice: additive migration first, deploy second, safe
+    in both directions with nothing for anyone to remember.
+
+    The cost of that decision is this orphan. Drop it once the deploy pointing
+    at `pos_item_categories` is live:
+
+    ```sql
+    DROP TABLE IF EXISTS public.pos_coffee_items;
+    ```
+
+    **Check before running:** it must still have zero rows and no code
+    references. If either is false, something started writing to the old table
+    and that needs understanding first, not dropping.
+
+    Can ride with any later migration batch. Recorded here because an empty
+    table nobody remembers the purpose of is exactly the kind of thing that
+    survives for years.
+
 ## What the accounting module is — and deliberately is not
 
 **Read this before auditing `/owner/accounting`.** Without it, the module's
