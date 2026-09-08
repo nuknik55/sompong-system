@@ -5,11 +5,14 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/data";
 import { parsePosMonthlyExport } from "@/lib/pos-parse";
+import { aggregateForClassification, platformRates } from "@/lib/pos-classify";
+import { isCategory, type Category } from "./categories";
 
-type StoredCoffeeRow = {
+type StoredRow = {
   pos_product_name: string;
-  is_coffee: boolean;
-  share_per_unit: number | string | null;
+  category: string;
+  coffee_share_per_unit: number | string | null;
+  reviewed_at: string;
 };
 
 /**
@@ -17,22 +20,22 @@ type StoredCoffeeRow = {
  *
  * PostgREST caps a response at 1,000 rows server-side and a plain .select()
  * inherits that cap silently. This table holds one row per distinct product
- * ever reviewed — August alone carries about 1,047 — so an unpaged read starts
- * truncating on the first real classification.
+ * ever reviewed — 523 from the seed alone, growing every month — so an unpaged
+ * read starts truncating within the first year.
  *
  * A truncated read here is not a display bug. A stored item that falls off the
  * end comes back with no `prior`, so the preview reports it as never reviewed
- * AND pre-ticks it from its POS category. One click of "accept all suggestions"
- * would then overwrite a human's decision with a category guess, in the table
- * that decides how much revenue is subtracted from the restaurant.
+ * and the screen asks for a decision it already has. Worse, saving that row
+ * would overwrite a human's category with whatever was picked second time
+ * round, in the table that decides how revenue is split.
  */
-async function loadStoredCoffeeRows(
+async function loadStoredRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<StoredCoffeeRow[]> {
-  return fetchAllRows<StoredCoffeeRow>(({ from, to }) =>
+): Promise<StoredRow[]> {
+  return fetchAllRows<StoredRow>(({ from, to }) =>
     supabase
-      .from("pos_coffee_items")
-      .select("pos_product_name, is_coffee, share_per_unit")
+      .from("pos_item_categories")
+      .select("pos_product_name, category, coffee_share_per_unit, reviewed_at")
       .order("pos_product_name")
       .range(from, to),
   );
@@ -45,133 +48,159 @@ function sameShare(a: number | string | null, b: number | null): boolean {
   return Math.round(Number(a) * 100) === Math.round(b * 100);
 }
 
-export type CoffeeCandidate = {
+/**
+ * The CHECK on pos_item_categories forbids a carve-out on a coffee row and a
+ * carve-out that is not positive. Normalise to what the constraint accepts
+ * rather than letting a stale box value reach the database.
+ */
+function normaliseShare(category: Category, share: number | null): number | null {
+  if (category === "coffee") return null;
+  return share != null && Number.isFinite(share) && share > 0 ? share : null;
+}
+
+/** A stored row, shaped for the client. The DB CHECK guarantees `category` is one of the six. */
+function toStored(r: StoredRow): { category: Category | null; coffeeSharePerUnit: number | null } {
+  return {
+    category: isCategory(r.category) ? r.category : null,
+    coffeeSharePerUnit: r.coffee_share_per_unit == null ? null : Number(r.coffee_share_per_unit),
+  };
+}
+
+export type ItemCandidate = {
   productName: string;
-  /** Every POS group/category this item appeared under, joined for display. */
+  /** Every POS group/category this item appeared under, joined for display. The hint, not a suggestion. */
   where: string;
   qty: number;
   gross: number;
-  /** Whether a decision already exists. false = never reviewed. */
+  /** Whole-line contribution to the coffee total, net of discount and GP — see pos-classify.ts. */
+  netWhole: number;
+  /** Multiply by a per-unit carve-out to get its net contribution. */
+  carveWeight: number;
+  /** Whether a row exists in pos_item_categories. false = never reviewed. */
   reviewed: boolean;
-  isCoffee: boolean;
-  /** null = the whole line, when isCoffee. */
-  sharePerUnit: number | null;
+  /**
+   * The stored category, or null when there is no row. null is "not yet
+   * decided" — a distinct state from all six, and the ONLY value a row without
+   * a stored category ever arrives with. Nothing here derives a category from
+   * the POS group: that mapping was one-time seed machinery and deliberately
+   * does not live in the monthly path.
+   */
+  category: Category | null;
+  /** Baht per unit that leaves this item's category for the coffee shop. */
+  coffeeSharePerUnit: number | null;
 };
 
-export type CoffeeClassificationPreview = {
+export type ItemClassificationPreview = {
   period: string;
-  candidates: CoffeeCandidate[];
-  /** Items with no row in pos_coffee_items — the ones needing a decision. */
+  candidates: ItemCandidate[];
+  /** Items with no row in pos_item_categories — the ones needing a decision. */
   unreviewedCount: number;
   totalGross: number;
 };
 
 /**
- * Read an export and list every product in it, newest classification attached.
- *
- * Aggregated by product name across sale modes, because the classification is
- * a property of the item: ชานม is coffee whether it was sold in the shop, via
- * Grab, or via LineMan. parsePosMonthlyExport has already stripped the
- * (Grab)/(LM)/(ห่อ) prefixes, so the three collapse to one row here.
+ * Expected failures come back as values, not throws. Next.js redacts a thrown
+ * message in production — Nik would see "An error occurred in the Server
+ * Components render" instead of which file to upload — so a message that
+ * ships as a throw is a message nobody can read.
  */
-export async function previewCoffeeClassification(
-  formData: FormData,
-): Promise<CoffeeClassificationPreview> {
+export type PreviewResult =
+  | { ok: true; preview: ItemClassificationPreview }
+  | { ok: false; error: string };
+
+/**
+ * Read an export and list every product in it, stored classification attached.
+ */
+export async function previewItemClassification(formData: FormData): Promise<PreviewResult> {
   await requireAdmin();
   const file = formData.get("file");
-  if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
+  if (!(file instanceof File)) return { ok: false, error: "ไม่พบไฟล์ที่อัปโหลด" };
 
   const report = parsePosMonthlyExport(await file.arrayBuffer());
   if (report.lines.length === 0) {
-    throw new Error(
-      'อ่านไฟล์ไม่พบรายการขาย ตรวจสอบว่าเป็นไฟล์ "รายงานการขายตามสินค้า" ที่ export จาก POS หรือไม่',
-    );
+    return {
+      ok: false,
+      error:
+        "อ่านไฟล์ไม่พบรายการขาย — ต้องเป็นไฟล์ที่ export จาก POS โดยตรง " +
+        "(ชื่อไฟล์ SaleData_YYYYMMDD_HHMMSS.xls มี 5 แผ่น) " +
+        "ไม่ใช่ไฟล์ที่จัดหมวดเอง (69-MMSaleData.xlsx)",
+    };
   }
 
-  const agg = new Map<string, { qty: number; gross: number; where: Set<string> }>();
-  for (const line of report.lines) {
-    const key = line.productName;
-    if (!key) continue;
-    const e = agg.get(key) ?? { qty: 0, gross: 0, where: new Set<string>() };
-    e.qty += line.qty;
-    e.gross += line.gross;
-    if (line.group) e.where.add(line.category ? `${line.group} :: ${line.category}` : line.group);
-    agg.set(key, e);
+  // A delivery line with no rate would make the "net of GP" total on screen
+  // false. Refuse rather than default to 0.
+  const { rates, missing } = platformRates(report);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error:
+        `ไฟล์มียอดขายช่องทาง ${missing.join(", ")} แต่ไม่พบแถวชำระเงินของช่องทางนั้นในแผ่นที่ 2 ` +
+        "จึงคำนวณ GP ไม่ได้ — ตรวจสอบว่า export ครบทั้ง 5 แผ่น",
+    };
   }
+  const items = aggregateForClassification(report, rates);
 
   const supabase = await createClient();
-  const existing = await loadStoredCoffeeRows(supabase);
+  const byName = new Map((await loadStoredRows(supabase)).map((r) => [r.pos_product_name, toStored(r)]));
 
-  const byName = new Map(
-    existing.map((r) => [
-      r.pos_product_name,
-      { isCoffee: r.is_coffee, sharePerUnit: r.share_per_unit == null ? null : Number(r.share_per_unit) },
-    ]),
-  );
-
-  const candidates: CoffeeCandidate[] = Array.from(agg.entries()).map(([productName, v]) => {
-    const prior = byName.get(productName);
+  const candidates: ItemCandidate[] = items.map((item) => {
+    const prior = byName.get(item.productName);
     return {
-      productName,
-      where: Array.from(v.where).join(", "),
-      qty: v.qty,
-      gross: v.gross,
+      ...item,
       reviewed: prior !== undefined,
-      // A never-reviewed item is PRE-TICKED only if the POS already files it
-      // under ร้านกาแฟ. That is a starting suggestion, not a stored decision —
-      // it stays `reviewed: false` so the screen can show it as needing one.
-      isCoffee: prior ? prior.isCoffee : Array.from(v.where).some((w) => w.startsWith("ร้านกาแฟ")),
-      sharePerUnit: prior ? prior.sharePerUnit : null,
+      category: prior ? prior.category : null,
+      coffeeSharePerUnit: prior ? prior.coffeeSharePerUnit : null,
     };
   });
 
-  // Largest first: the twenty biggest items account for most of the coffee
-  // total, so the tail can be skimmed once the running total reconciles.
-  candidates.sort((a, b) => b.gross - a.gross);
-
   return {
-    period: report.dateFrom,
-    candidates,
-    unreviewedCount: candidates.filter((c) => !c.reviewed).length,
-    totalGross: report.grossTotal,
+    ok: true,
+    preview: {
+      period: report.dateFrom,
+      candidates,
+      unreviewedCount: candidates.filter((c) => !c.reviewed).length,
+      totalGross: report.grossTotal,
+    },
   };
 }
 
 /**
- * Record decisions for EVERY item shown, not only the coffee ones.
+ * Record decisions for EVERY decided item, in every category.
  *
- * Writing the not-coffee rows is what makes a missing row mean "new since the
- * last review" rather than "never got round to it". Without that, next month's
- * new menu item would inherit a default silently and the coffee exclusion
- * would drift by an amount nobody is looking at.
+ * Writing the food/drink/… rows is what makes a missing row mean "new since
+ * the last review" rather than "never got round to it". Without that, next
+ * month's new menu item would be indistinguishable from one nobody looked at.
  */
-export async function saveCoffeeClassification(
-  items: { productName: string; isCoffee: boolean; sharePerUnit: number | null; touched: boolean }[],
+export async function saveItemClassification(
+  items: { productName: string; category: string; coffeeSharePerUnit: number | null; touched: boolean }[],
 ): Promise<{ written: number; skipped: number }> {
   const profile = await requireAdmin();
   if (items.length === 0) return { written: 0, skipped: 0 };
+
+  // The client only sends the six values; anything else is a tampered or
+  // stale payload and the CHECK would reject it anyway. Fail before the
+  // database does, with a message that names the value.
+  const decided = items.map((i) => {
+    if (!isCategory(i.category)) throw new Error(`หมวด "${i.category}" ไม่ถูกต้อง (${i.productName})`);
+    return { ...i, category: i.category, coffeeSharePerUnit: normaliseShare(i.category, i.coffeeSharePerUnit) };
+  });
+
   const supabase = await createClient();
 
   // The client already filters to decided rows, but this guard is repeated
-  // server-side on purpose. reviewed_at/reviewed_by are the only audit evidence
-  // this table has, and this table feeds a figure subtracted from restaurant
-  // revenue — that is not a property to leave to whatever the browser sent.
-  const stored = new Map(
-    (await loadStoredCoffeeRows(supabase)).map((r) => [
-      r.pos_product_name,
-      { isCoffee: r.is_coffee, sharePerUnit: r.share_per_unit },
-    ]),
-  );
+  // server-side on purpose. reviewed_at/reviewed_by are the only audit
+  // evidence this table has, and this table decides how revenue is split —
+  // that is not a property to leave to whatever the browser sent.
+  const stored = new Map((await loadStoredRows(supabase)).map((r) => [r.pos_product_name, r]));
 
-  const toWrite = items.filter((i) => {
+  const toWrite = decided.filter((i) => {
     const prior = stored.get(i.productName);
-    if (!prior) return true;                    // (a) never stored
-    if (i.touched) return true;                 // (c) a human looked at it
-    const share = i.isCoffee ? i.sharePerUnit : null;
-    return prior.isCoffee !== i.isCoffee || !sameShare(prior.sharePerUnit, share); // (b)
+    if (!prior) return true;    // (a) never stored
+    if (i.touched) return true; // (c) a human looked at it
+    return prior.category !== i.category || !sameShare(prior.coffee_share_per_unit, i.coffeeSharePerUnit); // (b)
   });
 
-  const skipped = items.length - toWrite.length;
+  const skipped = decided.length - toWrite.length;
   if (toWrite.length === 0) {
     // Nothing changed. Deliberately no UPSERT at all, so every untouched row
     // keeps the reviewed_at it earned.
@@ -180,10 +209,8 @@ export async function saveCoffeeClassification(
 
   const rows = toWrite.map((i) => ({
     pos_product_name: i.productName,
-    is_coffee: i.isCoffee,
-    // The CHECK constraint rejects a share on a non-coffee row, so normalise
-    // here rather than letting a stale box value reach the database.
-    share_per_unit: i.isCoffee ? i.sharePerUnit : null,
+    category: i.category,
+    coffee_share_per_unit: i.coffeeSharePerUnit,
     reviewed_at: new Date().toISOString(),
     reviewed_by: profile.id,
   }));
@@ -195,7 +222,7 @@ export async function saveCoffeeClassification(
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const { error } = await supabase
-      .from("pos_coffee_items")
+      .from("pos_item_categories")
       .upsert(rows.slice(i, i + CHUNK), { onConflict: "pos_product_name" });
     if (error) throw new Error(error.message);
   }
@@ -204,45 +231,23 @@ export async function saveCoffeeClassification(
   return { written: rows.length, skipped };
 }
 
-export type CoffeeItemRow = {
+export type StoredItem = {
   productName: string;
-  isCoffee: boolean;
-  sharePerUnit: number | null;
+  category: Category | null;
+  coffeeSharePerUnit: number | null;
   reviewedAt: string;
 };
 
 /**
- * Current stored classification, coffee items only.
- *
- * Paged for the same reason as loadStoredCoffeeRows. The `is_coffee` filter
- * makes truncation unlikely in practice — this returns classified coffee items
- * (expected ~100-150), not the whole table — but "unlikely" is not a property
- * worth relying on for a count shown on screen, and leaving one unpaged read in
- * a file whose commit claims to have fixed truncation would force the next
- * reader to re-audit it.
+ * Every stored classification, for the page's summary. Paged, via the same
+ * reader the preview uses, so the count on screen cannot be a truncated one.
  */
-export async function listCoffeeItems(): Promise<CoffeeItemRow[]> {
+export async function listStoredItems(): Promise<StoredItem[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const data = await fetchAllRows<{
-    pos_product_name: string;
-    is_coffee: boolean;
-    share_per_unit: number | string | null;
-    reviewed_at: string;
-  }>(({ from, to }) =>
-    supabase
-      .from("pos_coffee_items")
-      .select("pos_product_name, is_coffee, share_per_unit, reviewed_at")
-      .eq("is_coffee", true)
-      .order("pos_product_name")
-      .range(from, to),
-  );
-  return data.map((r) => ({
+  return (await loadStoredRows(supabase)).map((r) => ({
     productName: r.pos_product_name,
-    isCoffee: r.is_coffee,
-    // NUMERIC arrives as string or number depending on the driver; normalise
-    // once here rather than letting both shapes reach the UI.
-    sharePerUnit: r.share_per_unit == null ? null : Number(r.share_per_unit),
+    ...toStored(r),
     reviewedAt: r.reviewed_at,
   }));
 }

@@ -566,7 +566,7 @@ export type PosSalesLine = {
   group: string;
   /** Right of "::" */
   category: string;
-  /** Channel prefix stripped, so it matches menus.name and pos_coffee_items. */
+  /** Channel prefix stripped, so it matches menus.name and pos_item_categories. */
   productName: string;
   qty: number;
   unitPrice: number;

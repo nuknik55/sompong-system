@@ -3,53 +3,78 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  previewCoffeeClassification,
-  saveCoffeeClassification,
-  type CoffeeCandidate,
-  type CoffeeClassificationPreview,
+  previewItemClassification,
+  saveItemClassification,
+  type ItemCandidate,
+  type ItemClassificationPreview,
 } from "./actions";
+import { CATEGORIES, CATEGORY_LABEL, isCategory, type Category } from "./categories";
 
-// `decided` is the whole point of this type.
+// `category: null` is "not yet decided" — a state distinct from all six.
 //
-// An item the POS files under ร้านกาแฟ arrives PRE-TICKED, because that is a
-// good suggestion. A suggestion is not a decision. If saving wrote every
-// pre-ticked row, an item nobody examined would become a confirmed
-// classification — and the confirmation would then hide it from next month's
-// "ใหม่" list, which is the one place it would otherwise have surfaced.
+// A product with no row in pos_item_categories loads with NOTHING selected.
+// It is not food, it is not other, and it is not a guess from its POS group:
+// the group mapping was one-time seed machinery and does not run here. A row
+// becomes a category only when a person picks one, and only rows a person
+// decided are written. Everything else stays unreviewed and keeps showing up
+// as ใหม่ until someone looks at it.
 //
-// So: only rows the user actually acted on are written. Everything else stays
-// unreviewed and keeps showing up until someone looks at it.
-type Draft = { isCoffee: boolean; sharePerUnit: string; decided: boolean };
+// `decided` and `category !== null` say the same thing on load; they diverge
+// only while the user is undoing a mis-click on a new row (both go back).
+type Draft = { category: Category | null; coffeeSharePerUnit: string; decided: boolean };
+
+const CARVE_OUT_HELP =
+  "หมวด = เงินไปอยู่ที่ไหน · ฿/หน่วย แยกให้ร้านกาแฟ = ส่วนที่ออกจากหมวดนั้นไปร้านกาแฟ · " +
+  "เช่น ไอติมข้าวเหนียวมะม่วง ฿129 หมวดของหวาน แยก ฿15 → ของหวาน ฿114 / ร้านกาแฟ ฿15";
 
 function fmt(n: number): string {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-/** What this item contributes to the coffee total under the current draft. */
-function coffeeAmount(c: CoffeeCandidate, d: Draft): number {
-  if (!d.isCoffee) return 0;
-  const share = d.sharePerUnit.trim();
-  if (share === "") return c.gross; // whole line
-  const per = Number(share);
-  return Number.isFinite(per) ? per * c.qty : 0;
+function parseShare(raw: string): number | null {
+  const s = raw.trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: number }) {
+/**
+ * What this item contributes to the coffee total under the current draft,
+ * NET of discount and platform GP (the basis the screen states). The
+ * per-channel work is folded into netWhole/carveWeight server-side.
+ */
+function coffeeNet(c: ItemCandidate, d: Draft): number {
+  if (!d.decided || d.category === null) return 0;
+  if (d.category === "coffee") return c.netWhole;
+  const share = parseShare(d.coffeeSharePerUnit);
+  return share == null ? 0 : share * c.carveWeight;
+}
+
+/** The same contribution before any deduction — shown beside the net figure. */
+function coffeeGross(c: ItemCandidate, d: Draft): number {
+  if (!d.decided || d.category === null) return 0;
+  if (d.category === "coffee") return c.gross;
+  const share = parseShare(d.coffeeSharePerUnit);
+  return share == null ? 0 : share * c.qty;
+}
+
+export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: number }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [preview, setPreview] = useState<CoffeeClassificationPreview | null>(null);
+  const [preview, setPreview] = useState<ItemClassificationPreview | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [target, setTarget] = useState("128625");
   const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ written: number; skipped: number } | null>(null);
 
   // Product names the user actually interacted with in this session — a
-  // checkbox toggled or a share amount edited. Keyed exactly as `drafts` is.
+  // category picked or a carve-out edited. Keyed exactly as `drafts` is.
   //
   // Re-confirming a row you looked at IS a review event and earns a fresh
-  // reviewed_at, even when the value ends up unchanged. Being auto-marked
-  // decided at load time is not, and neither is bulk-accepting a suggestion.
+  // reviewed_at, even when the value ends up unchanged. Being marked decided
+  // at load time because a row already exists is not.
   const [touched, setTouched] = useState<Set<string>>(new Set());
 
   function markTouched(productName: string) {
@@ -69,18 +94,24 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
     setSaved(null);
     startTransition(async () => {
       try {
-        const p = await previewCoffeeClassification(formData);
+        const result = await previewItemClassification(formData);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        const p = result.preview;
         setPreview(p);
+        setTouched(new Set());
         setDrafts(
           Object.fromEntries(
             p.candidates.map((c) => [
               c.productName,
               {
-                isCoffee: c.isCoffee,
-                sharePerUnit: c.sharePerUnit == null ? "" : String(c.sharePerUnit),
-                // Already in the table = already decided. Never seen = not,
-                // however plausible its pre-tick.
-                decided: c.reviewed,
+                category: c.category,
+                coffeeSharePerUnit: c.coffeeSharePerUnit == null ? "" : String(c.coffeeSharePerUnit),
+                // Already in the table = already decided. No row = not, and
+                // the selector shows nothing until someone picks.
+                decided: c.category !== null,
               },
             ]),
           ),
@@ -96,16 +127,18 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
     setError(null);
     startTransition(async () => {
       try {
-        const result = await saveCoffeeClassification(
+        const result = await saveItemClassification(
           preview.candidates
-            .filter((c) => drafts[c.productName]?.decided)
+            .filter((c) => {
+              const d = drafts[c.productName];
+              return d?.decided && d.category !== null;
+            })
             .map((c) => {
               const d = drafts[c.productName];
-              const share = d.sharePerUnit.trim();
               return {
                 productName: c.productName,
-                isCoffee: d.isCoffee,
-                sharePerUnit: d.isCoffee && share !== "" && Number.isFinite(Number(share)) ? Number(share) : null,
+                category: d.category as Category,
+                coffeeSharePerUnit: d.category === "coffee" ? null : parseShare(d.coffeeSharePerUnit),
                 touched: touched.has(c.productName),
               };
             }),
@@ -132,15 +165,49 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
     });
   }
 
+  function setCategory(c: ItemCandidate, value: string) {
+    const d = drafts[c.productName];
+    if (value === "") {
+      // Back to "not yet decided". Only reachable on a row with no stored
+      // category (the placeholder is disabled otherwise), so this is an undo
+      // of a mis-click, and the row must not be saved or count as touched.
+      setTouched((prev) => {
+        const next = new Set(prev);
+        next.delete(c.productName);
+        return next;
+      });
+      setSaved(null);
+      setDrafts((p) => ({ ...p, [c.productName]: { category: null, coffeeSharePerUnit: "", decided: false } }));
+      return;
+    }
+    if (!isCategory(value)) return;
+    markTouched(c.productName);
+    setDrafts((p) => ({
+      ...p,
+      [c.productName]: {
+        ...d,
+        category: value,
+        // The CHECK forbids a carve-out on a coffee row; clear it here so the
+        // box does not reappear with a stale value if the user switches back.
+        coffeeSharePerUnit: value === "coffee" ? "" : d.coffeeSharePerUnit,
+        decided: true,
+      },
+    }));
+  }
+
   // Counts DECIDED rows only, so the figure always equals what saving would
-  // record. On a first run that starts at 0 and moves as decisions are made,
+  // record. On a first run with new items it moves as decisions are made,
   // which is the honest reading — nothing is classified until someone says so.
-  const runningTotal = useMemo(() => {
-    if (!preview) return 0;
-    return preview.candidates.reduce((s, c) => {
-      const d = drafts[c.productName];
-      return d?.decided ? s + coffeeAmount(c, d) : s;
-    }, 0);
+  const totals = useMemo(() => {
+    if (!preview) return { net: 0, gross: 0 };
+    return preview.candidates.reduce(
+      (s, c) => {
+        const d = drafts[c.productName];
+        if (!d) return s;
+        return { net: s.net + coffeeNet(c, d), gross: s.gross + coffeeGross(c, d) };
+      },
+      { net: 0, gross: 0 },
+    );
   }, [preview, drafts]);
 
   const undecidedCount = useMemo(() => {
@@ -150,62 +217,17 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
 
   const decidedCount = (preview?.candidates.length ?? 0) - undecidedCount;
 
-  /**
-   * Turn every outstanding suggestion into a decision, in one deliberate act.
-   *
-   * Bulk-accepting does NOT mark rows touched, so an unchanged existing row
-   * keeps its reviewed_at. But rows with no stored row are written anyway —
-   * they are new — which means one click can classify hundreds of items nobody
-   * inspected, from a POS-category guess.
-   *
-   * That is the original problem arriving through a different door. The door is
-   * meant to be there; what it must not be is quiet. So the confirmation names
-   * the number of items this click would classify FOR THE FIRST TIME, and
-   * counts only those — re-confirming rows that already have a decision is not
-   * the risk and padding the number with them would blunt the warning.
-   */
-  function acceptAllSuggestions() {
-    if (!preview) return;
-    const firstTime = preview.candidates.filter(
-      (c) => !c.reviewed && !drafts[c.productName]?.decided,
-    ).length;
-
-    if (firstTime > 0) {
-      // The wording must match what the click actually does. This only marks
-      // drafts as decided — nothing reaches the database until "บันทึก" is
-      // pressed. Saying "saved immediately" would be the same claim-vs-effect
-      // mismatch this screen exists to avoid, and worse in this direction: a
-      // user who believes it already saved may never press save at all.
-      const ok = window.confirm(
-        `จะตั้งค่าสินค้า ${firstTime} รายการที่ยังไม่เคยตรวจ ` +
-          `โดยใช้หมวดจาก POS เป็นตัวตั้ง (ร้านกาแฟ = ใช่, นอกนั้น = ไม่ใช่)\n\n` +
-          `ยังไม่บันทึกลงระบบตอนนี้ — จะบันทึกเมื่อกดปุ่ม "บันทึก" ` +
-          `หลังบันทึกแล้วรายการเหล่านี้จะไม่ขึ้นเป็น "ใหม่" อีก ` +
-          `ถ้ามีรายการที่ POS จัดหมวดไว้ผิด จะไม่มีใครเห็นอีกจนกว่าจะมาแก้เอง\n\n` +
-          `ยืนยันหรือไม่?`,
-      );
-      if (!ok) return;
-    }
-
-    // A stale "nothing was saved" notice sitting next to freshly-decided rows
-    // reads as though this click did nothing.
-    setSaved(null);
-
-    setDrafts((p) => {
-      const next = { ...p };
-      for (const k of Object.keys(next)) next[k] = { ...next[k], decided: true };
-      return next;
-    });
-  }
-
   const targetNum = Number(target) || 0;
-  const gap = runningTotal - targetNum;
+  const gap = totals.net - targetNum;
   const reconciled = Math.abs(gap) < 1;
 
   const visible = useMemo(() => {
     if (!preview) return [];
-    return onlyUnreviewed ? preview.candidates.filter((c) => !c.reviewed) : preview.candidates;
-  }, [preview, onlyUnreviewed]);
+    const q = query.trim().toLowerCase();
+    return preview.candidates.filter(
+      (c) => (!onlyUnreviewed || !c.reviewed) && (q === "" || c.productName.toLowerCase().includes(q)),
+    );
+  }, [preview, onlyUnreviewed, query]);
 
   return (
     <div className="space-y-4">
@@ -213,10 +235,11 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
         <div>
           <p className="text-sm font-medium text-neutral-800">อัปโหลดไฟล์ยอดขายจาก POS</p>
           <p className="mt-1 text-xs text-neutral-500">
-            ไฟล์ &quot;รายงานการขายตามสินค้า&quot; — ระบบจะแสดงสินค้าทุกตัวในไฟล์ ให้ติ๊กเฉพาะรายการที่เป็นของร้านกาแฟ
+            ใช้ไฟล์ที่ export จาก POS โดยตรง — ชื่อไฟล์ SaleData_YYYYMMDD_HHMMSS.xls (มี 5 แผ่น)
+            ไม่ใช่ไฟล์ที่จัดหมวดเอง (69-MMSaleData.xlsx) ระบบจะแสดงสินค้าทุกตัวในไฟล์ ให้เลือกหมวดให้สินค้าที่ยังไม่มีหมวด
           </p>
           <p className="mt-1 text-xs text-neutral-500">
-            ปัจจุบันบันทึกไว้แล้ว {initialCoffeeCount} รายการเป็นของร้านกาแฟ
+            ปัจจุบันบันทึกหมวดไว้แล้ว {initialStoredCount} รายการ
           </p>
         </div>
         <form action={handleUpload} className="flex flex-wrap items-center gap-2">
@@ -259,17 +282,23 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
 
       {preview && (
         <>
-          {/* Reconciliation — feedback while ticking, not a separate check afterwards */}
+          {/* Reconciliation — feedback while classifying, not a separate check afterwards.
+              The basis is stated in words because Nik's own figure is net of discount
+              and GP, and a total that silently used a different basis would look
+              like a bug in one direction or the other. */}
           <div className="rounded-lg border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p className="text-xs text-neutral-500">ยอดร้านกาแฟที่ติ๊กไว้ ({preview.period})</p>
-                <p className={`text-2xl font-semibold tabular-nums ${reconciled ? "text-green-700" : "text-neutral-900"}`}>
-                  {fmt(runningTotal)} ฿
+                <p className="text-xs text-neutral-500">
+                  ยอดร้านกาแฟ สุทธิ ({preview.period}) — หลังหักส่วนลดและ GP Grab/LineMan ตามอัตราในไฟล์
                 </p>
+                <p className={`text-2xl font-semibold tabular-nums ${reconciled ? "text-green-700" : "text-neutral-900"}`}>
+                  {fmt(totals.net)} ฿
+                </p>
+                <p className="text-xs text-neutral-500 tabular-nums">ก่อนหัก {fmt(totals.gross)} ฿</p>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-neutral-500">ยอดเป้าหมายจาก Excel</label>
+                <label className="mb-1 block text-xs text-neutral-500">ยอดเป้าหมายจาก Excel (สุทธิ)</label>
                 <input
                   type="number"
                   value={target}
@@ -286,7 +315,7 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
             </div>
             {preview.unreviewedCount > 0 && (
               <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                มี {preview.unreviewedCount} รายการที่ยังไม่เคยตรวจ — รายการใหม่ที่เพิ่งมีในเดือนนี้
+                มี {preview.unreviewedCount} รายการที่ยังไม่มีหมวด — รายการใหม่ที่เพิ่งมีในเดือนนี้
                 {" "}
                 <button type="button" onClick={() => setOnlyUnreviewed((v) => !v)} className="underline">
                   {onlyUnreviewed ? "แสดงทั้งหมด" : "ดูเฉพาะรายการใหม่"}
@@ -296,23 +325,44 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
           </div>
 
           <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+            <div className="flex flex-wrap items-center gap-3 border-b border-neutral-100 px-4 py-3">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหาชื่อสินค้า"
+                className="w-64 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+              <p className="text-xs text-neutral-500">
+                ช่องทางขาย (Eat In / ห่อ / Grab / LM) มาจากไฟล์อยู่แล้ว — หน้านี้เลือกเฉพาะ &quot;หมวด&quot; ของสินค้า
+              </p>
+            </div>
             <div className="max-h-[32rem] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
-                    <th className="px-3 py-2 w-12">กาแฟ</th>
+                    <th className="px-3 py-2 w-36">หมวด</th>
                     <th className="px-3 py-2">สินค้า</th>
                     <th className="px-3 py-2">หมวดใน POS</th>
                     <th className="px-3 py-2 text-right">จำนวน</th>
                     <th className="px-3 py-2 text-right">ยอดขาย</th>
-                    <th className="px-3 py-2 text-right w-32">฿/หน่วย ที่เป็นกาแฟ</th>
-                    <th className="px-3 py-2 text-right">เข้ากาแฟ</th>
+                    <th className="px-3 py-2 text-right w-32">฿/หน่วย แยกให้ร้านกาแฟ</th>
+                    <th className="px-3 py-2 text-right">เข้าร้านกาแฟ (สุทธิ)</th>
+                  </tr>
+                  {/* In the sticky header, not above the table, so it stays on
+                      screen next to the carve-out boxes while the list scrolls.
+                      The direction of the carve-out is the thing most likely
+                      to be misread on this screen. */}
+                  <tr>
+                    <th colSpan={7} className="px-3 pb-2 text-left text-xs font-normal text-neutral-600">
+                      {CARVE_OUT_HELP}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map((c) => {
-                    const d = drafts[c.productName] ?? { isCoffee: false, sharePerUnit: "" };
-                    const amount = coffeeAmount(c, d);
+                    const d = drafts[c.productName] ?? { category: null, coffeeSharePerUnit: "", decided: false };
+                    const net = coffeeNet(c, d);
                     return (
                       <tr
                         key={c.productName}
@@ -321,26 +371,31 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
                         className={`border-t border-neutral-100 ${!d.decided ? "bg-amber-50/60" : ""}`}
                       >
                         <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={d.isCoffee}
+                          <select
+                            value={d.category ?? ""}
                             disabled={isPending}
-                            onChange={(e) => {
-                              markTouched(c.productName);
-                              setDrafts((p) => ({
-                                ...p,
-                                [c.productName]: { ...d, isCoffee: e.target.checked, decided: true },
-                              }));
-                            }}
-                            className="h-4 w-4"
-                          />
+                            onChange={(e) => setCategory(c, e.target.value)}
+                            className={`w-full rounded border px-1.5 py-1 text-xs ${d.category === null ? "border-amber-400 text-amber-800" : "border-neutral-300"}`}
+                          >
+                            {/* The placeholder is the "not yet decided" state.
+                                A stored row cannot go back to it: there is no
+                                delete, so no un-decide. */}
+                            <option value="" disabled={c.reviewed}>
+                              — เลือกหมวด —
+                            </option>
+                            {CATEGORIES.map((k) => (
+                              <option key={k} value={k}>
+                                {CATEGORY_LABEL[k]}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-3 py-2 text-neutral-800">
                           {c.productName}
                           {!c.reviewed && <span className="ml-2 text-xs text-amber-700">ใหม่</span>}
                           {!d.decided && (
                             <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                              ยังไม่ยืนยัน
+                              ยังไม่เลือกหมวด
                             </span>
                           )}
                         </td>
@@ -348,29 +403,33 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
                         <td className="px-3 py-2 text-right tabular-nums text-neutral-500">{fmt(c.qty)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-neutral-700">{fmt(c.gross)}</td>
                         <td className="px-3 py-2 text-right">
-                          {d.isCoffee ? (
+                          {d.category === null ? (
+                            <span className="text-xs text-neutral-300">—</span>
+                          ) : d.category === "coffee" ? (
+                            // Mirrors the CHECK: no carve-out on a coffee row.
+                            <span className="text-xs text-neutral-400">ทั้งรายการ</span>
+                          ) : (
                             <input
                               type="number"
                               step="any"
                               min="0"
-                              placeholder="ทั้งรายการ"
-                              value={d.sharePerUnit}
+                              placeholder="ไม่มี"
+                              title={CARVE_OUT_HELP}
+                              value={d.coffeeSharePerUnit}
                               disabled={isPending}
                               onChange={(e) => {
                                 markTouched(c.productName);
                                 setDrafts((p) => ({
                                   ...p,
-                                  [c.productName]: { ...d, sharePerUnit: e.target.value, decided: true },
+                                  [c.productName]: { ...d, coffeeSharePerUnit: e.target.value, decided: true },
                                 }));
                               }}
                               className="w-28 rounded border border-neutral-300 px-2 py-1 text-right text-xs tabular-nums"
                             />
-                          ) : (
-                            <span className="text-xs text-neutral-300">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-neutral-800">
-                          {amount > 0 ? fmt(amount) : "—"}
+                          {net > 0 ? fmt(net) : "—"}
                         </td>
                       </tr>
                     );
@@ -388,28 +447,16 @@ export function CoffeeItemsClient({ initialCoffeeCount }: { initialCoffeeCount: 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 bg-neutral-50 px-4 py-3">
               <p className="text-xs text-neutral-500">
                 แสดง {visible.length} จาก {preview.candidates.length} รายการ
-                {undecidedCount > 0 ? ` — ยังไม่ยืนยัน ${undecidedCount} รายการ` : ""}
+                {undecidedCount > 0 ? ` — ยังไม่เลือกหมวด ${undecidedCount} รายการ` : ""}
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {undecidedCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={acceptAllSuggestions}
-                    disabled={isPending}
-                    className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
-                  >
-                    ยืนยันตามที่ระบบเสนอ ({undecidedCount})
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isPending || decidedCount === 0}
-                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-                >
-                  {isPending ? "กำลังบันทึก..." : `บันทึก ${decidedCount} รายการ`}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isPending || decidedCount === 0}
+                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {isPending ? "กำลังบันทึก..." : `บันทึก ${decidedCount} รายการ`}
+              </button>
             </div>
           </div>
         </>
