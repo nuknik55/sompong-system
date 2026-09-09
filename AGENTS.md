@@ -189,6 +189,32 @@ lines.filter((l) => l.trim() === "router.refresh();")
 A check that can false-positive on documentation gets disabled or ignored, which
 is worse than not having it.
 
+### The same trap in production data: a note is not the row's contents
+
+The two cases above are code. This one is data, and it reached a real person
+before it was caught.
+
+A CoA account was reported as holding a miscoded line because an entry in
+`125 ไข่ไก่` had the note `"พี่สมหมาย / ไข่No.1 (15*134) , เยี่ยวม้า (1*385)"` — a
+century egg, which belongs in `126 ไข่อื่นๆ`. The report was wrong. The bill had
+been split into two entries and split correctly: ฿2,010 to 125 (exactly
+15 × 134, the eggs) and ฿385 to 130 (the century egg). **The bookkeeper copies
+the whole bill text into the note of every entry the bill is split across**, so
+the note describes the BILL, not the row. The amounts were the evidence and they
+already agreed.
+
+The shape, and it is the same one as a regex matching its own comment: **a
+string that looks like data about the row is really a copy of something else.**
+Free-text fields written by humans — `note`, `detail`, `bill_ref` — are
+descriptions of context, not a schema. So:
+
+- **Reconcile against the numbers first.** `15 * 134 === 2010` settles what an
+  entry contains; the note cannot.
+- Treat a note naming several items as evidence of a SPLIT, not of a mixed row.
+  Check whether sibling entries on the same date carry the same text.
+- Before reporting a data defect to someone who will act on it, state which
+  field the claim rests on. If the answer is "the note", it is a hypothesis.
+
 ## 3. Line endings are mixed in this repo — do not assume `\n`
 
 `src/app/owner/hr/actions.ts` is CRLF while the files around it are LF. Three
