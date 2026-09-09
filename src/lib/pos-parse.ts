@@ -795,6 +795,55 @@ export function parsePosMonthlyExport(buffer: ArrayBuffer): PosMonthlyExport {
  * six 10 KB browser saves and the hand-built file on rule 1; three partial
  * exports and two other report types on rule 2. Rules 3–5 fired on nothing.
  */
+/**
+ * The single calendar month an export covers, as "YYYY-MM", or a reason it
+ * does not cover exactly one.
+ *
+ * The header gives Thai month names and a BUDDHIST year, in one of two
+ * shapes: "สิงหาคม 2569" for a whole month, or "01 เมษายน 2569" when the
+ * report was run over a date range. Both reduce to a year-month here.
+ *
+ * REFUSING A MULTI-MONTH EXPORT IS THE POINT. Nik's own POS folder holds
+ * files spanning a quarter ("01 เมษายน 2569", 1,185 lines) and a full year
+ * ("01 มกราคม 2568", 2,114 lines), and they parse perfectly — every sheet is
+ * well formed, every total reconciles. Importing one as a month would write a
+ * year of revenue into a single month's rows, and nothing downstream could
+ * tell. The file cannot say "this is one month" on its own, so the check has
+ * to be that dateFrom and dateTo land in the same one.
+ */
+export function posPeriodToYearMonth(
+  dateFrom: string,
+  dateTo: string,
+): { yearMonth: string } | { error: string } {
+  const toYm = (raw: string): string | null => {
+    if (!raw) return null;
+    // Built from a plain string, NOT a template literal: in a template
+    // literal `\s` and `\d` are resolved as escape sequences before RegExp
+    // ever sees them, so the pattern silently became "s+" and "d{4}" and
+    // matched nothing at all.
+    const m = raw.match(new RegExp("(" + Object.keys(THAI_MONTHS).join("|") + ")\\s+(\\d{4})"));
+    if (!m) return null;
+    const month = THAI_MONTHS[m[1]!];
+    const year = Number(m[2]) - 543; // Buddhist era
+    if (!month || !Number.isFinite(year)) return null;
+    return `${year}-${String(month).padStart(2, "0")}`;
+  };
+
+  const from = toYm(dateFrom);
+  const to = toYm(dateTo);
+  if (!from || !to) {
+    return { error: `อ่านเดือนจากหัวรายงานไม่ได้ ("${dateFrom}" ถึง "${dateTo}")` };
+  }
+  if (from !== to) {
+    return {
+      error:
+        `ไฟล์นี้ครอบคลุมหลายเดือน (${dateFrom} ถึง ${dateTo}) — ` +
+        "นำเข้าได้ครั้งละหนึ่งเดือนเท่านั้น ให้ export ใหม่โดยเลือกเดือนเดียว",
+    };
+  }
+  return { yearMonth: from };
+}
+
 export function checkPosExportPlausibility(report: PosMonthlyExport): string | null {
   if (!report.dateFrom || report.grossTotal === 0 || report.netTotal === 0) {
     return (

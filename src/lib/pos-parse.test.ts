@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkPosExportPlausibility, splitPosDiscounts, type PosMonthlyExport, type PosSalesLine } from "./pos-parse.ts";
+import { checkPosExportPlausibility, posPeriodToYearMonth, splitPosDiscounts, type PosMonthlyExport, type PosSalesLine } from "./pos-parse.ts";
 // ─── splitPosDiscounts ─────────────────────────────────────────────────────
 // Fixtures are the real Sheet3 contents of the July and August 2569 exports,
 // verbatim. They are here rather than as sample files because the whole point
@@ -191,4 +191,35 @@ test("order: rule 1 wins over rules 2 and 3 when several apply", () => {
   // A browser save: nothing at all. Still rule 1, not "empty Sheet1".
   const save = plausibleReport({ dateFrom: "", grossTotal: 0, netTotal: 0, lines: [], payments: [] });
   assert.match(checkPosExportPlausibility(save) ?? "", /ไม่ใช่ไฟล์ที่ export จาก POS/);
+});
+
+// ─── posPeriodToYearMonth ───────────────────────────────────────────────────
+
+test("a whole-month header resolves to its Gregorian year-month", () => {
+  assert.deepEqual(posPeriodToYearMonth("สิงหาคม 2569", "สิงหาคม 2569"), { yearMonth: "2026-08" });
+  assert.deepEqual(posPeriodToYearMonth("มกราคม 2568", "มกราคม 2568"), { yearMonth: "2025-01" });
+});
+
+test("a dated header inside one month resolves to that month", () => {
+  assert.deepEqual(posPeriodToYearMonth("01 มีนาคม 2569", "31 มีนาคม 2569"), { yearMonth: "2026-03" });
+});
+
+test("an export spanning more than one month is REFUSED", () => {
+  // A real file on disk: 2,114 lines, ฿60.4M, every sheet well formed. It
+  // parses perfectly and would write a year of revenue into one month.
+  const r = posPeriodToYearMonth("01 มกราคม 2568", "26 กรกฎาคม 2569");
+  assert.ok("error" in r);
+  assert.match(r.error, /หลายเดือน/);
+});
+
+test("two different months in the same year are refused too", () => {
+  const r = posPeriodToYearMonth("01 กรกฎาคม 2569", "31 สิงหาคม 2569");
+  assert.ok("error" in r);
+});
+
+test("a header with no readable month is refused rather than guessed", () => {
+  for (const [from, to] of [["", ""], ["2569", "2569"], ["ไม่มีเดือน", "ไม่มีเดือน"]]) {
+    const r = posPeriodToYearMonth(from!, to!);
+    assert.ok("error" in r, `expected refusal for "${from}"`);
+  }
 });
