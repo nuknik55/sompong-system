@@ -446,6 +446,38 @@ In order. Nothing here is started unless it says so.
     | this README (3) and the memory note (1) | text |
     | `CoffeeItemsClient` identifier | cosmetic; rename in the same commit or not at all |
 
+14. **`/owner/ingredients` throws an RSC error on saving a NEW ingredient, but
+    the save succeeds.** Not started. Reported by Nik from production,
+    2026-09-09.
+
+    **Observed, exactly:**
+
+    - Saving a **new** ingredient rendered *"An error occurred in the Server
+      Components render. The specific message is omitted in production
+      builds…"*
+    - **The save SUCCEEDED.** The ingredient was stored and appears in the list
+      normally.
+    - A **second attempt showed no error at all.**
+
+    **A hypothesis, to be confirmed and not assumed.** Succeeded-but-errored,
+    plus a clean second attempt, is consistent with the throw being in the
+    post-save re-render path rather than in the mutation, and with whatever
+    triggered it being state-dependent. That is a starting point for the
+    investigation, not a conclusion — two earlier hypotheses of exactly this
+    shape (the coffee-items RSC error) were both dead on inspection, and the
+    real cause was found only by reading the digest.
+
+    **Start with the digest, not the code.** This is the same production
+    redaction as item 12: the real message exists in the Vercel logs keyed by
+    the digest shown to the user. Nik can fetch it when this work starts, and
+    it turns a guess into a stack trace. Do not begin by reading
+    `owner/ingredients` looking for likely-looking throws.
+
+    Related but not the same: item 12 makes *expected* failures return values.
+    This one is an *unexpected* throw, so it is a bug to find rather than a
+    message to convert — though the redaction that hides it is the same
+    problem.
+
 ## The coffee-shop reimbursement, and why it is deliberately not corrected
 
 Sompong buys supplies for the coffee shop, pays up front, and is reimbursed at
