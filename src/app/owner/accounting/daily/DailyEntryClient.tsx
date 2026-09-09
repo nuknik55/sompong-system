@@ -210,11 +210,14 @@ type EditState = {
 export function DailyEntryClient({
   coa,
   entries,
+  withheldCount,
   date,
   suppliers,
 }: {
   coa: CoaAccount[];
   entries: ExpenseEntry[];
+  /** Rows the server did not send this caller (owner-only accounts). Count only. */
+  withheldCount: number;
   date: string;
   suppliers: Supplier[];
 }) {
@@ -619,9 +622,14 @@ export function DailyEntryClient({
               {printAccrual > 0 && (
                 <tr className="border-t border-neutral-200 text-neutral-500">
                   <td className="py-1.5 pr-6 text-sm">
-                    ไม่รวมรายการที่ไม่ต้องจ่าย {printAccrualCount} รายการ (GP/ส่วนลด หักไปแล้ว)
+                    ไม่รวมรายการที่ไม่ต้องจ่าย {printAccrualCount} รายการ (GP/ส่วนลด/ยอดรายเดือน)
                   </td>
                   <td colSpan={2} className="py-1.5 pl-4 text-right tabular-nums text-sm">{fmt(printAccrual)}</td>
+                </tr>
+              )}
+              {withheldCount > 0 && (
+                <tr className="border-t border-neutral-200 text-neutral-500">
+                  <td colSpan={3} className="py-1.5 pr-6 text-sm">มีรายการที่ไม่แสดง {withheldCount} รายการ — ยอดรวมด้านล่างไม่รวมรายการเหล่านั้น</td>
                 </tr>
               )}
               <tr className="border-t-2 border-neutral-400 font-semibold" style={{ backgroundColor: "#fef9c3" }}>
@@ -862,6 +870,11 @@ export function DailyEntryClient({
                       </td>
                       <td></td>
                     </tr>
+                    {withheldCount > 0 && (
+                      <tr className="bg-neutral-100 text-xs text-neutral-500">
+                        <td colSpan={8} className="px-3 py-1.5 text-right">มีรายการที่ไม่แสดง {withheldCount} รายการ — ยอดรวมไม่รวมรายการเหล่านั้น</td>
+                      </tr>
+                    )}
                   </>
                 )}
               </tbody>

@@ -48,6 +48,7 @@ function exportExcel(
     operatingExpense: number;
     capex: number;
     tax: number;
+    withheldAccounts: number;
   } & MonthCompleteness
 ) {
   // Lazy-load xlsx (already in package.json)
@@ -91,6 +92,10 @@ function exportExcel(
     }
     rows.push(["รวมค่าใช้จ่ายดำเนินงาน", "", summary.operatingExpense,
       summary.totalRevenue > 0 ? (summary.operatingExpense / summary.totalRevenue) * 100 : 0, ""]);
+    // A cell, not a note: the file travels. Count only, never an amount.
+    if (summary.withheldAccounts > 0) {
+      rows.push(["*** มีบัญชีที่ไม่แสดง " + summary.withheldAccounts + " บัญชี — ยอดรวมด้านบนไม่รวมบัญชีเหล่านั้น"]);
+    }
     rows.push([]);
 
     // Operating profit. CapEx and tax are listed below it and never subtracted,
@@ -145,6 +150,7 @@ export function PLPrintClient({
     operatingExpense: number;
     capex: number;
     tax: number;
+    withheldAccounts: number;
   } & MonthCompleteness;
   revenueMap: Record<string, number>;
 }) {
@@ -303,7 +309,12 @@ export function PLPrintClient({
           </tbody>
           <tfoot>
             <tr style={{ background: "#f3f4f6", borderTop: "2px solid #999" }}>
-              <td style={{ ...cellStyle, fontWeight: 700 }}>รวมค่าใช้จ่ายดำเนินงาน</td>
+              <td style={{ ...cellStyle, fontWeight: 700 }}>
+                รวมค่าใช้จ่ายดำเนินงาน
+                {summary.withheldAccounts > 0 && (
+                  <span style={{ marginLeft: 8, fontWeight: 400, fontSize: 11, color: "#6b7280" }}>มีบัญชีที่ไม่แสดง {summary.withheldAccounts} บัญชี — ยอดนี้ไม่รวม</span>
+                )}
+              </td>
               <td style={{ ...numStyle, fontWeight: 700 }}>{fmt(summary.operatingExpense)}</td>
               <td style={pctStyle}>
                 {summary.totalRevenue > 0

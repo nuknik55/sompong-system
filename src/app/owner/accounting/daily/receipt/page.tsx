@@ -14,7 +14,7 @@ export default async function ReceiptPage({
   const today = new Date().toISOString().slice(0, 10);
   const date = rawDate?.match(/^\d{4}-\d{2}-\d{2}$/) ? rawDate : today;
   const ids = rawIds ? rawIds.split(",").filter(Boolean) : [];
-  const entries = await getEntriesByIds(ids);
+  const { entries, withheldCount } = await getEntriesByIds(ids);
 
-  return <ReceiptClient entries={entries} date={date} />;
+  return <ReceiptClient entries={entries} withheldCount={withheldCount} date={date} />;
 }

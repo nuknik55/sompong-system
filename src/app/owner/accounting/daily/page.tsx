@@ -15,7 +15,7 @@ export default async function DailyEntryPage({
   const today = new Date().toISOString().slice(0, 10);
   const date = rawDate?.match(/^\d{4}-\d{2}-\d{2}$/) ? rawDate : today;
 
-  const [coa, entries, suppliers] = await Promise.all([getCoa(), getEntriesByDate(date), getSuppliers()]);
+  const [coa, { entries, withheldCount }, suppliers] = await Promise.all([getCoa(), getEntriesByDate(date), getSuppliers()]);
 
   const yearMonth = date.slice(0, 7);
 
@@ -40,6 +40,7 @@ export default async function DailyEntryPage({
         key={date}
         coa={coa}
         entries={entries}
+        withheldCount={withheldCount}
         date={date}
         suppliers={suppliers}
       />

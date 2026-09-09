@@ -42,9 +42,12 @@ function highlight(text: string, query: string) {
 
 export function AccountingEntryClient({
   initialEntries,
+  withheldCount,
   yearMonth,
 }: {
   initialEntries: ExpenseEntry[];
+  /** Rows the server did not send this caller (owner-only accounts). Count only. */
+  withheldCount: number;
   yearMonth: string;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -116,6 +119,9 @@ export function AccountingEntryClient({
             <>
               <span className="text-neutral-500">ยอดรวมเดือน:</span>
               <span className="font-semibold text-neutral-900">{formatBaht(monthTotal)} บาท</span>
+              {withheldCount > 0 && (
+                <span className="text-xs text-neutral-500">(มีรายการที่ไม่แสดง {withheldCount} รายการ)</span>
+              )}
             </>
           )}
         </div>

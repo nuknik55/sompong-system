@@ -38,6 +38,16 @@ export type CoaAccount = {
   is_sensitive: boolean;
 };
 
+/**
+ * Entries a caller may see, plus how many were withheld from them.
+ *
+ * is_sensitive accounts (790 เงินเดือนเจ้าของร้าน) are filtered server-side for
+ * non-owners, so their totals come out reduced. The count travels with the
+ * rows so every total can say "N rows not shown" — a count only, never an
+ * amount, which is all a non-owner could infer from the CoA anyway.
+ */
+export type EntriesResult = { entries: ExpenseEntry[]; withheldCount: number };
+
 export type ExpenseEntry = {
   id: string;
   entry_date: string;
@@ -405,7 +415,7 @@ export async function getCoa(): Promise<CoaAccount[]> {
 
 // ── Expense Entries ──────────────────────────────────
 
-export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
+export async function getEntriesByDate(date: string): Promise<EntriesResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
 
@@ -418,9 +428,13 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
 
   if (error) throw new Error(error.message);
 
-  return (data ?? [])
-    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
-    .map((r) => {
+  const rows = data ?? [];
+  const visible = rows
+    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
+  // Rows a non-owner may not see are counted, never summed: the count is
+  // rendered beside every total so a reduced figure is labelled as reduced.
+  const withheldCount = rows.length - visible.length;
+  const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       const row = r as unknown as { bill_ref: string | null; display_order: number | null; supplier_id: string | null; detail: string | null; suppliers: { name: string } | null };
       return {
@@ -439,10 +453,11 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
         supplier_name: row.suppliers?.name ?? null,
         detail: row.detail ?? null,
       };
-    });
+  });
+  return { entries, withheldCount };
 }
 
-export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[]> {
+export async function getRecentEntries(yearMonth: string): Promise<EntriesResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
 
@@ -484,9 +499,13 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
       .range(from, to),
   );
 
-  return data
-    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
-    .map((r) => {
+  const rows = data;
+  const visible = rows
+    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
+  // Rows a non-owner may not see are counted, never summed: the count is
+  // rendered beside every total so a reduced figure is labelled as reduced.
+  const withheldCount = rows.length - visible.length;
+  const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       return {
         id: r.id,
@@ -504,7 +523,8 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
         supplier_name: null,
         detail: null,
       };
-    });
+  });
+  return { entries, withheldCount };
 }
 
 export async function addExpenseEntry(data: {
@@ -592,9 +612,9 @@ export async function deleteExpenseEntry(id: string): Promise<void> {
   revalidatePath("/owner/accounting");
 }
 
-export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
+export async function getEntriesByIds(ids: string[]): Promise<EntriesResult> {
   const profile = await requireAdmin();
-  if (!ids.length) return [];
+  if (!ids.length) return { entries: [], withheldCount: 0 };
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("expense_entries")
@@ -602,9 +622,13 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
     .in("id", ids)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? [])
-    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive)
-    .map((r) => {
+  const rows = data ?? [];
+  const visible = rows
+    .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
+  // Rows a non-owner may not see are counted, never summed: the count is
+  // rendered beside every total so a reduced figure is labelled as reduced.
+  const withheldCount = rows.length - visible.length;
+  const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       return {
         id: r.id,
@@ -622,7 +646,8 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
         supplier_name: null,
         detail: null,
       };
-    });
+  });
+  return { entries, withheldCount };
 }
 
 export async function bulkInsertEntries(
@@ -755,6 +780,12 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
    */
   expenseDataIncomplete: boolean;
   /**
+   * Sensitive accounts with entries this month that this caller may not see.
+   * 0 for the owner. Rendered as a count beside the totals and as a cell in
+   * the xlsx, so an exported figure says it is partial.
+   */
+  withheldAccounts: number;
+  /**
    * The month has not finished yet, so its expenses are partial by nature.
    * A different condition from expenseDataIncomplete with a different cause,
    * and both can be true at once.
@@ -810,6 +841,10 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   // Filter sensitive for non-owners
   const visibleCoa =
     profile.role === "owner" ? allCoa : allCoa.filter((c) => !c.is_sensitive);
+  const withheldAccounts =
+    profile.role === "owner"
+      ? 0
+      : allCoa.filter((c) => c.is_sensitive && entries.some((e) => e.coa_code === c.code)).length;
 
   // Sum entries by coa_code
   const totals = new Map<string, number>();
@@ -861,6 +896,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
     capex,
     tax,
     expenseDataIncomplete,
+    withheldAccounts,
     monthInProgress,
   };
 }

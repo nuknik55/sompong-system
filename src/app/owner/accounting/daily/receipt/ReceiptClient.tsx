@@ -66,9 +66,12 @@ type ReceiptRow = {
 
 export function ReceiptClient({
   entries,
+  withheldCount,
   date,
 }: {
   entries: ExpenseEntry[];
+  /** Rows the server did not send this caller (owner-only accounts). Count only. */
+  withheldCount: number;
   date: string;
 }) {
   const [companyName, setCompanyName] = useState("ห้างหุ้นส่วนจำกัด สวนอาหารสมพงศ์");
@@ -287,6 +290,9 @@ export function ReceiptClient({
           <span style={{ whiteSpace: "nowrap" }}>ตัวอักษร</span>
           <span style={{ borderBottom: "1px solid #555", flex: 1, paddingBottom: "1px", paddingLeft: "8px" }}>
             {bahtToWords(total)}
+            {withheldCount > 0 && (
+              <span className="ml-2 text-xs text-neutral-500">(มีรายการที่ไม่แสดง {withheldCount} รายการ)</span>
+            )}
           </span>
         </div>
 

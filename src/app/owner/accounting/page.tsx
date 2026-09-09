@@ -17,7 +17,7 @@ export default async function AccountingPage({
   const yearMonth =
     rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today.toISOString().slice(0, 7);
 
-  const entries = await getRecentEntries(yearMonth);
+  const { entries, withheldCount } = await getRecentEntries(yearMonth);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
@@ -44,6 +44,7 @@ export default async function AccountingPage({
 
       <AccountingEntryClient
         initialEntries={entries}
+        withheldCount={withheldCount}
         yearMonth={yearMonth}
       />
     </div>
