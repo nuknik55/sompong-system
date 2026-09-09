@@ -678,6 +678,30 @@ not there. What the import writes, for August 2569:
 table is the raw category split, while the import moves the ฿765 carve-out
 out of dessert and into the excluded coffee side. Two rows, one cause.
 
+### The 650 / 752 / 753 entries include coffee's share — about ฿620 a month
+
+Revenue excludes coffee to the baht. **The three expense entries do not**, and
+that asymmetry is deliberate rather than an oversight. August 2569:
+
+| entry | amount written | of which coffee's |
+|---|---:|---:|
+| `650` ส่วนลด | 102,876.25 | ~193 |
+| `752` GP LineMan + `753` GP Grab | 59,477.44 | ~430 |
+| | | **~฿620, or 0.016% of revenue** |
+
+**Why it is not split.** These figures are what the bank account and the
+platform statements actually show — the full discount the POS recorded, the
+full commission Grab and LineMan withheld. And Sheet3 reports discounts **by
+type** (ส่วนลด 20%, พ้อยท์, Birthday …), not by item, so apportioning coffee's
+share would mean allocating a total the file never breaks down. That is
+inventing precision the source does not have, in order to make a booked figure
+disagree with the statement it should reconcile to.
+
+Same treatment as the CRM half: a measured approximation, written down with
+its size so nobody has to rediscover it. **If you are comparing the 650 entry
+against a per-category coffee split and find roughly ฿620, that is this — not
+a bug.**
+
 ## What the accounting module is — and deliberately is not
 
 **Read this before auditing `/owner/accounting`.** Without it, the module's
