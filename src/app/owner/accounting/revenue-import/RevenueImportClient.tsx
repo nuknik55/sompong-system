@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useReducer, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   applyPosRevenueImport,
@@ -8,6 +8,7 @@ import {
   type ApplyResult,
   type ImportPreview,
 } from "./actions";
+import { canApply, importReducer, initialImportState } from "./import-state";
 
 const TYPE_LABEL: Record<string, string> = {
   food: "อาหาร",
@@ -64,29 +65,32 @@ function Delta({ current, next }: { current: number | null; next: number }) {
 export function RevenueImportClient() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [applied, setApplied] = useState<ApplyResult | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  // The File lives HERE from the moment it is chosen, and apply sends this
+  // object. It is never read back from the <input>: the first production run
+  // did that and found the input empty, because React 19 resets an
+  // uncontrolled form after a <form action> completes. See import-state.ts.
+  const [state, dispatch] = useReducer(
+    importReducer<File, ImportPreview, ApplyResult>,
+    undefined,
+    initialImportState<File, ImportPreview, ApplyResult>,
+  );
+  const { file, preview, error, applied } = state;
 
-  function handleUpload(formData: FormData) {
-    setError(null);
-    setApplied(null);
-    setPreview(null);
+  function handlePreview() {
+    if (!file) return;
+    const previewOf = file; // the file this preview will belong to, even if the selection changes meanwhile
+    dispatch({ type: "preview-start" });
     startTransition(async () => {
-      const result = await previewPosRevenueImport(formData);
-      if (!result.ok) setError(result.error);
-      else setPreview(result.preview);
+      const fd = new FormData();
+      fd.set("file", previewOf);
+      const result = await previewPosRevenueImport(fd);
+      if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
+      else dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
     });
   }
 
   function handleApply() {
-    if (!preview) return;
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setError("ไฟล์หายไปจากช่องเลือกไฟล์ — กรุณาเลือกไฟล์แล้วกดอ่านไฟล์อีกครั้ง");
-      return;
-    }
+    if (!file || !preview || !canApply(state)) return;
     const ok = window.confirm(
       `บันทึกรายได้เดือน ${preview.yearMonth}\n\n` +
         `${preview.revenue.filter((r) => r.amount > 0).length} บรรทัดรายได้ รวม ${fmt(preview.restaurantGross)} บาท\n` +
@@ -96,25 +100,25 @@ export function RevenueImportClient() {
     );
     if (!ok) return;
 
-    setError(null);
+    dispatch({ type: "apply-start" });
     startTransition(async () => {
-      // The file is sent again, not the numbers: the server re-parses and
-      // refuses if it does not get back the month and gross shown above.
+      // The held file is sent again, not the numbers: the server re-parses
+      // and refuses unless it gets back the month and gross shown above.
       const fd = new FormData();
       fd.set("file", file);
       fd.set("expectedYearMonth", preview.yearMonth);
       fd.set("expectedGrossTotal", String(preview.grossTotal));
       const result = await applyPosRevenueImport(fd);
-      setApplied(result);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
       else {
-        setPreview((p) => (p ? { ...p, previousImport: { importedAt: new Date().toISOString(), sourceFile: p.fileName } } : p));
+        dispatch({ type: "apply-ok", result });
         router.refresh();
       }
     });
   }
 
   const blocked = (preview?.blocks.length ?? 0) > 0;
+  const applyEnabled = !isPending && canApply(state);
 
   return (
     <div className="space-y-4">
@@ -126,24 +130,34 @@ export function RevenueImportClient() {
             ระบบจะแสดงตัวเลขทั้งหมดให้ตรวจก่อน ยังไม่บันทึกอะไรจนกว่าจะกดยืนยัน
           </p>
         </div>
-        <form action={handleUpload} className="flex flex-wrap items-center gap-2">
+        {/* Deliberately NOT a <form action={…}>: React resets an uncontrolled
+            form after its action completes, which is what emptied the file
+            input on the first production run. The input only feeds state;
+            the buttons read state. */}
+        <div className="flex flex-wrap items-center gap-2">
           <input
-            ref={fileRef}
             type="file"
-            name="file"
             accept=".xls,.xlsx"
-            required
             disabled={isPending}
+            onChange={(e) => dispatch({ type: "select-file", file: e.target.files?.[0] ?? null })}
             className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-sm file:text-white"
           />
           <button
-            type="submit"
-            disabled={isPending}
+            type="button"
+            onClick={handlePreview}
+            disabled={isPending || !file}
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
           >
-            {isPending ? "กำลังอ่าน..." : "อ่านไฟล์"}
+            {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
-        </form>
+        </div>
+        {file && (
+          <p className="text-xs text-neutral-500">
+            ไฟล์ที่เลือก: <span className="font-medium text-neutral-700">{file.name}</span>{" "}
+            <span className="tabular-nums">({Math.round(file.size / 1024)} KB)</span>
+            {preview && " — อ่านแล้ว"}
+          </p>
+        )}
         {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {applied?.ok && (
           <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
@@ -320,7 +334,7 @@ export function RevenueImportClient() {
             <button
               type="button"
               onClick={handleApply}
-              disabled={isPending || blocked}
+              disabled={!applyEnabled}
               className="rounded-md bg-brand-green px-5 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
             >
               {isPending ? "กำลังบันทึก..." : `ยืนยันบันทึกเดือน ${preview.yearMonth}`}
