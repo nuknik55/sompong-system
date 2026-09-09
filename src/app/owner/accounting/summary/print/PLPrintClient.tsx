@@ -8,14 +8,20 @@ const MONTHS_TH = [
   "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม",
 ];
 
+// Two "other" lines, deliberately distinguished: pos_other is the POS's own
+// อื่นๆ group (ค่าทำ/ค่าห้อง, เพิ่มราคา), while other is the figure the
+// accountants compile — scrap and used-oil sales among other things. Labelling
+// both "อื่นๆ" would merge two unrelated things on the P&L.
 const REVENUE_LABELS: Record<string, string> = {
   food: "อาหาร",
   drink: "เครื่องดื่ม",
   dessert: "ของหวาน",
   delivery: "เดลิเวอรี่",
-  other: "อื่นๆ",
+  souvenir: "ของฝาก",
+  pos_other: "อื่นๆ (POS)",
+  other: "อื่นๆ (บัญชี)",
 };
-const REVENUE_KEYS = ["food", "drink", "dessert", "delivery", "other"];
+const REVENUE_KEYS = ["food", "drink", "dessert", "delivery", "souvenir", "pos_other", "other"];
 
 function getThaiMonth(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map(Number);

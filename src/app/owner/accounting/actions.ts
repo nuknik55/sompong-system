@@ -74,8 +74,16 @@ export type WeeklySupplierRow = {
   total: number;
 };
 
+/**
+ * Seven types. Six are written by the POS revenue import; "other" is compiled
+ * by the outsourced accountant and hand-entered, and the import can neither
+ * name nor overwrite it — see supabase/README.md.
+ */
+export type RevenueType =
+  | "food" | "drink" | "dessert" | "delivery" | "souvenir" | "pos_other" | "other";
+
 export type RevenueRow = {
-  revenue_type: "food" | "drink" | "dessert" | "delivery" | "other";
+  revenue_type: RevenueType;
   amount: number;
 };
 
@@ -677,7 +685,7 @@ export async function getMonthlyRevenue(yearMonth: string): Promise<RevenueRow[]
 
 export async function setMonthlyRevenue(
   yearMonth: string,
-  type: "food" | "drink" | "dessert" | "delivery" | "other",
+  type: RevenueType,
   amount: number
 ): Promise<void> {
   await requireAdmin();
@@ -687,6 +695,25 @@ export async function setMonthlyRevenue(
     .upsert({ year_month: yearMonth, revenue_type: type, amount }, { onConflict: "year_month,revenue_type" });
   if (error) throw new Error(error.message);
   revalidatePath("/owner/accounting");
+}
+
+/**
+ * When this month was imported from a POS export, or null.
+ *
+ * Drives the revenue form: the six import-owned boxes go read-only for a month
+ * that has been imported, because a hand edit there would survive only until
+ * the next import run.
+ */
+export async function getPosImportedAt(yearMonth: string): Promise<string | null> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pos_revenue_imports")
+    .select("imported_at")
+    .eq("year_month", yearMonth)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.imported_at as string) ?? null;
 }
 
 // ── Monthly Summary ──────────────────────────────────

@@ -36,6 +36,8 @@ export default async function AccountingPage({
           <span className="text-neutral-200">|</span>
           <Link href="/owner/accounting/coa" className="hover:text-neutral-800">จัดการหมวด</Link>
           <span className="text-neutral-200">|</span>
+          <Link href="/owner/accounting/revenue-import" className="hover:text-neutral-800">นำเข้ารายได้ POS</Link>
+          <span className="text-neutral-200">|</span>
           <Link href="/owner/accounting/coffee-items" className="hover:text-neutral-800">จัดหมวดสินค้า POS</Link>
         </div>
       </div>

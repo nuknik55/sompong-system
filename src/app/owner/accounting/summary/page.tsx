@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getMonthlySummary, getMonthlyRevenue } from "../actions";
+import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt } from "../actions";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 
@@ -38,9 +38,10 @@ export default async function AccountingSummaryPage({
   const today = new Date().toISOString().slice(0, 7);
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
-  const [summary, revenueRows] = await Promise.all([
+  const [summary, revenueRows, importedAt] = await Promise.all([
     getMonthlySummary(yearMonth),
     getMonthlyRevenue(yearMonth),
+    getPosImportedAt(yearMonth),
   ]);
 
   const revenueMap = Object.fromEntries(revenueRows.map((r) => [r.revenue_type, r.amount]));
@@ -109,7 +110,7 @@ export default async function AccountingSummaryPage({
       </div>
 
       {/* Revenue entry */}
-      <RevenueEntryClient yearMonth={yearMonth} initialRevenue={revenueMap as Record<string, number>} />
+      <RevenueEntryClient yearMonth={yearMonth} initialRevenue={revenueMap as Record<string, number>} importedAt={importedAt} />
 
       {totalRevenue === 0 ? (
         <p className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
