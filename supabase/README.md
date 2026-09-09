@@ -327,29 +327,42 @@ In order. Nothing here is started unless it says so.
     table nobody remembers the purpose of is exactly the kind of thing that
     survives for years.
 
-12. **Coffee-items screen, Defects B and C, one commit.** Not started. Agreed
-    scope after `77877f9` (the six-way selector):
+12. **Defect C — Server Action throws elsewhere in the app.** Not started.
 
-    - **Defect C — expected errors as return values.** Next.js redacts a
-      thrown Server Action message in production; the client sees "An error
-      occurred in the Server Components render" instead of the Thai text. The
-      preview action was converted in `77877f9`. **25 throws remain across the
-      other `"use server"` files** — each one that a user can trigger with a
-      wrong file, a stale form, or an empty input needs to become a
-      `{ ok: false, error }` return.
+    The coffee-items page is done: `77877f9` returned the preview's expected
+    failures as values, and the follow-up commit added the parse plausibility
+    guard (`checkPosExportPlausibility` in `src/lib/pos-parse.ts` — Defect B,
+    measured 24 genuine exports passing / 12 refused on named rules) and
+    reworded the save-path throw, which stays: it is an unexpected-input path
+    the screen cannot produce.
 
-      Carry-over from the review of `77877f9`: `saveItemClassification` in
-      `coffee-items/actions.ts` still throws on an invalid category, and its
-      comment claims the message "names the value". It cannot — a throw is
-      redacted, so the value is never seen. It is an unexpected-input path
-      (the client only ever sends the six values), so the throw itself is
-      defensible; the comment is what overpromises. Either return it as a
-      value with the others or reword the comment. Do one of the two here.
+    Next.js redacts a thrown Server Action message in production; the client
+    sees "An error occurred in the Server Components render" instead of the
+    Thai text. **Every throw a user can trigger** — wrong file, stale form,
+    empty input — needs to become a `{ ok: false, error }` return. Throws a
+    user cannot trigger (Supabase `error.message` rethrows, tamper guards) may
+    stay.
 
-    - **Defect B — plausibility guard on the parse.** Refuse an export that
-      parses "successfully" into nonsense: zero lines, all-zero qty or gross,
-      or a Sheet1 total that disagrees with the Sheet3 gross header. Today a
-      corrupt or truncated file can produce an empty, confident preview.
+    `throw new Error(` per `"use server"` file, comments stripped, measured
+    2026-09-09 — 143 in total. An earlier estimate of ~25 counted only the
+    Thai-message subset; re-derive which are user-triggerable when this
+    starts rather than trusting either number:
+
+    | file | throws |
+    |---|---:|
+    | `owner/accounting/actions.ts` | 32 |
+    | `owner/hr/actions.ts` | 26 |
+    | `owner/ingredients/pos-import-actions.ts` | 16 |
+    | `staff/prep/actions.ts` | 15 |
+    | `owner/sales-import-actions.ts` | 11 |
+    | `staff/menu/actions.ts` | 10 |
+    | `owner/ingredients/actions.ts` | 8 |
+    | `owner/catering/actions.ts` | 7 |
+    | `sop/actions.ts` | 6 |
+    | `staff/actions.ts` | 5 |
+    | `owner/approve/actions.ts` | 3 |
+    | `owner/catering/[id]/cost/actions.ts` | 3 |
+    | `owner/settings/actions.ts` | 1 |
 
     After this: the nav link to `/owner/accounting/coffee-items` (URL-only
     today), then item 11's DROP, then the unified revenue import.

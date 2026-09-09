@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitPosDiscounts } from "./pos-parse.ts";
+import { checkPosExportPlausibility, splitPosDiscounts, type PosMonthlyExport, type PosSalesLine } from "./pos-parse.ts";
 // ─── splitPosDiscounts ─────────────────────────────────────────────────────
 // Fixtures are the real Sheet3 contents of the July and August 2569 exports,
 // verbatim. They are here rather than as sample files because the whole point
@@ -111,4 +111,84 @@ test("GPLineMan is excluded, and its absence is not an error", () => {
   // tolerate a member being absent.
   assert.equal(splitPosDiscounts([{ name: "GPLineMan", amount: 160 }]).excluded, 160);
   assert.equal(splitPosDiscounts(AUGUST_DISCOUNTS).unclassified.length, 0);
+});
+
+// ─── checkPosExportPlausibility ─────────────────────────────────────────────
+//
+// Synthetic reports only. The data-layer check — every SaleData_*.xls on disk,
+// 24 genuine exports passing and 12 refused each on a named rule — is run by
+// hand because those files live outside the repo.
+
+function plausibleLine(over: Partial<PosSalesLine> = {}): PosSalesLine {
+  return { saleMode: "Eat In", group: "อาหาร", category: "", productName: "ข้าวผัด", qty: 2, unitPrice: 50, gross: 100, discount: 0, net: 100, ...over };
+}
+
+function plausibleReport(over: Partial<PosMonthlyExport> = {}): PosMonthlyExport {
+  return {
+    dateFrom: "สิงหาคม 2569",
+    dateTo: "สิงหาคม 2569",
+    lines: [plausibleLine(), plausibleLine({ productName: "ชานม", qty: 1, gross: 50, net: 50 })],
+    grossTotal: 150,
+    discountTotal: 0,
+    netTotal: 150,
+    discounts: [],
+    payments: [{ method: "Cash", amount: 150, platformFee: 0, actual: 150 }],
+    customerCount: 3,
+    billCount: 2,
+    cancelledBills: 0,
+    cancelledAmount: 0,
+    ...over,
+  };
+}
+
+test("a genuine-shaped export passes", () => {
+  assert.equal(checkPosExportPlausibility(plausibleReport()), null);
+});
+
+test("rule 1: no period, no Sheet3 total, or no Sheet2 total → not a POS export", () => {
+  for (const over of [{ dateFrom: "" }, { grossTotal: 0 }, { netTotal: 0 }] as Partial<PosMonthlyExport>[]) {
+    const why = checkPosExportPlausibility(plausibleReport(over));
+    assert.match(why ?? "", /ไม่ใช่ไฟล์ที่ export จาก POS/);
+    assert.match(why ?? "", /69-MMSaleData.xlsx/);
+  }
+});
+
+test("rule 2: totals present but Sheet1 empty → re-export, not wrong file", () => {
+  const why = checkPosExportPlausibility(plausibleReport({ lines: [] }));
+  assert.match(why ?? "", /แผ่นที่ 1 ไม่มีรายการสินค้า/);
+  assert.doesNotMatch(why ?? "", /ไม่ใช่ไฟล์ที่ export จาก POS/);
+});
+
+test("rule 3: every line zero → refused; some zero lines → fine (August has 19 free items)", () => {
+  const allZero = plausibleReport({ lines: [plausibleLine({ qty: 0, gross: 0, net: 0 })] });
+  assert.match(checkPosExportPlausibility(allZero) ?? "", /เป็นศูนย์ทั้งหมด/);
+  const someZero = plausibleReport({
+    lines: [plausibleLine(), plausibleLine({ productName: "ฟรี", qty: 1, gross: 0, net: 0 })],
+    grossTotal: 100,
+    netTotal: 100,
+    payments: [{ method: "Cash", amount: 100, platformFee: 0, actual: 100 }],
+  });
+  assert.equal(checkPosExportPlausibility(someZero), null);
+});
+
+test("rule 4: Sheet1 gross ≠ Sheet3 header beyond ฿1 → refused with both figures; ฿1 rounding passes", () => {
+  const why = checkPosExportPlausibility(plausibleReport({ grossTotal: 1500 }));
+  assert.match(why ?? "", /150/);
+  assert.match(why ?? "", /1,500/);
+  assert.equal(checkPosExportPlausibility(plausibleReport({ grossTotal: 150.6 })), null);
+});
+
+test("rule 5: Sheet2 payments ≠ Sheet2 net → refused", () => {
+  const why = checkPosExportPlausibility(plausibleReport({ payments: [{ method: "Cash", amount: 100, platformFee: 0, actual: 100 }] }));
+  assert.match(why ?? "", /แผ่นที่ 2/);
+});
+
+test("order: rule 1 wins over rules 2 and 3 when several apply", () => {
+  // The hand-built file: one zero line, no period, no totals. Rule 1 is the
+  // sentence that sends Nik back to the POS.
+  const nik = plausibleReport({ dateFrom: "", grossTotal: 0, netTotal: 0, lines: [plausibleLine({ qty: 0, gross: 0, net: 0 })], payments: [] });
+  assert.match(checkPosExportPlausibility(nik) ?? "", /ไม่ใช่ไฟล์ที่ export จาก POS/);
+  // A browser save: nothing at all. Still rule 1, not "empty Sheet1".
+  const save = plausibleReport({ dateFrom: "", grossTotal: 0, netTotal: 0, lines: [], payments: [] });
+  assert.match(checkPosExportPlausibility(save) ?? "", /ไม่ใช่ไฟล์ที่ export จาก POS/);
 });

@@ -762,6 +762,77 @@ export function parsePosMonthlyExport(buffer: ArrayBuffer): PosMonthlyExport {
 }
 
 /**
+ * Refuse an export that parsed "successfully" into nonsense.
+ *
+ * parsePosMonthlyExport does not throw on a wrong file. A browser save of the
+ * POS page, Nik's hand-built 69-MMSaleData.xlsx, an export whose Sheet1 came
+ * out empty — each returns a well-formed object full of zeros. Without this
+ * check the screen shows an empty, confident preview, or a coffee total "net
+ * of GP" that is wrong by the whole month.
+ *
+ * Returns the first failing reason in Thai, or null. ORDER IS THE DESIGN: the
+ * most specific reason first, so the one sentence Nik reads tells him what to
+ * do.
+ *
+ *   1. no period, no Sheet3 total, or no Sheet2 total → not a POS export at
+ *      all; go back to the POS. Fires BEFORE the empty-Sheet1 rule so a
+ *      browser save is not told to "re-export" a file that was never the
+ *      right kind.
+ *   2. totals present but no item lines → a POS export whose Sheet1 is empty;
+ *      export again.
+ *   3. lines exist but every one is zero.
+ *   4. Sheet1 gross ≠ Sheet3 header.
+ *   5. Sheet2 payments ≠ Sheet2 net.
+ *
+ * Measured against every SaleData_*.xls on the machine this was written on:
+ * 24 genuine exports — monthly, multi-month, and the two outlier shapes, a
+ * 2565 run of 2,590 lines / ฿41.6M and a 2568 run of 2,114 lines / ฿60.4M —
+ * and the two cross-sheet identities hold TO THE BAHT in all 24. Rules 4 and
+ * 5 therefore fail only for the right reason. The ฿1 tolerance exists because
+ * Sheet3 rounds its header to the baht (August 2569: 107,195.02 vs 107,195).
+ * Rule 3 sums over ALL lines because a real month carries zero-gross lines
+ * (August: 19 free items). The 12 files refused each land on a named rule:
+ * six 10 KB browser saves and the hand-built file on rule 1; three partial
+ * exports and two other report types on rule 2. Rules 3–5 fired on nothing.
+ */
+export function checkPosExportPlausibility(report: PosMonthlyExport): string | null {
+  if (!report.dateFrom || report.grossTotal === 0 || report.netTotal === 0) {
+    return (
+      "ไฟล์นี้ไม่ใช่ไฟล์ที่ export จาก POS — ต้องเป็นไฟล์ SaleData_YYYYMMDD_HHMMSS.xls " +
+      "(มี 5 แผ่น: รายการสินค้า ชำระเงิน ส่วนลด จำนวนลูกค้า ยกเลิกบิล) " +
+      "ไม่ใช่ไฟล์ที่จัดหมวดเอง (69-MMSaleData.xlsx)"
+    );
+  }
+  if (report.lines.length === 0) {
+    return "ไฟล์เป็น export จาก POS แต่แผ่นที่ 1 ไม่มีรายการสินค้า — export ใหม่จาก POS อีกครั้ง";
+  }
+
+  const qty = report.lines.reduce((s, l) => s + l.qty, 0);
+  const gross = Math.round(report.lines.reduce((s, l) => s + l.gross, 0) * 100) / 100;
+  if (qty === 0 || gross === 0) {
+    return "ไฟล์มีรายการสินค้า แต่จำนวนและยอดขายเป็นศูนย์ทั้งหมด — export ใหม่จาก POS อีกครั้ง";
+  }
+
+  const baht = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  if (Math.abs(gross - report.grossTotal) > 1) {
+    return (
+      `ยอดขายรวมในแผ่นที่ 1 (${baht(gross)}) ไม่ตรงกับยอดรวมในแผ่นสรุปส่วนลด (${baht(report.grossTotal)}) ` +
+      "— ไฟล์อาจไม่สมบูรณ์ export ใหม่จาก POS อีกครั้ง"
+    );
+  }
+
+  const payments = Math.round(report.payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  if (Math.abs(payments - report.netTotal) > 1) {
+    return (
+      `ยอดชำระเงินรวมในแผ่นที่ 2 (${baht(payments)}) ไม่ตรงกับยอดชำระ (${baht(report.netTotal)}) ` +
+      "— ไฟล์อาจไม่สมบูรณ์ export ใหม่จาก POS อีกครั้ง"
+    );
+  }
+
+  return null;
+}
+
+/**
  * Split the discount lines the way the restaurant books them.
  *
  * ส่วนลด      genuine percentage discounts to customers — booked in full

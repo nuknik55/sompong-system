@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/data";
-import { parsePosMonthlyExport } from "@/lib/pos-parse";
+import { checkPosExportPlausibility, parsePosMonthlyExport, type PosMonthlyExport } from "@/lib/pos-parse";
 import { aggregateForClassification, platformRates } from "@/lib/pos-classify";
 import { isCategory, type Category } from "./categories";
 
@@ -116,16 +116,24 @@ export async function previewItemClassification(formData: FormData): Promise<Pre
   const file = formData.get("file");
   if (!(file instanceof File)) return { ok: false, error: "ไม่พบไฟล์ที่อัปโหลด" };
 
-  const report = parsePosMonthlyExport(await file.arrayBuffer());
-  if (report.lines.length === 0) {
-    return {
-      ok: false,
-      error:
-        "อ่านไฟล์ไม่พบรายการขาย — ต้องเป็นไฟล์ที่ export จาก POS โดยตรง " +
-        "(ชื่อไฟล์ SaleData_YYYYMMDD_HHMMSS.xls มี 5 แผ่น) " +
-        "ไม่ใช่ไฟล์ที่จัดหมวดเอง (69-MMSaleData.xlsx)",
-    };
+  let report: PosMonthlyExport;
+  try {
+    report = parsePosMonthlyExport(await file.arrayBuffer());
+  } catch {
+    // INSURANCE, NOT AN OBSERVED FIX. No file on the machine this was written
+    // on — 36 tried, including browser saves of the POS page and the
+    // hand-built workbook — makes the parser throw; it returns zeros and the
+    // plausibility check below refuses those. This catch covers a workbook
+    // XLSX.read itself rejects (encrypted, unknown container), which would
+    // otherwise reach Nik as a redacted RSC error. Do not remove it believing
+    // it was load-bearing, and do not keep it believing it caught something.
+    return { ok: false, error: "อ่านไฟล์ไม่ได้ — ไฟล์เสียหรือไม่ใช่ไฟล์ Excel" };
   }
+
+  // A wrong file parses without error into a well-formed object of zeros;
+  // the guard is what turns that into a sentence Nik can act on.
+  const implausible = checkPosExportPlausibility(report);
+  if (implausible) return { ok: false, error: implausible };
 
   // A delivery line with no rate would make the "net of GP" total on screen
   // false. Refuse rather than default to 0.
@@ -177,9 +185,12 @@ export async function saveItemClassification(
   const profile = await requireAdmin();
   if (items.length === 0) return { written: 0, skipped: 0 };
 
-  // The client only sends the six values; anything else is a tampered or
-  // stale payload and the CHECK would reject it anyway. Fail before the
-  // database does, with a message that names the value.
+  // Unexpected-input path, and a throw is the right shape for it: the client
+  // only ever sends the six values, so anything else is a tampered or stale
+  // payload, and the CHECK would reject it regardless. Production redacts a
+  // thrown message — nobody sees the value — which is acceptable for input no
+  // user can produce from the screen. Failures a user CAN produce on this
+  // page return values instead (see PreviewResult).
   const decided = items.map((i) => {
     if (!isCategory(i.category)) throw new Error(`หมวด "${i.category}" ไม่ถูกต้อง (${i.productName})`);
     return { ...i, category: i.category, coffeeSharePerUnit: normaliseShare(i.category, i.coffeeSharePerUnit) };
