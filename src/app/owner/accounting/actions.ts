@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
 import { fetchAllRows } from "@/lib/data";
+import type { PaymentMethod } from "./daily/payment-split";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
 
 /**
@@ -46,7 +47,7 @@ export type ExpenseEntry = {
   amount: number;
   note: string | null;
   bill_ref: string | null;
-  payment_method: "cash" | "transfer";
+  payment_method: PaymentMethod;
   created_at: string;
   display_order: number | null;
   supplier_id: string | null;
@@ -423,7 +424,7 @@ export async function getEntriesByDate(date: string): Promise<ExpenseEntry[]> {
         amount: r.amount,
         note: r.note,
         bill_ref: row.bill_ref ?? null,
-        payment_method: r.payment_method as "cash" | "transfer",
+        payment_method: r.payment_method as PaymentMethod,
         created_at: r.created_at,
         display_order: row.display_order ?? null,
         supplier_id: row.supplier_id ?? null,
@@ -488,7 +489,7 @@ export async function getRecentEntries(yearMonth: string): Promise<ExpenseEntry[
         amount: r.amount,
         note: r.note,
         bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
-        payment_method: r.payment_method as "cash" | "transfer",
+        payment_method: r.payment_method as PaymentMethod,
         created_at: r.created_at,
         display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
         supplier_id: null,
@@ -503,7 +504,7 @@ export async function addExpenseEntry(data: {
   coa_code: string;
   amount: number;
   note?: string;
-  payment_method: "cash" | "transfer";
+  payment_method: PaymentMethod;
 }): Promise<void> {
   const profile = await requireAdmin();
   const supabase = await createClient();
@@ -541,7 +542,7 @@ export async function updateExpenseEntry(
     amount: number;
     note: string | null;
     bill_ref: string | null;
-    payment_method: "cash" | "transfer";
+    payment_method: PaymentMethod;
     supplier_id?: string | null;
     detail?: string | null;
   }
@@ -606,7 +607,7 @@ export async function getEntriesByIds(ids: string[]): Promise<ExpenseEntry[]> {
         amount: r.amount,
         note: r.note,
         bill_ref: (r as unknown as { bill_ref: string | null }).bill_ref ?? null,
-        payment_method: r.payment_method as "cash" | "transfer",
+        payment_method: r.payment_method as PaymentMethod,
         created_at: r.created_at,
         display_order: (r as unknown as { display_order: number | null }).display_order ?? null,
         supplier_id: null,
@@ -623,7 +624,7 @@ export async function bulkInsertEntries(
     amount: number;
     note?: string;
     bill_ref?: string;
-    payment_method: "cash" | "transfer";
+    payment_method: PaymentMethod;
     display_order?: number;
     supplier_id?: string;
     detail?: string;

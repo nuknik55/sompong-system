@@ -12,6 +12,7 @@ import {
   type ExpenseEntry,
   type Supplier,
 } from "../actions";
+import { isDailyEditable, resolveEditPaymentMethod, splitByPaymentMethod } from "./payment-split";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -198,6 +199,8 @@ type EditState = {
   supplierId: string;
   detail: string;
   coaCode: string;
+  /** The method the entry already has, so a save need not assert one. */
+  paymentMethod: string;
   amountCash: string;
   amountTransfer: string;
 };
@@ -274,16 +277,24 @@ export function DailyEntryClient({
     return parts.join(" — ") || "–";
   }
 
-  const printGroups = useMemo(() => {
-    const map = new Map<string, { cash: number; transfer: number }>();
-    for (const e of entries) {
-      const key = e.bill_ref?.trim() || entryLabel(e);
-      const prev = map.get(key) ?? { cash: 0, transfer: 0 };
-      if (e.payment_method === "cash") map.set(key, { ...prev, cash: prev.cash + e.amount });
-      else map.set(key, { ...prev, transfer: prev.transfer + e.amount });
-    }
-    return [...map.entries()].map(([label, t]) => ({ label, ...t }));
-  }, [entries]);
+  // The printed sheet is a payment instruction: เงินสด is settled, โอน is what
+  // Nik still has to send. An accrual entry — GP withheld before payout, or a
+  // POS discount — is neither, so it is summed separately and shown as a
+  // footnote rather than inside either column. Until this used
+  // splitByPaymentMethod it fell into โอน by an else-branch.
+  const printSplit = useMemo(
+    () => splitByPaymentMethod(entries, (e) => e.bill_ref?.trim() || entryLabel(e)),
+    [entries],
+  );
+  const printGroups = useMemo(
+    () => printSplit.groups.filter((g) => g.buckets.cash > 0 || g.buckets.transfer > 0),
+    [printSplit],
+  );
+  const printAccrual = printSplit.totals.accrual;
+  const printAccrualCount = useMemo(
+    () => printSplit.groups.filter((g) => g.buckets.accrual > 0 && g.buckets.cash === 0 && g.buckets.transfer === 0).length,
+    [printSplit],
+  );
 
   // ── Checkbox helpers ─────────────────────────────────────────────
 
@@ -403,11 +414,21 @@ export function DailyEntryClient({
   // ── Edit saved entry ─────────────────────────────────────────────
 
   function startEdit(e: ExpenseEntry) {
+    // The dialog has only เงินสด and โอน boxes, so it can neither show nor
+    // express an accrual entry: it would open with both blank and save as a
+    // transfer. These are written and replaced wholesale by the POS import,
+    // so hand-editing one would survive only until the next run anyway.
+    if (!isDailyEditable(e)) {
+      setError("รายการนี้เป็นค่าใช้จ่ายที่ไม่ต้องจ่าย (GP/ส่วนลดจาก POS) แก้ไขที่หน้านำเข้ารายได้");
+      return;
+    }
+    setError(null);
     setEditing({
       id: e.id,
       supplierId: e.supplier_id ?? "",
       detail: e.detail ?? e.note ?? "",
       coaCode: e.coa_code,
+      paymentMethod: e.payment_method,
       amountCash: e.payment_method === "cash" ? String(e.amount) : "",
       amountTransfer: e.payment_method === "transfer" ? String(e.amount) : "",
     });
@@ -418,7 +439,10 @@ export function DailyEntryClient({
     const cash = parseFloat(editing.amountCash) || 0;
     const transfer = parseFloat(editing.amountTransfer) || 0;
     const amount = cash > 0 ? cash : transfer;
-    const payMethod: "cash" | "transfer" = cash > 0 ? "cash" : "transfer";
+    // Never assert a method the user did not express. The old rule resolved
+    // anything that was not cash to "transfer", which silently moved an
+    // accrual entry onto the pay-out list.
+    const payMethod = resolveEditPaymentMethod(cash, transfer, editing.paymentMethod);
     if (!editing.coaCode || amount <= 0) { setError("กรุณาเลือกหมวดและใส่จำนวนเงิน"); return; }
     setError(null);
     savedScrollRef.current = window.scrollY;
@@ -576,8 +600,8 @@ export function DailyEntryClient({
               {printGroups.map((g, i) => (
                 <tr key={i} className="border-b border-neutral-200">
                   <td className="py-1.5 pr-6">{g.label}</td>
-                  <td className="py-1.5 px-4 text-right tabular-nums">{fmt(g.cash) || "–"}</td>
-                  <td className="py-1.5 pl-4 text-right tabular-nums">{fmt(g.transfer) || "–"}</td>
+                  <td className="py-1.5 px-4 text-right tabular-nums">{fmt(g.buckets.cash) || "–"}</td>
+                  <td className="py-1.5 pl-4 text-right tabular-nums">{fmt(g.buckets.transfer) || "–"}</td>
                 </tr>
               ))}
             </tbody>
@@ -592,6 +616,14 @@ export function DailyEntryClient({
                 <td className="py-1 px-4"></td>
                 <td className="py-1 pl-4 text-right tabular-nums text-sm">{fmt(savedTransfer) || "–"}</td>
               </tr>
+              {printAccrual > 0 && (
+                <tr className="border-t border-neutral-200 text-neutral-500">
+                  <td className="py-1.5 pr-6 text-sm">
+                    ไม่รวมรายการที่ไม่ต้องจ่าย {printAccrualCount} รายการ (GP/ส่วนลด หักไปแล้ว)
+                  </td>
+                  <td colSpan={2} className="py-1.5 pl-4 text-right tabular-nums text-sm">{fmt(printAccrual)}</td>
+                </tr>
+              )}
               <tr className="border-t-2 border-neutral-400 font-semibold" style={{ backgroundColor: "#fef9c3" }}>
                 <td className="py-2 pr-6">รวม</td>
                 <td colSpan={2} className="py-2 pl-4 text-right tabular-nums">{fmt(savedCash + savedTransfer)}</td>
