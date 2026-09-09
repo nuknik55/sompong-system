@@ -215,6 +215,41 @@ descriptions of context, not a schema. So:
 - Before reporting a data defect to someone who will act on it, state which
   field the claim rests on. If the answer is "the note", it is a hypothesis.
 
+## React resets a `<form action={fn}>` after the action runs — a file input read later is empty
+
+The first production run of the POS revenue import failed at apply: the
+preview had rendered, then `fileRef.current.files[0]` was `undefined`. Nothing
+was written; the guard refused before the server was called.
+
+The cause is React 19, by design, and it is in react-dom's source rather than
+in anything this repo did. `startHostTransition` — the path every
+`<form action={fn}>` submission takes — wraps the action as:
+
+```js
+function () { requestFormReset$1(formFiber); return action(formData); }
+```
+
+so an uncontrolled form is **reset after its action completes**. A file input
+is uncontrolled. Submit the form once to build a preview, and the input that
+apply then reads is already empty.
+
+**`coffee-items` has the identical pattern and only survives because it needs
+the file once.** The next page that needs a file twice — preview, then commit
+the same file — will hit this again unless it does what `revenue-import` now
+does:
+
+- capture the `File` into React state in the input's `onChange`, and have
+  every later step read state — never the DOM input;
+- no `<form action>` around a file input the page will need again; a plain
+  button reading state does not trigger the reset;
+- when a different file is chosen, invalidate anything derived from the old
+  one, and gate the commit step on the held file being the same object the
+  preview came from (`import-state.ts`, `canApply`).
+
+Server-side, still re-parse the submitted file and echo-check it against what
+the preview returned. Holding the file in state is the client half of that
+guard, not a replacement for it.
+
 ## 3. Line endings are mixed in this repo — do not assume `\n`
 
 `src/app/owner/hr/actions.ts` is CRLF while the files around it are LF. Three
