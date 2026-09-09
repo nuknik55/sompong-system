@@ -478,6 +478,34 @@ In order. Nothing here is started unless it says so.
     message to convert — though the redaction that hides it is the same
     problem.
 
+    **Order agreed 2026-09-09: this is next after the import.** Nik fetches
+    the digest from the Vercel logs; nothing starts until it is in hand.
+
+15. **`monthly_covers` — bills and customers per month.** Not started.
+    Separate commit, after item 14.
+
+    The POS export's Sheet4/Sheet5 already parse cleanly — August 2569: 2,690
+    bills, 6,686 customers, 19 cancelled bills for ฿52,974 — and the revenue
+    import shows them in its preview under "ข้อมูลอื่นในไฟล์ (ยังไม่บันทึก)".
+    Nothing stores them, because nothing consumes them yet: the P&L has no
+    per-cover line and the break-even view is not built.
+
+    Needs a table (`year_month` PK, bills, customers, cancelled_bills,
+    cancelled_amount, plus provenance), a write inside the same
+    `import_pos_month` RPC so covers and revenue can never disagree about
+    which file they came from, and the same delete-and-insert ownership rule.
+    Read the RPC's header before extending it — the allowlist and the
+    hardcoded `supplier_id NULL` are load-bearing.
+
+    Not before then: a covers table nobody reads is a second place for a number
+    to go stale.
+
+**Checked and closed 2026-09-09, not queued:** every `page.tsx` under
+`src/app/owner` has at least one link to it. The one grep miss,
+`/owner/hr/schedule/print`, is opened through a computed `printUrl` in
+`ScheduleClient.tsx`. `/owner/accounting/revenue-import` was linked from the
+accounting tool row in the same commit that created it (`d56a5ee`).
+
 ## The coffee-shop reimbursement, and why it is deliberately not corrected
 
 Sompong buys supplies for the coffee shop, pays up front, and is reimbursed at
@@ -701,6 +729,38 @@ Same treatment as the CRM half: a measured approximation, written down with
 its size so nobody has to rediscover it. **If you are comparing the 650 entry
 against a per-category coffee split and find roughly ฿620, that is this — not
 a bug.**
+
+### August 2569 was imported on 2026-09-09 — what landed, verified from the tables
+
+First production run of `/owner/accounting/revenue-import`, from
+`SaleData_20260908_194017.xls`. The first attempt failed before writing
+anything (see AGENTS.md, "React resets a `<form action>`"); the second wrote
+exactly the projection above. Read back from the database, not from the
+screen:
+
+| what | landed |
+|---|---|
+| six revenue rows | food 3,136,226 · drink 303,092 · dessert 187,434 · delivery 210,926 · souvenir 3,024 · pos_other 19,150 — **every figure equal to the projection** |
+| `other` | **121,195.50, untouched** |
+| total revenue | **3,981,047.50** (the six + `other`) |
+| three expense entries, dated 2026-08-31 | 650 ฿102,876.25 · 752 ฿34,047.34 · 753 ฿25,430.10 — all `payment_method = accrual`, all `supplier_id NULL`, all with a `POS-…-2026-08` bill_ref |
+| `pos_revenue_imports` | one row: gross 3,989,129, restaurant 3,859,852, source file recorded |
+
+**What the summary page computes for August now**, and why one figure is
+below what was forecast:
+
+| | before import | after |
+|---|---:|---:|
+| COGS % of revenue | 53.07% | **44.93%** |
+| operating expense | 2,277,935 | 2,440,288.69 |
+| operating profit % | 32.41% | **38.70%** |
+
+The earlier forecast of "about 41%" profit was revenue ÷ *existing* expenses.
+The import also **adds ฿162,353.69 of expense** — the discount and the two GP
+entries that had never been posted — so profit is 38.70%, not 42.78%. That is
+the import working, not a shortfall: those costs were always real, and they
+were previously missing from the ledger entirely. The 44.9% COGS forecast
+holds because COGS itself did not change, only the revenue it is divided by.
 
 ## What the accounting module is — and deliberately is not
 
