@@ -620,6 +620,32 @@ nobody chases them as reconciliation failures:**
   platform GP → **฿128,625**, the figure he enters. Three numbers, three bases,
   all correct.
 
+### Do not compare the import's `delivery` row against ฿212,456
+
+The ฿212,456 above is the **delivery column of the table**, every category
+including coffee. The revenue import excludes coffee entirely, so the
+`delivery` row it writes is **฿210,926** — the same figure less the ฿1,530 of
+coffee sold through Grab and LineMan.
+
+Both numbers are right on their own basis and neither is a typo. They are
+recorded together because the first person to check an import against this
+section will otherwise find a ฿1,530 gap and start looking for a bug that is
+not there. What the import writes, for August 2569:
+
+| revenue_type | amount | |
+|---|---:|---|
+| `food` | 3,136,226 | dine-in |
+| `drink` | 303,092 | dine-in |
+| `dessert` | **187,434** | dine-in, **less** the ฿765 carve-out — not the 188,199 in the table above |
+| `souvenir` | 3,024 | dine-in |
+| `pos_other` | 19,150 | dine-in |
+| `delivery` | **210,926** | all non-coffee Grab + LineMan |
+| **total** | **3,859,852** | = export gross 3,989,129 − coffee side 129,277 |
+
+`dessert` differs from the table for the same reason `delivery` does: the
+table is the raw category split, while the import moves the ฿765 carve-out
+out of dessert and into the excluded coffee side. Two rows, one cause.
+
 ## What the accounting module is — and deliberately is not
 
 **Read this before auditing `/owner/accounting`.** Without it, the module's
