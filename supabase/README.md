@@ -372,8 +372,28 @@ In order. Nothing here is started unless it says so.
     | `owner/catering/[id]/cost/actions.ts` | 3 |
     | `owner/settings/actions.ts` | 1 |
 
-    After this: the nav link to `/owner/accounting/coffee-items` (URL-only
-    today), then item 11's DROP, then the unified revenue import.
+    The nav link landed in `91a503a`; item 11's DROP file is written. Next is
+    the unified revenue import.
+
+13. **Rename the `coffee-items` route to match its title.** Deferred —
+    **conditional, not standalone.** The page is titled จัดหมวดสินค้า POS and
+    covers six categories; the route still says `coffee-items` from when it
+    covered one. Decided 2026-09-09: do it only the next time that folder is
+    touched for another reason. The return is cosmetic, and two applied SQL
+    files will carry the old path permanently either way.
+
+    Inventory, so the rename is one commit when it happens:
+
+    | where | what |
+    |---|---|
+    | `src/app/owner/accounting/coffee-items/` | `git mv` the folder; `page.tsx`, `actions.ts`, `CoffeeItemsClient.tsx`, `categories.ts` move with it |
+    | `coffee-items/actions.ts` — `revalidatePath("/owner/accounting/coffee-items")` | the one that breaks silently if missed: stale page, no error |
+    | `src/app/owner/accounting/page.tsx` | the nav link |
+    | `next.config` | add a redirect from the old path — Nik has the URL bookmarked |
+    | `supabase/seed_pos_item_categories.sql` (2 mentions) | **applied — leave as is.** An applied migration keeps describing what executed |
+    | `scripts/seed-item-categories.mjs` (2) | generates that SQL text; one-time tooling, update or leave |
+    | this README (3) and the memory note (1) | text |
+    | `CoffeeItemsClient` identifier | cosmetic; rename in the same commit or not at all |
 
 ## Item categories — what survives each month, and what does not
 
