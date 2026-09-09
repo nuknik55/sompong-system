@@ -59,6 +59,8 @@ and `menus.fuel_cost` was dropped on the same day.
 | `pos_item_categories_migration.sql` | 2026-09-08 | Created `pos_item_categories` with the five-value category CHECK, the carve-out CHECK, and owner/admin RLS. |
 | `pos_item_categories_souvenir_migration.sql` | 2026-09-08 | Widened the category CHECK to six values (`souvenir`); column comments on `category` and `reviewed_by`. Verified live by Nik: `pg_get_constraintdef` lists six values. |
 | `seed_pos_item_categories.sql` | 2026-09-08 | **One-off.** 523 rows from Nik's August split, `reviewed_by IS NULL`. Verified live: 523/523. The file refuses to run on a non-empty table — do not re-seed; new products are classified on the screen. |
+| `drop_pos_coffee_items_migration.sql` | 2026-09-08 | Dropped the empty orphan `pos_coffee_items`. Verified live: the table returns 404; `pos_item_categories` still holds 523. Closes queue item 11. |
+| `coa_document_ui_created_accounts.sql` | 2026-09-09 | `description` on the ten CoA accounts created through the UI. Verified live: all ten documented, 23 described accounts in total. Sets no other column; every clause keyed on `code`. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -67,13 +69,9 @@ recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 
 ### Not applied
 
-- `drop_pos_coffee_items_migration.sql` — drops the empty, orphaned
-  `pos_coffee_items`. Preconditions (zero rows, zero code references, the
-  replacement deploy live) verified 2026-09-09 16:12; the file re-checks the
-  row count at run time. Nik to run. Queue item 11.
-- `coa_document_ui_created_accounts.sql` — sets `description` on nine of the ten
-  CoA accounts that exist in production but in no migration. Sets no other
-  column; every clause keyed on `code`. Nik to run.
+Nothing outstanding.
+
+### The 125/126 boundary, recorded because 126's own entries cannot show it
 
   The 125/126 boundary is real and is as the names say — Nik confirmed:
   **125 is chicken eggs only; 126 is every other kind** (duck, salted, century).
