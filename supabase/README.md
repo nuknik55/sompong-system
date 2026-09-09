@@ -55,6 +55,10 @@ and `menus.fuel_cost` was dropped on the same day.
 | `pos_date_precision_migration.sql` | 2026-09-03 | Added `pos_receipt_deliveries.date_precision` (`day`/`month`) with its CHECK and index. Constraint verified live: rejects `'week'` with 23514. |
 | `reset_catering_test_data.sql` | 2026-09-06 | Deleted all 8 test catering events and the 104 cascaded child rows; deleted the `catering_quote_sequences` row so the counter restarts at 1. Customers (9), set menus (3) and set menu items (14) kept. Ran clean — the exactly-8 guard did not fire. **One-off. Do not re-run:** it would delete whatever real events exist by then, and only the guard's count stands between it and that. |
 | `fix_quote_number_column_comment.sql` | 2026-09-06 | Corrected the `quote_number` column comment, which still described the format as `QSP-IN{YYMM}` after the prefix became `IN`/`OUT`. Documentation only, safe to re-run. |
+| `pos_coffee_items_migration.sql` | 2026-09-07 | Created `pos_coffee_items` (boolean is-coffee per product). Superseded before it ever held a row — see item 11 and `drop_pos_coffee_items_migration.sql`. |
+| `pos_item_categories_migration.sql` | 2026-09-08 | Created `pos_item_categories` with the five-value category CHECK, the carve-out CHECK, and owner/admin RLS. |
+| `pos_item_categories_souvenir_migration.sql` | 2026-09-08 | Widened the category CHECK to six values (`souvenir`); column comments on `category` and `reviewed_by`. Verified live by Nik: `pg_get_constraintdef` lists six values. |
+| `seed_pos_item_categories.sql` | 2026-09-08 | **One-off.** 523 rows from Nik's August split, `reviewed_by IS NULL`. Verified live: 523/523. The file refuses to run on a non-empty table — do not re-seed; new products are classified on the screen. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -63,7 +67,10 @@ recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 
 ### Not applied
 
-Nothing outstanding.
+- `drop_pos_coffee_items_migration.sql` — drops the empty, orphaned
+  `pos_coffee_items`. Preconditions (zero rows, zero code references, the
+  replacement deploy live) verified 2026-09-09 16:12; the file re-checks the
+  row count at run time. Nik to run. Queue item 11.
 
 ### Removed rather than applied
 
@@ -296,7 +303,8 @@ In order. Nothing here is started unless it says so.
     rather than fixed because that round was scoped to one module and this
     touches shared data-access code used by the costing engine.
 
-11. **Drop the orphaned `pos_coffee_items` table.** Not started. One line, but
+11. **Drop the orphaned `pos_coffee_items` table.** File written
+    (`drop_pos_coffee_items_migration.sql`), Nik to run. One line, but
     it needs to happen or an empty table with a misleading name lives forever.
 
     `pos_coffee_items` was created for a single boolean question — "is this item
