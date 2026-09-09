@@ -125,6 +125,19 @@ export type MonthlySummaryGroup = {
 // though tsc and eslint both pass it. Nothing outside this module needs it.
 const NON_OPERATING_GROUPS = ["G950", "G990"] as const;
 
+/**
+ * The current year-month in Bangkok, not UTC.
+ *
+ * `new Date().toISOString().slice(0, 7)` is UTC, and Thailand is UTC+7: between
+ * 00:00 and 07:00 Bangkok on the 1st, UTC still reads the previous month. That
+ * would mark a month that had just closed as "still in progress" and fail to
+ * mark the one that had just opened — for seven hours, every month. A marker
+ * that is wrong even occasionally is one people learn to ignore.
+ */
+function bangkokYearMonth(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
+}
+
 // ── Suppliers ────────────────────────────────────────
 
 export async function getSuppliers(): Promise<Supplier[]> {
@@ -692,6 +705,33 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   operatingExpense: number;
   capex: number;
   tax: number;
+  /**
+   * This month's expense record starts part-way through the month, so every
+   * percentage below is a full month of revenue against a partial month of
+   * costs.
+   *
+   * TRUE FOR EXACTLY ONE MONTH IN THE TABLE'S WHOLE HISTORY — the one holding
+   * the earliest expense entry, and only when that entry is not on the 1st.
+   * `expense_entries` begins 2026-07-17: July 2569 was the trial month while
+   * this app was being built, and Nik has decided not to backfill 1–16 July.
+   *
+   * WHAT THIS DOES NOT MEAN: false here is NOT "this month is verified
+   * complete". It detects one failure mode — the start of the record — and
+   * nothing else. A month left half-entered because someone forgot a week
+   * reports false, exactly like a complete one. Do not build anything on this
+   * that needs the stronger claim.
+   *
+   * It self-corrects: backfill 1–16 July and the earliest entry becomes the
+   * 1st, so the flag clears with no code change. It cannot false-positive a
+   * later month, because a later month is not the earliest.
+   */
+  expenseDataIncomplete: boolean;
+  /**
+   * The month has not finished yet, so its expenses are partial by nature.
+   * A different condition from expenseDataIncomplete with a different cause,
+   * and both can be true at once.
+   */
+  monthInProgress: boolean;
 }> {
   const profile = await requireAdmin();
   const supabase = await createClient();
@@ -700,7 +740,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   // PostgREST's 1000-row server cap. August 2026 holds 990 entries — ten more
   // and the month's expenses would have quietly come back short, understating
   // every group total and the profit line with no error anywhere.
-  const [entries, coaRes, revenueRes] = await Promise.all([
+  const [entries, coaRes, revenueRes, firstEntryRes] = await Promise.all([
     fetchAllRows<{ coa_code: string; amount: number }>(({ from, to }) =>
       supabase
         .from("expense_entries")
@@ -711,6 +751,9 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
     ),
     supabase.from("coa").select("*").order("sort_order"),
     supabase.from("monthly_revenue").select("revenue_type,amount").eq("year_month", yearMonth),
+    // The earliest expense entry in the whole table — where the record begins.
+    // See expenseDataIncomplete above for why one row is the entire test.
+    supabase.from("expense_entries").select("entry_date").order("entry_date").limit(1),
   ]);
 
   if (coaRes.error) throw new Error(coaRes.error.message);
@@ -719,6 +762,17 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   // rendered a full month of expenses against no income — a plausible-looking
   // catastrophic loss, produced by a query failure rather than by the numbers.
   if (revenueRes.error) throw new Error(revenueRes.error.message);
+  // Checked for the same reason as revenueRes: a failed read here would leave
+  // firstEntry undefined, the flag false, and July would render its 78% profit
+  // with no warning — a marker that fails silently is worse than none.
+  if (firstEntryRes.error) throw new Error(firstEntryRes.error.message);
+
+  const firstEntryDate = firstEntryRes.data?.[0]?.entry_date as string | undefined;
+  const expenseDataIncomplete =
+    firstEntryDate !== undefined &&
+    firstEntryDate.slice(0, 7) === yearMonth &&
+    firstEntryDate.slice(8) !== "01";
+  const monthInProgress = yearMonth === bangkokYearMonth();
 
   const allCoa = (coaRes.data ?? []) as CoaAccount[];
   const revenueRows = revenueRes.data ?? [];
@@ -771,5 +825,14 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
   const capex = nonOperating.find((g) => g.group_code === "G990")?.total ?? 0;
   const tax = nonOperating.find((g) => g.group_code === "G950")?.total ?? 0;
 
-  return { groups, nonOperating, totalRevenue, operatingExpense, capex, tax };
+  return {
+    groups,
+    nonOperating,
+    totalRevenue,
+    operatingExpense,
+    capex,
+    tax,
+    expenseDataIncomplete,
+    monthInProgress,
+  };
 }

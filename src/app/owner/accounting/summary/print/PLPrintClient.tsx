@@ -1,6 +1,7 @@
 "use client";
 
 import type { MonthlySummaryGroup } from "../../actions";
+import { completenessNotices, profitJudgementAllowed, type MonthCompleteness } from "../completeness";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
@@ -41,7 +42,7 @@ function exportExcel(
     operatingExpense: number;
     capex: number;
     tax: number;
-  }
+  } & MonthCompleteness
 ) {
   // Lazy-load xlsx (already in package.json)
   import("xlsx").then((XLSX) => {
@@ -52,6 +53,13 @@ function exportExcel(
 
     // Title
     rows.push([`งบกำไรขาดทุน (P&L) — ${thaiMonth}`]);
+
+    // The warning must be a CELL, not a styled banner: this file is the thing
+    // that leaves the building. A reader who opens it in Excel has none of the
+    // context the screen carries, and July 2569's 78.2% profit is entirely
+    // believable to someone who does not know half its costs are missing.
+    for (const notice of completenessNotices(summary)) rows.push([`*** ${notice}`]);
+
     rows.push([]);
 
     // Revenue section
@@ -131,13 +139,18 @@ export function PLPrintClient({
     operatingExpense: number;
     capex: number;
     tax: number;
-  };
+  } & MonthCompleteness;
   revenueMap: Record<string, number>;
 }) {
   const thaiMonth = getThaiMonth(yearMonth);
   const operatingProfit = summary.totalRevenue - summary.operatingExpense;
   const profitPct = summary.totalRevenue > 0 ? (operatingProfit / summary.totalRevenue) * 100 : null;
-  const profitColor = operatingProfit < 0 ? "#dc2626" : "#16a34a";
+  // Same rule as the screen (profitJudgementAllowed): the figure prints, the
+  // verdict does not. Green on July 2569's 78.2% would be the single most
+  // misleading mark on a page that gets emailed to the accountant.
+  const judged = profitJudgementAllowed(summary);
+  const profitColor = !judged ? "#111827" : operatingProfit < 0 ? "#dc2626" : "#16a34a";
+  const notices = completenessNotices(summary);
 
   const backHref = `/owner/accounting/summary?month=${yearMonth}`;
 
@@ -198,6 +211,18 @@ export function PLPrintClient({
           <div style={{ fontSize: 20, fontWeight: 700, fontFamily: font }}>งบกำไรขาดทุน (P&L)</div>
           <div style={{ fontSize: 15, color: "#555", marginTop: 4 }}>{thaiMonth}</div>
         </div>
+
+        {notices.map((n) => (
+          <div
+            key={n}
+            style={{
+              border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e",
+              padding: "8px 12px", marginBottom: 16, fontSize: 13, lineHeight: 1.5,
+            }}
+          >
+            {n}
+          </div>
+        ))}
 
         {/* Revenue table */}
         <div style={{ marginBottom: 4, fontWeight: 700, fontSize: 15, fontFamily: font }}>รายได้</div>
@@ -301,7 +326,7 @@ export function PLPrintClient({
         {/* Profit row */}
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
-            <tr style={{ background: operatingProfit < 0 ? "#fef2f2" : "#f0fdf4", borderTop: "2px solid #333" }}>
+            <tr style={{ background: !judged ? "#f9fafb" : operatingProfit < 0 ? "#fef2f2" : "#f0fdf4", borderTop: "2px solid #333" }}>
               <td style={{ ...cellStyle, fontWeight: 700, fontSize: 16, color: profitColor }}>
                 กำไรจากการดำเนินงาน
               </td>

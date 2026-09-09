@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { requireAdmin } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getMonthlySummary, getMonthlyRevenue } from "../actions";
+import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 
 function formatBaht(n: number) {
@@ -57,6 +58,24 @@ export default async function AccountingSummaryPage({
   const operatingProfit = totalRevenue - summary.operatingExpense;
   const profitPct = totalRevenue > 0 ? (operatingProfit / totalRevenue) * 100 : null;
 
+  const notices = completenessNotices(summary);
+  // On an incomplete month the profit figure still shows, but without its
+  // red/amber/green verdict — July 2569's 78.2% renders green otherwise, which
+  // reads as an excellent month rather than as half the costs.
+  const profitHighlight =
+    profitPct !== null && profitJudgementAllowed(summary)
+      ? profitPct < 10
+        ? "red"
+        : profitPct < 15
+          ? "amber"
+          : "green"
+      : undefined;
+  const profitColor = !profitJudgementAllowed(summary)
+    ? "text-neutral-900"
+    : operatingProfit < 0
+      ? "text-red-600"
+      : "text-brand-green";
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
       {/* Header */}
@@ -98,6 +117,12 @@ export default async function AccountingSummaryPage({
         </p>
       ) : null}
 
+      {notices.map((n) => (
+        <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {n}
+        </p>
+      ))}
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="รายได้รวม" value={`${formatBaht(totalRevenue)} ฿`} />
@@ -109,7 +134,7 @@ export default async function AccountingSummaryPage({
         <KpiCard
           label="กำไรจากการดำเนินงาน"
           value={totalRevenue > 0 ? `${formatBaht(operatingProfit)} ฿` : "—"}
-          highlight={profitPct !== null ? (profitPct < 10 ? "red" : profitPct < 15 ? "amber" : "green") : undefined}
+          highlight={profitHighlight}
         />
       </div>
 
@@ -173,10 +198,13 @@ export default async function AccountingSummaryPage({
             {totalRevenue > 0 && (
               <tr className="border-t border-neutral-200">
                 <td className="px-4 py-2 font-semibold text-neutral-900">กำไรจากการดำเนินงาน</td>
-                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${operatingProfit < 0 ? "text-red-600" : "text-brand-green"}`}>
+                {/* Same reasoning as the KPI card: on an incomplete month the
+                    figure is shown but not coloured, because green on 78.2%
+                    is a verdict the data cannot support. */}
+                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${profitColor}`}>
                   {formatBaht(operatingProfit)}
                 </td>
-                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${operatingProfit < 0 ? "text-red-600" : "text-brand-green"}`}>
+                <td className={`px-4 py-2 text-right tabular-nums font-semibold ${profitColor}`}>
                   {profitPct != null ? `${profitPct.toFixed(1)}%` : "—"}
                 </td>
                 <td colSpan={2} />

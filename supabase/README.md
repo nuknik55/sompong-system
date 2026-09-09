@@ -71,6 +71,59 @@ recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
   `pos_coffee_items`. Preconditions (zero rows, zero code references, the
   replacement deploy live) verified 2026-09-09 16:12; the file re-checks the
   row count at run time. Nik to run. Queue item 11.
+- `coa_document_ui_created_accounts.sql` — sets `description` on nine of the ten
+  CoA accounts that exist in production but in no migration. Sets no other
+  column; every clause keyed on `code`. Nik to run.
+
+  The 125/126 boundary is real and is as the names say — Nik confirmed:
+  **125 is chicken eggs only; 126 is every other kind** (duck, salted, century).
+  Both descriptions name the other account, because 126's own entries are all
+  supplier-batch labels (`วัตถุดิบ (ไหน)`) that never say what was bought, so the
+  description is the only thing that places a line.
+
+### Two entries to review in the UI — not moved by any migration
+
+Found while documenting 125/126. **Relocating a posted expense between COGS
+accounts is Nik's call in the app, not a migration's**, so both are reported
+and left alone.
+
+- **2026-07-21 · ฿385 · currently in `130 ของแห้ง`** — the เยี่ยวม้า (century
+  egg) half of the พี่สมหมาย bill. By the confirmed rule it belongs in
+  `126 ไข่อื่นๆ`.
+- **2026-07-22 · ฿40 · currently in `125 ไข่ไก่`** — note reads only
+  `วัตถุดิบร้าน (ไหน)`. 126 holds thirteen entries with near-identical notes at
+  ฿40–45 from the same supplier, so this one probably belongs there too. **Not
+  verifiable from the note** — Nik would have to recognise it.
+
+**A correction worth recording, because the wrong version was acted on
+briefly.** An earlier pass reported that 125 contained a miscoded `เยี่ยวม้า
+(1*385)` line. It does not. The พี่สมหมาย bill of 2026-07-21 was split into two
+entries — ฿2,010 to 125 (exactly 15 × 134, the chicken eggs) and ฿385 to 130
+(the century egg) — and **the full bill text was copied into both notes**. The
+amounts were split correctly; only the note is shared. Reading an account's
+contents from note text rather than from amounts is what produced the false
+finding.
+
+### Two hazards in files that have already run
+
+Both stay as they are — an applied migration keeps describing what executed —
+but re-running either would not do what it looks like it does.
+
+- **`coa_description_migration.sql` matches on `name`, not `code`.** All ten of
+  its clauses are `WHERE name = '...'`, and `name` is user-editable at
+  `/owner/accounting/coa` while `code` is the primary key. Rename an account
+  and that file silently stops matching it. Any new CoA migration keys on
+  `code` — `coa_document_ui_created_accounts.sql` does.
+- **`cost_behavior` NULL on an account means INHERIT, not exclude.** An account
+  with NULL takes its group header's value; only NULL on a *group header*
+  excludes a group from break-even (which is why G950 Tax and G990 CapEx are
+  out). Consequence, recorded here because it will matter the moment the
+  break-even view is built: **G900 is `fixed`, so `998 ร้านกาแฟ` inherits
+  `fixed`** and would enter break-even as a restaurant fixed cost of roughly
+  ฿3,600–4,100 a month — money laid out for the coffee shop and reimbursed.
+  Excluding it needs a third behaviour value (the CHECK permits only
+  `NULL | fixed | variable` today) or a group of its own. Decide it as part of
+  the break-even work, not before.
 
 ### Removed rather than applied
 
@@ -394,6 +447,69 @@ In order. Nothing here is started unless it says so.
     | `scripts/seed-item-categories.mjs` (2) | generates that SQL text; one-time tooling, update or leave |
     | this README (3) and the memory note (1) | text |
     | `CoffeeItemsClient` identifier | cosmetic; rename in the same commit or not at all |
+
+## The coffee-shop reimbursement, and why it is deliberately not corrected
+
+Sompong buys supplies for the coffee shop, pays up front, and is reimbursed at
+month end. **This is a receivable being settled, not revenue** — and the system
+books it as revenue anyway. That is a known, measured, deliberate decision, not
+an oversight. Do not "fix" it in code.
+
+**The flow, as the data holds it:**
+
+| | |
+|---|---|
+| purchase side | CoA **998 ร้านกาแฟ**, group G900 (operating) — July ฿4,073, August ฿3,614, Sept-to-date ฿1,235. Almost all ผักสี่มุมเมือง |
+| reimbursement side | inside `monthly_revenue.other`, as a single typed number |
+| contra / receivable | **none.** Zero negative rows exist in `expense_entries`; no receivable table exists |
+
+**Why it is not corrected.** `other` is not Nik's figure. The outsourced
+accountant and the in-house bookkeeper compile it and hand him one total, which
+he types into the revenue box. Changing how this app treats the flow would put
+the app's number out of step with what they send — worse than the distortion it
+fixes. If it is ever corrected, that is a conversation with the accountants,
+not a code change.
+
+**The size, so nobody re-litigates it from intuition.** August, on stored
+figures: removing the ฿3,614 pass-through from both sides moves COGS from
+53.07% to 53.13% and operating profit from 32.414% to 32.449% — about
+**0.06 and 0.035 percentage points**. For scale, correcting August's
+under-entered revenue (฿3,370,423.52 → the export's restaurant gross
+฿3,859,852) moves COGS 53.07% → 46.34% and profit 32.41% → 40.98%. The revenue
+import matters roughly a hundred times more than this does.
+
+**Follows from the above:** the import **never touches `other`** — not
+overwrite, not add to, not reconcile against. It owns food / drink / dessert /
+delivery / souvenir and nothing else. And souvenir therefore cannot be folded
+into `other`; it gets its own `revenue_type`.
+
+One thing the data cannot settle: identified purchases are ฿3,614 in August
+while non-POS `other` is ฿99,021.50, so either the reimbursement really is
+~฿4k and the rest is scrap and used-oil sales (both real revenue, never in the
+POS), or more coffee-shop purchases sit unseparated inside G100. Fourteen
+separate August postings to 998 suggest the bookkeeper does separate them.
+
+## July 2569 is half a month of expenses against a full month of revenue
+
+`expense_entries` begins **2026-07-17**. There are zero rows for 1–16 July.
+July was the trial month while this app was being built; the documents exist
+(also in `budget69.xlsx`) and **Nik has decided not to backfill them**. So
+July's figures are wrong permanently and on purpose:
+
+| | July (shown) | August |
+|---|---|---|
+| operating expense | ฿676,547 = **21.8%** | 67.6% |
+| COGS | ฿518,957 = **16.7%** vs a 43% target | 53.1% |
+| operating profit | ฿2,428,853 = **78.2%** | 32.4% |
+
+Nothing marks this. The summary page's only guard is `totalRevenue === 0`, and
+July has revenue, so every percentage renders exactly as August's does —
+including a green profit highlight at 78.2% and a COGS bar reading far under
+target. It also **exports to xlsx** from the print P&L, where it stops being
+obviously screen-bound and can reach the outsourced accountant as fact.
+
+September is protected only by accident: it has entries but no revenue row yet,
+so `totalRevenue` is 0 and the amber warning fires.
 
 ## Item categories — what survives each month, and what does not
 
