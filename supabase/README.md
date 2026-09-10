@@ -61,6 +61,9 @@ and `menus.fuel_cost` was dropped on the same day.
 | `seed_pos_item_categories.sql` | 2026-09-08 | **One-off.** 523 rows from Nik's August split, `reviewed_by IS NULL`. Verified live: 523/523. The file refuses to run on a non-empty table — do not re-seed; new products are classified on the screen. |
 | `drop_pos_coffee_items_migration.sql` | 2026-09-08 | Dropped the empty orphan `pos_coffee_items`. Verified live: the table returns 404; `pos_item_categories` still holds 523. Closes queue item 11. |
 | `coa_document_ui_created_accounts.sql` | 2026-09-09 | `description` on the ten CoA accounts created through the UI. Verified live: all ten documented, 23 described accounts in total. Sets no other column; every clause keyed on `code`. |
+| `coa_add_225_870.sql` | 2026-09-10 | Added **225 โบนัส** (G200) and **870 Supply จัดเลี้ยง** (G800), documented at creation, placed by live-neighbour subquery. 870 not 850: the original migration had 870 as Supply - Catering before the row was deleted through the UI. Verified live: both exist. |
+| `budget69_import_schema_rpc.sql` | 2026-09-10 | `budget69_imports` provenance (owner-only writes), partial unique index on `bill_ref LIKE 'B69-%'`, and `import_budget69_month`. Verified live by probing: refuses 650/752/753, refuses 790 from a caller without the owner role, refuses a group header, an unknown code, a zero amount and a malformed month — state unchanged after every probe. |
+| `seed_pos_item_categories_catering.sql` | 2026-09-10 | 26 catering/set/buffet products → `food`, 15 beer-by-the-case and mixer items → `drink`, `reviewed_by NULL`. Verified live: 564 rows. 343 genuine dishes remain for the screen across Jan–Jul. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -500,6 +503,39 @@ In order. Nothing here is started unless it says so.
     Not before then: a covers table nobody reads is a second place for a number
     to go stale.
 
+16. **Accounting tool row + start-of-month checklist.** Not started. Proposal
+    reported 2026-09-09 and taken to Nik; sequenced after the budget69 import
+    because the checklist's "done" derivation and the P&L were both wrong
+    until monthly costs existed in the ledger.
+
+    Tool row, grouped by cadence, monthly items in dependency order:
+    `ทุกวัน: บันทึกรายวัน · ใบโอนเงิน | ทุกเดือน: จัดหมวดสินค้า POS → นำเข้ารายได้ POS →
+    นำเข้ารายจ่ายรายเดือน → สรุปรายเดือน | ตั้งค่า: ซัพพลายเออร์ · จัดการหมวด`.
+    `นำเข้าข้อมูล` was the อู๋ importer and is now the budget69 one — it belongs
+    in the monthly group under its new name.
+
+    Checklist: a panel at the top of `/owner/accounting`, shown from the 1st
+    until every step for the previous month is satisfied. **Two files, six
+    steps, in order:** receipt report → price import; SaleData → sales import
+    (dashboard); SaleData → classification; SaleData → revenue import;
+    **budget69 → monthly costs (new, this is the step the import added)**;
+    accountants' `other` typed in. "Done" derived from evidence where it
+    exists — `pos_revenue_imports` and `budget69_imports` are exact per month;
+    `pos_import_meta` is a single "last" row (adequate for the current month,
+    no history); `pos_receipt_deliveries` gives "last upload" but not "right
+    range"; `monthly_revenue.other` present or not; classification is implied
+    by a successful revenue import. Show a date rather than a tick where the
+    evidence is partial.
+
+17. **Upload UX — one pattern everywhere.** Not started. Nik wants
+    select-then-อ่านไฟล์ on every upload; today three pages auto-read on
+    select (dashboard sales import, ingredients price import, and the price
+    importer also **writes deliveries to the database on select, before any
+    confirm**), and coffee-items still uses `<form action>` (the React-reset
+    trap; survives only because it needs the file once). Inventory in the
+    2026-09-09 report. SOP photos are not an owner import and stay as they
+    are. The `import-state.ts` reducer is the shape to converge on.
+
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
 `/owner/hr/schedule/print`, is opened through a computed `printUrl` in
@@ -547,6 +583,88 @@ while non-POS `other` is ฿99,021.50, so either the reimbursement really is
 POS), or more coffee-shop purchases sit unseparated inside G100. Fourteen
 separate August postings to 998 suggest the bookkeeper does separate them.
 
+## budget69.xlsx is the source of a third of the restaurant's costs — every month
+
+**The app's ledger has never held the monthly-billed costs.** Salaries, the
+owner's salary, land rent, electricity, water, the accountant, card fees —
+nobody pays them at the till, so the bookkeeper's daily entries never include
+them. In July 2569 that is **≈฿1,032,000**. August's operating profit of 38.7%
+was computed without any of it; with July's figures as the estimate it is
+nearer **12.8%**, and budget69's own July bottom line is 3.5%.
+
+So `/owner/accounting/import` (which replaced the never-run อู๋ importer) is
+**a monthly step, not a history load**: Nik fills the green ACTUAL column of
+`งบ69` after each month closes and imports it. Jan–Jul 2569 first, then
+August onward, forever.
+
+### The rule that governs every write
+
+`lump(code, month) = sheet actual − Σ app entries for that code and month
+that are not themselves lumps.` Jan–Jun: the whole sheet figure. July: the
+1–16 remainder (the bookkeeper began daily entries on the 17th). August on:
+whatever the daily entries did not cover. A negative remainder is clamped to
+zero and reported — budget69 is the authority on the month, the daily entries
+on the days. July's two: 610 ฿3,658 and 780 ฿442 stand as small overstatements.
+
+Every lump: `payment_method = accrual`, `supplier_id NULL` (the transfer slip
+filters on supplier, not on method — see the RPC), dated the **1st**,
+`bill_ref = B69-<code>-YYYY-MM`. Dating on the 1st is what clears the
+incomplete-month marker: once Jan–Jul are in, `MIN(entry_date)` is 1 January
+and July is a full month.
+
+### What the import refuses, by construction
+
+- **650 / 752 / 753** — the POS revenue import writes these from the export;
+  the sheet carries the same figures and writing them here too would double
+  every month's discount. The RPC refuses them; the preview shows them as
+  "from POS".
+- **790 from a non-owner.** The page and both actions are `requireOwner`;
+  the RPC checks the caller's role as the second lock. Probed live: refused.
+- **A month that does not reconcile by explanation.** `revenue − Net Profit`
+  (+ rows the sheet's own subtotals skip) must equal Σ entries + Σ POS-owned
+  + Σ unmapped, to the baht. Otherwise the preview goes red, confirm is
+  disabled, and the server refuses regardless — this is a third of the costs.
+
+### What the real sheet taught the parser — four properties, all handled by rule
+
+1. **Subtotal formulas skip a row, per column.** `- ต้นทุนอื่นๆ` includes
+   ของฝาก in June and omits it in July. Nik's own bottom line is ฿4,340 (Jun)
+   and ฿2,570 (Jul) short because of it. Detection recognises a parent with
+   one child left out and **names** the skipped row so the stop check
+   reconciles by explanation, not tolerance. Nik has been told.
+2. **One name, two meanings.** `- ต้นทุนอื่นๆ` is a subtotal at r27 and a
+   leaf at r64/r102; `ผ้าเย็น` and `ซื้อของเพื่อทดแทน` each appear twice. A
+   leaf with the subtotal's name takes its section's "other" account from
+   the nearest preceding code prefix (2xx→240, 4xx→420); a parent splits only
+   when a child maps to a *different* code.
+3. **The revenue row is a "parent" of the whole sheet** — revenue = Σ costs +
+   Net Profit is an identity. Revenue and Net Profit are structural: never
+   parents, never members. Rows keep their innermost parent.
+4. The parent is *smaller* when a child is skipped, so the gap is negative.
+   A sign error there was caught by the data-layer proof, not by reading.
+
+`src/lib/budget69-map.ts` is generated from the sheet's own row names: 51
+exact, 21 near, 86 proposed (approved as a batch 2026-09-10, seven of them
+added during implementation and marked), 2 memo. Regenerate from the sheet if
+it changes; never hand-edit a name.
+
+### Verified on the real file, Jan–Jul 2569
+
+Every month reconciles to its own bottom line to the baht, no unmapped rows.
+July lumps equal the report: ผักสด 57,607 · ของสด 539,826 · 220 580,846 ·
+310 120,000 · 520 83,642.30 · 790 205,000. January, the first month Nik
+runs: 66 entries, ฿3,224,000.57, POS-owned 650 95,898 · 752 42,783.
+
+### Two things in budget69 itself, recorded so they are not chased as bugs
+
+- **April and June `ยอดขาย` are net of discount; the other five months are
+  gross-minus-coffee.** The import takes revenue from the POS export, so this
+  affects only reconciliation targets — but a comparison against those two
+  months will be ฿107k / ฿65k off for that reason.
+- **The app holds a ฿50,000 CapEx (993) dated 17–31 July that the sheet does
+  not show anywhere.** Held, untouched, Nik's to decide; the import lists it
+  under "in the app, not in the sheet".
+
 ## July 2569 is half a month of expenses against a full month of revenue
 
 `expense_entries` begins **2026-07-17**. There are zero rows for 1–16 July.
@@ -568,6 +686,15 @@ obviously screen-bound and can reach the outsourced accountant as fact.
 
 September is protected only by accident: it has entries but no revenue row yet,
 so `totalRevenue` is 0 and the amber warning fires.
+
+**Update 2026-09-10 — this section describes the state before two things
+landed.** `3845de1` added the marker (July shows *ข้อมูลไม่ครบ*, its 78.2%
+loses its green, and the xlsx carries the warning as a cell). And the
+budget69 import fills July's 1–16 per account with the remainder rule above,
+dated 1 July, so once Jan–Jul are imported `MIN(entry_date)` is 1 January,
+**the marker clears by itself, and July is a full month** — without anyone
+backfilling the daily detail Nik decided not to enter. What July will still
+not have is the per-day, per-supplier detail for 1–16; it has the month.
 
 ## Item categories — what survives each month, and what does not
 
