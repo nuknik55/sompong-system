@@ -94,7 +94,8 @@ export function RevenueImportClient() {
     const ok = window.confirm(
       `บันทึกรายได้เดือน ${preview.yearMonth}\n\n` +
         `${preview.revenue.filter((r) => r.amount > 0).length} บรรทัดรายได้ รวม ${fmt(preview.restaurantGross)} บาท\n` +
-        `${preview.expenses.length} รายการค่าใช้จ่าย (ส่วนลด/GP)\n\n` +
+        `${preview.expenses.length} รายการค่าใช้จ่าย (ส่วนลด/GP)\n` +
+        `จำนวนบิล ${fmt(preview.covers.bills)} · ลูกค้า ${fmt(preview.covers.customers)}${preview.coversCurrent ? " (แทนที่ของเดิม)" : " (เพิ่มใหม่)"}\n\n` +
         `${preview.previousImport ? "เดือนนี้เคยนำเข้าแล้ว — ของเดิมจะถูกแทนที่ทั้งหมด\n" : ""}` +
         `ยอด "อื่นๆ" ของฝ่ายบัญชีจะไม่ถูกแตะต้อง\n\nยืนยันหรือไม่?`,
     );
@@ -162,7 +163,7 @@ export function RevenueImportClient() {
         {applied?.ok && (
           <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
             บันทึกเดือน {applied.yearMonth} แล้ว ✓ — รายได้ {applied.revenueWritten} บรรทัด, ค่าใช้จ่าย{" "}
-            {applied.expensesWritten} รายการ
+            {applied.expensesWritten} รายการ, จำนวนบิล/ลูกค้า{applied.coversReplaced ? " (แทนที่)" : " (เพิ่มใหม่)"}
             {applied.wasReimport && " (แทนที่ข้อมูลเดิม)"}
           </p>
         )}
@@ -310,11 +311,18 @@ export function RevenueImportClient() {
             )}
           </div>
 
+          {/* Written in the same call as the revenue. A month imported before
+              covers existed shows "จะเพิ่มให้": that is how Jul/Aug get theirs. */}
           <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm">
-            <p className="font-medium text-neutral-800">ข้อมูลอื่นในไฟล์ (ยังไม่บันทึก)</p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="font-medium text-neutral-800">จำนวนบิลและลูกค้า (บันทึกพร้อมรายได้)</p>
+            <p className="mt-1 text-xs text-neutral-700">
               จำนวนบิล {fmt(preview.covers.bills)} · จำนวนลูกค้า {fmt(preview.covers.customers)} · ยกเลิกบิล{" "}
               {fmt(preview.covers.cancelledBills)} รายการ {fmt(preview.covers.cancelledAmount)} บาท
+            </p>
+            <p className={`mt-1 text-xs ${preview.coversCurrent ? "text-neutral-500" : "text-amber-700"}`}>
+              {preview.coversCurrent
+                ? `เดิมในระบบ: บิล ${fmt(preview.coversCurrent.bills)} · ลูกค้า ${fmt(preview.coversCurrent.customers)} — จะแทนที่`
+                : "เดือนนี้ยังไม่มีจำนวนบิล/ลูกค้าในระบบ — จะเพิ่มให้"}
             </p>
           </div>
 

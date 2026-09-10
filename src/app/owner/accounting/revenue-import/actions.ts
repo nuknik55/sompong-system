@@ -47,6 +47,12 @@ export type ImportPreview = {
   discounts: { discount: number; crmRaw: number; crmBooked: number; excluded: number; unclassifiedNames: string[] };
   platformFees: { method: string; amount: number; fee: number; ratePct: number }[];
   covers: { bills: number; customers: number; cancelledBills: number; cancelledAmount: number };
+  /**
+   * monthly_covers as stored today, or null. Written in the same RPC call
+   * as the revenue, so a month imported before covers existed (Jul/Aug 2569)
+   * shows null here and gains its row on re-run.
+   */
+  coversCurrent: { bills: number; customers: number; cancelledBills: number; cancelledAmount: number } | null;
   /** Set when this month has been imported before — a re-run replaces it. */
   previousImport: { importedAt: string; sourceFile: string | null } | null;
 };
@@ -54,7 +60,7 @@ export type ImportPreview = {
 export type PreviewResult = { ok: true; preview: ImportPreview } | { ok: false; error: string };
 
 export type ApplyResult =
-  | { ok: true; yearMonth: string; revenueWritten: number; expensesWritten: number; wasReimport: boolean }
+  | { ok: true; yearMonth: string; revenueWritten: number; expensesWritten: number; wasReimport: boolean; coversReplaced: boolean }
   | { ok: false; error: string };
 
 /** Every stored category, paged — PostgREST caps a plain select at 1,000 rows. */
@@ -112,16 +118,21 @@ async function buildPreview(
   const { projection, blocks } = projectPosRevenue(report, yearMonth, categories);
 
   // What is stored today, so the preview can show current → new.
-  const [revenueRes, expenseRes, importRes] = await Promise.all([
+  const [revenueRes, expenseRes, importRes, coversRes] = await Promise.all([
     supabase.from("monthly_revenue").select("revenue_type,amount").eq("year_month", yearMonth),
     supabase
       .from("expense_entries")
       .select("coa_code,amount,bill_ref")
       .in("bill_ref", projection.expenses.map((e) => e.bill_ref).concat(`POS-DISCOUNT-${yearMonth}`)),
     supabase.from("pos_revenue_imports").select("imported_at,source_file").eq("year_month", yearMonth).maybeSingle(),
+    supabase.from("monthly_covers").select("bills,customers,cancelled_bills,cancelled_amount").eq("year_month", yearMonth).maybeSingle(),
   ]);
   if (revenueRes.error) return { ok: false, error: revenueRes.error.message };
   if (expenseRes.error) return { ok: false, error: expenseRes.error.message };
+  if (importRes.error) return { ok: false, error: importRes.error.message };
+  // Checked: a failed read here would show "จะเพิ่มให้" on a month that has
+  // covers, and the confirm would promise the wrong thing.
+  if (coversRes.error) return { ok: false, error: coversRes.error.message };
 
   const storedRevenue = new Map((revenueRes.data ?? []).map((r) => [r.revenue_type, Number(r.amount)]));
   const storedExpense = new Map((expenseRes.data ?? []).map((e) => [e.bill_ref as string, Number(e.amount)]));
@@ -166,6 +177,14 @@ async function buildPreview(
       },
       platformFees: projection.platformFees,
       covers: projection.covers,
+      coversCurrent: coversRes.data
+        ? {
+            bills: Number(coversRes.data.bills),
+            customers: Number(coversRes.data.customers),
+            cancelledBills: Number(coversRes.data.cancelled_bills),
+            cancelledAmount: Number(coversRes.data.cancelled_amount),
+          }
+        : null,
       previousImport: importRes.data
         ? { importedAt: importRes.data.imported_at as string, sourceFile: (importRes.data.source_file as string) ?? null }
         : null,
@@ -233,6 +252,14 @@ export async function applyPosRevenueImport(formData: FormData): Promise<ApplyRe
     p_source_file: preview.fileName,
     p_gross_total: preview.grossTotal,
     p_restaurant_gross: preview.restaurantGross,
+    // Same call as the revenue, from the same re-parsed file: covers and
+    // revenue can never come from different exports. The RPC refuses NULL.
+    p_covers: {
+      bills: preview.covers.bills,
+      customers: preview.covers.customers,
+      cancelled_bills: preview.covers.cancelledBills,
+      cancelled_amount: preview.covers.cancelledAmount,
+    },
   });
   if (error) return { ok: false, error: error.message };
 
@@ -248,5 +275,6 @@ export async function applyPosRevenueImport(formData: FormData): Promise<ApplyRe
     revenueWritten: Number(result.revenue_inserted ?? 0),
     expensesWritten: Number(result.expenses_inserted ?? 0),
     wasReimport: Boolean(result.was_reimport),
+    coversReplaced: Boolean(result.covers_replaced),
   };
 }

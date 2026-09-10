@@ -1,3 +1,14 @@
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ SUPERSEDED 2026-09-10 by monthly_covers_migration.sql. DO NOT RE-RUN.  ║
+-- ║                                                                         ║
+-- ║ That file dropped this seven-parameter function and created an         ║
+-- ║ eight-parameter one (p_covers). Running this file again would          ║
+-- ║ recreate the seven-parameter version BESIDE it — Postgres identifies a ║
+-- ║ function by name and argument types — and PostgREST would then have    ║
+-- ║ two candidates, one of which accepts calls that carry no covers.       ║
+-- ║ Kept for its header, which still describes the function's rules.       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+--
 -- import_pos_month — the whole monthly import as ONE transaction.
 --
 -- Run pos_revenue_import_schema.sql first; this function depends on the
