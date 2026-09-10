@@ -65,6 +65,7 @@ and `menus.fuel_cost` was dropped on the same day.
 | `budget69_import_schema_rpc.sql` | 2026-09-10 | `budget69_imports` provenance (owner-only writes), partial unique index on `bill_ref LIKE 'B69-%'`, and `import_budget69_month`. Verified live by probing: refuses 650/752/753, refuses 790 from a caller without the owner role, refuses a group header, an unknown code, a zero amount and a malformed month — state unchanged after every probe. |
 | `seed_pos_item_categories_catering.sql` | 2026-09-10 | 26 catering/set/buffet products → `food`, 15 beer-by-the-case and mixer items → `drink`, `reviewed_by NULL`. Verified live: 564 rows. 343 genuine dishes remained for the screen across Jan–Jul at that point; by evening the table held 633 and the Feb–Jun exports' union of unreviewed items was 228 (see the classification section). |
 | `outsource_import_schema_rpc.sql` | 2026-09-10 | `outsource_imports` provenance (owner-only writes, `expenses_written` flag), partial unique index on `bill_ref LIKE 'OUT-%'`, and `import_outsource_month` — allowlist of 15 codes, `other` required, a budget69-owned month accepts `other` only. Nik reported success; the five refusal probes in the file's footer were not reported back. Verified live by use the same day: August wrote exactly 10 `OUT-` rows and `other` 20,793; Jan–Jul each wrote `other` only with `expenses_written = false`, so the budget69-month rule was exercised seven times in the accepting direction. The refusing direction (entries for an owned month) is exercised only by construction — the page never sends them. |
+| `monthly_covers_migration.sql` | 2026-09-10 | `monthly_covers` (bills, customers, cancelled bills and amount per month, non-negative CHECKs, RLS as `pos_revenue_imports`); **drops the seven-parameter `import_pos_month` and creates the eight-parameter one** with `p_covers` required (NULL refused in the body; the DEFAULT NULL exists only so the old call shape fails readably). Nik reported success and did not run the probes. **Behaviour verified, catalog query unrun:** a seven-argument call — the shape the deployed app still sent at that moment — was refused with "covers are required" and wrote nothing; had the old overload survived, that call would have matched it and written a 2099-01 provenance row. The `pg_proc` one-function query in the file's footer has not been run. Then verified by use: July and August re-imported the same evening, each gaining its covers row with the six revenue types and the three POS entries byte-identical to before. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -485,24 +486,28 @@ In order. Nothing here is started unless it says so.
     **Order agreed 2026-09-09: this is next after the import.** Nik fetches
     the digest from the Vercel logs; nothing starts until it is in hand.
 
-15. **`monthly_covers` — bills and customers per month.** Not started.
-    Separate commit, after item 14.
-
-    The POS export's Sheet4/Sheet5 already parse cleanly — August 2569: 2,690
-    bills, 6,686 customers, 19 cancelled bills for ฿52,974 — and the revenue
-    import shows them in its preview under "ข้อมูลอื่นในไฟล์ (ยังไม่บันทึก)".
-    Nothing stores them, because nothing consumes them yet: the P&L has no
-    per-cover line and the break-even view is not built.
-
-    Needs a table (`year_month` PK, bills, customers, cancelled_bills,
-    cancelled_amount, plus provenance), a write inside the same
-    `import_pos_month` RPC so covers and revenue can never disagree about
-    which file they came from, and the same delete-and-insert ownership rule.
-    Read the RPC's header before extending it — the allowlist and the
-    hardcoded `supplier_id NULL` are load-bearing.
-
-    Not before then: a covers table nobody reads is a second place for a number
-    to go stale.
+**Closed 2026-09-10 — `monthly_covers`, bills and customers per month**
+(`dd24e2c` migration, `3bd7eec`, `545e14f`, was item 15). Written by
+`import_pos_month` in the SAME call as the revenue — `p_covers` is required
+and NULL is refused — so covers and revenue can never come from different
+exports; the delete-and-insert rule covers the tenth row. **Counts are
+stored, averages are not:** the POS's own ฿/bill and ฿/head divide its
+net-of-discount total including the coffee shop (3,881,934 in August); the
+summary divides the app's own revenue by the counts, so August reads
+≈1,442.62 ฿/bill and 580.41 ฿/customer against the POS's 1,443.10 and
+580.61 — one basis on one screen. The old seven-parameter RPC overload was
+dropped explicitly (CREATE OR REPLACE with a new parameter list would have
+left both in place, the old one silently accepting calls without covers),
+and `pos_revenue_import_rpc.sql` now opens with a DO NOT RE-RUN box for the
+same reason. Display is the minimum: one line under the summary's KPI cards
+(hidden when the month has no row, never zeros) and two count rows on the
+print P&L and its xlsx. A month imported before covers existed gains its
+row on re-run; the preview says "จะเพิ่มให้". July and August were re-run
+2026-09-10 (July 2,346 bills / 5,655 customers / 23 cancelled ฿75,471;
+August 2,690 / 6,686 / 19 ฿52,974). **June 2569 was POS-imported the same
+day before commit 1 deployed and has no covers row until re-run.** Nothing
+else in the app counts bills or customers; catering's "customers" are
+booking contacts, a different thing.
 
 **Closed 2026-09-10 — upload UX, one pattern everywhere** (`051dcd4`,
 `8a9ef2b`; was item 17, renumbered 16 when the tool row closed). Every owner upload is now select → อ่านไฟล์, with
