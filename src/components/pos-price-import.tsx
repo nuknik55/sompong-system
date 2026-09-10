@@ -35,7 +35,40 @@ function formatBaht(n: number | null) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** One delivery line as sent to ingestPosDeliveries — the shape validateChunk checks server-side. */
+type DeliveryRow = {
+  materialCode: string;
+  materialName: string;
+  documentNumber: string;
+  documentDate: string;
+  vendorName: string;
+  unitName: string;
+  qty: number;
+  totalCostIncVat: number;
+  totalCostExcVat: number;
+  datePrecision: "day" | "month" | undefined;
+};
+
+/** What อ่านไฟล์ found, shown before anything is written. */
+type ParsedFile = {
+  rows: DeliveryRow[];
+  materials: number;
+  /** Thai labels of the earliest and latest delivery dates in the file. */
+  from: string;
+  to: string;
+  /** Rows whose date is known only to the month (see recoverPeriodFromDocumentNumber). */
+  monthOnly: number;
+};
+
 export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id: string; name: string }[] }) {
+  // Three explicit steps, Nik's choice for this page: select → อ่านไฟล์
+  // (parse in the browser, write nothing, show what the file covers) →
+  // บันทึกประวัติรับของ (the one write, named on the button with its row
+  // count) → the price preview → ยืนยัน. This page used to write the
+  // deliveries on select, before any confirm; the write path itself is
+  // unchanged — same chunked, idempotent ingest — only what triggers it.
+  const [file, setFile] = useState<File | null>(null);
+  const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [preview, setPreview] = useState<PosImportPreview | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
@@ -63,10 +96,25 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
   }, []);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    // Select stores the file and nothing else. Everything derived from the
+    // previous file — what it covered, the preview built after its rows were
+    // stored — is dropped.
+    setFile(e.target.files?.[0] ?? null);
+    setParsed(null);
+    setPreview(null);
     setError(null);
     setDoneCount(null);
+    setStoredCount(null);
+  }
+
+  function handleRead() {
+    if (!file) return;
+    const reading = file;
+    setError(null);
+    setDoneCount(null);
+    setStoredCount(null);
+    setParsed(null);
+    setPreview(null);
     startTransition(async () => {
       try {
         // Parse in the browser. Posting the .xls hit Vercel's 4.5 MB request
@@ -75,11 +123,11 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         // file's size and go up in chunks, so the ceiling is gone.
         //
         // Dynamic import so SheetJS (~800 KB) is fetched only when a file is
-        // actually chosen, not by every page that ships this bundle.
-        const { parsePosReceiptDeliveries } = await import("@/lib/pos-parse");
-        const materials = parsePosReceiptDeliveries(await file.arrayBuffer());
+        // actually read, not by every page that ships this bundle.
+        const { parsePosReceiptDeliveries, isoToThaiDateLabel } = await import("@/lib/pos-parse");
+        const materials = parsePosReceiptDeliveries(await reading.arrayBuffer());
 
-        const rows = materials.flatMap((m) =>
+        const rows: DeliveryRow[] = materials.flatMap((m) =>
           m.deliveries.map((d) => ({
             materialCode: m.materialCode,
             materialName: m.materialName,
@@ -98,14 +146,41 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
             'อ่านไฟล์ไม่พบรายการรับสินค้าเลย ตรวจสอบว่าเป็นไฟล์รายงาน "ใบรับสินค้าตรง" ที่ export มาจาก POS หรือไม่',
           );
         }
+        // The range the file covers, shown before the write. The checklist's
+        // price step cannot verify coverage from the table; this is the one
+        // moment the range is visible.
+        let from = rows[0]!.documentDate, to = rows[0]!.documentDate;
+        for (const r of rows) { if (r.documentDate < from) from = r.documentDate; if (r.documentDate > to) to = r.documentDate; }
+        setParsed({
+          rows,
+          materials: materials.length,
+          from: isoToThaiDateLabel(from),
+          to: isoToThaiDateLabel(to),
+          monthOnly: rows.filter((r) => r.datePrecision === "month").length,
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
+        setParsed(null);
+      }
+    });
+  }
 
+  /** THE WRITE. Stores the parsed deliveries (chunked, idempotent), then builds the price preview. */
+  function handleStore() {
+    if (!file || !parsed) return;
+    const { rows } = parsed;
+    const fileName = file.name;
+    setError(null);
+    setDoneCount(null);
+    startTransition(async () => {
+      try {
         // Sequential: the server bounds rows per batch, and concurrent chunks
         // would race that check.
         const batchId = crypto.randomUUID();
         setProgress({ sent: 0, total: rows.length });
         let stored = 0;
         for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-          const res = await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE), file.name);
+          const res = await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE), fileName);
           stored += res.inserted;
           setProgress({ sent: Math.min(i + CHUNK_SIZE, rows.length), total: rows.length });
         }
@@ -150,7 +225,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         );
         setResolved({});
       } catch (err) {
-        setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
+        setError(err instanceof Error ? err.message : "บันทึกประวัติรับของไม่สำเร็จ");
         setPreview(null);
       } finally {
         setProgress(null);
@@ -244,16 +319,61 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           แล้วจึงนำเข้าราคาอีกครั้ง
         </p>
         <p className="mb-3 text-xs text-neutral-400">
-          เมื่ออัปโหลด ระบบจะ<b>บันทึกประวัติการรับของจากไฟล์นี้ไว้ทันที</b> (ก่อนกดยืนยันราคา) เพราะรายงาน POS ย้อนหลังได้จำกัด —
-          ข้อมูลที่ไม่เก็บตอนนี้จะหายไปถาวร การกดยืนยันด้านล่างมีผลเฉพาะ<b>การอัปเดตราคาวัตถุดิบ</b>เท่านั้น
+          สามขั้น: เลือกไฟล์ → <b>อ่านไฟล์</b> (ยังไม่เขียนอะไร แสดงช่วงวันที่ที่ไฟล์ครอบคลุม) → <b>บันทึกประวัติรับของ</b>
+          (เก็บรายการรับของจากไฟล์นี้ไว้ก่อนยืนยันราคา เพราะรายงาน POS ย้อนหลังได้จำกัด — ข้อมูลที่ไม่เก็บจะหายไปถาวร)
+          → ตรวจราคา → ยืนยัน การกดยืนยันด้านล่างมีผลเฉพาะ<b>การอัปเดตราคาวัตถุดิบ</b>เท่านั้น
         </p>
-        <input
-          type="file"
-          accept=".xls,.xlsx,.csv"
-          onChange={handleFile}
-          disabled={isPending}
-          className="block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept=".xls,.xlsx,.csv"
+            onChange={handleFile}
+            disabled={isPending}
+            className="block rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={handleRead}
+            disabled={isPending || !file}
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {isPending && !parsed && !progress ? "กำลังอ่าน..." : "อ่านไฟล์"}
+          </button>
+        </div>
+        {file && !parsed && !isPending && (
+          <p className="mt-2 text-xs text-neutral-500">
+            ไฟล์ที่เลือก: <span className="font-medium text-neutral-700">{file.name}</span> — ยังไม่ได้อ่าน
+          </p>
+        )}
+        {parsed && file && (
+          <div className="mt-3 space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+            <p className="text-sm text-neutral-800">
+              <span className="font-medium">{file.name}</span> — รายการรับของ{" "}
+              <span className="tabular-nums font-medium">{parsed.rows.length.toLocaleString("th-TH")}</span> แถว,{" "}
+              <span className="tabular-nums">{parsed.materials.toLocaleString("th-TH")}</span> วัตถุดิบ
+            </p>
+            {/* The range is the thing to read: the checklist cannot verify it. */}
+            <p className="text-sm text-neutral-800">
+              ช่วงวันที่ในไฟล์: <span className="font-medium">{parsed.from}</span> – <span className="font-medium">{parsed.to}</span>
+              {parsed.monthOnly > 0 && (
+                <span className="ml-2 text-xs text-neutral-500">
+                  ({parsed.monthOnly.toLocaleString("th-TH")} แถวทราบแค่เดือน)
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-neutral-500">ยังไม่มีอะไรถูกเขียน — กดปุ่มด้านล่างเพื่อเก็บประวัติแล้วดูราคา</p>
+            {!preview && (
+              <button
+                type="button"
+                onClick={handleStore}
+                disabled={isPending}
+                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {progress ? "กำลังบันทึก..." : `บันทึกประวัติรับของ ${parsed.rows.length.toLocaleString("th-TH")} แถว แล้วดูราคา`}
+              </button>
+            )}
+          </div>
+        )}
         {progress && (
           <p className="mt-2 text-xs text-neutral-500">
             กำลังส่งข้อมูล {progress.sent.toLocaleString("th-TH")} / {progress.total.toLocaleString("th-TH")} แถว…
