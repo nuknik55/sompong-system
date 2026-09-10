@@ -34,6 +34,7 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
     item(`/owner/accounting/revenue-import`, "นำเข้ารายได้ POS", "revenue-import"),
     ...(role === "owner" ? [item("/owner/accounting/import", "นำเข้ารายจ่ายรายเดือน", "import")] : []),
     item(`/owner/accounting/summary?month=${yearMonth}`, "สรุปรายเดือน", "summary"),
+    item(`/owner/accounting/break-even?month=${yearMonth}`, "จุดคุ้มทุน", "break-even"),
   ];
   const monthlyArrows = monthly.flatMap((l, i) => (i === 0 ? [l] : [<span key={`a${i}`} className="text-neutral-300">→</span>, l]));
   return (

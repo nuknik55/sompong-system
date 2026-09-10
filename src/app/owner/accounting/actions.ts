@@ -9,6 +9,7 @@ import type { PaymentMethod } from "./daily/payment-split";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
 import { posPeriodToYearMonth } from "@/lib/pos-parse";
 import { deriveChecklist, previousMonth, type Checklist } from "./checklist";
+import type { CoaBehaviorRow } from "./break-even";
 
 /**
  * Last calendar day of a "YYYY-MM" string, as "YYYY-MM-DD".
@@ -807,6 +808,24 @@ export async function getMonthlyCovers(yearMonth: string): Promise<MonthlyCovers
     cancelledBills: Number(data.cancelled_bills),
     cancelledAmount: Number(data.cancelled_amount),
   };
+}
+
+/**
+ * Every chart row's code, group and cost_behavior, for break-even. Not
+ * filtered by is_sensitive: this carries no amounts and no names, only how
+ * an account is classified, which the CoA screen shows anyone anyway. The
+ * amounts come from getMonthlySummary, which does withhold.
+ */
+export async function getCoaBehaviors(): Promise<CoaBehaviorRow[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("coa").select("code,group_code,cost_behavior").order("sort_order");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({
+    code: r.code as string,
+    group_code: (r.group_code as string | null) ?? null,
+    cost_behavior: (r.cost_behavior as CoaBehaviorRow["cost_behavior"]) ?? null,
+  }));
 }
 
 export async function getPosImportedAt(yearMonth: string): Promise<string | null> {
