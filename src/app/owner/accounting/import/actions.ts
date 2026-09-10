@@ -205,6 +205,21 @@ export async function applyBudget69Import(formData: FormData): Promise<ApplyResu
   if (preview.blocks.length > 0) return { ok: false, error: "เดือนนี้ยังไม่ผ่านการตรวจสอบ — กรุณาอ่านไฟล์ใหม่และแก้รายการที่ค้าง" };
 
   const supabase = await createClient();
+  // A month is budget69 OR the outsourced accountant's file, never both.
+  // import_outsource_month refuses expense entries for a month budget69
+  // owns; this is the reverse direction, which that RPC cannot see and this
+  // one predates. Evidence, not provenance: the OUT- lumps themselves.
+  const outLumps = await supabase
+    .from("expense_entries")
+    .select("id", { count: "exact", head: true })
+    .like("bill_ref", `OUT-%-${yearMonth}`);
+  if (outLumps.error) return { ok: false, error: outLumps.error.message };
+  if ((outLumps.count ?? 0) > 0) {
+    return {
+      ok: false,
+      error: `เดือน ${yearMonth} บันทึกรายจ่ายรายเดือนจากไฟล์บัญชีแล้ว (${outLumps.count} รายการ OUT-) — budget69 เขียนทับไม่ได้ เดือนหนึ่งมีแหล่งเดียว`,
+    };
+  }
   const entries = preview.entries
     .filter((e) => e.lump > 0)
     .map((e) => ({
