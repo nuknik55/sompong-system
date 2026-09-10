@@ -1234,7 +1234,7 @@ export async function upsertCateringEvent(data: {
   detail_note: string | null;
   kitchen_note: string | null;
   staff_ids: string[];
-}): Promise<void> {
+}): Promise<string> {
   const profile = await requireSales();
   const supabase = await createClient();
 
@@ -1380,6 +1380,94 @@ export async function upsertCateringEvent(data: {
 
   revalidatePath("/owner/catering");
   revalidatePath(`/owner/catering/${eventId}`);
+  // The id, so the one-screen save (saveBooking) can attach menus and
+  // charges to a booking it just created. Existing callers awaited void.
+  return eventId as string;
+}
+
+/** One line of the booking screen's price box. Menu lines reference a set menu or dish; charge lines are rates, hand-typed items, or the discount. */
+export type BookingLine =
+  | { kind: "set" | "dish"; refId: string; eventMenuId: string | null; quantity: number }
+  | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null };
+
+export type SaveBookingResult =
+  | { ok: true; id: string; quoteNumber: string | null }
+  | { ok: false; error: string };
+
+/**
+ * THE ONE SAVE. Booking fields, price box, and optionally the quote number,
+ * in one call, in this order — each step relies on the one before:
+ *
+ *   1. upsertCateringEvent  → the event id (created or existing)
+ *   2. menu lines dropped from the box → removeCateringEventMenu
+ *   3. menu lines new to the box      → addCateringEventMenu (creates the
+ *                                        catering_event_menus row and its
+ *                                        charge at the set/dish price)
+ *   4. saveCateringCharges with every line: menu-linked rows carry their
+ *      event_menu_id and the box's quantity; rate/manual/discount rows as
+ *      typed. This is what keeps catering_event_menus.quantity in sync.
+ *   5. issueCateringQuote when asked — it totals from the rows just written.
+ *
+ * Expected failures are RETURNED (the room-conflict block, a cost lock, a
+ * refused charge): production redacts a thrown Server Action message, and a
+ * sales person needs to read why the save was refused.
+ *
+ * Not one transaction: the Supabase client cannot open one, and these
+ * steps were already separate writes on the old three-page path. A failure
+ * mid-way leaves the booking saved with whatever lines landed, which the
+ * screen shows on refresh; nothing here can double a line, because step 4
+ * replaces the charge list wholesale.
+ */
+export async function saveBooking(input: {
+  event: Parameters<typeof upsertCateringEvent>[0];
+  lines: BookingLine[];
+  issueQuote: boolean;
+}): Promise<SaveBookingResult> {
+  await requireSales();
+  try {
+    const eventId = await upsertCateringEvent(input.event);
+
+    const before = await getCateringCharges(eventId);
+    const keptMenuIds = new Set(input.lines.flatMap((l) => (l.kind !== "charge" && l.eventMenuId ? [l.eventMenuId] : [])));
+    for (const c of before) {
+      if (c.event_menu_id && !keptMenuIds.has(c.event_menu_id)) await removeCateringEventMenu(c.event_menu_id, eventId);
+    }
+    for (const l of input.lines) {
+      if (l.kind !== "charge" && !l.eventMenuId) await addCateringEventMenu(eventId, { kind: l.kind, id: l.refId, quantity: l.quantity, note: null });
+    }
+
+    // Re-read: the adds above created event_menu ids the client cannot know.
+    const after = await getCateringCharges(eventId);
+    const menuRows = await getCateringEventMenus(eventId);
+    const chargeByMenuId = new Map(after.filter((c) => c.event_menu_id).map((c) => [c.event_menu_id as string, c]));
+    const menuIdByRef = new Map(menuRows.map((m) => [m.set_menu_id ?? m.menu_id ?? "", m.id]));
+
+    const payload: Parameters<typeof saveCateringCharges>[1] = [];
+    for (const l of input.lines) {
+      if (l.kind === "charge") {
+        payload.push({ label: l.label, charge_type: l.charge_type, unit_price: l.unit_price, quantity: l.quantity, amount: l.amount, note: l.note, event_menu_id: null });
+        continue;
+      }
+      const menuId = l.eventMenuId ?? menuIdByRef.get(l.refId);
+      const row = menuId ? chargeByMenuId.get(menuId) : undefined;
+      if (!row) return { ok: false, error: "บันทึกรายการเมนูไม่สำเร็จ — กรุณาอ่านหน้านี้ใหม่แล้วลองอีกครั้ง" };
+      payload.push({
+        label: row.label, charge_type: "food", unit_price: row.unit_price,
+        quantity: l.quantity, amount: row.unit_price * l.quantity, note: row.note, event_menu_id: row.event_menu_id,
+      });
+    }
+    await saveCateringCharges(eventId, payload);
+
+    let quoteNumber: string | null = null;
+    if (input.issueQuote) {
+      await issueCateringQuote(eventId);
+      const ev = await getCateringEvent(eventId);
+      quoteNumber = ev?.quote_number ?? null;
+    }
+    return { ok: true, id: eventId, quoteNumber };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "บันทึกไม่สำเร็จ" };
+  }
 }
 
 /**

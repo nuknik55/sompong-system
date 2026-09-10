@@ -3,37 +3,29 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { upsertCateringEvent, deleteCateringEvent } from "./actions";
-import type { CateringEvent, CateringCustomer, StaffOption } from "./actions";
+import { deleteCateringEvent } from "./actions";
+import type { CateringEvent, StaffOption } from "./actions";
 import {
   MONTHS_TH, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL,
-  thDate, timeRange, staffLabel, locationLabel, formToUpsertPayload,
+  thDate, timeRange, staffLabel, locationLabel,
   StatusBadge,
 } from "./shared-utils";
-import type { FormState } from "./shared-utils";
-import { EventFormModal } from "./shared";
 
 export function CateringClient({
   initialEvents,
-  customers,
   staffOptions,
   year,
   month,
   view,
-  defaultStaffId,
 }: {
   initialEvents: CateringEvent[];
-  customers: CateringCustomer[];
   staffOptions: StaffOption[];
   year: number;
   month: number;
   view: "month" | "year";
-  /** The current user's linked employee, pre-selected on new bookings only. */
-  defaultStaffId: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<CateringEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,22 +68,6 @@ export function CateringClient({
     }
     return out;
   })();
-
-  function openNew() { setError(null); setShowForm(true); }
-  function closeForm() { setShowForm(false); setError(null); }
-
-  function handleSave(form: FormState) {
-    setError(null);
-    startTransition(async () => {
-      try {
-        await upsertCateringEvent(formToUpsertPayload(form));
-        closeForm();
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
-      }
-    });
-  }
 
   function handleDelete() {
     if (!confirmDelete) return;
@@ -146,9 +122,10 @@ export function CateringClient({
 
       {/* Action buttons */}
       <div className="mb-4 flex flex-wrap gap-2">
-        <button onClick={openNew} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+        {/* The one screen, not a modal: /owner/catering/new (BookingScreen.tsx). */}
+        <Link href="/owner/catering/new" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
           + บันทึกการจอง
-        </button>
+        </Link>
       </div>
 
       {/* Table */}
@@ -235,21 +212,7 @@ export function CateringClient({
         </table>
       </div>
 
-      {error && !showForm && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
-      {/* Form modal — create only; editing happens on the event detail page */}
-      {showForm && (
-        <EventFormModal
-          initial={null}
-          customers={customers}
-          staffOptions={staffOptions}
-          isPending={isPending}
-          error={error}
-          onSave={handleSave}
-          onCancel={closeForm}
-          defaultStaffId={defaultStaffId}
-        />
-      )}
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       {/* Delete confirm */}
       {confirmDelete && (
