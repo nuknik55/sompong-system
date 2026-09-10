@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   createIngredient,
   deleteCategory,
@@ -99,6 +100,7 @@ export function IngredientManager({
   usageMap?: UsageMap;
   submitMode?: "save" | "pending";
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(ingredients);
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("ทั้งหมด");
@@ -159,6 +161,7 @@ export function IngredientManager({
           usage_unit: row.usage_unit,
           par_level: row.par_level,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setRowStatus((prev) => ({ ...prev, [id]: result.status }));
       } catch (e) {
         setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -175,6 +178,7 @@ export function IngredientManager({
     startTransition(async () => {
       try {
         const result = await deleteIngredient(id, name);
+        if (result.status === "error") { setError(result.message); return; }
         if (result.status === "saved") {
           setRows((prev) => prev.filter((r) => r.id !== id));
         } else {
@@ -196,15 +200,36 @@ export function IngredientManager({
     startTransition(async () => {
       try {
         const result = await createIngredient(newForm.name, newForm);
+        if (result.status === "error") { setError(result.message); return; }
         if (result.status === "pending") {
           setNewFormPending(true);
           setNewForm(emptyForm());
           setShowNewForm(false);
           return;
         }
+        // Append the created row and refresh the route inside the same
+        // transition. This used to be window.location.reload(): a full
+        // reload fired while the router was still applying the action's
+        // revalidation refresh, and the best-evidence hypothesis for the
+        // once-only RSC error after a first save (queue item 14) is that
+        // abort. Not proven — the boundary now shows the digest if it recurs.
+        if (result.id) {
+          const created: IngredientRow = {
+            id: result.id,
+            name: newForm.name,
+            category: newForm.category || null,
+            purchase_unit_label: newForm.purchase_unit_label || null,
+            purchase_cost: newForm.purchase_cost,
+            receive_qty: newForm.receive_qty,
+            yield_qty: newForm.yield_qty,
+            usage_unit: newForm.usage_unit || null,
+            par_level: newForm.par_level ?? null,
+          };
+          setRows((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, "th")));
+        }
         setNewForm(emptyForm());
         setShowNewForm(false);
-        window.location.reload();
+        router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "เพิ่มไม่สำเร็จ");
       }
@@ -281,6 +306,7 @@ export function IngredientManager({
                   startTransition(async () => {
                     try {
                       const result = await deleteCategory(filterCategory);
+                      if (result.status === "error") { setError(result.message); return; }
                       if (result.status === "pending") {
                         setCategoryDeletePending(true);
                         setFilterCategory("ทั้งหมด");
@@ -432,6 +458,7 @@ export function IngredientManager({
                           startTransition(async () => {
                             try {
                               const result = await updateIngredient(row.id, row.name, { category: v });
+                              if (result.status === "error") { setError(result.message); return; }
                               setRowStatus((prev) => ({ ...prev, [row.id]: result.status }));
                             } catch (e) {
                               setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -561,6 +588,7 @@ export function IngredientManager({
                       startTransition(async () => {
                         try {
                           const result = await updateIngredient(row.id, row.name, { category: v });
+                          if (result.status === "error") { setError(result.message); return; }
                           setRowStatus((prev) => ({ ...prev, [row.id]: result.status }));
                         } catch (e) {
                           setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");

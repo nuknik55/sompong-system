@@ -34,7 +34,18 @@ export type IngredientFields = {
   par_level?: number | null;
 };
 
-export type IngredientSaveResult = { status: "saved" } | { status: "pending" };
+/**
+ * Expected failures are RETURNED, not thrown. Production redacts a thrown
+ * Server Action message, so a thrown "ลบไม่ได้ เพราะมีเมนูใช้วัตถุดิบนี้อยู่"
+ * reached the screen as a generic RSC error — the shape queue item 12
+ * exists for. The four write actions on the ingredients page return
+ * { status: "error", message }; the client renders the message. Throws
+ * remain only for the unexpected (auth, a failed profiles read).
+ */
+export type IngredientSaveResult =
+  | { status: "saved"; id?: string }
+  | { status: "pending" }
+  | { status: "error"; message: string };
 
 export async function updateIngredient(id: string, ingredientName: string, fields: Partial<IngredientFields>): Promise<IngredientSaveResult> {
   const profile = await requireAdminOrEditor();
@@ -50,7 +61,7 @@ export async function updateIngredient(id: string, ingredientName: string, field
 
   const supabase = await createClient();
   const { error } = await supabase.from("ingredients").update(fields).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: `บันทึกไม่สำเร็จ: ${error.message}` };
   revalidatePath("/owner/ingredients");
   return { status: "saved" };
 }
@@ -67,10 +78,12 @@ export async function createIngredient(ingredientName: string, fields: Ingredien
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("ingredients").insert({ ...fields, is_prep: false });
-  if (error) throw new Error(error.message);
+  // The new row's id comes back so the client can append it to its list
+  // and refresh the route, instead of reloading the whole page.
+  const { data, error } = await supabase.from("ingredients").insert({ ...fields, is_prep: false }).select("id").single();
+  if (error) return { status: "error", message: `เพิ่มไม่สำเร็จ: ${error.message}` };
   revalidatePath("/owner/ingredients");
-  return { status: "saved" };
+  return { status: "saved", id: data.id as string };
 }
 
 export async function deleteIngredient(id: string, ingredientName: string): Promise<IngredientSaveResult> {
@@ -87,10 +100,12 @@ export async function deleteIngredient(id: string, ingredientName: string): Prom
 
   const { error } = await supabase.from("ingredients").delete().eq("id", id);
   if (error) {
+    // Returned, not thrown: this message is the one a person needs to read,
+    // and a throw would have production redact it.
     if (error.code === "23503") {
-      throw new Error("ลบไม่ได้ เพราะมีเมนูหรือของเตรียมใช้วัตถุดิบนี้อยู่ — ต้องเอาออกจากสูตรทั้งหมดก่อน");
+      return { status: "error", message: "ลบไม่ได้ เพราะมีเมนูหรือของเตรียมใช้วัตถุดิบนี้อยู่ — ต้องเอาออกจากสูตรทั้งหมดก่อน" };
     }
-    throw new Error(error.message);
+    return { status: "error", message: `ลบไม่สำเร็จ: ${error.message}` };
   }
   revalidatePath("/owner/ingredients");
   return { status: "saved" };
@@ -127,7 +142,7 @@ export async function deleteCategory(category: string): Promise<IngredientSaveRe
     .from("ingredients")
     .update({ category: null })
     .eq("category", category);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: `ลบหมวดไม่สำเร็จ: ${error.message}` };
   revalidatePath("/owner/ingredients");
   return { status: "saved" };
 }
