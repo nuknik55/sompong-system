@@ -504,14 +504,20 @@ In order. Nothing here is started unless it says so.
     Not before then: a covers table nobody reads is a second place for a number
     to go stale.
 
-16. **Upload UX — one pattern everywhere.** Not started. Nik wants
-    select-then-อ่านไฟล์ on every upload; today three pages auto-read on
-    select (dashboard sales import, ingredients price import, and the price
-    importer also **writes deliveries to the database on select, before any
-    confirm**), and coffee-items still uses `<form action>` (the React-reset
-    trap; survives only because it needs the file once). Inventory in the
-    2026-09-09 report. SOP photos are not an owner import and stay as they
-    are. The `import-state.ts` reducer is the shape to converge on.
+**Closed 2026-09-10 — upload UX, one pattern everywhere** (`051dcd4`,
+`8a9ef2b`; was item 17, renumbered 16 when the tool row closed). Every owner upload is now select → อ่านไฟล์, with
+the File held in state and a new selection dropping what the old one
+produced, the shape `import-state.ts` established. Dashboard sales import:
+used to parse on select. Classification screen: used `<form action>`; a
+new file after decisions were made now confirms first, because dropping
+touched rows silently would be its own failure. Price importer, its own
+plan because it changed a write trigger: it used to **write deliveries on
+select, before any confirm**; now select → อ่านไฟล์ (parse only, shows rows,
+materials and **the date range the file covers**, the one moment coverage is
+visible since the checklist cannot verify it) → *บันทึกประวัติรับของ N แถว
+แล้วดูราคา*, the one write, same chunked idempotent ingest, server action
+untouched → preview → ยืนยัน. SOP photos are not an owner import and stay
+as they are.
 
 **Closed 2026-09-10 — the tool row and start-of-month checklist** (`34b4489`,
 was item 16). One `ToolRow` on the month view, บันทึกรายวัน and สรุปรายเดือน,
@@ -796,11 +802,41 @@ not have is the per-day, per-supplier detail for 1–16; it has the month.
 
 **Landed 2026-09-10.** Nik imported Jan–Jul from budget69 (July: 61 lumps,
 2,269,534.31 — the 1–16 remainder plus the monthly items), `MIN(entry_date)`
-is now 2026-01-01 and the marker has cleared. With `other` corrected to
-18,165 by the accountant's file, July computes to revenue 3,010,495,
-operating expense 2,915,272.81 = 96.8%, operating profit ≈ 3.2% — within
-range of the accountant's own 3.5%. Its POS revenue import is still pending
-(the hand-typed five boxes stand until Nik runs the July export).
+is now 2026-01-01 and the marker has cleared. Later the same day he ran the
+July POS revenue import (seven types, 650/752/753 present) and the
+accountant's file set `other` to 18,165. July now computes to revenue
+3,206,394, operating expense 3,054,857.38, **operating profit 151,536.62 =
+4.7%**.
+
+### July: the app vs budget69's July, reconciled once so nobody re-derives it
+
+Reconciled group by group on 2026-09-10 against งบ69's July actual column
+(ยอดขาย 3,187,878, Net Profit 110,511.32). **G100, G200, G300, G500, G800 and
+Tax are equal to the baht.** Everything that differs is a definition or a
+decision, not a missing step:
+
+| where | app − sheet | why |
+|---|---|---|
+| revenue, six POS types | +351 | coffee-boundary carve-out/rounding, not chased |
+| revenue, `other` | +18,165 | the sheet has no other-income line |
+| G400 | +123 | 480, a daily entry the sheet has no row for |
+| G600 | +3,658 | 610 daily 5,658 > sheet 2,000, lump clamped, entries kept |
+| G700 | +442 | 780 daily 14,306 > sheet 13,864, same |
+| G750 | −2,556.80 | GP basis: per-platform rate on non-coffee delivery vs the sheet's own GP |
+| G900 | +4,073 | 998, deliberately in the ledger, never in the sheet |
+| G990 CapEx | +50,000 | 993, in the app, not in the sheet — Nik's open decision |
+| ของฝาก 2,570 | in the app, in the sheet's rows, **not in its Net Profit** | the sheet's own subtotal skips it |
+
+Operating profit 151,536.62 vs Net Profit 110,511.32 = +41,025.30 = +18,516
+revenue + 30,818.50 tax (the sheet subtracts it; the app shows it below the
+line) − 5,739.20 the expense overages above − 2,570 ของฝาก. CapEx is outside
+both figures.
+
+**The July 993, pulled 2026-09-10 for Nik's decision.** One entry, id
+`a1549313…`: dated **2026-07-18**, ฿50,000, `payment_method = cash`, no
+supplier, no bill_ref, note **"เด"** — two characters, a truncated typo, so
+the row itself does not say what was bought. Created 2026-07-18 20:21
+Bangkok. Untouched until he decides.
 
 ## Item categories — what survives each month, and what does not
 
