@@ -66,6 +66,7 @@ and `menus.fuel_cost` was dropped on the same day.
 | `seed_pos_item_categories_catering.sql` | 2026-09-10 | 26 catering/set/buffet products → `food`, 15 beer-by-the-case and mixer items → `drink`, `reviewed_by NULL`. Verified live: 564 rows. 343 genuine dishes remained for the screen across Jan–Jul at that point; by evening the table held 633 and the Feb–Jun exports' union of unreviewed items was 228 (see the classification section). |
 | `outsource_import_schema_rpc.sql` | 2026-09-10 | `outsource_imports` provenance (owner-only writes, `expenses_written` flag), partial unique index on `bill_ref LIKE 'OUT-%'`, and `import_outsource_month` — allowlist of 15 codes, `other` required, a budget69-owned month accepts `other` only. Nik reported success; the five refusal probes in the file's footer were not reported back. Verified live by use the same day: August wrote exactly 10 `OUT-` rows and `other` 20,793; Jan–Jul each wrote `other` only with `expenses_written = false`, so the budget69-month rule was exercised seven times in the accepting direction. The refusing direction (entries for an owned month) is exercised only by construction — the page never sends them. |
 | `monthly_covers_migration.sql` | 2026-09-10 | `monthly_covers` (bills, customers, cancelled bills and amount per month, non-negative CHECKs, RLS as `pos_revenue_imports`); **drops the seven-parameter `import_pos_month` and creates the eight-parameter one** with `p_covers` required (NULL refused in the body; the DEFAULT NULL exists only so the old call shape fails readably). Nik reported success and did not run the probes. **Behaviour verified, catalog query unrun:** a seven-argument call — the shape the deployed app still sent at that moment — was refused with "covers are required" and wrote nothing; had the old overload survived, that call would have matched it and written a 2099-01 provenance row. The `pg_proc` one-function query in the file's footer has not been run. Then verified by use: July and August re-imported the same evening, each gaining its covers row with the six revenue types and the three POS entries byte-identical to before. |
+| `coa_cost_behavior_excluded_migration.sql` | 2026-09-10 | `cost_behavior` CHECK widened to `fixed | variable | excluded`; a second CHECK forbids `excluded` on a group header; `998` set to `excluded`; column comment rewritten with the complete rule. Nik reported success. Verified live by reading the column: `998` is `excluded` and August's fixed total through the break-even function fell by exactly its ฿3,614. The header-refusal probe in the file's footer was not reported back. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -127,6 +128,14 @@ but re-running either would not do what it looks like it does.
   Excluding it needs a third behaviour value (the CHECK permits only
   `NULL | fixed | variable` today) or a group of its own. Decide it as part of
   the break-even work, not before.
+
+  **Decided and applied 2026-09-10** (`coa_cost_behavior_excluded_migration.sql`):
+  the third value exists, `998` is `excluded`, and a second CHECK forbids
+  `excluded` on a group header, so the complete rule — NULL inherits the
+  header, `excluded` is explicit and never inherited, a NULL header excludes
+  the group — is a constraint. This supersedes the "cost_behavior
+  deliberately not set" paragraph in the header of
+  `coa_document_ui_created_accounts.sql`; that file stays as it ran.
 
 ### Removed rather than applied
 
@@ -391,7 +400,16 @@ In order. Nothing here is started unless it says so.
     table nobody remembers the purpose of is exactly the kind of thing that
     survives for years.
 
-12. **Defect C — Server Action throws elsewhere in the app.** Not started.
+12. **Defect C — Server Action throws elsewhere in the app.** Not started
+    as a whole. Done page by page so far: coffee-items (`77877f9`),
+    revenue-import (returns values from the start), and on 2026-09-10 the
+    ingredients page (`7a6697b`: its four write actions return
+    `{ status: "error", message }` — `deleteIngredient` had been building a
+    Thai foreign-key message and then throwing it, so production redacted
+    it). **The remainder is this item: about 139 throws across 12 files**,
+    to be converted where a user can trigger them and left where they are
+    unexpected-input paths. The error boundaries (`9fe11e7`) now show the
+    digest for whatever still throws.
 
     The coffee-items page is done: `77877f9` returned the preview's expected
     failures as values, and the follow-up commit added the parse plausibility
@@ -485,6 +503,44 @@ In order. Nothing here is started unless it says so.
 
     **Order agreed 2026-09-09: this is next after the import.** Nik fetches
     the digest from the Vercel logs; nothing starts until it is in hand.
+
+    **2026-09-10, done without the digest, which never arrived — the work
+    that makes it unnecessary next time.** (a) Error boundaries (`9fe11e7`):
+    `error.tsx` at owner, staff and sop plus `global-error.tsx`, rendering the
+    digest, route, time and message with one-tap copy, so the next
+    occurrence hands over its key. (b) The post-save path (`7a6697b`): the
+    structural investigation found no throw that fires once and not again
+    in the server render — every read on the path is identical on both
+    attempts — so the once-only failure has two candidates the code cannot
+    distinguish: the client's `window.location.reload()` firing while the
+    router was still applying the action's revalidation refresh (the only
+    thing that differs between a first save and a later load), or a
+    transient read failure on the first render after revalidation. The
+    reload is replaced by `router.refresh()` inside the transition, which
+    removes the first candidate outright; the hypothesis is recorded at the
+    site, labelled as one. **Open only to close:** if the error recurs, the
+    boundary gives the digest and candidate two is found in the logs; if a
+    month passes without it, close this item.
+
+**Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
+`7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
+migrated). `/owner/accounting/break-even`: four figures — contribution
+margin, fixed costs, break-even revenue, safety margin — plus bills to break
+even from `monthly_covers`, and one sentence of basis. Pure
+`break-even.ts` with tests carries the resolution rule; the page reuses
+`getMonthlySummary`. **Counts what the rule says, not what the grouping
+says:** Tax, CapEx and `998` are excluded, and the excluded amount is shown.
+**Fixed is fixed BY HEADER for seven groups** (Occupancy, Maintenance,
+Utilities, Marketing, G&A, Supply, Misc; only labour is split per account),
+so the page names them and calls the margin an approximation of a known
+shape — the true margin is somewhat lower, the true break-even somewhat
+higher. For an admin, 790 is withheld, so the page says in the same
+sentence as the count that the break-even shown is *lower* than the true
+one and the safety margin *higher*. August 2569 with 998 excluded: margin
+47.0%, fixed 1,522,746, break-even 3,236,968 = 83.4% of revenue, safety
+643,677, 2,244 bills (≈73/day against 87). July: margin 50.3%, break-even
+90.3%, safety 309,510. No table, no chart, no trend — a history or per-day
+view is a different item and was not started.
 
 **Closed 2026-09-10 — `monthly_covers`, bills and customers per month**
 (`dd24e2c` migration, `3bd7eec`, `545e14f`, was item 15). Written by
