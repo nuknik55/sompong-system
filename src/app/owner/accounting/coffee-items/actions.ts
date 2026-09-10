@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/data";
 import { checkPosExportPlausibility, parsePosMonthlyExport, type PosMonthlyExport } from "@/lib/pos-parse";
 import { aggregateForClassification, platformRates } from "@/lib/pos-classify";
+import { suggestFromPosGroups } from "@/lib/pos-group-category";
 import { isCategory, type Category } from "./categories";
 
 type StoredRow = {
@@ -81,11 +82,17 @@ export type ItemCandidate = {
   /**
    * The stored category, or null when there is no row. null is "not yet
    * decided" — a distinct state from all six, and the ONLY value a row without
-   * a stored category ever arrives with. Nothing here derives a category from
-   * the POS group: that mapping was one-time seed machinery and deliberately
-   * does not live in the monthly path.
+   * a stored category ever arrives with.
    */
   category: Category | null;
+  /**
+   * For a row with NO stored category: what its POS group says, via the
+   * shared pos-group-category rule (null where the group has no default —
+   * Other, ออเดอร์พนักงาน, อื่นๆ — or its groups disagree). A SUGGESTION: the
+   * screen pre-selects it, marks it แนะนำ, and writes it only when a person
+   * confirms or overrides. Always null for a stored row.
+   */
+  suggested: Category | null;
   /** Baht per unit that leaves this item's category for the coffee shop. */
   coffeeSharePerUnit: number | null;
 };
@@ -151,12 +158,16 @@ export async function previewItemClassification(formData: FormData): Promise<Pre
   const supabase = await createClient();
   const byName = new Map((await loadStoredRows(supabase)).map((r) => [r.pos_product_name, toStored(r)]));
 
-  const candidates: ItemCandidate[] = items.map((item) => {
+  const candidates: ItemCandidate[] = items.map(({ groups, ...item }) => {
     const prior = byName.get(item.productName);
+    const suggestion = prior ? null : suggestFromPosGroups(groups);
     return {
       ...item,
       reviewed: prior !== undefined,
       category: prior ? prior.category : null,
+      // The lib's literal union and the app's Category are the same six
+      // values; isCategory is the check that keeps them so.
+      suggested: suggestion !== null && isCategory(suggestion) ? suggestion : null,
       coffeeSharePerUnit: prior ? prior.coffeeSharePerUnit : null,
     };
   });

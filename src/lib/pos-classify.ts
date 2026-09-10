@@ -19,6 +19,8 @@ export type ClassificationItem = {
   productName: string;
   /** Every POS group/category this item appeared under, joined for display. */
   where: string;
+  /** The same pairs, structured, for the group-based suggestion (pos-group-category.ts). */
+  groups: { group: string; subcategory: string }[];
   qty: number;
   /** รวมราคา, before discount — the basis revenue is booked on. */
   gross: number;
@@ -95,6 +97,7 @@ export function aggregateForClassification(
     const e = agg.get(line.productName) ?? {
       productName: line.productName,
       where: "",
+      groups: [],
       qty: 0,
       gross: 0,
       netWhole: 0,
@@ -105,7 +108,11 @@ export function aggregateForClassification(
     e.gross += line.gross;
     e.netWhole += (line.gross - line.discount) * keep;
     e.carveWeight += line.qty * keep;
-    if (line.group) e.whereSet.add(line.category ? `${line.group} :: ${line.category}` : line.group);
+    if (line.group) {
+      const key = line.category ? `${line.group} :: ${line.category}` : line.group;
+      if (!e.whereSet.has(key)) e.groups.push({ group: line.group, subcategory: line.category ?? "" });
+      e.whereSet.add(key);
+    }
     agg.set(line.productName, e);
   }
 

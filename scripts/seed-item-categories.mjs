@@ -64,77 +64,12 @@ const SHEET_CATEGORY = {
 const CHANNEL_SHEETS = new Set(["LM", "Grab"]);
 
 /**
- * Raw-export POS group -> category. Used ONLY as a fallback for LM/Grab items,
- * because those two sheets are a CHANNEL and a Lineman dessert is still a
- * dessert.
- *
- * All 11 groups in the export are handled explicitly. An unlisted group returns
- * null and the product is REPORTED as unclassified rather than defaulted —
- * building this over the groups I happened to have looked at, with everything
- * else falling through to 'other', is what put a vegetable dish in the wrong
- * bucket the first time.
- *
- * ── GROUPS WITH NO DEFAULT, AND WHY THAT IS NOT DEAD CODE ─────────────────
- *
- * Other (฿81,110), ออเดอร์พนักงาน (฿30,300) and อื่นๆ (฿13,500) return null on
- * purpose: their products demonstrably span several categories, so any single
- * default is wrong for some of them.
- *
- *   Other            food 35 · drink 7 · other 6 · coffee 1
- *   ออเดอร์พนักงาน   food 24 · coffee 8 · drink 1
- *   อื่นๆ             food 14 · other 5
- *
- * ออเดอร์พนักงาน is the sharpest: Nik files staff meals by WHAT THE STAFF ATE,
- * so a staff coffee sits in his กาแฟ sheet. Defaulting the group to food would
- * pull staff coffee back into restaurant revenue — precisely what the coffee
- * exclusion exists to prevent.
- *
- * IMPORTANT, so nobody deletes these as unreachable: this fallback only ever
- * runs for items on the LM/Grab sheets, and in August those 78 items touch just
- * THREE groups — อาหาร (60), Lineman (17), เครื่องดื่ม (1). The three
- * no-default guards therefore never fire on this month's data. They are a guard
- * against a future month where a delivered item comes from one of those groups,
- * not live behaviour. A guard that has never fired is not dead code.
- *
- * ── GROUPS THAT LOOK HETEROGENEOUS BUT ARE RESOLVED ───────────────────────
- *
- * เครื่องดื่ม, ร้านกาแฟ and กลุ่มของฝาก each span more than one category, but
- * every exception is NAMED — a subcategory rule, or an entry in EXCEPTIONS
- * below. Resolved is not the same as heterogeneous, so they keep their default.
+ * Raw-export POS group -> category, the LM/Grab fallback. ONE definition,
+ * shared with the classification screen: src/lib/pos-group-category.ts.
+ * The groups with no default (Other, ออเดอร์พนักงาน, อื่นๆ) and the reasons
+ * are documented there.
  */
-function categoryFromRaw(group, subcategory) {
-  switch (group) {
-    // Single-category groups: a default is safe.
-    case "อาหาร":
-    case "ตรุษจีน":
-    case "Comment Menu":
-    case "อาหารเจ":
-      return "food";
-
-    // Legacy grouping, not a channel despite the name. All 17 that reach this
-    // fallback are dishes.
-    case "Lineman":
-      return "food";
-
-    // Resolved by a subcategory rule rather than a guess.
-    case "เครื่องดื่ม":
-      return subcategory === "ของหวาน" ? "dessert" : "drink";
-
-    // Resolved by named exceptions (ข้าวเหนียวมูน, the บ้าบิ่น pair).
-    case "ร้านกาแฟ":
-      return "coffee";
-    case "กลุ่มของฝาก":
-      return "souvenir";
-
-    // NO DEFAULT — see the comment above. Reported, never guessed.
-    case "Other":
-    case "ออเดอร์พนักงาน":
-    case "อื่นๆ":
-      return null;
-
-    default:
-      return null;
-  }
+const { categoryFromPosGroup: categoryFromRaw } = await import("../src/lib/pos-group-category.ts");
 }
 
 /**

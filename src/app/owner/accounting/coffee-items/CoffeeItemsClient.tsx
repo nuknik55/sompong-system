@@ -10,18 +10,21 @@ import {
 } from "./actions";
 import { CATEGORIES, CATEGORY_LABEL, isCategory, type Category } from "./categories";
 
-// `category: null` is "not yet decided" — a state distinct from all six.
+// `decided` is the property that matters: only decided rows are written.
 //
-// A product with no row in pos_item_categories loads with NOTHING selected.
-// It is not food, it is not other, and it is not a guess from its POS group:
-// the group mapping was one-time seed machinery and does not run here. A row
-// becomes a category only when a person picks one, and only rows a person
-// decided are written. Everything else stays unreviewed and keeps showing up
-// as ใหม่ until someone looks at it.
+// A product with no row in pos_item_categories loads UNDECIDED. Where its
+// POS group has an unambiguous answer (the shared pos-group-category rule),
+// the selector is PRE-SELECTED with that value and the row is marked แนะนำ —
+// a suggestion, not a decision: `decided` stays false and save skips it.
+// It becomes decided when a person confirms it (the ยืนยันตามที่ระบบแนะนำ
+// button, which marks but does not write) or overrides it (a touch, as
+// today). Groups with no default — Other, ออเดอร์พนักงาน, อื่นๆ — arrive with
+// nothing selected, as before.
 //
-// `decided` and `category !== null` say the same thing on load; they diverge
-// only while the user is undoing a mis-click on a new row (both go back).
-type Draft = { category: Category | null; coffeeSharePerUnit: string; decided: boolean };
+// This reverses the earlier no-suggestion decision, made against a monthly
+// trickle and reversed against a 343-item queue. The protected property is
+// unchanged: nothing reaches the table without a person's say-so.
+type Draft = { category: Category | null; coffeeSharePerUnit: string; decided: boolean; suggested: boolean };
 
 const CARVE_OUT_HELP =
   "หมวด = เงินไปอยู่ที่ไหน · ฿/หน่วย แยกให้ร้านกาแฟ = ส่วนที่ออกจากหมวดนั้นไปร้านกาแฟ · " +
@@ -107,11 +110,13 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
             p.candidates.map((c) => [
               c.productName,
               {
-                category: c.category,
+                // Stored → that. No row → the POS-group suggestion if there
+                // is one, shown but NOT decided.
+                category: c.category ?? c.suggested,
                 coffeeSharePerUnit: c.coffeeSharePerUnit == null ? "" : String(c.coffeeSharePerUnit),
-                // Already in the table = already decided. No row = not, and
-                // the selector shows nothing until someone picks.
+                // Already in the table = already decided. A suggestion is not.
                 decided: c.category !== null,
+                suggested: c.category === null && c.suggested !== null,
               },
             ]),
           ),
@@ -177,7 +182,7 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
         return next;
       });
       setSaved(null);
-      setDrafts((p) => ({ ...p, [c.productName]: { category: null, coffeeSharePerUnit: "", decided: false } }));
+      setDrafts((p) => ({ ...p, [c.productName]: { category: null, coffeeSharePerUnit: "", decided: false, suggested: false } }));
       return;
     }
     if (!isCategory(value)) return;
@@ -191,8 +196,35 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
         // box does not reappear with a stale value if the user switches back.
         coffeeSharePerUnit: value === "coffee" ? "" : d.coffeeSharePerUnit,
         decided: true,
+        // Picked by a person now, whatever the group said.
+        suggested: false,
       },
     }));
+  }
+
+  /**
+   * Mark every still-undecided suggested row as decided. Marks only: nothing
+   * is written until บันทึก, and these rows are NOT touched — they earn a
+   * row (never stored) but not the "a human re-confirmed it" reviewed_at
+   * refresh that a touch means. Rows with no suggestion are untouched.
+   */
+  function acceptSuggestions() {
+    if (!preview) return;
+    const names = preview.candidates.map((c) => c.productName).filter((n) => drafts[n]?.suggested && !drafts[n]?.decided);
+    if (names.length === 0) return;
+    const ok = window.confirm(
+      `ยืนยันหมวดตามที่ระบบแนะนำ ${names.length} รายการ?\n\n` +
+        "ระบบจะทำเครื่องหมายว่า \"เลือกแล้ว\" ตามหมวดใน POS ของแต่ละรายการ เพื่อให้บันทึกได้\n" +
+        "ยังไม่มีอะไรถูกเขียนลงฐานข้อมูล จนกว่าจะกด บันทึก\n" +
+        "รายการที่ระบบไม่แนะนำ (Other, ออเดอร์พนักงาน, อื่นๆ) ไม่ถูกแตะต้อง",
+    );
+    if (!ok) return;
+    setSaved(null);
+    setDrafts((p) => {
+      const next = { ...p };
+      for (const n of names) next[n] = { ...next[n]!, decided: true };
+      return next;
+    });
   }
 
   // Counts DECIDED rows only, so the figure always equals what saving would
@@ -216,6 +248,12 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
   }, [preview, drafts]);
 
   const decidedCount = (preview?.candidates.length ?? 0) - undecidedCount;
+
+  /** Suggested and not yet confirmed or overridden — what the one button acts on. */
+  const suggestedCount = useMemo(() => {
+    if (!preview) return 0;
+    return preview.candidates.filter((c) => { const d = drafts[c.productName]; return d?.suggested && !d.decided; }).length;
+  }, [preview, drafts]);
 
   const targetNum = Number(target) || 0;
   const gap = totals.net - targetNum;
@@ -361,7 +399,7 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
                 </thead>
                 <tbody>
                   {visible.map((c) => {
-                    const d = drafts[c.productName] ?? { category: null, coffeeSharePerUnit: "", decided: false };
+                    const d = drafts[c.productName] ?? { category: null, coffeeSharePerUnit: "", decided: false, suggested: false };
                     const net = coffeeNet(c, d);
                     return (
                       <tr
@@ -375,7 +413,9 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
                             value={d.category ?? ""}
                             disabled={isPending}
                             onChange={(e) => setCategory(c, e.target.value)}
-                            className={`w-full rounded border px-1.5 py-1 text-xs ${d.category === null ? "border-amber-400 text-amber-800" : "border-neutral-300"}`}
+                            // Amber follows the DECISION: a pre-selected
+                            // suggestion is still undecided and still amber.
+                            className={`w-full rounded border px-1.5 py-1 text-xs ${!d.decided ? "border-amber-400 text-amber-800" : "border-neutral-300"}`}
                           >
                             {/* The placeholder is the "not yet decided" state.
                                 A stored row cannot go back to it: there is no
@@ -395,7 +435,7 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
                           {!c.reviewed && <span className="ml-2 text-xs text-amber-700">ใหม่</span>}
                           {!d.decided && (
                             <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                              ยังไม่เลือกหมวด
+                              {d.suggested ? "แนะนำ — ยังไม่ยืนยัน" : "ยังไม่เลือกหมวด"}
                             </span>
                           )}
                         </td>
@@ -448,15 +488,28 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
               <p className="text-xs text-neutral-500">
                 แสดง {visible.length} จาก {preview.candidates.length} รายการ
                 {undecidedCount > 0 ? ` — ยังไม่เลือกหมวด ${undecidedCount} รายการ` : ""}
+                {suggestedCount > 0 ? ` (ระบบแนะนำไว้ ${suggestedCount})` : ""}
               </p>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isPending || decidedCount === 0}
-                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-              >
-                {isPending ? "กำลังบันทึก..." : `บันทึก ${decidedCount} รายการ`}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Marks, never writes: the confirm says so. Save is still the
+                    only write, and it still writes decided rows only. */}
+                <button
+                  type="button"
+                  onClick={acceptSuggestions}
+                  disabled={isPending || suggestedCount === 0}
+                  className="rounded-md border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  ยืนยันตามที่ระบบแนะนำ ({suggestedCount} รายการ)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isPending || decidedCount === 0}
+                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  {isPending ? "กำลังบันทึก..." : `บันทึก ${decidedCount} รายการ`}
+                </button>
+              </div>
             </div>
           </div>
         </>
