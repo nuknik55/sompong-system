@@ -64,6 +64,13 @@ function coffeeGross(c: ItemCandidate, d: Draft): number {
 export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: number }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // The File lives in state from selection and is read on อ่านไฟล์, not on
+  // select and not through <form action>. This page only needs the file
+  // once, so the React form-reset trap (AGENTS.md) never bit here — the
+  // change is for one pattern on every upload, as Nik asked. Choosing a
+  // different file drops the preview, and with it any unsaved decisions,
+  // after a confirm when there are any.
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ItemClassificationPreview | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [target, setTarget] = useState("128625");
@@ -92,7 +99,27 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
     setSaved(null);
   }
 
-  function handleUpload(formData: FormData) {
+  function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.files?.[0] ?? null;
+    if (preview && touched.size > 0) {
+      const ok = window.confirm(`มีการเลือกหมวดที่ยังไม่บันทึก ${touched.size} รายการ — เปลี่ยนไฟล์จะทิ้งการเลือกเหล่านี้ ยืนยันหรือไม่?`);
+      if (!ok) {
+        e.target.value = "";
+        return;
+      }
+    }
+    setFile(next);
+    setPreview(null);
+    setDrafts({});
+    setTouched(new Set());
+    setError(null);
+    setSaved(null);
+  }
+
+  function handleRead() {
+    if (!file) return;
+    const formData = new FormData();
+    formData.set("file", file);
     setError(null);
     setSaved(null);
     startTransition(async () => {
@@ -280,23 +307,31 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
             ปัจจุบันบันทึกหมวดไว้แล้ว {initialStoredCount} รายการ
           </p>
         </div>
-        <form action={handleUpload} className="flex flex-wrap items-center gap-2">
+        {/* No <form action>: React resets an uncontrolled form after its
+            action runs (AGENTS.md). The file is state; the button reads it. */}
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="file"
-            name="file"
             accept=".xls,.xlsx"
-            required
             disabled={isPending}
+            onChange={handleSelect}
             className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-sm file:text-white"
           />
           <button
-            type="submit"
-            disabled={isPending}
+            type="button"
+            onClick={handleRead}
+            disabled={isPending || !file}
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
           >
-            {isPending ? "กำลังอ่าน..." : "อ่านไฟล์"}
+            {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
-        </form>
+        </div>
+        {file && (
+          <p className="text-xs text-neutral-500">
+            ไฟล์ที่เลือก: <span className="font-medium text-neutral-700">{file.name}</span>
+            {preview && ` — อ่านแล้ว (${preview.period})`}
+          </p>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         {/* Three states, never a success tick on a write that did not happen.
             "บันทึกแล้ว 0 รายการ ✓" reads as either a bug or a lie depending on

@@ -15,6 +15,12 @@ function formatNum(n: number) {
 
 export function PosSalesImport() {
   const router = useRouter();
+  // The File lives in state from selection; reading is a separate, explicit
+  // step. Same shape as the accounting imports (import-state.ts): a new
+  // selection drops everything derived from the old file, and the DOM input
+  // is only ever how a file gets into state, never read back. Nik asked for
+  // select-then-อ่านไฟล์ on every upload; this page used to read on select.
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<SalesImportPreview | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
@@ -29,14 +35,23 @@ export function PosSalesImport() {
   const [rowDivisorInput, setRowDivisorInput] = useState<Record<string, string>>({});
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    // A different file invalidates the previous preview and its per-row
+    // adjustments; nothing is read until อ่านไฟล์.
+    setFile(e.target.files?.[0] ?? null);
+    setPreview(null);
+    setError(null);
+    setDoneCount(null);
+  }
+
+  function handleRead() {
     if (!file) return;
+    const reading = file;
     setError(null);
     setDoneCount(null);
     startTransition(async () => {
       try {
         const formData = new FormData();
-        formData.set("file", file);
+        formData.set("file", reading);
         const result = await previewPosSalesImport(formData);
         setPreview(result);
         setChecked(Object.fromEntries(result.matched.map((r) => [r.menuId, true])));
@@ -141,20 +156,35 @@ export function PosSalesImport() {
             ถ้าชื่อสินค้าใน POS ไม่ตรงกับเมนูเลย (อยู่ในรายการ &quot;ไม่พบในระบบ&quot; ด้านล่าง เช่น ขายตามน้ำหนักเป็นขีด) ใช้ปุ่ม
             &quot;ผูกเข้าเมนู&quot; เพื่อรวมยอดเข้ากับเมนูที่มีอยู่ — ผูกครั้งเดียว ครั้งต่อไปนำเข้าใหม่จะรวมให้อัตโนมัติเลย
           </p>
-          <input
-            type="file"
-            accept=".xls,.xlsx,.csv"
-            onChange={handleFile}
-            disabled={isPending}
-            className="block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept=".xls,.xlsx,.csv"
+              onChange={handleFile}
+              disabled={isPending}
+              className="block rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={handleRead}
+              disabled={isPending || !file}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
+            </button>
+          </div>
+          {file && (
+            <p className="mt-1 text-xs text-neutral-500">
+              ไฟล์ที่เลือก: <span className="font-medium text-neutral-700">{file.name}</span>
+              {preview && " — อ่านแล้ว"}
+            </p>
+          )}
         </div>
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-neutral-500 underline hover:text-neutral-800">
           ปิด
         </button>
       </div>
 
-      {isPending && !preview && <p className="text-sm text-neutral-500">กำลังอ่านไฟล์...</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
       {doneCount != null && <p className="text-sm text-green-700">อัปเดตยอดขายสำเร็จ {doneCount} เมนู</p>}
 
