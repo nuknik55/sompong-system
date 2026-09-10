@@ -1,6 +1,6 @@
 "use client";
 
-import type { MonthlySummaryGroup } from "../../actions";
+import type { MonthlySummaryGroup, MonthlyCovers } from "../../actions";
 import { completenessNotices, profitJudgementAllowed, type MonthCompleteness } from "../completeness";
 
 const MONTHS_TH = [
@@ -49,7 +49,8 @@ function exportExcel(
     capex: number;
     tax: number;
     withheldAccounts: number;
-  } & MonthCompleteness
+  } & MonthCompleteness,
+  covers: MonthlyCovers | null,
 ) {
   // Lazy-load xlsx (already in package.json)
   import("xlsx").then((XLSX) => {
@@ -79,6 +80,13 @@ function exportExcel(
       }
     }
     rows.push(["รวมรายได้", "", summary.totalRevenue, 100]);
+    // The two counts, when the month has them. Rows remembered so the
+    // integer format below can exempt them from the baht format.
+    const coverRows: number[] = [];
+    if (covers) {
+      coverRows.push(rows.length); rows.push(["จำนวนบิล", "", covers.bills, ""]);
+      coverRows.push(rows.length); rows.push(["จำนวนลูกค้า", "", covers.customers, ""]);
+    }
     rows.push([]);
 
     // Expense section
@@ -125,7 +133,7 @@ function exportExcel(
     const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
     for (let r = revenueRowStart; r <= range.e.r; r++) {
       const cCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
-      if (cCell && typeof cCell.v === "number") cCell.z = "#,##0.00";
+      if (cCell && typeof cCell.v === "number") cCell.z = coverRows.includes(r) ? "#,##0" : "#,##0.00";
       const dCell = ws[XLSX.utils.encode_cell({ r, c: 3 })];
       if (dCell && typeof dCell.v === "number") dCell.z = "0.0%";
     }
@@ -141,6 +149,7 @@ export function PLPrintClient({
   yearMonth,
   summary,
   revenueMap,
+  covers,
 }: {
   yearMonth: string;
   summary: {
@@ -153,6 +162,8 @@ export function PLPrintClient({
     withheldAccounts: number;
   } & MonthCompleteness;
   revenueMap: Record<string, number>;
+  /** null = the month has no covers row; the two rows are then omitted, never zero. */
+  covers: MonthlyCovers | null;
 }) {
   const thaiMonth = getThaiMonth(yearMonth);
   const operatingProfit = summary.totalRevenue - summary.operatingExpense;
@@ -205,7 +216,7 @@ export function PLPrintClient({
           พิมพ์ / บันทึก PDF
         </button>
         <button
-          onClick={() => exportExcel(yearMonth, revenueMap, summary)}
+          onClick={() => exportExcel(yearMonth, revenueMap, summary, covers)}
           style={{
             background: "#16a34a", color: "#fff", border: "none", borderRadius: 6,
             padding: "6px 16px", fontSize: 14, cursor: "pointer",
@@ -268,6 +279,22 @@ export function PLPrintClient({
               <td style={{ ...numStyle, fontWeight: 700 }}>{fmt(summary.totalRevenue)}</td>
               <td style={{ ...pctStyle, fontWeight: 700 }}>100%</td>
             </tr>
+            {/* The two counts, when the month has them. Counts, not the POS's
+                averages: the app's revenue divided by these is the screen's job. */}
+            {covers && (
+              <>
+                <tr>
+                  <td style={cellStyle}>จำนวนบิล</td>
+                  <td style={numStyle}>{covers.bills.toLocaleString("th-TH")}</td>
+                  <td style={pctStyle}>—</td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>จำนวนลูกค้า</td>
+                  <td style={numStyle}>{covers.customers.toLocaleString("th-TH")}</td>
+                  <td style={pctStyle}>—</td>
+                </tr>
+              </>
+            )}
           </tfoot>
         </table>
 

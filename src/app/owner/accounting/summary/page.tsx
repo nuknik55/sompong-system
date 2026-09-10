@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt } from "../actions";
+import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt, getMonthlyCovers } from "../actions";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 import { ToolRow } from "../tool-row";
@@ -39,10 +39,11 @@ export default async function AccountingSummaryPage({
   const today = new Date().toISOString().slice(0, 7);
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
-  const [summary, revenueRows, importedAt] = await Promise.all([
+  const [summary, revenueRows, importedAt, covers] = await Promise.all([
     getMonthlySummary(yearMonth),
     getMonthlyRevenue(yearMonth),
     getPosImportedAt(yearMonth),
+    getMonthlyCovers(yearMonth),
   ]);
 
   const revenueMap = Object.fromEntries(revenueRows.map((r) => [r.revenue_type, r.amount]));
@@ -138,6 +139,21 @@ export default async function AccountingSummaryPage({
           highlight={profitHighlight}
         />
       </div>
+
+      {/* Bills and customers, one line. Averages divide THIS page's revenue,
+          not the POS's own averages, which are on a net-of-discount basis
+          that includes the coffee shop — one basis on one screen. Absent for
+          a month with no row; never zeros. */}
+      {covers && (
+        <p className="text-sm text-neutral-600 tabular-nums">
+          บิล {covers.bills.toLocaleString("th-TH")} · ลูกค้า {covers.customers.toLocaleString("th-TH")}
+          {totalRevenue > 0 && covers.bills > 0 && ` · เฉลี่ย ${formatBaht(totalRevenue / covers.bills)} ฿/บิล`}
+          {totalRevenue > 0 && covers.customers > 0 && ` · ${formatBaht(totalRevenue / covers.customers)} ฿/คน`}
+          {covers.cancelledBills > 0 && (
+            <span className="text-neutral-400"> · ยกเลิก {covers.cancelledBills.toLocaleString("th-TH")} บิล ({formatBaht(covers.cancelledAmount)} ฿ ตาม POS)</span>
+          )}
+        </p>
+      )}
 
       {/* Cost Structure table */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">

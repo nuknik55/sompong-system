@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
-import { getMonthlySummary, getMonthlyRevenue } from "../../actions";
+import { getMonthlySummary, getMonthlyRevenue, getMonthlyCovers } from "../../actions";
 import { PLPrintClient } from "./PLPrintClient";
 
 export default async function PLPrintPage({
@@ -15,9 +15,10 @@ export default async function PLPrintPage({
   const today = new Date().toISOString().slice(0, 7);
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
-  const [summary, revenueRows] = await Promise.all([
+  const [summary, revenueRows, covers] = await Promise.all([
     getMonthlySummary(yearMonth),
     getMonthlyRevenue(yearMonth),
+    getMonthlyCovers(yearMonth),
   ]);
 
   const revenueMap = Object.fromEntries(revenueRows.map((r) => [r.revenue_type, r.amount]));
@@ -27,6 +28,7 @@ export default async function PLPrintPage({
       yearMonth={yearMonth}
       summary={summary}
       revenueMap={revenueMap}
+      covers={covers}
     />
   );
 }

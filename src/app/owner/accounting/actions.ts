@@ -782,6 +782,33 @@ export async function getStartOfMonthChecklist(): Promise<Checklist> {
   );
 }
 
+export type MonthlyCovers = { bills: number; customers: number; cancelledBills: number; cancelledAmount: number };
+
+/**
+ * Bills and customers for the month, from monthly_covers — written only by
+ * the POS revenue import, in the same call as the revenue. null when the
+ * month has no row (imported before covers existed and not re-run, or not
+ * imported at all); callers show nothing rather than zeros. Counts only:
+ * the averages are computed by the caller from the app's own revenue.
+ */
+export async function getMonthlyCovers(yearMonth: string): Promise<MonthlyCovers | null> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("monthly_covers")
+    .select("bills,customers,cancelled_bills,cancelled_amount")
+    .eq("year_month", yearMonth)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return {
+    bills: Number(data.bills),
+    customers: Number(data.customers),
+    cancelledBills: Number(data.cancelled_bills),
+    cancelledAmount: Number(data.cancelled_amount),
+  };
+}
+
 export async function getPosImportedAt(yearMonth: string): Promise<string | null> {
   await requireAdmin();
   const supabase = await createClient();
