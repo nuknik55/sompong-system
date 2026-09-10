@@ -3,13 +3,14 @@ export const dynamic = "force-dynamic";
 import { requireAdmin } from "@/lib/auth";
 import { getCoa, getEntriesByDate, getSuppliers } from "../actions";
 import { DailyEntryClient } from "./DailyEntryClient";
+import { ToolRow } from "../tool-row";
 
 export default async function DailyEntryPage({
   searchParams,
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
-  await requireAdmin();
+  const profile = await requireAdmin();
 
   const { date: rawDate } = await searchParams;
   const today = new Date().toISOString().slice(0, 10);
@@ -28,13 +29,8 @@ export default async function DailyEntryPage({
           <span className="text-neutral-300 text-sm">/</span>
           <h1 className="font-kanit text-lg font-semibold text-neutral-900">บันทึกรายวัน</h1>
         </div>
-        <div className="flex items-center gap-4 text-sm text-neutral-400">
-          <a href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-700">สรุปรายเดือน</a>
-          <a href="/owner/accounting/transfer-slip" className="hover:text-neutral-700">ใบโอนเงิน</a>
-          <a href="/owner/accounting/suppliers" className="hover:text-neutral-700">ซัพพลายเออร์</a>
-          <a href="/owner/accounting/coa" className="hover:text-neutral-700">จัดการหมวด</a>
-        </div>
       </div>
+      <ToolRow role={profile.role} yearMonth={yearMonth} current="daily" />
 
       <DailyEntryClient
         key={date}

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt } from "../actions";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
+import { ToolRow } from "../tool-row";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -87,8 +88,6 @@ export default async function AccountingSummaryPage({
           <h1 className="font-kanit text-lg font-semibold text-neutral-900">สรุปรายเดือน</h1>
         </div>
         <div className="flex items-center gap-4 text-sm text-neutral-400">
-          <a href={`/owner/accounting/daily`} className="hover:text-neutral-700">บันทึกรายวัน</a>
-          <a href="/owner/accounting/coa" className="hover:text-neutral-700">จัดการหมวด</a>
           <a
             href={`/owner/accounting/summary/print?month=${yearMonth}`}
             className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50"
@@ -97,6 +96,7 @@ export default async function AccountingSummaryPage({
           </a>
         </div>
       </div>
+      <ToolRow role={profile.role} yearMonth={yearMonth} current="summary" />
 
       {/* Month navigator */}
       <div className="flex items-center gap-3">

@@ -1,46 +1,35 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
-import { getRecentEntries } from "./actions";
+import { getRecentEntries, getStartOfMonthChecklist } from "./actions";
 import { AccountingEntryClient } from "./AccountingEntryClient";
+import { ToolRow } from "./tool-row";
+import { ChecklistPanel } from "./ChecklistPanel";
 
 export default async function AccountingPage({
   searchParams,
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
-  await requireAdmin();
+  const profile = await requireAdmin();
 
   const { month: rawMonth } = await searchParams;
   const today = new Date();
   const yearMonth =
     rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today.toISOString().slice(0, 7);
 
-  const { entries, withheldCount } = await getRecentEntries(yearMonth);
+  const [{ entries, withheldCount }, checklist] = await Promise.all([getRecentEntries(yearMonth), getStartOfMonthChecklist()]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">ดูทั้งเดือน</h1>
-        <div className="flex items-center gap-4 text-sm text-neutral-500">
-          <Link href="/owner/accounting/daily" className="hover:text-neutral-800">บันทึกรายวัน</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href={`/owner/accounting/summary?month=${yearMonth}`} className="hover:text-neutral-800">สรุปรายเดือน</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/transfer-slip" className="hover:text-neutral-800">ใบโอนเงิน</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/suppliers" className="hover:text-neutral-800">ซัพพลายเออร์</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/import" className="hover:text-neutral-800">นำเข้าข้อมูล</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/coa" className="hover:text-neutral-800">จัดการหมวด</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/revenue-import" className="hover:text-neutral-800">นำเข้ารายได้ POS</Link>
-          <span className="text-neutral-200">|</span>
-          <Link href="/owner/accounting/coffee-items" className="hover:text-neutral-800">จัดหมวดสินค้า POS</Link>
-        </div>
       </div>
+
+      <ToolRow role={profile.role} yearMonth={yearMonth} />
+
+      {/* The month that just closed, until every step is satisfied. */}
+      <ChecklistPanel checklist={checklist} role={profile.role} />
 
       <AccountingEntryClient
         initialEntries={entries}

@@ -7,6 +7,8 @@ import { swapSortOrder } from "@/lib/reorder";
 import { fetchAllRows } from "@/lib/data";
 import type { PaymentMethod } from "./daily/payment-split";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
+import { posPeriodToYearMonth } from "@/lib/pos-parse";
+import { deriveChecklist, previousMonth, type Checklist } from "./checklist";
 
 /**
  * Last calendar day of a "YYYY-MM" string, as "YYYY-MM-DD".
@@ -729,6 +731,57 @@ export async function setMonthlyRevenue(
  * that has been imported, because a hand edit there would survive only until
  * the next import run.
  */
+/**
+ * The start-of-month checklist for the month that just closed (Bangkok
+ * time), derived from the evidence each import leaves behind. See
+ * checklist.ts for what each source can and cannot prove.
+ */
+export async function getStartOfMonthChecklist(): Promise<Checklist> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const yearMonth = previousMonth(bangkokYearMonth());
+
+  const [newestDoc, newestUpload, meta, revenue, outsource, budget69] = await Promise.all([
+    supabase.from("pos_receipt_deliveries").select("document_date").order("document_date", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("pos_receipt_deliveries").select("imported_at").order("imported_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("pos_import_meta").select("date_from,date_to,imported_at").eq("id", "last").maybeSingle(),
+    supabase.from("pos_revenue_imports").select("imported_at").eq("year_month", yearMonth).maybeSingle(),
+    supabase.from("outsource_imports").select("imported_at,expenses_written").eq("year_month", yearMonth).maybeSingle(),
+    supabase.from("budget69_imports").select("imported_at").eq("year_month", yearMonth).maybeSingle(),
+  ]);
+  // Checked, every one: a failed read here would render a step as "open"
+  // and send someone to redo an import that was done.
+  for (const r of [newestDoc, newestUpload, meta, revenue, outsource, budget69]) if (r.error) throw new Error(r.error.message);
+
+  let salesImport: Parameters<typeof deriveChecklist>[0]["salesImport"] = null;
+  if (meta.data) {
+    const from = (meta.data.date_from as string | null) ?? "";
+    const to = (meta.data.date_to as string | null) ?? from;
+    const parsed = posPeriodToYearMonth(from, to);
+    salesImport = {
+      yearMonth: "yearMonth" in parsed ? parsed.yearMonth : null,
+      period: to && to !== from ? `${from} – ${to}` : from,
+      importedAt: (meta.data.imported_at as string | null) ?? null,
+    };
+  }
+
+  return deriveChecklist(
+    {
+      deliveries: {
+        newestDocumentDate: (newestDoc.data?.document_date as string | undefined) ?? null,
+        newestImportedAt: (newestUpload.data?.imported_at as string | undefined) ?? null,
+      },
+      salesImport,
+      revenueImportedAt: (revenue.data?.imported_at as string | undefined) ?? null,
+      outsource: outsource.data
+        ? { importedAt: outsource.data.imported_at as string, expensesWritten: Boolean(outsource.data.expenses_written) }
+        : null,
+      budget69ImportedAt: (budget69.data?.imported_at as string | undefined) ?? null,
+    },
+    yearMonth,
+  );
+}
+
 export async function getPosImportedAt(yearMonth: string): Promise<string | null> {
   await requireAdmin();
   const supabase = await createClient();
