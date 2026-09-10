@@ -63,7 +63,8 @@ and `menus.fuel_cost` was dropped on the same day.
 | `coa_document_ui_created_accounts.sql` | 2026-09-09 | `description` on the ten CoA accounts created through the UI. Verified live: all ten documented, 23 described accounts in total. Sets no other column; every clause keyed on `code`. |
 | `coa_add_225_870.sql` | 2026-09-10 | Added **225 โบนัส** (G200) and **870 Supply จัดเลี้ยง** (G800), documented at creation, placed by live-neighbour subquery. 870 not 850: the original migration had 870 as Supply - Catering before the row was deleted through the UI. Verified live: both exist. |
 | `budget69_import_schema_rpc.sql` | 2026-09-10 | `budget69_imports` provenance (owner-only writes), partial unique index on `bill_ref LIKE 'B69-%'`, and `import_budget69_month`. Verified live by probing: refuses 650/752/753, refuses 790 from a caller without the owner role, refuses a group header, an unknown code, a zero amount and a malformed month — state unchanged after every probe. |
-| `seed_pos_item_categories_catering.sql` | 2026-09-10 | 26 catering/set/buffet products → `food`, 15 beer-by-the-case and mixer items → `drink`, `reviewed_by NULL`. Verified live: 564 rows. 343 genuine dishes remain for the screen across Jan–Jul. |
+| `seed_pos_item_categories_catering.sql` | 2026-09-10 | 26 catering/set/buffet products → `food`, 15 beer-by-the-case and mixer items → `drink`, `reviewed_by NULL`. Verified live: 564 rows. 343 genuine dishes remained for the screen across Jan–Jul at that point; by evening the table held 633 and the Feb–Jun exports' union of unreviewed items was 228 (see the classification section). |
+| `outsource_import_schema_rpc.sql` | 2026-09-10 | `outsource_imports` provenance (owner-only writes, `expenses_written` flag), partial unique index on `bill_ref LIKE 'OUT-%'`, and `import_outsource_month` — allowlist of 15 codes, `other` required, a budget69-owned month accepts `other` only. Nik reported success; the five refusal probes in the file's footer were not reported back. Verified live by use the same day: August wrote exactly 10 `OUT-` rows and `other` 20,793; Jan–Jul each wrote `other` only with `expenses_written = false`, so the budget69-month rule was exercised seven times in the accepting direction. The refusing direction (entries for an owned month) is exercised only by construction — the page never sends them. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -503,31 +504,7 @@ In order. Nothing here is started unless it says so.
     Not before then: a covers table nobody reads is a second place for a number
     to go stale.
 
-16. **Accounting tool row + start-of-month checklist.** Not started. Proposal
-    reported 2026-09-09 and taken to Nik; sequenced after the budget69 import
-    because the checklist's "done" derivation and the P&L were both wrong
-    until monthly costs existed in the ledger.
-
-    Tool row, grouped by cadence, monthly items in dependency order:
-    `ทุกวัน: บันทึกรายวัน · ใบโอนเงิน | ทุกเดือน: จัดหมวดสินค้า POS → นำเข้ารายได้ POS →
-    นำเข้ารายจ่ายรายเดือน → สรุปรายเดือน | ตั้งค่า: ซัพพลายเออร์ · จัดการหมวด`.
-    `นำเข้าข้อมูล` was the อู๋ importer and is now the budget69 one — it belongs
-    in the monthly group under its new name.
-
-    Checklist: a panel at the top of `/owner/accounting`, shown from the 1st
-    until every step for the previous month is satisfied. **Two files, six
-    steps, in order:** receipt report → price import; SaleData → sales import
-    (dashboard); SaleData → classification; SaleData → revenue import;
-    **budget69 → monthly costs (new, this is the step the import added)**;
-    accountants' `other` typed in. "Done" derived from evidence where it
-    exists — `pos_revenue_imports` and `budget69_imports` are exact per month;
-    `pos_import_meta` is a single "last" row (adequate for the current month,
-    no history); `pos_receipt_deliveries` gives "last upload" but not "right
-    range"; `monthly_revenue.other` present or not; classification is implied
-    by a successful revenue import. Show a date rather than a tick where the
-    evidence is partial.
-
-17. **Upload UX — one pattern everywhere.** Not started. Nik wants
+16. **Upload UX — one pattern everywhere.** Not started. Nik wants
     select-then-อ่านไฟล์ on every upload; today three pages auto-read on
     select (dashboard sales import, ingredients price import, and the price
     importer also **writes deliveries to the database on select, before any
@@ -535,6 +512,22 @@ In order. Nothing here is started unless it says so.
     trap; survives only because it needs the file once). Inventory in the
     2026-09-09 report. SOP photos are not an owner import and stay as they
     are. The `import-state.ts` reducer is the shape to converge on.
+
+**Closed 2026-09-10 — the tool row and start-of-month checklist** (`34b4489`,
+was item 16). One `ToolRow` on the month view, บันทึกรายวัน and สรุปรายเดือน,
+grouped ทุกวัน | ทุกเดือน (dependency order) | ตั้งค่า; the owner-only import
+link renders only for the owner, because an admin had been shown a link that
+bounced them. The checklist (`checklist.ts`, pure, tested) has **five** steps
+for the month that just closed, not the six once planned: the accountant's
+file (step 5) writes `other`, so the "typed `other`" step no longer exists.
+Each step is derived from evidence — prices: the deliveries record reaches
+past month end (`imported_at` cannot be used, the importer upserts and keeps
+the first insert); sales: the single `pos_import_meta` row, a later month
+shown as a date, never a tick; classification: implied by the revenue import;
+revenue and the accountant's file: exact per-month rows, a budget69-only
+month reads as partial. Panel expands with three or more open steps, one line
+otherwise, hidden when all done. Verified on live evidence for August before
+and after Nik's import.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
@@ -596,6 +589,11 @@ So `/owner/accounting/import` (which replaced the never-run อู๋ importer) 
 **a monthly step, not a history load**: Nik fills the green ACTUAL column of
 `งบ69` after each month closes and imports it. Jan–Jul 2569 first, then
 August onward, forever.
+
+**Superseded the same day for August onward** — see the next section. Jan–Jul
+2569 stay as imported from budget69 (Nik's decision, 2026-09-10) and this
+section remains the record of how those seven months were written. The
+budget69 importer is still on the page, folded away, for those months only.
 
 ### The rule that governs every write
 
@@ -665,6 +663,106 @@ runs: 66 entries, ฿3,224,000.57, POS-owned 650 95,898 · 752 42,783.
   not show anywhere.** Held, untouched, Nik's to decide; the import lists it
   under "in the app, not in the sheet".
 
+## The outsourced accountant's file is the source from August 2569
+
+`69-08.xlsx` from the outsourced accountant — one growing file per year
+(`69-09.xlsx` next, `70-01.xlsx` the year after). Nik's decision of
+2026-09-10, replacing budget69 for August onward. Parser `src/lib/outsource.ts`,
+RPC `import_outsource_month`, page `/owner/accounting/import` (owner only).
+
+### What is read, and from where
+
+Sheet `รับ-จ่าย<yy>` holds every month top to bottom: a daily table, a row
+with `รวม` in column A, the card fee in column C of the next row, receipts,
+`หักจ่ายสด` and the **cash-paid block** to the first blank row, then **the
+monthly block** (`ค่าแรงพนักงาน … รวมคชจ.`, labels in C, amounts in F). The
+importer takes the monthly block and the card fee. Located by position, never
+by label: **three labels occur in both blocks** — ค่าแรงพนักงาน (Aug 604,970
+monthly vs 78,497 cash-paid), ค่าอาหารพนักงาน (71,080 vs 27,725), ค่าเช่า
+(120,000 vs 9,120). The cash-paid block is already in the app as the
+bookkeeper's daily entries; the preview shows each twin beside its monthly
+figure as *จ่ายสดรายวัน (มีในระบบแล้ว)* so 604,970 next to 78,497 reads as two
+things, not a mismatch.
+
+The month sheet (`สค.69` …) contributes **one cell: F7 รายได้อื่นๆ**, written
+to `monthly_revenue.other`. This import owns `other` — it is the accountants'
+figure and this is their file; the POS import never touches it. July's typed
+113,070 became 18,165, August's 121,195.50 became 20,793.
+
+### The identity, the stop, and the year
+
+`รวมคชจ. = หักจ่ายสด + Σ(monthly block)` holds to 0.00 in nine of nine months
+(Dec 2568 → Aug 2569) and is the first stop: a month where it fails is
+refused. Then: an unknown label in the block is a named stop (row, label,
+amount) — the map is exact-string, 14 labels, no fuzzy matching; a missing
+F7 is a stop, never a zero (March's F7 is a genuine typed 0 and is a value).
+
+**The year comes from the daily table's date column, never from a sheet or
+file name, and the cells are 57 years off, not 543.** The accountant typed a
+two-digit Buddhist year (`1/12/68`) and Excel read it as **1968**. Rule: a
+stored year 1900–1999 is BE 2500+yy → CE; ≥2400 is a four-digit BE; 2000–2399
+is already CE. Verified on every block; the 70-series fixture in the tests
+proves the rollover (`ธค.69` → 2026-12, `มค.70` → 2027-01, distinct from
+2025-12). Month sheets are tied to their block by the F7 formula pointing
+into the block's rows, and by name; disagreement is a stop. The
+abbreviations กย/ตค/พย for Sep–Nov are unseen until those files arrive; the
+formula tie does not depend on them.
+
+### Written in full, not by remainder — and what is never written
+
+Unlike budget69, **no daily entries are subtracted**: the file's own
+arithmetic makes the monthly figures distinct from the cash-paid ones, and
+the daily entries are the cash-paid side. Subtracting would have written
+61,720 for a line the accountant states as 71,080. The app's daily is shown
+beside each line for information. Accepted and named: ค่าภ.ง.ด.1 (฿10–20)
+sits in the cash-paid block and reaches 952 as a daily entry, so 952 runs
+฿10 over the file's ภงด.3,53.
+
+Every lump: accrual, `supplier_id NULL`, dated the 1st, `bill_ref =
+OUT-<code>-YYYY-MM`. Codes: ค่าแรงพนักงาน 220 · เงินเดือนออฟฟิศ 790 ·
+**ค่าอาหารพนักงาน 221** (Nik wrote 214; seven months of budget69 evidence say
+221, and 214 is the part-time meal account — treated as a slip, he can veto)
+· ค่าเช่า 310 · ค่าไฟ 520 · ค่าน้ำประปา 530 · ค่าภงด.3,53 952 · ค่า ภพ.30 951
+· ค่าทำบัญชี (+ค่าสอบบัญชี) 710 · โบนัส 225 · ค่าภงด.50 959 · ค่าภาษีที่ดิน 954
+· card fee 745. The RPC allowlist is those 13 plus 953/955 for the months
+they appear; everything else is refused by name.
+
+Never written, shown under *ตรวจแล้ว ไม่บันทึก*:
+- **ค่าประกันสังคม** — in the cash-paid block, already a daily entry (Aug
+  2569: 231 = 36,360, exactly the file). A check row against the app's
+  230+231, warning on mismatch. For Jan–Jul the app figure includes the B69
+  lumps, so it reads "=".
+- **จ่ายคืนร้านกาแฟ** (Aug 128,625) — revenue already excludes coffee-shop
+  sales; booking their return as an expense would double-count. Same
+  standing as 998.
+- Everything else in the file. Nik: "other figures may differ because they
+  look at different things — what I entered in the app is primary."
+
+### One source per month, guarded in both directions
+
+A month is budget69 **or** the accountant's file. The RPC refuses expense
+entries for a month with a `budget69_imports` row and accepts `other` only;
+`applyBudget69Import` counts `OUT-` lumps in `expense_entries` before its RPC
+and refuses if any exist — evidence, not the provenance flag. December 2568
+parses cleanly and is skipped: the ledger begins 2026-01.
+
+### Jan–Jul against the budget69 lumps, recorded
+
+Same code, file minus lump: equal in every month for 790, 310, 520, 530, 951,
+710, 225, 954, 959 and 221. Two real differences, reported to Nik, no action:
+**220 January** file 558,120 vs lump 496,062 (+62,058); **745 March** file
+19,998.49 vs lump 4,710 (+15,288.49). 952 is −10 Jan–May and −20 Jun (the
+ภ.ง.ด.1 line above). Jan–Jul stay budget69.
+
+### August 2569, after the outsource import (confirmed from the tables)
+
+10 `OUT-` rows, 1,171,308.99, all dated 2026-08-01, accrual, no supplier;
+`other` 20,793; no B69 rows. Revenue **3,880,645.00**, operating expense
+**3,581,458.08 = 92.3%**, operating profit **299,186.92 = 7.7%**, COGS 46.1%
+against a 43% target. The 38.7% is gone. ภพ.30 and ภงด.3,53 (30,139.60) sit
+in the Tax group below the line, which is why operating expense is that much
+less than the lumps plus the daily entries.
+
 ## July 2569 is half a month of expenses against a full month of revenue
 
 `expense_entries` begins **2026-07-17**. There are zero rows for 1–16 July.
@@ -696,6 +794,14 @@ dated 1 July, so once Jan–Jul are imported `MIN(entry_date)` is 1 January,
 backfilling the daily detail Nik decided not to enter. What July will still
 not have is the per-day, per-supplier detail for 1–16; it has the month.
 
+**Landed 2026-09-10.** Nik imported Jan–Jul from budget69 (July: 61 lumps,
+2,269,534.31 — the 1–16 remainder plus the monthly items), `MIN(entry_date)`
+is now 2026-01-01 and the marker has cleared. With `other` corrected to
+18,165 by the accountant's file, July computes to revenue 3,010,495,
+operating expense 2,915,272.81 = 96.8%, operating profit ≈ 3.2% — within
+range of the accountant's own 3.5%. Its POS revenue import is still pending
+(the hand-typed five boxes stand until Nik runs the July export).
+
 ## Item categories — what survives each month, and what does not
 
 `pos_item_categories` holds one row per POS product: which of six revenue
@@ -707,24 +813,38 @@ when things change?* The honest shape:
 
 | | |
 |---|---|
-| the table (523 seeded rows, growing as items are reviewed) | live |
+| the table (523 seeded rows, 564 after the catering seed, 633 by 2026-09-10 evening, growing as items are reviewed) | live |
 | the screen at `/owner/accounting/coffee-items` | live |
 | the "no row = not yet reviewed" check | live |
 
-### What was one-time seed machinery and never runs again
+### What was one-time seed machinery, and the one piece that now runs monthly
 
-The 11-group POS mapping, the named exception list, the four-step precedence,
-the seven-sheet reading — **all of it lives in `scripts/seed-item-categories.mjs`
-and nowhere in `src/`.** Verified: a grep for `categoryFromRaw`, `EXCEPTIONS`,
-`CARVE_OUT`, `SHEET_CATEGORY` and `กลุ่มของฝาก` across `src/` returns nothing.
-The application never imports the script. **Nothing from the seed survives into
-the app.**
+The named exception list, the four-step precedence and the seven-sheet
+reading live in `scripts/seed-item-categories.mjs` and nowhere in `src/`.
+The application never imports the script.
 
-This was a deliberate decision, not an accident. The screen does **not**
-suggest a category for a new item from its POS group — that would have copied
-the group mapping into the monthly path as a second thing to keep in sync. A
-new item arrives with nothing selected; the POS group column is visible and is
-all the hint needed.
+**The 11-group POS mapping is the exception, since 2026-09-10** (`d4abd73`).
+It lives in `src/lib/pos-group-category.ts` — one definition, two callers:
+the seed imports it as its LM/Grab fallback, and the classification screen
+uses it as a **suggestion**. This reverses the earlier decision (no
+suggestion on the screen), which was made against a monthly trickle of new
+items; Nik reversed it against a 228-item backlog where the POS group
+already said the answer.
+
+What survives the reversal, unchanged: **a suggestion is not a decision.** A
+new item whose group resolves (อาหาร, เครื่องดื่ม with ::ของหวาน → dessert,
+ร้านกาแฟ, กลุ่มของฝาก, ตรุษจีน, อาหารเจ, Comment Menu, Lineman) loads
+pre-selected, amber, badged *แนะนำ — ยังไม่ยืนยัน*, `decided` false, and
+**save skips it**. One button, *ยืนยันตามที่ระบบแนะนำ (N รายการ)*, confirms and
+marks those rows decided (never touched); บันทึก is still the only write and
+still writes decided rows only. Groups with no default — Other,
+ออเดอร์พนักงาน, อื่นๆ — arrive blank, same list as the seed's; an item under
+two groups that disagree (พุดดิ้งมะพร้าวอ่อน: ร้านกาแฟ + Lineman) gets none.
+
+Measured on the real exports before shipping: across Feb–Jun the union of
+unreviewed items was **228, of which 81 get a suggestion and 145 sit in
+Other** with nothing to suggest. The button saves a third of the clicks, not
+the backlog; Nik was told so.
 
 ### The seed is one-time, and the file enforces it
 
