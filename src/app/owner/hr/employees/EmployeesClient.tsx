@@ -46,6 +46,7 @@ const BLANK_EMP: Omit<Employee, "id" | "department_name"> = {
   weekly_day_off: "จันทร์",
   citizenship_type: "thai",
   is_active: true,
+  takes_bookings: false,
   sort_order: 999,
   al_quota_override: null,
   probation_end_date: null,
@@ -98,6 +99,7 @@ export function EmployeesClient({
       weekly_day_off: emp.weekly_day_off ?? "จันทร์",
       citizenship_type: emp.citizenship_type,
       is_active: emp.is_active,
+      takes_bookings: emp.takes_bookings,
       sort_order: emp.sort_order,
       al_quota_override: emp.al_quota_override ?? null,
       probation_end_date: emp.probation_end_date ?? null,
@@ -242,6 +244,9 @@ export function EmployeesClient({
                           </Link>
                           {emp.nickname && (
                             <span className="ml-1 text-xs text-neutral-400">({emp.nickname})</span>
+                          )}
+                          {emp.takes_bookings && (
+                            <span className="ml-1.5 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">รับจอง</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-neutral-700">{emp.position ?? "–"}</td>
@@ -459,6 +464,15 @@ export function EmployeesClient({
                       className="rounded"
                     />
                     ยังทำงานอยู่ (ยกเลิกเครื่องหมายถ้าลาออกแล้ว)
+                  </label>
+                  <label className="mt-1.5 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.takes_bookings}
+                      onChange={(e) => setForm((f) => ({ ...f, takes_bookings: e.target.checked }))}
+                      className="rounded"
+                    />
+                    รับงานจองจัดเลี้ยง (ขึ้นในรายชื่อผู้รับงานจอง)
                   </label>
                 </Field>
               </div>

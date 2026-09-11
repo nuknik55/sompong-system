@@ -86,6 +86,9 @@ function linesFromCharges(charges: CateringCharge[]): Line[] {
 
 function money(n: number) { return `฿${fmtBaht(n)}`; }
 
+/** Device memory of the last taker chosen, for logins with no linked employee. */
+const LAST_TAKER_KEY = "catering.lastTaker";
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export function BookingScreen({
@@ -212,13 +215,33 @@ export function BookingScreen({
     startTransition(async () => {
       const result = await saveBooking({ event: formToUpsertPayload(derived, event?.id), lines: buildLines(), issueQuote });
       if (!result.ok) { setError(result.error); return; }
+      try { if (derived.staff_ids[0]) localStorage.setItem(LAST_TAKER_KEY, derived.staff_ids[0]); } catch { /* storage unavailable */ }
       router.push(issueQuote ? `/owner/catering/${result.id}/quote` : `/owner/catering/${result.id}`);
       router.refresh();
     });
   }
 
   const pickedCustomer = form.customerId ? customers.find((c) => c.id === form.customerId) : null;
-  const activeStaff = staffOptions.filter((s) => s.is_active || form.staff_ids.includes(s.id));
+  // The taker dropdown: people flagged takes_bookings on the HR page (the
+  // sheet's six), plus whoever is already saved on this booking even if
+  // since unflagged or left — otherwise they would be stuck on it unseen.
+  const takers = staffOptions.filter((s) => (s.takes_bookings && s.is_active) || form.staff_ids.includes(s.id));
+
+  // Default taker on a NEW booking: the login's employee (defaultStaffId,
+  // via blankForm) when linked; else the last taker chosen on this device;
+  // else nothing, and the person picks. Device memory is a convenience for
+  // the shared `sale` login, which has no employee of its own; it never
+  // overrides a saved booking or a linked login.
+  useEffect(() => {
+    if (event || defaultStaffId) return;
+    try {
+      const last = localStorage.getItem(LAST_TAKER_KEY);
+      if (last && staffOptions.some((s) => s.id === last && s.takes_bookings && s.is_active)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time seed from device storage, unavailable during render under SSR
+        setForm((f) => (f.staff_ids.length === 0 ? { ...f, staff_ids: [last] } : f));
+      }
+    } catch { /* storage unavailable: no default */ }
+  }, [event, defaultStaffId, staffOptions]);
 
   return (
     <div className="space-y-5">
@@ -315,8 +338,9 @@ export function BookingScreen({
           <Field label="ผู้รับงานจอง">
             <select className="input-base" value={form.staff_ids[0] ?? ""} onChange={(e) => set("staff_ids", e.target.value ? [e.target.value] : [])}>
               <option value="">– เลือก –</option>
-              {activeStaff.map((s) => <option key={s.id} value={s.id}>{staffLabel(s)}</option>)}
+              {takers.map((s) => <option key={s.id} value={s.id}>{staffLabel(s)}</option>)}
             </select>
+            {takers.length === 0 && <p className="mt-1 text-xs text-amber-700">ยังไม่มีใครถูกตั้งเป็นผู้รับงานจอง — ติ๊ก &quot;รับงานจองจัดเลี้ยง&quot; ในหน้าพนักงาน (HR)</p>}
           </Field>
           <Field label="เงินมัดจำ (บาท)">
             <input type="number" min={0} className="input-base" value={form.deposit_amount} onChange={(e) => set("deposit_amount", e.target.value)} />

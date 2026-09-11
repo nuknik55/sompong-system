@@ -34,6 +34,8 @@ export type StaffOption = {
   full_name: string;
   department_name: string | null;
   is_active: boolean;
+  /** employees.takes_bookings through the view: may be the taker of a booking. */
+  takes_bookings: boolean;
 };
 
 export type CateringEvent = {
@@ -381,7 +383,7 @@ export async function getStaffOptions(): Promise<StaffOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_staff_options")
-    .select("id,nickname,full_name,department_name,is_active,sort_order")
+    .select("id,nickname,full_name,department_name,is_active,takes_bookings,sort_order")
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
@@ -390,6 +392,7 @@ export async function getStaffOptions(): Promise<StaffOption[]> {
     full_name: r.full_name as string,
     department_name: r.department_name as string | null,
     is_active: (r.is_active as boolean) ?? false,
+    takes_bookings: (r.takes_bookings as boolean) ?? false,
   }));
 }
 

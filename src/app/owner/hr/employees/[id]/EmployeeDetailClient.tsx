@@ -139,6 +139,7 @@ export function EmployeeDetailClient({
         weekly_day_off: form.weekly_day_off ?? "",
         citizenship_type: form.citizenship_type,
         is_active: form.is_active,
+        takes_bookings: form.takes_bookings,
         al_quota_override: form.al_quota_override,
         probation_end_date: form.employment_type === "probation" ? form.probation_end_date : null,
       });
@@ -432,6 +433,11 @@ export function EmployeeDetailClient({
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="rounded" />
                 ยังทำงานอยู่
+              </label>
+              {/* The sheet's ผู้รับงานจอง: the booking screen lists only ticked people. */}
+              <label className="mt-1.5 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={form.takes_bookings} onChange={(e) => setForm((f) => ({ ...f, takes_bookings: e.target.checked }))} className="rounded" />
+                รับงานจองจัดเลี้ยง
               </label>
             </Field>
           </div>

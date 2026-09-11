@@ -32,6 +32,8 @@ export type Employee = {
   weekly_day_off: string | null;
   citizenship_type: "thai" | "foreign";
   is_active: boolean;
+  /** May be the taker (ผู้รับงานจอง) of a catering booking. Ticked here; read by the booking screen through catering_staff_options. */
+  takes_bookings: boolean;
   sort_order: number;
   al_quota_override: number | null;
   probation_end_date: string | null;
@@ -218,7 +220,7 @@ export async function getEmployees(): Promise<Employee[]> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, start_date, daily_wage,
-      weekly_day_off, citizenship_type, is_active, sort_order,
+      weekly_day_off, citizenship_type, is_active, takes_bookings, sort_order,
       al_quota_override, probation_end_date,
       departments(name, sort_order)
     `)
@@ -249,7 +251,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
       department_id, position, employment_type,
       base_salary, position_allowance, social_security_monthly,
       hire_date, start_date, daily_wage,
-      weekly_day_off, citizenship_type, is_active,
+      weekly_day_off, citizenship_type, is_active, takes_bookings,
       al_quota_override, probation_end_date,
       departments(name)
     `)
@@ -282,12 +284,14 @@ export async function upsertEmployee(e: {
   weekly_day_off: string;
   citizenship_type: string;
   is_active: boolean;
+  takes_bookings: boolean;
   al_quota_override?: number | null;
   probation_end_date?: string | null;
 }): Promise<void> {
   await requireHR();
   const supabase = await createClient();
   const payload = {
+    takes_bookings: e.takes_bookings,
     employee_code: e.employee_code || null,
     full_name: e.full_name,
     nickname: e.nickname || null,
