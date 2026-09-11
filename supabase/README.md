@@ -620,6 +620,36 @@ In order. Nothing here is started unless it says so.
     either should read both — the flag narrows the population, item 5 changes
     what the population is averaged within.
 
+16. **A `section` column on `catering_event_charges`, so the booking screen's
+    price box does not have to guess on reload.** Not started; to be put to Nik
+    with documents B and C, 2026-09-11.
+
+    While the booking screen is open, a charge's price-box section is known
+    exactly — the row was added from that section's own rate picker. Nothing
+    persists it, so `sectionForCharge` in `BookingScreen.tsx` reconstructs it
+    from the stored charge, and for ดนตรี that means **a label match**:
+    `charge_type` is `'other'` for music, `staff_bonus` and every typed
+    อื่นๆ line alike, so the only thing separating them is whether the label
+    contains ดนตรี, คาราโอเกะ or วง.
+
+    `af825db` fixed the reachable half of this — the branch had tested
+    `charge_type === 'service'`, which no rate ever produces, so every music
+    charge from the rate picker reloaded into อื่นๆ and the ดนตรี section was
+    unreachable. Measured on all 20 rates: 3 change section, exactly the three
+    music rates, zero false positives.
+
+    **What that commit did NOT fix, and cannot:** a music charge labelled with
+    none of those three words still lands in อื่นๆ, and an อื่นๆ line someone
+    names "ค่าวงดนตรี" lands in ดนตรี. Both are free text a person typed. The
+    structural fix is one column holding the section the user actually chose,
+    and then `sectionForCharge` reads it instead of guessing.
+
+    Related: the service function sheet's **ค่าไฟ field can never be filled in
+    automatically for the same reason** — the band's electricity is a `music`
+    rate, so it lands in `'other'` with everything else and prints as a ruled
+    line. One column would answer both. Worth raising with Nik as a single
+    decision rather than two.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
