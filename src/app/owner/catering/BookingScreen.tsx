@@ -472,7 +472,10 @@ export function BookingScreen({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-3 text-sm">
-          {event && <Link href={`/owner/catering/${event.id}/function-sheet`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบฟังก์ชั่นงาน</Link>}
+          {/* Two sheets, named for who reads them — the old single
+              "พิมพ์ใบฟังก์ชั่นงาน" was ambiguous once the kitchen got its own. */}
+          {event && <Link href={`/owner/catering/${event.id}/function-sheet`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบฟังก์ชั่นงาน (บริการ)</Link>}
+          {event && <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบฟังก์ชั่นงาน (ครัว)</Link>}
           {event?.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบเสนอราคา</Link>}
         </div>
         <div className="flex gap-2">

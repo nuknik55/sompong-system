@@ -191,6 +191,11 @@ export type CateringSetMenuItem = {
   /** dish | dessert | drink | free — which group this row prints under on the
    *  three documents. See catering_set_menu_sections_migration.sql. */
   section: string;
+  /** menus.selling_price. On the KITCHEN sheet this is the PORTION SIZE the
+   *  chef plates to, not a cost and not a total — see src/lib/kitchen-sheet.ts.
+   *  menus already grants SELECT to sales (sales_read_menus), the same grant
+   *  getCateringDishOptions relies on, so this exposes nothing new. */
+  selling_price: number;
 };
 
 const CATERING_EVENT_SELECT = `
@@ -827,14 +832,15 @@ export async function getCateringSetMenuItems(setMenuId: string): Promise<Cateri
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_set_menu_items")
-    .select("id, menu_id, quantity, note, section, menus(name)")
+    .select("id, menu_id, quantity, note, section, menus(name, selling_price)")
     .eq("set_menu_id", setMenuId)
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     menu_id: r.menu_id as string,
-    menu_name: (r.menus as { name: string } | null)?.name ?? "-",
+    menu_name: (r.menus as { name: string; selling_price: number } | null)?.name ?? "-",
+    selling_price: (r.menus as { selling_price: number } | null)?.selling_price ?? 0,
     quantity: r.quantity as number,
     note: r.note as string | null,
     section: r.section as string,
@@ -866,7 +872,7 @@ export async function getCateringSetMenuItemsForSets(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_set_menu_items")
-    .select("id, set_menu_id, menu_id, quantity, note, section, menus(name)")
+    .select("id, set_menu_id, menu_id, quantity, note, section, menus(name, selling_price)")
     .in("set_menu_id", setMenuIds)
     .order("sort_order");
   if (error) throw error;
@@ -876,7 +882,8 @@ export async function getCateringSetMenuItemsForSets(
     list.push({
       id: r.id as string,
       menu_id: r.menu_id as string,
-      menu_name: (r.menus as { name: string } | null)?.name ?? "-",
+      menu_name: (r.menus as { name: string; selling_price: number } | null)?.name ?? "-",
+      selling_price: (r.menus as { selling_price: number } | null)?.selling_price ?? 0,
       quantity: r.quantity as number,
       note: r.note as string | null,
       section: r.section as string,
