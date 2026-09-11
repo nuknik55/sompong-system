@@ -70,7 +70,6 @@ const CHANNEL_SHEETS = new Set(["LM", "Grab"]);
  * are documented there.
  */
 const { categoryFromPosGroup: categoryFromRaw } = await import("../src/lib/pos-group-category.ts");
-}
 
 /**
  * Products whose category overrides everything else, including their POS group.

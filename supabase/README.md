@@ -194,10 +194,25 @@ lint and silently regressed paging on the category-delete path.
 In order. Nothing here is started unless it says so.
 
 1. ~~Finish the `set-state-in-effect` fixes~~ — DONE.
-2. **Add a CI workflow that runs `npm run lint`.** Not started, and now the
-   blocker is gone — lint is green, so a gate would pass today. Without it,
-   item 1 buys nothing enforceable. See the section above for why this is a
-   separate item rather than the tail of item 1.
+2. **Add a CI workflow that runs `npm run lint`.** Not started. Lint is green
+   as of 2026-09-11, so a gate would pass today. Without it, item 1 buys
+   nothing enforceable. See the section above for why this is a separate item
+   rather than the tail of item 1.
+
+   **This item's own evidence, earned the hard way.** From 2026-09-10 to
+   2026-09-11 `npm run lint` exited 1 for the whole repo and nobody noticed.
+   `d4abd73` deleted a 70-line function body from
+   `scripts/seed-item-categories.mjs` and replaced it with an import, leaving
+   the function's closing `}` behind — a syntax error, confirmed by
+   `node --check` against the committed blobs (`bea8cf6` passes, `d4abd73`
+   fails). It was found only because an unrelated change ran lint a day later,
+   and the line above used to claim lint was green while it was red.
+
+   So the gap this item describes is not hypothetical: **a one-character
+   regression survived a commit, a push and a production deploy**, and the
+   only thing that would have caught it the same day is the workflow that does
+   not exist yet. Fixed in the commit that wrote this paragraph; the item
+   stays open, because the fix is the brace, not the gate.
 3. **The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.
    Investigation first: for each, what it was evidently meant to gate and what
    wiring it would change, so the decision is informed rather than guessed.
