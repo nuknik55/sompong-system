@@ -14,13 +14,23 @@
  * that makes a customer-facing figure on a kitchen sheet correct rather than
  * a leak.
  *
- * It follows that the cell is NOT arithmetic. "485 x 6" prints literally, the
- * two numbers unmultiplied: the price names the portion, the count says how
- * many tables get one. Multiplying them would produce ฿2,910, which is a
- * number nobody on that sheet has any use for. There is no row total and no
- * grand total, and the dishes deliberately do not sum to the package price
- * (ชุดงานนอก 3000's dishes come to ฿2,545 against a ฿3,000 package) — a total
- * would be actively misleading.
+ * It follows that the cell is NOT arithmetic. "180 x 1" prints literally, the
+ * two numbers unmultiplied. There is no row total and no grand total, and the
+ * dishes deliberately do not sum to the package price (ชุดงานนอก 3000's
+ * dishes come to ฿2,545 against a ฿3,000 package) — a total would be actively
+ * misleading.
+ *
+ * ── WHAT THE SECOND NUMBER IS, CORRECTED ──────────────────────────────────
+ *
+ * DISHES OF THIS ITEM PER TABLE — catering_set_menu_items.quantity. Not the
+ * event's table count, which is what this shipped as in 0f14a7f and was
+ * wrong on paper.
+ *
+ * Nik, reading his own sheet: "ปูไข่ 547.06 x 1 หมายความว่าที่ 1 ตัว" and
+ * "หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำหอยตลับผัดฉ่าไซส์ 180 1 จาน". The cell is
+ * two instructions to one cook at one table — which size, and how many plates
+ * of it — not an event-wide total. The table count is in the header, where it
+ * answers a different question, and it stays there.
  */
 
 const DAYS_FULL = [
@@ -65,29 +75,18 @@ function fmtPortionPrice(n: number): string {
 /**
  * The ราคา cell, printed literally and never multiplied.
  *
- *   485, 6  -> "485 x 6"
- *   485, null -> "485"      the portion size still stands; the table count is
- *                           in the header, so repeating it is not the point
- *   0 / null price -> null  blank rather than "0 x 6", which would tell the
- *                           chef a portion size of zero
+ *   180, 1   -> "180 x 1"    one plate of the ฿180 size
+ *   200, 5   -> "200 x 5"    five plates of the ฿200 size
+ *   485, null -> "485"       the size still stands when the count is unknown
+ *   0 / null price -> null   blank rather than "0 x 1", which would tell the
+ *                            chef a portion size of zero
+ *
+ * `perTable` is catering_set_menu_items.quantity — dishes of this item per
+ * table. See the file header for why it is not the event's table count.
  */
-export function priceCell(sellingPrice: number | null, tableCount: number | null): string | null {
+export function priceCell(sellingPrice: number | null, perTable: number | null): string | null {
   if (sellingPrice == null || sellingPrice <= 0) return null;
   const price = fmtPortionPrice(sellingPrice);
-  if (tableCount == null || tableCount <= 0) return price;
-  return `${price} x ${tableCount}`;
-}
-
-/**
- * "2 ที่/โต๊ะ" for a dish the package serves more than once per table, shown
- * beside the dish name.
- *
- * The paper sheet has no way to express this — every row on it is one per
- * table — but the data does: setโต๊ะพรีเมี่ยม carries กุ้งแก้ว (เล็ก) at
- * quantity 5. It goes next to the NAME rather than into ราคา, because ราคา's
- * rule is "the dish price × the number of tables" exactly, and folding a
- * third number into that cell would break the one thing the chef reads it for.
- */
-export function perTableQty(quantity: number): string | null {
-  return quantity > 1 ? `${quantity} ที่/โต๊ะ` : null;
+  if (perTable == null || perTable <= 0) return price;
+  return `${price} x ${perTable}`;
 }

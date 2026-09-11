@@ -1,7 +1,7 @@
 /** Run with: npm test — the kitchen function sheet's rules (document B). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { thWeekdayFullDate, kitchenHeading, priceCell, perTableQty } from "./kitchen-sheet.ts";
+import { thWeekdayFullDate, kitchenHeading, priceCell } from "./kitchen-sheet.ts";
 
 test("the date form is the paper sheet's, not the app's usual one", () => {
   // The example on Nik's paper sheet, to the character.
@@ -38,40 +38,41 @@ test("an unknown location_type reads as ภายนอก rather than ภาย
   assert.equal(kitchenHeading("something_new").offsite, true);
 });
 
-test("ราคา prints literally and is never multiplied", () => {
-  assert.equal(priceCell(485, 6), "485 x 6");
-  assert.equal(priceCell(590, 6), "590 x 6");
-  // The number that must NOT appear anywhere.
-  assert.notEqual(priceCell(485, 6), "2910");
-  assert.ok(!priceCell(485, 6)!.includes("2,910"));
+test("ราคา is price x DISHES PER TABLE, printed literally", () => {
+  // Nik reading his own sheet: "หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำหอยตลับผัดฉ่า
+  // ไซส์ 180 1 จาน" — which size, how many plates. Not an event total.
+  assert.equal(priceCell(180, 1), "180 x 1");
+  assert.equal(priceCell(547.06, 1), "547.06 x 1");
+  assert.equal(priceCell(200, 5), "200 x 5");
 });
 
-test("no table count leaves the portion price standing alone", () => {
+test("the cell is never arithmetic", () => {
+  assert.equal(priceCell(200, 5), "200 x 5");
+  assert.notEqual(priceCell(200, 5), "1000");
+  assert.ok(!priceCell(200, 5)!.includes("1,000"));
+});
+
+test("no per-table count leaves the portion price standing alone", () => {
   assert.equal(priceCell(485, null), "485");
   assert.equal(priceCell(485, 0), "485");
 });
 
 test("a dish with no price is blank, never a portion size of zero", () => {
-  assert.equal(priceCell(0, 6), null);
-  assert.equal(priceCell(null, 6), null);
-  assert.equal(priceCell(-1, 6), null);
+  assert.equal(priceCell(0, 1), null);
+  assert.equal(priceCell(null, 1), null);
+  assert.equal(priceCell(-1, 1), null);
 });
 
 test("prices print without ฿ and without forced decimals", () => {
-  assert.equal(priceCell(1000, 6), "1,000 x 6");
-  assert.equal(priceCell(547.06, 6), "547.06 x 6");
-  assert.equal(priceCell(200, 1), "200 x 1");
-  assert.ok(!priceCell(485, 6)!.includes("฿"));
-  assert.ok(!priceCell(485, 6)!.includes(".00"));
+  assert.equal(priceCell(1000, 1), "1,000 x 1");
+  assert.equal(priceCell(547.06, 1), "547.06 x 1");
+  assert.ok(!priceCell(485, 1)!.includes("฿"));
+  assert.ok(!priceCell(485, 1)!.includes(".00"));
 });
 
-test("a dish served more than once per table says so beside the name", () => {
-  // setโต๊ะพรีเมี่ยม really does carry กุ้งแก้ว (เล็ก) at quantity 5.
-  assert.equal(perTableQty(5), "5 ที่/โต๊ะ");
-  assert.equal(perTableQty(2), "2 ที่/โต๊ะ");
-});
-
-test("the ordinary one-per-table dish says nothing at all", () => {
-  assert.equal(perTableQty(1), null);
-  assert.equal(perTableQty(0), null);
+test("the per-table count lives ONLY in the cell, never beside the name", () => {
+  // setโต๊ะพรีเมี่ยม really does carry กุ้งแก้ว (เล็ก) at quantity 5, and the
+  // 5 belongs in ราคา. The old "(5 ที่/โต๊ะ)" annotation is gone: printing the
+  // same number twice on one row invites the chef to multiply them.
+  assert.equal(priceCell(200, 5), "200 x 5");
 });

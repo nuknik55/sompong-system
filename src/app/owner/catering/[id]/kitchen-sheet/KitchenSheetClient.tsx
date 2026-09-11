@@ -1,22 +1,25 @@
 "use client";
 
+import { Fragment } from "react";
 import type { CateringEvent } from "../../actions";
 import { thWeekdayFullDate, kitchenHeading } from "@/lib/kitchen-sheet";
 import { timeRange, locationLabel, FOOD_FORMAT_LABEL } from "../../shared-utils";
 
 export type KitchenRow = {
   id: string;
-  /** 1-based, as printed in the first column. */
+  /** 1-based, as printed in the ลำดับ column. */
   index: number;
   name: string;
-  /** "5 ที่/โต๊ะ", or null for the ordinary one-per-table dish. */
-  perTable: string | null;
-  /** "485 x 6" — literal, never multiplied. null prints an empty cell. */
+  /** "180 x 1" — price × dishes per table, literal, never multiplied. null
+   *  prints an empty cell. */
   price: string | null;
   note: string | null;
 };
 
 export type KitchenBlock = {
+  /** The catering_event_menus row id — the React key, because a booking may
+   *  legitimately carry the same package twice and names would collide. */
+  id: string;
   title: string;
   /** Only sections WITH ROWS reach here — see groupBySection. */
   sections: { label: string; rows: KitchenRow[] }[];
@@ -31,29 +34,54 @@ function HeadLine({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function RowTable({ rows }: { rows: KitchenRow[] }) {
+/**
+ * ONE table per package, as the paper has it — headed ลำดับ | รายการอาหาร |
+ * ราคา | หมายเหตุ.
+ *
+ * It previously rendered one table PER SECTION, with no <thead> at all, so a
+ * package showed as a headerless grid whose fourth column looked like an
+ * accident. Sections are now label rows INSIDE the one table, and only when
+ * there is more than one of them: a package that is all dishes needs no
+ * subheading, because the package's own name already says what the list is.
+ */
+function PackageTable({ sections }: { sections: { label: string; rows: KitchenRow[] }[] }) {
+  const showSectionRows = sections.length > 1;
   return (
     <table>
       <colgroup>
-        <col style={{ width: "7%" }} />
-        <col style={{ width: "48%" }} />
+        <col style={{ width: "8%" }} />
+        <col style={{ width: "47%" }} />
         <col style={{ width: "17%" }} />
         <col style={{ width: "28%" }} />
       </colgroup>
+      <thead>
+        <tr>
+          <th style={{ textAlign: "center" }}>ลำดับ</th>
+          <th style={{ textAlign: "left" }}>รายการอาหาร</th>
+          <th style={{ textAlign: "center" }}>ราคา</th>
+          {/* หมายเหตุ is a real column now: the paper version has staff
+              writing across the dish line. Blank cells stay writable. */}
+          <th style={{ textAlign: "left" }}>หมายเหตุ</th>
+        </tr>
+      </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.id}>
-            <td style={{ textAlign: "center" }}>{r.index}</td>
-            <td>
-              {r.name}
-              {r.perTable && <span style={{ fontSize: "12px", color: "#555" }}> ({r.perTable})</span>}
-            </td>
-            {/* Literal. See src/lib/kitchen-sheet.ts for why this is not a sum. */}
-            <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{r.price ?? ""}</td>
-            {/* หมายเหตุ is a real column now: the paper version has staff
-                writing across the dish line. Blank rows stay writable. */}
-            <td style={{ minHeight: "1.6em" }}>{r.note ?? ""}</td>
-          </tr>
+        {sections.map((s) => (
+          <Fragment key={s.label}>
+            {showSectionRows && (
+              <tr>
+                <td colSpan={4} style={{ fontWeight: 600, background: "#f3f4f6" }}>{s.label}</td>
+              </tr>
+            )}
+            {s.rows.map((r) => (
+              <tr key={r.id}>
+                <td style={{ textAlign: "center" }}>{r.index}</td>
+                <td>{r.name}</td>
+                {/* Literal. See src/lib/kitchen-sheet.ts for why this is not a sum. */}
+                <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{r.price ?? ""}</td>
+                <td>{r.note ?? ""}</td>
+              </tr>
+            ))}
+          </Fragment>
         ))}
       </tbody>
     </table>
@@ -104,7 +132,8 @@ export function KitchenSheetClient({
           .ks-wrap { max-width: 760px; margin: 0 auto; }
         }
         .ks-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .ks-wrap td { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+        .ks-wrap td, .ks-wrap th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+        .ks-wrap th { background: #f3f4f6; font-weight: 600; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3">
@@ -149,17 +178,11 @@ export function KitchenSheetClient({
         </div>
 
         {packages.map((p) => (
-          <div key={p.title} className="ks-avoid-break" style={{ marginBottom: "16px" }}>
+          <div key={p.id} className="ks-avoid-break" style={{ marginBottom: "16px" }}>
             <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{p.title}</div>
-            {p.sections.map((s) => (
-              <div key={s.label} style={{ marginBottom: "8px" }}>
-                {/* Only printed when the section has rows. A package with no
-                    dessert is a package with no dessert, not a blank ขนมหวาน
-                    heading. */}
-                <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "2px" }}>{s.label}</div>
-                <RowTable rows={s.rows} />
-              </div>
-            ))}
+            {/* One table, sections as label rows inside it. A section with no
+                rows never reaches here, so an absent ขนมหวาน prints nothing. */}
+            {p.sections.length > 0 && <PackageTable sections={p.sections} />}
             {p.sections.length === 0 && (
               <div style={{ fontSize: "13px", color: "#666", paddingLeft: "10px" }}>
                 ยังไม่ได้กำหนดรายการอาหารในชุดนี้
@@ -171,7 +194,7 @@ export function KitchenSheetClient({
         {extras.length > 0 && (
           <div className="ks-avoid-break" style={{ marginBottom: "16px" }}>
             <div style={{ fontWeight: "bold", marginBottom: "4px" }}>รายการอาหารเพิ่มเติม</div>
-            <RowTable rows={extras} />
+            <PackageTable sections={[{ label: "รายการอาหารเพิ่มเติม", rows: extras }]} />
           </div>
         )}
 
