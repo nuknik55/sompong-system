@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
-import { CHECKLIST_STEPS } from "./checklist";
 import { calendarGridRange } from "./calendar-grid";
 import { STATUS_LABEL, isValidCateringStatus } from "./event-status";
 
@@ -637,22 +636,6 @@ export async function getCateringEventMenus(eventId: string): Promise<CateringEv
   });
 }
 
-export type TaskCompletion = {
-  task_key: string;
-  completed_at: string | null;
-};
-
-export async function getCateringTaskCompletions(eventId: string): Promise<TaskCompletion[]> {
-  await requireSales();
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("catering_event_task_completions")
-    .select("task_key, completed_at")
-    .eq("event_id", eventId);
-  if (error) throw error;
-  return (data ?? []) as TaskCompletion[];
-}
-
 // ─── Activity log ───────────────────────────────────────────────────────────
 // Simple who/what/when, no field-level diffs. Every event-scoped write
 // action below calls logCateringActivity() right after its own write
@@ -768,42 +751,6 @@ export async function updateCateringEventStatus(eventId: string, status: string)
   await logCateringActivity(supabase, eventId, profile.id, "status_changed", `เปลี่ยนสถานะเป็น: ${STATUS_LABEL[status]}`);
 
   revalidatePath("/owner/catering");
-  revalidatePath(`/owner/catering/${eventId}`);
-}
-
-/**
- * Upserts a single row per (event_id, task_key) — checking sets
- * completed_at/completed_by, unchecking clears both back to NULL on the
- * same row rather than deleting it. task_key isn't validated against
- * CHECKLIST_STEPS here; the template is the only source of truth for which
- * keys are meaningful, matching the migration's deliberately unconstrained
- * task_key column.
- */
-export async function setCateringTaskCompletion(eventId: string, taskKey: string, completed: boolean): Promise<void> {
-  const profile = await requireSales();
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("catering_event_task_completions")
-    .upsert(
-      {
-        event_id: eventId,
-        task_key: taskKey,
-        completed_at: completed ? new Date().toISOString() : null,
-        completed_by: completed ? profile.id : null,
-      },
-      { onConflict: "event_id,task_key" },
-    );
-  if (error) throw error;
-
-  const stepLabel = CHECKLIST_STEPS.find((s) => s.key === taskKey)?.label ?? taskKey;
-  await logCateringActivity(
-    supabase,
-    eventId,
-    profile.id,
-    completed ? "task_completed" : "task_uncompleted",
-    completed ? `ทำเครื่องหมายเสร็จ: ${stepLabel}` : `ยกเลิกเครื่องหมาย: ${stepLabel}`,
-  );
-
   revalidatePath(`/owner/catering/${eventId}`);
 }
 

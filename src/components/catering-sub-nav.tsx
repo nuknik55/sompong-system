@@ -5,6 +5,19 @@ import { usePathname } from "next/navigation";
 
 type NavItem = { href: string; label: string; exact?: boolean };
 
+/**
+ * Four items, down from seven. Staff book on paper because the module had
+ * too many places to go; what is left is the daily path plus the two
+ * settings screens that feed it.
+ *
+ * Off the nav, deliberately, and where each went:
+ *   สถานะ          the booking list filters by status already
+ *   ลูกค้า          behind เพิ่มเติม on the booking, still reachable
+ *   ต้นทุนภายใน     admin-only, linked from a booking's cost page — it is
+ *                  internal COST, easily confused with ราคา below, which is
+ *                  what the customer pays
+ *   เช็กลิสต์        deleted; see the booking page's header comment
+ */
 export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
@@ -16,13 +29,10 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
   const inactiveCls = "pb-2 text-sm font-medium text-neutral-500 hover:text-neutral-800 whitespace-nowrap";
 
   const navItems: NavItem[] = [
-    { href: "/owner/catering", label: "รายการจอง", exact: true },
+    { href: "/owner/catering", label: "การจอง", exact: true },
     { href: "/owner/catering/calendar", label: "ปฏิทิน" },
-    { href: "/owner/catering/status", label: "สถานะ" },
-    { href: "/owner/catering/customers", label: "ลูกค้า" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
-    ...(isAdmin ? [{ href: "/owner/catering/settings", label: "อัตราค่าบริการ" }] : []),
-    ...(isAdmin ? [{ href: "/owner/catering/cost-settings", label: "ต้นทุนภายใน" }] : []),
+    ...(isAdmin ? [{ href: "/owner/catering/settings", label: "ราคา" }] : []),
   ];
 
   return (

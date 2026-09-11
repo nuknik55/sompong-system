@@ -22,8 +22,10 @@ function formatLogTimestamp(iso: string): string {
 
 export function ActivityLogSection({ entries }: { entries: CateringActivityLogEntry[] }) {
   return (
-    // Collapsed by default, same pattern as TaskChecklistSection — this is
-    // supplementary reference info, not something needed on every visit.
+    // Collapsed by default: supplementary reference info, not something
+    // needed on every visit. It now sits inside the booking's เพิ่มเติม
+    // block, which is collapsed too — two layers, deliberately, because
+    // this answers "who changed this" and nothing else.
     <details className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
       <summary className="cursor-pointer font-kanit text-base font-semibold text-neutral-900">
         กิจกรรม ({entries.length})
