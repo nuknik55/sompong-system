@@ -27,7 +27,7 @@ import {
   fmtBaht, toNum, staffLabel, Field,
 } from "./shared-utils";
 import type { FormState } from "./shared-utils";
-import { CustomerCombobox, Time24Input, ToggleGroup } from "./shared";
+import { CustomerCombobox, SearchSelect, Time24Input, ToggleGroup } from "./shared";
 
 // ─── Price box model ─────────────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ export function BookingScreen({
   return (
     <div className="space-y-5">
       {/* ── The booking: the sheet's row ── */}
-      <section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5">
+      <section className="space-y-4 rounded-xl border border-neutral-300 bg-white p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="ลูกค้า *" className="sm:col-span-2">
             <CustomerCombobox
@@ -361,7 +361,7 @@ export function BookingScreen({
       </section>
 
       {/* ── The price box: the quote ── */}
-      <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <section className="rounded-xl border border-neutral-300 bg-white p-5">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-kanit text-base font-semibold text-neutral-900">ราคา / ใบเสนอราคา</h2>
           <p className="text-xs text-neutral-500">
@@ -370,7 +370,7 @@ export function BookingScreen({
               : "ยังไม่เคยออกใบเสนอราคา"}
           </p>
         </div>
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-neutral-200">
           {SECTIONS.map((sec) => {
             const rows = lines.filter((l) => l.section === sec.key);
             const sectionRates = sec.rateType ? rates.filter((r) => r.rate_type === sec.rateType) : [];
@@ -397,14 +397,23 @@ export function BookingScreen({
                   <div className="flex flex-wrap items-center gap-2">
                     {sec.key === "menu" && (
                       <>
-                        <select className="line-input w-56" value="" disabled={isPending} onChange={(e) => { if (e.target.value) addMenu("set", e.target.value); }}>
-                          <option value="">+ ชุดเมนู × โต๊ะ</option>
-                          {setMenuOptions.map((s) => <option key={s.id} value={s.id}>{s.name} — {fmtBaht(s.price_per_set)}</option>)}
-                        </select>
-                        <select className="line-input w-56" value="" disabled={isPending} onChange={(e) => { if (e.target.value) addMenu("dish", e.target.value); }}>
-                          <option value="">+ เมนูเดี่ยว</option>
-                          {dishOptions.map((d) => <option key={d.id} value={d.id}>{d.name} — {fmtBaht(d.selling_price)}</option>)}
-                        </select>
+                        {/* Type to filter: 238 dishes is not a scrollable list. */}
+                        <div className="w-56">
+                          <SearchSelect
+                            options={setMenuOptions.map((s) => ({ id: s.id, name: s.name, price: s.price_per_set }))}
+                            placeholder="+ ชุดเมนู × โต๊ะ — พิมพ์เพื่อค้นหา"
+                            disabled={isPending}
+                            onPick={(id) => addMenu("set", id)}
+                          />
+                        </div>
+                        <div className="w-56">
+                          <SearchSelect
+                            options={dishOptions.map((d) => ({ id: d.id, name: d.name, price: d.selling_price }))}
+                            placeholder="+ เมนูเดี่ยว — พิมพ์เพื่อค้นหา"
+                            disabled={isPending}
+                            onPick={(id) => addMenu("dish", id)}
+                          />
+                        </div>
                       </>
                     )}
                     {sectionRates.length > 0 && (
@@ -418,7 +427,7 @@ export function BookingScreen({
                       </select>
                     )}
                     {(sec.key === "other" || sec.key === "discount") && (
-                      <button type="button" onClick={() => addManual(sec.key)} disabled={isPending} className="rounded-md border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
+                      <button type="button" onClick={() => addManual(sec.key)} disabled={isPending} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
                         {sec.key === "discount" ? "+ ส่วนลด" : "+ พิมพ์รายการเอง"}
                       </button>
                     )}
@@ -431,7 +440,7 @@ export function BookingScreen({
             );
           })}
         </div>
-        <div className="mt-3 flex items-baseline justify-between border-t border-neutral-200 pt-3">
+        <div className="mt-3 flex items-baseline justify-between border-t-2 border-neutral-300 pt-3">
           <span className="text-sm font-medium text-neutral-700">รวมทั้งหมด</span>
           <span className="text-lg font-semibold tabular-nums text-neutral-900">{money(total)}</span>
         </div>
@@ -457,13 +466,22 @@ export function BookingScreen({
         </div>
       </div>
 
+      {/* Borders: #d4d4d4 is neutral-300, the app's own commonest control
+          border (184 input-shaped className uses against 89 at the 200
+          weight), and the weight the daily accounting screen uses — the one
+          Nik works in every day without complaint. Focus is that screen's
+          blue-400 too. The faint #e5e7eb this replaces is the shared
+          .input-base, copied verbatim into seven files; the other six are
+          untouched here and are Nik's decision, app-wide. */}
       <style>{`
-        .input-base { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; outline: none; background: white; }
-        .input-base:focus { border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
-        .input-base:read-only { background: #f9fafb; color: #6b7280; }
-        .line-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 8px; font-size: 0.8125rem; outline: none; background: white; }
-        .line-input:focus { border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
-        .line-input:disabled { background: #f9fafb; color: #6b7280; }
+        .input-base { width: 100%; border: 1px solid #d4d4d4; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; outline: none; background: white; color: #171717; }
+        .input-base:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,0.25); }
+        .input-base:read-only { background: #f5f5f5; color: #525252; }
+        .input-base::placeholder { color: #a3a3a3; }
+        .line-input { width: 100%; border: 1px solid #d4d4d4; border-radius: 6px; padding: 4px 8px; font-size: 0.8125rem; outline: none; background: white; color: #171717; }
+        .line-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,0.25); }
+        .line-input:disabled { background: #f5f5f5; color: #737373; }
+        .line-input::placeholder { color: #a3a3a3; }
       `}</style>
     </div>
   );

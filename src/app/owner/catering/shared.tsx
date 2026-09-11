@@ -92,6 +92,112 @@ export function Time24Input({ value, onChange }: { value: string; onChange: (v: 
   );
 }
 
+export type SearchOption = { id: string; name: string; price: number };
+
+/**
+ * Type-to-filter picker for a long list, used by the booking screen's set-menu
+ * and dish pickers. It replaced two native <select>s: the dish one listed 238
+ * items and Nik was scrolling through every กุ้ง dish to reach one.
+ *
+ * NO DEPENDENCY, deliberately. A picker library (downshift, react-select)
+ * would add 15–30 KB to one screen and bring its own markup and focus
+ * conventions, which is precisely the "new design language" this round is
+ * avoiding. This is ~70 lines built on CustomerCombobox's existing shape —
+ * same click-outside handling, same dropdown markup — plus the keyboard
+ * navigation Nik asked for.
+ *
+ * The five "เลือกจากอัตรา" pickers stay native: three to eight rows each,
+ * where a native select is the better control.
+ */
+export function SearchSelect({
+  options,
+  placeholder,
+  disabled,
+  onPick,
+}: {
+  options: SearchOption[];
+  placeholder: string;
+  disabled?: boolean;
+  onPick: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    function onDocDown(ev: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  // Filter across EVERY option, then cap what is rendered: a search that only
+  // looked at the first N would silently fail to find the dish being typed.
+  const matches = (q === "" ? options : options.filter((o) => o.name.toLowerCase().includes(q))).slice(0, 60);
+  const clamped = Math.min(active, Math.max(0, matches.length - 1));
+
+  function choose(index: number) {
+    const picked = matches[index];
+    if (!picked) return;
+    onPick(picked.id);
+    setQuery("");
+    setOpen(false);
+    setActive(0);
+  }
+
+  function onKeyDown(ev: React.KeyboardEvent<HTMLInputElement>) {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (!open) { setOpen(true); return; }
+      const next = ev.key === "ArrowDown"
+        ? Math.min(clamped + 1, matches.length - 1)
+        : Math.max(clamped - 1, 0);
+      setActive(next);
+      listRef.current?.children[next]?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (ev.key === "Enter") { ev.preventDefault(); if (open) choose(clamped); return; }
+    if (ev.key === "Escape") { setOpen(false); return; }
+  }
+
+  return (
+    <div ref={boxRef} className="relative">
+      <input
+        type="text"
+        className="line-input"
+        placeholder={placeholder}
+        value={query}
+        disabled={disabled}
+        onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+      />
+      {open && !disabled && (
+        <ul ref={listRef} className="absolute z-30 mt-1 max-h-64 w-full min-w-64 overflow-y-auto rounded-lg border border-neutral-300 bg-white shadow-xl">
+          {matches.length === 0 && <li className="px-3 py-2 text-sm text-neutral-400">ไม่พบรายการ</li>}
+          {matches.map((o, i) => (
+            <li key={o.id}>
+              <button
+                type="button"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+                className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${i === clamped ? "bg-neutral-100" : "hover:bg-neutral-50"}`}
+              >
+                <span className="truncate text-neutral-800">{o.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-neutral-500">{o.price.toLocaleString("th-TH")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function CustomerCombobox({
   customers,
   customerId,
