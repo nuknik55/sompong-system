@@ -522,6 +522,89 @@ In order. Nothing here is started unless it says so.
     boundary gives the digest and candidate two is found in the logs; if a
     month passes without it, close this item.
 
+15. **True catering cost — the catering flag on `menus`, and the prefixed
+    catering dishes.** Not started, approved by Nik 2026-09-11.
+
+    **Read this part first, because it is the reason the item is small:**
+
+    **THE COST MECHANISM ALREADY EXISTS. Do not re-plan it.**
+    `src/app/owner/catering/[id]/cost/page.tsx` already computes an event's
+    food cost **from the booking, not from the till**: it reads the event's
+    `catering_event_menus`, expands every `set_menu_id` through
+    `catering_set_menu_items`, and sums `computeMenuCost(dish) × dishes-per-set
+    × number-of-sets`. It has never read POS. So a cost figure exists for every
+    event whether or not the till has dish lines, and it reflects what was
+    quoted. `hasUnknownFoodCost` propagates from `computeMenuCost`, so an event
+    containing a dish with no recipe reads as incomplete rather than quietly
+    understated. The expansion loops over every row of the set, so the `free`
+    section's rows enter the cost automatically — correct, since free items are
+    free to the customer, not to the restaurant.
+
+    **What is left is therefore data entry, not a mechanism**: recipes, by Nik
+    and the kitchen. That is the long pole, and no code waits on it.
+
+    **Why per-dish POS data is not the source, from Nik.** Staff ring only the
+    table price, and the reason is not laziness or double-ringing — they do not
+    double-ring, the till total would exceed what the customer pays. It is that
+    **the food served often does not match the set**: guests change dishes per
+    event, so the set in the system is not what went out, and nobody edits POS
+    settings mid-service. Per-dish catering data from POS will stay sparse and
+    unreliable however much is built, because the served menu is negotiated.
+    POS stays useful where it lands; it is not the mechanism.
+
+    **The work, in two pieces:**
+
+    **(a) One boolean on `menus`, and one filter.** Catering dishes become
+    ordinary `menus` rows named with Nik's existing POS prefix convention —
+    `(จีน)ปลากะพง`, the same shape as `(Grab)` / `(LM)` / `(ห่อ)` — each with
+    its own recipe and its own `selling_price`. No new table: the prefix does
+    the separation, and `pos-parse.ts` already respects it (the stripper is a
+    closed whitelist of exactly those three, verified by running it, and
+    corroborated by the 8 parenthesised names that survive intact in
+    `pos_item_categories`). A separate table was rejected because POS sales
+    arrive as names and the sales importer matches `menus.name`; a flag alone
+    was rejected because one row holds one recipe, and Nik says catering
+    portions are sometimes a different size or recipe.
+
+    The boolean is **stored, never derived from the name.** Deriving it would
+    mean matching `name LIKE '(%'`, which already has seven false positives in
+    the POS catalogue — six wine bottle numbers `(007)`…`(112)` and
+    `(โปร) ขนมบ้าบิ่น 2 ชิ้น` — and would need the known-prefix list maintained
+    in a second place. A stored fact does not break when someone edits a name.
+    `menus.staff_visible` is the precedent: a boolean gating which surface a row
+    appears on, filtered at `src/app/staff/page.tsx:16`.
+
+    **Why it must be excluded from Menu Engineering, with the arithmetic —
+    put this in the code comment beside the filter.** Both thresholds in
+    `classifyMenuEngineering` (`src/lib/costing.ts:186`) are
+    **population-relative**:
+
+    ```
+    popularity threshold = (100 / count of menus with sales) × 0.8
+    profit threshold     = total profit / total qty        (sales-weighted)
+    ```
+
+    197 of 239 menus have sales today, so the bar is **0.406%**. Add ~40
+    catering rows with sales and it falls to **0.338%** — a 17% drop applied to
+    every à la carte dish, reclassifying ones near the Horse/Dog and
+    Star/Puzzle boundaries **because of dishes served at a wedding**. The
+    profit threshold is qty-weighted and barely moves; the popularity threshold
+    is the damage. And the catering row is misread in the other direction: six
+    portions at one wedding is 0.01% popularity, landing it in **Dog /
+    ตัวถ่วง** — an argument to drop it from the à la carte menu, drawn from
+    sales that were never on the à la carte menu. Menu Engineering asks whether
+    a dish earns its place at table; catering qty is not evidence about that.
+
+    **(b) The catering `menus` rows and their recipes.** Nik and the kitchen.
+    Note that matching is **exact** on `menus.name`, with `pos_sales_aliases`
+    as the only override — so `(จีน)ปลากะพง` receives POS qty only if a `menus`
+    row is named exactly that. No fuzzy matching exists, and per the standing
+    rule none will be built.
+
+    **Related:** item 5 also changes `classifyMenuEngineering`. Whoever does
+    either should read both — the flag narrows the population, item 5 changes
+    what the population is averaged within.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -910,7 +993,7 @@ when things change?* The honest shape:
 
 | | |
 |---|---|
-| the table (523 seeded rows, 564 after the catering seed, 633 by 2026-09-10 evening, growing as items are reviewed) | live |
+| the table (523 seeded rows, 564 after the catering seed, 633 by 2026-09-10 evening, 690 by 2026-09-11, growing as items are reviewed) | live |
 | the screen at `/owner/accounting/coffee-items` | live |
 | the "no row = not yet reviewed" check | live |
 
@@ -981,6 +1064,86 @@ Not "coffee with a ฿15 share" — that would strand the other ฿114. The CHEC
 forbids a carve-out on a row whose category is already `coffee`, because
 carving coffee out of coffee is meaningless. Written in the column comment,
 the migration header, and the screen's help text.
+
+### Two findings for Nik, from the catering investigation — NOT code defects
+
+Both were measured on 2026-09-11 while investigating how catering sales reach
+the system. Neither is a bug in this repo, and neither is being fixed here:
+one is an accounting question for Nik and his accountant, the other is POS
+data entry. They are recorded so they are not rediscovered as bugs, and so
+whoever acts on them has the figures.
+
+**1. `มัดจำงานเลี้ยง` — a deposit — is categorised `food`.**
+
+`DINE_IN_TYPE` maps `food` → revenue type `food`, on `line.gross`. So a
+catering deposit is booked as **food revenue in the month it is taken**, and
+the event it belongs to may fall in a later month — or not happen. Whether
+that is right is a revenue-recognition question, not a technical one: it is
+Nik's to settle with his accountant, and the answer might legitimately be "yes,
+that is how we book it".
+
+Not quantified. `pos_item_categories` holds no amounts, so the size of this
+needs a product-level POS export — find the `มัดจำงานเลี้ยง` line and read
+รวมราคา. Until then the direction is known and the magnitude is not.
+
+If the answer turns out to be "it should not be revenue", the change is one
+row's category on `/owner/accounting/coffee-items`, not code — there is no
+revenue type for a liability, and inventing one is a much larger decision.
+
+**2. Fourteen products exist under two spellings differing only in whitespace.**
+
+Measured across all 690 rows by comparing names with whitespace removed —
+**a measurement for this note, not a matcher, and nothing like it is or will be
+built into the system** (see the standing rule against name normalisation and
+fuzzy matching):
+
+```
+กุ้งแก้ว (เล็ก)          vs  กุ้งแก้ว(เล็ก)
+ข้าวไข่ดาว 2 ฟอง        vs  ข้าวไข่ดาว2ฟอง
+ข้าวเหนียวมะม่วง (เล็ก)   vs  ข้าวเหนียวมะม่วง(เล็ก)
+ทอดมันกุ้ง (เล็ก)        vs  ทอดมันกุ้ง(เล็ก)
+ทอดมันปลา (เล็ก)        vs  ทอดมันปลา(เล็ก)
+ปลาหมึกแดดเดียว (เล็ก)   vs  ปลาหมึกแดดเดียว(เล็ก)
+ปูนิ่มทอดกระเทียม (เล็ก)  vs  ปูนิ่มทอดกระเทียม(เล็ก)
+ยำถั่วพู (เล็ก)          vs  ยำถั่วพู(เล็ก)
+ราดหน้ากุ้ง (เล็ก)       vs  ราดหน้ากุ้ง(เล็ก)
+หอยแครงเผา (เล็ก)       vs  หอยแครงเผา(เล็ก)
+หอยแครงลวก (เล็ก)       vs  หอยแครงลวก(เล็ก)
+หอยตลับผัดโหรพา (เล็ก)   vs  หอยตลับผัดโหรพา(เล็ก)
+อาหารชุด3000            vs  อาหารชุด 3000
+อาหารชุด4000            vs  อาหารชุด 4000
+```
+
+**Revenue is unaffected.** All fourteen pairs agree on category, so both
+spellings land in the same bucket and the month's totals are right. This is
+not a money error.
+
+**Menu Engineering is affected, and that is the real finding.** The sales
+importer matches `menus.name` exactly, with `pos_sales_aliases` as the only
+override. Of the fourteen:
+
+| | |
+|---|---|
+| exactly one spelling reaches a `menus` row | **11** |
+| neither spelling does | 3 (`ข้าวไข่ดาว`, and both `อาหารชุด` pairs, which are packages and have no `menus` row by design) |
+| both do | 0 |
+
+So for **eleven à la carte dishes**, every sale rung on the orphan button falls
+into `unmatched` and never reaches `last_period_qty_sold`. Those dishes are
+understated in Menu Engineering — which decides Star / Horse / Puzzle / Dog,
+so a dish can be reading as a Dog because half its sales are on the other
+button. How much is lost is not known from here; it needs a product-level
+export, where the orphan spelling's qty column is the answer.
+
+Two remedies, both already available, neither requiring code:
+
+- **At the POS** — merge the duplicate buttons. Fixes it at the source and
+  stops it recurring, but does not recover the split history.
+- **In this app** — one `pos_sales_aliases` row per orphan spelling, divisor 1,
+  pointing at the same menu. That table exists for exactly this and holds 7
+  rows today (all weight cases, e.g. `กุ้งก้ามกรามเผา 5 ขีด` ÷ 2). Each row is
+  a human decision about one specific name, which is why it is not the fuzzy
+  matching the standing rule forbids.
 
 ## Reconciliation baselines against Nik's August split — read the axis first
 
