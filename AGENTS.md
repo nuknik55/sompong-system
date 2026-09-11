@@ -236,6 +236,49 @@ descriptions of context, not a schema. So:
 - Before reporting a data defect to someone who will act on it, state which
   field the claim rests on. If the answer is "the note", it is a hypothesis.
 
+### A query you never actually asked returns a clean, confident absence
+
+Seventh in this family, and the first where the check was not matching the wrong
+text but **addressing the wrong thing entirely.**
+
+After pushing `746c50e`, the deploy was polled with
+`?sha=746c50e5` — the seven-character short sha from `git log --oneline`, with a
+digit appended to make it look like a real one. GitHub has no such commit, so it
+answered `[]`. The poll printed:
+
+```
+attempt 1: no deployment yet
+...
+attempt 8: no deployment yet
+[exited with code 0]
+```
+
+Eight clean lines and exit 0. **That reads exactly like "Vercel has not deployed
+yet"** — a normal, patient, correct-looking result. The real deployment had
+succeeded before the second attempt.
+
+Take the identifier from the tool that owns it:
+
+```
+FULL=$(git rev-parse HEAD)      # never a short sha, never one you assembled
+curl -s ".../deployments?sha=$FULL"
+```
+
+The general rule, and it is the same one as the regex matching its own comment:
+**an absence must be distinguishable from an answer.** A lookup by identifier
+should fail loudly when the identifier does not exist, rather than returning an
+empty set that the surrounding prose reads as meaningful. Where the API cannot
+tell you, assert the precondition yourself — that the sha is 40 characters, that
+the row was found, that the file was non-empty — before believing the empty
+result.
+
+### The list itself is the point
+
+Seven instances, all the same shape: **output that reads as an answer when it is
+an absence.** Nobody recognises the seventh from first principles in the moment;
+they recognise it because the first six are written down. Add the next one here
+rather than assuming it is too obvious to record.
+
 ## React resets a `<form action={fn}>` after the action runs — a file input read later is empty
 
 The first production run of the POS revenue import failed at apply: the

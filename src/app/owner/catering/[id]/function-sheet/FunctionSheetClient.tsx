@@ -1,34 +1,63 @@
 "use client";
 
 import type { CateringEvent, StaffOption } from "../../actions";
+import type { SheetLine, SheetPackage, MoneyField } from "@/lib/function-sheet";
 import {
   thFullDate, timeRange, locationLabel, fmtBaht, staffLabel,
-  MUSIC_TYPE_LABEL,
 } from "../../shared-utils";
 
-export type FunctionSheetItem = {
-  id: string;
-  name: string;
-  quantity: number;
-  /** null when this item predates the event_menu_id ↔ charge link — shown as "-", not ฿0.00. */
-  unit_price: number | null;
-  note: string | null;
-};
+// A section that reaches this component is a section WITH ROWS — groupBySection
+// drops the empty ones — so there is no "no rows" branch to render here. That
+// is the print contract: a section with no rows prints nothing at all.
+
+/** A header field printed as "label : value", or as a ruled line for the
+ *  service team to write on when the booking does not hold the answer. */
+function HeaderField({ label, value, width }: { label: string; value: string | null; width?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flex: width ? undefined : 1, width }}>
+      <span style={{ whiteSpace: "nowrap" }}>{label}</span>
+      <span
+        style={{
+          flex: 1,
+          borderBottom: "1px dotted #555",
+          minHeight: "1.3em",
+          paddingLeft: "4px",
+          // A value is the printed answer; a blank keeps the dotted rule so
+          // the form stays writable on paper.
+          fontWeight: value ? 600 : 400,
+        }}
+      >
+        {value ?? " "}
+      </span>
+    </div>
+  );
+}
 
 export function FunctionSheetClient({
   event,
-  items,
+  packages,
+  extras,
+  money,
   staffOptions,
 }: {
   event: CateringEvent;
-  items: FunctionSheetItem[];
+  packages: SheetPackage[];
+  extras: SheetLine[];
+  money: MoneyField[];
   staffOptions: StaffOption[];
 }) {
   const staffById = new Map(staffOptions.map((s) => [s.id, s]));
-  const assignedStaff = event.staff_ids.map((id) => {
+  const assignedStaff = event.staff_ids.flatMap((id) => {
     const s = staffById.get(id);
-    return s ? staffLabel(s) : "?";
+    return s ? [staffLabel(s)] : [];
   });
+
+  const venue =
+    event.location_type === "in_house"
+      ? locationLabel(event)
+      : [event.offsite_address, event.offsite_distance_km != null ? `${event.offsite_distance_km} กม.` : null]
+          .filter(Boolean)
+          .join(" · ") || "นอกสถานที่";
 
   return (
     <>
@@ -36,12 +65,15 @@ export function FunctionSheetClient({
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { size: A4; margin: 15mm 20mm; }
+          @page { size: A4; margin: 12mm 14mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .fs-avoid-break { break-inside: avoid; }
         }
         @media screen {
-          .fs-wrap { max-width: 720px; margin: 0 auto; }
+          .fs-wrap { max-width: 760px; margin: 0 auto; }
         }
+        .fs-wrap table { width: 100%; border-collapse: collapse; }
+        .fs-wrap th, .fs-wrap td { border: 1px solid #333; padding: 5px 8px; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3">
@@ -56,126 +88,141 @@ export function FunctionSheetClient({
 
       <div
         className="fs-wrap px-6 py-8"
-        style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.7", color: "#000" }}
+        style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.65", color: "#000" }}
       >
-        {/* Title + reference */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", borderBottom: "2px solid #000", paddingBottom: "12px" }}>
-          <div>
-            <div style={{ fontSize: "22px", fontWeight: "bold" }}>ใบฟังก์ชั่นงาน</div>
-            <div style={{ fontSize: "13px" }}>เอกสารภายใน — สำหรับครัว/บริการ ไม่ใช่เอกสารสำหรับลูกค้า</div>
+        {/* Title */}
+        <div style={{ textAlign: "center", marginBottom: "14px" }}>
+          <div style={{ fontSize: "21px", fontWeight: "bold" }}>ใบฟังก์ชั่นงาน — ฝ่ายบริการ</div>
+          <div style={{ fontSize: "12px" }}>เอกสารภายใน ไม่ใช่เอกสารสำหรับลูกค้า</div>
+        </div>
+
+        {/* Header — every field the paper form has, in its order. Anything the
+            booking does not hold prints as a dotted rule to write on. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "7px", borderTop: "2px solid #000", borderBottom: "1px solid #000", padding: "12px 0", marginBottom: "14px" }}>
+          <div style={{ display: "flex", gap: "20px" }}>
+            <HeaderField label="ชื่อลูกค้า" value={event.customer_name} />
+            <HeaderField label="ชื่อไลน์" value={event.customer_line_id} />
           </div>
-          <div style={{ textAlign: "right", fontSize: "13px" }}>
-            <div>อ้างอิงใบเสนอราคา {event.quote_number ?? "ยังไม่ออกใบเสนอราคา"}</div>
-            <div>วันที่จอง {thFullDate(event.created_at.slice(0, 10))}</div>
-            <div>วันที่จัดงาน {thFullDate(event.event_date)}</div>
+          <div style={{ display: "flex", gap: "20px" }}>
+            <HeaderField label="เบอร์โทร" value={event.customer_phone} />
+            <HeaderField label="บริษัท" value={event.customer_company_name} />
+          </div>
+          <div style={{ display: "flex", gap: "20px" }}>
+            <HeaderField label="วันที่จอง" value={thFullDate(event.created_at.slice(0, 10))} />
+            <HeaderField label="วันที่จัดงาน" value={thFullDate(event.event_date)} />
+          </div>
+          <div style={{ display: "flex", gap: "20px" }}>
+            <HeaderField label="เวลา" value={timeRange(event.start_time, event.end_time)} />
+            <HeaderField label="สถานที่" value={venue} />
+          </div>
+          <div style={{ display: "flex", gap: "20px" }}>
+            <HeaderField label="จำนวนแขก" value={event.guest_count != null ? `${event.guest_count} ท่าน` : null} />
+            {/* ประเภทงาน (เลี้ยงสัมมนาบริษัท, งานแต่ง…) has no column on
+                catering_events — booking_type is จองโต๊ะ/จองห้อง/จองงานจัดเลี้ยง,
+                which is a different question — so it is always a ruled line. */}
+            <HeaderField label="ประเภทงาน" value={null} />
           </div>
         </div>
 
-        {/* Customer + venue */}
-        <div style={{ display: "flex", gap: "24px", marginBottom: "16px" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>ลูกค้า</div>
-            <div>{event.customer_name ?? "-"}</div>
-            {event.customer_company_name && <div>{event.customer_company_name}</div>}
-            {event.customer_contact_person && <div>ผู้ติดต่อ: {event.customer_contact_person}</div>}
-            {event.customer_phone && <div>โทร. {event.customer_phone}</div>}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>สถานที่</div>
-            {event.location_type === "in_house" ? (
-              <div>{locationLabel(event)}</div>
+        {/* The four money fields */}
+        <div style={{ display: "flex", gap: "18px", marginBottom: "16px", flexWrap: "wrap" }}>
+          {money.map((f) => (
+            <HeaderField
+              key={f.label}
+              label={f.label}
+              value={f.amount != null ? `฿${fmtBaht(f.amount)}` : null}
+              width="calc(50% - 9px)"
+            />
+          ))}
+        </div>
+
+        {/* Food, by package. A package with no sections at all still prints its
+            own line — the booking says it was ordered, and a service sheet
+            that silently omitted it would be worse than one showing it empty. */}
+        {packages.map((p) => (
+          <div key={p.id} className="fs-avoid-break" style={{ marginBottom: "14px" }}>
+            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+              {p.name}
+              {p.quantity > 1 && <span style={{ fontWeight: 400 }}> × {p.quantity}</span>}
+              {p.note && <span style={{ fontWeight: 400, fontSize: "13px" }}> — {p.note}</span>}
+            </div>
+            {p.groups.length === 0 ? (
+              <div style={{ fontSize: "13px", color: "#666", paddingLeft: "10px" }}>
+                ยังไม่ได้กำหนดรายการอาหารในชุดนี้
+              </div>
             ) : (
-              <>
-                <div>นอกสถานที่</div>
-                {event.offsite_address && <div>{event.offsite_address}</div>}
-                {event.offsite_distance_km != null && <div>ระยะทาง {event.offsite_distance_km} กม.</div>}
-                {event.floor_level != null && <div>ชั้น {event.floor_level}</div>}
-              </>
-            )}
-            <div>เวลา {timeRange(event.start_time, event.end_time)}</div>
-          </div>
-        </div>
-
-        {/* Counts */}
-        <div style={{ display: "flex", gap: "24px", marginBottom: "16px", fontSize: "14px" }}>
-          <div>จำนวนโต๊ะ: {event.table_count ?? "-"}{event.reserve_tables ? ` (+${event.reserve_tables} สำรอง)` : ""}</div>
-          {event.table_label && <div>หมายเลขโต๊ะ: {event.table_label}</div>}
-          <div>จำนวนแขก: {event.guest_count ?? "-"} ท่าน</div>
-        </div>
-
-        {/* Food items */}
-        <div style={{ fontWeight: "bold", marginBottom: "4px" }}>รายการอาหาร</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px" }}>
-          <thead>
-            <tr>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "left" }}>รายการ</th>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "right", width: "12%" }}>จำนวน</th>
-              <th style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "right", width: "18%" }}>ราคาต่อหน่วย</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={3} style={{ border: "1px solid #333", padding: "10px", textAlign: "center", color: "#888" }}>
-                  ยังไม่มีรายการอาหาร
-                </td>
-              </tr>
-            ) : (
-              items.map((it) => (
-                <tr key={it.id}>
-                  <td style={{ border: "1px solid #333", padding: "6px 10px" }}>
-                    {it.name}
-                    {it.note && <div style={{ fontSize: "12px", color: "#555" }}>{it.note}</div>}
-                  </td>
-                  <td style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "right" }}>{it.quantity}</td>
-                  <td style={{ border: "1px solid #333", padding: "6px 10px", textAlign: "right" }}>
-                    {it.unit_price != null ? fmtBaht(it.unit_price) : "-"}
-                  </td>
-                </tr>
+              p.groups.map((g) => (
+                <div key={g.key} style={{ marginBottom: "8px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "2px" }}>{g.label}</div>
+                  <table>
+                    <tbody>
+                      {g.lines.map((l, i) => (
+                        <tr key={l.id}>
+                          <td style={{ width: "6%", textAlign: "center" }}>{i + 1}</td>
+                          <td>
+                            {l.name}
+                            {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
+                          </td>
+                          <td style={{ width: "12%", textAlign: "right" }}>{l.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ))
             )}
-          </tbody>
-        </table>
-
-        {/* Music/drinks + deposit */}
-        <div style={{ display: "flex", gap: "24px", marginBottom: "16px" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>ดนตรี/เครื่องดื่ม</div>
-            <div>{MUSIC_TYPE_LABEL[event.music_type] ?? event.music_type}</div>
-            {event.music_note && <div>{event.music_note}</div>}
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>เงินมัดจำ</div>
-            <div>{event.deposit_amount != null ? `฿${fmtBaht(event.deposit_amount)}` : "ยังไม่รับมัดจำ"}</div>
-            {event.deposit_paid_at && <div>รับเมื่อ {thFullDate(event.deposit_paid_at)}</div>}
+        ))}
+
+        {/* รายการเพิ่มเติม — dishes added to the booking outside any package. */}
+        {extras.length > 0 && (
+          <div className="fs-avoid-break" style={{ marginBottom: "14px" }}>
+            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>รายการเพิ่มเติม</div>
+            <table>
+              <tbody>
+                {extras.map((l, i) => (
+                  <tr key={l.id}>
+                    <td style={{ width: "6%", textAlign: "center" }}>{i + 1}</td>
+                    <td>
+                      {l.name}
+                      {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
+                    </td>
+                    <td style={{ width: "12%", textAlign: "right" }}>{l.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {packages.length === 0 && extras.length === 0 && (
+          <div style={{ border: "1px solid #333", padding: "10px", textAlign: "center", color: "#666", marginBottom: "14px" }}>
+            ยังไม่มีรายการอาหาร
+          </div>
+        )}
+
+        {/* หมายเหตุ — the booking's own note. แจ้งครัว is NOT printed here: it
+            is the kitchen's, and it goes on the kitchen function sheet. */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontWeight: "bold", marginBottom: "3px" }}>หมายเหตุ</div>
+          <div style={{ whiteSpace: "pre-wrap", borderBottom: "1px dotted #555", minHeight: "3em", paddingBottom: "2px" }}>
+            {event.detail_note || " "}
           </div>
         </div>
 
-        {/* Staff */}
-        <div style={{ marginBottom: "16px" }}>
-          <div style={{ fontWeight: "bold", marginBottom: "4px" }}>ผู้รับผิดชอบงาน</div>
-          <div>{assignedStaff.length > 0 ? assignedStaff.join(", ") : "-"}</div>
-        </div>
-
-        {/* Notes — kept separate and clearly labeled, never merged into one block */}
-        <div style={{ marginBottom: "16px" }}>
-          <div style={{ fontWeight: "bold", marginBottom: "4px" }}>รายละเอียดเพิ่มเติม</div>
-          <div style={{ whiteSpace: "pre-wrap" }}>{event.detail_note || "-"}</div>
-        </div>
-        <div style={{ marginBottom: "24px" }}>
-          <div style={{ fontWeight: "bold", marginBottom: "4px" }}>แจ้งครัว</div>
-          <div style={{ whiteSpace: "pre-wrap" }}>{event.kitchen_note || "-"}</div>
+        <div style={{ marginBottom: "20px", fontSize: "14px" }}>
+          ผู้รับผิดชอบงาน: {assignedStaff.length > 0 ? assignedStaff.join(", ") : "—"}
         </div>
 
         {/* Signatures */}
-        <div style={{ display: "flex", justifyContent: "space-around", marginTop: "32px", gap: "24px" }}>
-          <div style={{ textAlign: "center", flex: 1 }}>
-            <div>ลงชื่อ......................................ผู้รับจองงาน</div>
-            <div style={{ marginTop: "20px" }}>วันที่.........../.........../...........</div>
-          </div>
+        <div className="fs-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "28px", gap: "24px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div>ลงชื่อ......................................ผู้ร่วมดำเนินการ</div>
-            <div style={{ marginTop: "20px" }}>วันที่.........../.........../...........</div>
+            <div style={{ marginTop: "18px" }}>วันที่.........../.........../...........</div>
+          </div>
+          <div style={{ textAlign: "center", flex: 1 }}>
+            <div>ลงชื่อ......................................ผู้รับจองงาน</div>
+            <div style={{ marginTop: "18px" }}>วันที่.........../.........../...........</div>
           </div>
         </div>
       </div>

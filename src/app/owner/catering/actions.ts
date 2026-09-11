@@ -45,6 +45,9 @@ export type CateringEvent = {
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  /** catering_customers.line_id — the service function sheet prints it, because
+   *  that is how Nik's team actually reaches a catering customer. */
+  customer_line_id: string | null;
   customer_company_name: string | null;
   customer_address: string | null;
   customer_contact_person: string | null;
@@ -177,6 +180,9 @@ export type CateringSetMenuItem = {
   menu_name: string;
   quantity: number;
   note: string | null;
+  /** dish | dessert | drink | free — which group this row prints under on the
+   *  three documents. See catering_set_menu_sections_migration.sql. */
+  section: string;
 };
 
 const CATERING_EVENT_SELECT = `
@@ -186,14 +192,14 @@ const CATERING_EVENT_SELECT = `
   music_type, music_note, status,
   deposit_amount, deposit_paid_at, detail_note, kitchen_note, created_by,
   quote_number, quote_revision, quoted_total, quoted_at, cost_locked_at,
-  catering_customers(name, phone, company_name, address, contact_person),
+  catering_customers(name, phone, line_id, company_name, address, contact_person),
   catering_event_staff(employee_id),
   profiles(full_name)
 `;
 
 function mapEventRow(r: Record<string, unknown>): CateringEvent {
   const cust = r.catering_customers as {
-    name: string; phone: string | null; company_name: string | null;
+    name: string; phone: string | null; line_id: string | null; company_name: string | null;
     address: string | null; contact_person: string | null;
   } | null;
   const staff = (r.catering_event_staff ?? []) as { employee_id: string }[];
@@ -205,6 +211,7 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
     customer_id: r.customer_id as string | null,
     customer_name: cust?.name ?? null,
     customer_phone: cust?.phone ?? null,
+    customer_line_id: cust?.line_id ?? null,
     customer_company_name: cust?.company_name ?? null,
     customer_address: cust?.address ?? null,
     customer_contact_person: cust?.contact_person ?? null,
@@ -807,7 +814,7 @@ export async function getCateringSetMenuItems(setMenuId: string): Promise<Cateri
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_set_menu_items")
-    .select("id, menu_id, quantity, note, menus(name)")
+    .select("id, menu_id, quantity, note, section, menus(name)")
     .eq("set_menu_id", setMenuId)
     .order("sort_order");
   if (error) throw error;
@@ -817,7 +824,53 @@ export async function getCateringSetMenuItems(setMenuId: string): Promise<Cateri
     menu_name: (r.menus as { name: string } | null)?.name ?? "-",
     quantity: r.quantity as number,
     note: r.note as string | null,
+    section: r.section as string,
   }));
+}
+
+/**
+ * The same rows as getCateringSetMenuItems, for MANY sets at once and behind
+ * requireSales() instead of requireAdmin() — the service function sheet is a
+ * service-team document and a sales session must be able to print it.
+ *
+ * A separate function rather than relaxing the gate above, deliberately.
+ * getCateringSetMenuItems is called by the set-menu editor and by the event
+ * cost page, both of which are admin-only by design and say so at the top of
+ * their files; widening its gate would widen theirs. Nothing here is
+ * cost-bearing — this table holds no price and no recipe, only which dish sits
+ * in which package — and RLS on catering_set_menu_items already admits
+ * 'sales', so this grants no access the role did not have.
+ *
+ * One query for every set on the booking, keyed by set_menu_id, rather than
+ * the per-set loop the cost page does.
+ */
+export async function getCateringSetMenuItemsForSets(
+  setMenuIds: string[],
+): Promise<Map<string, CateringSetMenuItem[]>> {
+  await requireSales();
+  const out = new Map<string, CateringSetMenuItem[]>();
+  if (setMenuIds.length === 0) return out;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_set_menu_items")
+    .select("id, set_menu_id, menu_id, quantity, note, section, menus(name)")
+    .in("set_menu_id", setMenuIds)
+    .order("sort_order");
+  if (error) throw error;
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const key = r.set_menu_id as string;
+    const list = out.get(key) ?? [];
+    list.push({
+      id: r.id as string,
+      menu_id: r.menu_id as string,
+      menu_name: (r.menus as { name: string } | null)?.name ?? "-",
+      quantity: r.quantity as number,
+      note: r.note as string | null,
+      section: r.section as string,
+    });
+    out.set(key, list);
+  }
+  return out;
 }
 
 export async function saveCateringSetMenu(data: {

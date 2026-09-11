@@ -2,8 +2,27 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
-import { getCateringEvent, getCateringEventMenus, getCateringCharges, getStaffOptions } from "../../actions";
-import { FunctionSheetClient, type FunctionSheetItem } from "./FunctionSheetClient";
+import {
+  getCateringEvent, getCateringEventMenus, getCateringCharges,
+  getCateringSetMenuItemsForSets, getStaffOptions,
+} from "../../actions";
+import { SET_MENU_SECTIONS } from "../../shared-utils";
+import { groupBySection, moneyFields, type SheetLine, type SheetPackage } from "@/lib/function-sheet";
+import { FunctionSheetClient } from "./FunctionSheetClient";
+
+// ── ใบฟังก์ชั่นงาน — ฝ่ายบริการ (document A) ────────────────────────────────
+//
+// The service team's function sheet, rebuilt against the paper form Nik's
+// team actually fills in. Not a customer document and not the kitchen's —
+// the kitchen sheet (document B) is separate and prints different columns.
+//
+// NO PRICES ON THE FOOD LIST. The paper form has none: the service team
+// needs to know what goes out, not what it costs. The four money fields in
+// the header are the only figures on the sheet, and they are the four the
+// paper form has.
+//
+// This page reads no cost and computes none — no getCostingContext(), no
+// computeMenuCost(). It is requireSales(), so it must not.
 
 export default async function CateringFunctionSheetPage({
   params,
@@ -22,34 +41,42 @@ export default async function CateringFunctionSheetPage({
 
   if (!event) notFound();
 
-  // Reuses the existing event_menu_id link (see actions.ts) rather than a
-  // new query: group each item's linked charges and derive its price from
-  // them, instead of re-deriving from catering_set_menus/menus — the charge
-  // is the actual agreed price, which may have been hand-adjusted after the
-  // fact. A repeat-add bumps quantity on the same catering_event_menus row
-  // but always inserts a fresh charge row, so a row can have more than one
-  // linked charge — sum their amounts and divide by the item's total
-  // quantity so the displayed price stays correct either way. A row from
-  // before this link existed has no linked charge at all; its price shows
-  // as unknown ("-") rather than a misleading ฿0.00.
-  const chargesByMenuId = new Map<string, typeof charges>();
-  for (const c of charges) {
-    if (!c.event_menu_id) continue;
-    const list = chargesByMenuId.get(c.event_menu_id) ?? [];
-    list.push(c);
-    chargesByMenuId.set(c.event_menu_id, list);
-  }
-  const items: FunctionSheetItem[] = eventMenus.map((m) => {
-    const linked = chargesByMenuId.get(m.id) ?? [];
-    const totalAmount = linked.reduce((s, c) => s + c.amount, 0);
-    return {
+  // ── The food list ───────────────────────────────────────────────────────
+  // A package line expands into its dishes, grouped by section. A dish line
+  // added straight to the booking is not part of any package, so it prints
+  // under รายการเพิ่มเติม — the same split document B makes with its
+  // "รายการอาหารเพิ่มเติม" break.
+  const setMenuIds = [...new Set(eventMenus.filter((m) => m.set_menu_id).map((m) => m.set_menu_id as string))];
+  const itemsBySet = await getCateringSetMenuItemsForSets(setMenuIds);
+
+  const packages: SheetPackage[] = eventMenus
+    .filter((m) => m.set_menu_id)
+    .map((m) => ({
       id: m.id,
       name: m.name,
       quantity: m.quantity,
-      unit_price: linked.length > 0 && m.quantity > 0 ? totalAmount / m.quantity : null,
       note: m.note,
-    };
-  });
+      // Grouped here rather than in the client so the client renders what it
+      // is given: a group that reaches it is a group with rows in it.
+      groups: groupBySection(itemsBySet.get(m.set_menu_id as string) ?? [], SET_MENU_SECTIONS),
+    }));
 
-  return <FunctionSheetClient event={event} items={items} staffOptions={staffOptions} />;
+  const extras: SheetLine[] = eventMenus
+    .filter((m) => !m.set_menu_id)
+    .map((m) => ({ id: m.id, name: m.name, quantity: m.quantity, note: m.note }));
+
+  // The four money fields: the figure where the booking holds one, a ruled
+  // line where it does not. The rule and the reason ค่าไฟ is always a ruled
+  // line live in @/lib/function-sheet, with tests.
+  const money = moneyFields(charges, event.deposit_amount);
+
+  return (
+    <FunctionSheetClient
+      event={event}
+      packages={packages}
+      extras={extras}
+      money={money}
+      staffOptions={staffOptions}
+    />
+  );
 }

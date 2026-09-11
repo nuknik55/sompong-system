@@ -52,6 +52,24 @@ export const FOOD_FORMAT_OPTIONS: { value: string; label: string }[] = [
   { value: "set_menu",      label: "ชุดเมนู" },
   { value: "box_set",       label: "อาหารกล่อง" },
 ];
+/**
+ * catering_set_menu_items.section — the four groups, IN PRINT ORDER. The
+ * values mirror the CHECK constraint in
+ * supabase/catering_set_menu_sections_migration.sql; the order is the order
+ * the three documents print them in, which is why this is an array and not a
+ * label map.
+ *
+ * A section with no rows prints NOTHING — no heading, no empty row. A package
+ * with no dessert is a package with no dessert, not a document with a blank
+ * ขนมหวาน line.
+ */
+export const SET_MENU_SECTIONS: { value: string; label: string }[] = [
+  { value: "dish",    label: "รายการอาหาร" },
+  { value: "dessert", label: "ขนมหวาน" },
+  { value: "drink",   label: "เครื่องดื่ม" },
+  { value: "free",    label: "รายการแถมฟรี" },
+];
+
 export const MUSIC_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "none",         label: "ไม่มี" },
   { value: "karaoke_shop", label: "คาราโอเกะ (ร้าน)" },
