@@ -24,6 +24,27 @@ caught from `git show --stat` *after* pushing.
    the file list and confirm it matches the intended change exactly — same
    files, no extras. Before, not after: after is a repair, before is a fix.
 
+   **Count the staged files against the number you intended. Do not read the
+   list.** Rule 2 fired and was read past: a commit meant to carry seven paths
+   was committed with two, and the stat printed exactly that — `2 files
+   changed` under a change described as seven. The cause was one `git add`
+   given all seven paths at once, two of which had already been removed by
+   `git rm`. **`git add` aborts on a pathspec that matches nothing and stages
+   NOTHING**, so the five modified files never entered the index; only the two
+   deletions, staged earlier by `git rm`, were in it. HEAD then deleted a
+   module that two files still imported, and the deploy failed (`24f393d`,
+   fixed by `665f458`).
+
+   Two things follow, and the first is the one that would have stopped it:
+
+   - Know the number before you look. "This commit is seven files" then
+     `2 files changed` is a mismatch a glance at a file list does not produce
+     — skimming names invites recognising them; a count either matches or does
+     not.
+   - **Stage deletions separately from modifications.** `git rm` already
+     staged them; including those paths in a later `git add` is what makes the
+     whole call fail. Add the modified paths in their own call.
+
 3. **A hotfix commit contains only the hotfix.** For any production outage,
    first confirm the working tree is clean of unrelated changes, or `git stash`
    them. Never let a hotfix inherit whatever happened to be staged.
