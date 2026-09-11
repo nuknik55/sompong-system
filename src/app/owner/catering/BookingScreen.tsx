@@ -62,10 +62,32 @@ const SECTION_BY_CHARGE_TYPE: Record<string, Section> = {
   venue: "room", drink: "drink", transport: "delivery", discount: "discount", food: "menu",
 };
 
+/**
+ * Which price-box section a STORED charge belongs to, on reload. While the
+ * screen is open the section is known exactly — the row was added from that
+ * section's own rate picker — but nothing persists it, so it has to be
+ * reconstructed from the charge.
+ *
+ * ── THE ดนตรี BRANCH WAS DEAD, AND THIS IS THE PARTIAL FIX ────────────────
+ *
+ * It tested charge_type === 'service'. No rate maps to 'service':
+ * RATE_TYPE_TO_CHARGE_TYPE sends rate_type 'music' to **'other'**. So every
+ * music charge added from the rate picker — including the karaoke sets and
+ * ค่าไฟวงดนตรีลูกค้า — reloaded into อื่นๆ, and the ดนตรี section was
+ * unreachable except for a hand-typed row somebody had set to บริการ. Both
+ * charge types are now tested, so the rate-picker path works.
+ *
+ * It is still a LABEL MATCH, and that is a real limit rather than a tidy
+ * ending: a music charge whose label says none of those three words still
+ * lands in อื่นๆ, and an อื่นๆ line someone names "ค่าวงดนตรี" will land in
+ * ดนตรี. The structural fix is to persist the section on the charge row —
+ * catering_event_charges has no column for it — which is a migration and a
+ * decision for Nik, not something to slip into a UI commit.
+ */
 function sectionForCharge(c: CateringCharge): Section {
   if (c.event_menu_id) return "menu";
   if (c.charge_type === "discount") return "discount";
-  if (c.charge_type === "service" && /ดนตรี|คาราโอเกะ|วง/.test(c.label)) return "music";
+  if ((c.charge_type === "service" || c.charge_type === "other") && /ดนตรี|คาราโอเกะ|วง/.test(c.label)) return "music";
   return SECTION_BY_CHARGE_TYPE[c.charge_type] ?? "other";
 }
 

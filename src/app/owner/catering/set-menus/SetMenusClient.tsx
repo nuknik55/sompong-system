@@ -6,7 +6,7 @@ import {
   saveCateringSetMenu, deleteCateringSetMenu, toggleCateringSetMenuActive, getCateringSetMenuItems,
 } from "../actions";
 import type { CateringSetMenu } from "../actions";
-import { fmtBaht, toNum } from "../shared-utils";
+import { fmtBaht, toNum, SET_MENU_SECTIONS } from "../shared-utils";
 
 /** Per-dish cost, computed once server-side in page.tsx — see the comment there. */
 export type DishCostOption = {
@@ -24,6 +24,8 @@ type SetMenuItemRow = {
   menu_name: string;
   quantity: string;
   note: string;
+  /** dish | dessert | drink | free — which group this row prints under. */
+  section: string;
 };
 
 type SetMenuForm = {
@@ -220,6 +222,7 @@ export function SetMenusClient({
               menu_name: it.menu_name,
               quantity: it.quantity.toString(),
               note: it.note ?? "",
+              section: it.section,
             })),
           },
         });
@@ -241,7 +244,7 @@ export function SetMenusClient({
         ? m.form.items.map((it) =>
             it.menu_id === dish.id ? { ...it, quantity: ((toNum(it.quantity) ?? 0) + quantity).toString() } : it,
           )
-        : [...m.form.items, { _key: crypto.randomUUID(), menu_id: dish.id, menu_name: dish.name, quantity: quantity.toString(), note: "" }];
+        : [...m.form.items, { _key: crypto.randomUUID(), menu_id: dish.id, menu_name: dish.name, quantity: quantity.toString(), note: "", section: "dish" }];
       return { ...m, form: { ...m.form, items } };
     });
   }
@@ -274,7 +277,7 @@ export function SetMenusClient({
           serves_guests: toNum(f.serves_guests),
           items: f.items
             .filter((it) => it.menu_id)
-            .map((it) => ({ menu_id: it.menu_id, quantity: toNum(it.quantity) ?? 1, note: it.note || null })),
+            .map((it) => ({ menu_id: it.menu_id, quantity: toNum(it.quantity) ?? 1, note: it.note || null, section: it.section })),
         });
         setModal(null);
         router.refresh();
@@ -345,8 +348,26 @@ export function SetMenusClient({
           <div key={sm.id} className={`flex items-center gap-3 border-b border-neutral-50 px-4 py-3 last:border-0 ${!sm.is_active ? "opacity-50" : ""}`}>
             <div className="flex-1">
               <span className="text-sm font-medium text-neutral-800">{sm.name}</span>
-              <span className="ml-2 text-xs text-neutral-400">{sm.dish_count} เมนู</span>
               {sm.serves_guests != null && <span className="ml-2 text-xs text-neutral-400">เสิร์ฟ {sm.serves_guests} ท่าน</span>}
+              {/* The whole breakdown, zeros included, so a package missing a
+                  section is visible without opening it. Zero is shown rather
+                  than hidden because "no dessert" is the fact worth seeing.
+                  Only an empty รายการอาหาร is a warning — a package
+                  legitimately may have no dessert, drink or free item, but one
+                  with no dishes cannot print a kitchen sheet at all. */}
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-400">
+                {SET_MENU_SECTIONS.map((s, i) => {
+                  const n = sm.section_counts[s.value] ?? 0;
+                  const isEmptyDish = s.value === "dish" && n === 0;
+                  return (
+                    <span key={s.value} className={isEmptyDish ? "font-medium text-amber-600" : undefined}>
+                      {i > 0 && <span className="mr-1.5 text-neutral-300">·</span>}
+                      {s.label} <span className="tabular-nums">{n}</span>
+                      {isEmptyDish && " ⚠"}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
             <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(sm.price_per_set)}</span>
             <div className="flex items-center gap-2">
@@ -406,15 +427,17 @@ export function SetMenusClient({
                   <div className="overflow-hidden rounded-lg border border-neutral-200">
                     <table className="w-full table-fixed text-sm">
                       <colgroup>
-                        <col style={{ width: "34%" }} />
-                        <col style={{ width: "12%" }} />
-                        <col style={{ width: "32%" }} />
-                        <col style={{ width: "14%" }} />
-                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "28%" }} />
+                        <col style={{ width: "17%" }} />
+                        <col style={{ width: "10%" }} />
+                        <col style={{ width: "25%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: "7%" }} />
                       </colgroup>
                       <thead>
                         <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
                           <th className="px-2 py-1.5">เมนู</th>
+                          <th className="px-2 py-1.5">หมวดในชุด</th>
                           <th className="px-2 py-1.5 text-right">จำนวน</th>
                           <th className="px-2 py-1.5">หมายเหตุ</th>
                           <th className="px-2 py-1.5 text-right">ทุนรวม</th>
@@ -430,6 +453,20 @@ export function SetMenusClient({
                               <td className="px-2 py-1.5 text-neutral-800">
                                 {it.menu_name}
                                 {dish?.has_unknown_cost && <span className="ml-1 text-amber-600" title="ต้นทุนไม่ทราบแน่ชัด">⚠</span>}
+                              </td>
+                              {/* Which group this row prints under on the three
+                                  documents. Defaults to รายการอาหาร, so an
+                                  untouched package behaves exactly as before. */}
+                              <td className="px-2 py-1.5">
+                                <select
+                                  className="input-base"
+                                  value={it.section}
+                                  onChange={(e) => updateItem(it._key, { section: e.target.value })}
+                                >
+                                  {SET_MENU_SECTIONS.map((s) => (
+                                    <option key={s.value} value={s.value}>{s.label}</option>
+                                  ))}
+                                </select>
                               </td>
                               <td className="px-2 py-1.5">
                                 <input

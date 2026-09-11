@@ -171,7 +171,15 @@ export type CateringSetMenu = {
   price_per_set: number;
   serves_guests: number | null;
   is_active: boolean;
-  dish_count: number;
+  /**
+   * Rows per section, keyed by section value — the list row shows the whole
+   * breakdown so an incomplete package is visible without opening it.
+   *
+   * Replaces the old `dish_count`, which counted every row and was named as
+   * though it counted dishes. Once a package can hold a dessert, a drink and
+   * four free items, "13 เมนู" stops being an answer to any question.
+   */
+  section_counts: Record<string, number>;
 };
 
 export type CateringSetMenuItem = {
@@ -792,11 +800,16 @@ export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_set_menus")
-    .select("id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(count)")
+    // section rather than count(): the list needs the breakdown, not a total,
+    // and counting in JS avoids one embedded aggregate per section. A package
+    // holds of the order of ten rows, so this is cheaper than it looks.
+    .select("id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(section)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => {
-    const countRow = (r.catering_set_menu_items as { count: number }[] | null)?.[0];
+    const rows = (r.catering_set_menu_items as { section: string }[] | null) ?? [];
+    const section_counts: Record<string, number> = {};
+    for (const row of rows) section_counts[row.section] = (section_counts[row.section] ?? 0) + 1;
     return {
       id: r.id as string,
       name: r.name as string,
@@ -804,7 +817,7 @@ export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
       price_per_set: r.price_per_set as number,
       serves_guests: r.serves_guests as number | null,
       is_active: r.is_active as boolean,
-      dish_count: countRow?.count ?? 0,
+      section_counts,
     };
   });
 }
@@ -879,7 +892,7 @@ export async function saveCateringSetMenu(data: {
   description: string | null;
   price_per_set: number;
   serves_guests: number | null;
-  items: { menu_id: string; quantity: number; note: string | null }[];
+  items: { menu_id: string; quantity: number; note: string | null; section: string }[];
 }): Promise<string> {
   await requireAdmin();
   const supabase = await createClient();
@@ -925,6 +938,10 @@ export async function saveCateringSetMenu(data: {
         menu_id: it.menu_id,
         quantity: it.quantity,
         note: it.note?.trim() || null,
+        // Sent explicitly rather than left to the column default: this is a
+        // replace, so every row is an INSERT and a row whose section the admin
+        // changed from 'dish' would silently revert on the next save.
+        section: it.section,
         sort_order: (i + 1) * 10,
       })),
     );
