@@ -379,19 +379,19 @@ export function SetMenusClient({
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium text-neutral-600">ชื่อชุดเมนู *</label>
-                  <input className="set-menu-input" value={modal.form.name} onChange={(e) => setForm({ name: e.target.value })} />
+                  <input className="input-base" value={modal.form.name} onChange={(e) => setForm({ name: e.target.value })} />
                 </div>
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium text-neutral-600">รายละเอียด</label>
-                  <textarea className="set-menu-input h-16 resize-none" value={modal.form.description} onChange={(e) => setForm({ description: e.target.value })} />
+                  <textarea className="input-base h-16 resize-none" value={modal.form.description} onChange={(e) => setForm({ description: e.target.value })} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-neutral-600">ราคาต่อชุด (บาท) *</label>
-                  <input type="number" min={0} className="set-menu-input" value={modal.form.price_per_set} onChange={(e) => setForm({ price_per_set: e.target.value })} />
+                  <input type="number" min={0} className="input-base" value={modal.form.price_per_set} onChange={(e) => setForm({ price_per_set: e.target.value })} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-neutral-600">เสิร์ฟกี่ท่าน</label>
-                  <input type="number" min={0} className="set-menu-input" value={modal.form.serves_guests} onChange={(e) => setForm({ serves_guests: e.target.value })} />
+                  <input type="number" min={0} className="input-base" value={modal.form.serves_guests} onChange={(e) => setForm({ serves_guests: e.target.value })} />
                 </div>
               </div>
 
@@ -434,13 +434,13 @@ export function SetMenusClient({
                               <td className="px-2 py-1.5">
                                 <input
                                   type="number" min={0}
-                                  className="set-menu-input text-right tabular-nums"
+                                  className="input-base text-right tabular-nums"
                                   value={it.quantity}
                                   onChange={(e) => updateItem(it._key, { quantity: e.target.value })}
                                 />
                               </td>
                               <td className="px-2 py-1.5">
-                                <input className="set-menu-input" value={it.note} onChange={(e) => updateItem(it._key, { note: e.target.value })} />
+                                <input className="input-base" value={it.note} onChange={(e) => updateItem(it._key, { note: e.target.value })} />
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-neutral-600">฿{fmtBaht(lineCost)}</td>
                               <td className="px-2 py-1.5 text-center">
@@ -494,10 +494,6 @@ export function SetMenusClient({
         </div>
       )}
 
-      <style>{`
-        .set-menu-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; outline: none; background: white; }
-        .set-menu-input:focus { border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
-      `}</style>
     </div>
   );
 }

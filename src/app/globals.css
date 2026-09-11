@@ -27,3 +27,51 @@ body {
     display: none !important;
   }
 }
+
+/* ── Form controls: ONE definition ─────────────────────────────────────────
+   Seven screens carried a byte-identical copy of .input-base in their own
+   <style> block and an eighth carried the same rules as .set-menu-input.
+   Nik asked for stronger borders on the booking screen; the finding was that
+   the faint styling WAS the shared one — #e5e7eb, the lightest weight,
+   against 184 input-shaped uses of #d4d4d4 elsewhere, which is what the daily
+   accounting screen uses without complaint. This is that weight, with the
+   same screen's blue-400 focus.
+
+   .line-input is the compact variant for dense rows (the booking screen's
+   price box and the SearchSelect inside it, which live in two files and so
+   cannot share a local <style> block).
+
+   DELIBERATELY UNLAYERED, exactly as the <style> blocks were. Unlayered CSS
+   beats Tailwind's layered utilities, so a `w-28` written beside
+   `input-base` has never taken effect and still does not. Putting these in
+   @layer components would change that on screens nobody is re-testing here;
+   if those widths are wanted, that is its own change.
+*/
+.input-base {
+  width: 100%;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  outline: none;
+  background: white;
+  color: #171717;
+}
+.input-base:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25); }
+.input-base:read-only { background: #f5f5f5; color: #525252; }
+.input-base:disabled { background: #f5f5f5; color: #737373; }
+.input-base::placeholder { color: #a3a3a3; }
+
+.line-input {
+  width: 100%;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+  outline: none;
+  background: white;
+  color: #171717;
+}
+.line-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25); }
+.line-input:disabled { background: #f5f5f5; color: #737373; }
+.line-input::placeholder { color: #a3a3a3; }

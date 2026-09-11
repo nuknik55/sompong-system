@@ -206,10 +206,6 @@ export function CustomerDetailClient({
         )}
       </div>
 
-      <style>{`
-        .input-base { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; outline: none; background: white; }
-        .input-base:focus { border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
-      `}</style>
     </>
   );
 }

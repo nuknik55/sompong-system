@@ -473,16 +473,6 @@ export function BookingScreen({
           blue-400 too. The faint #e5e7eb this replaces is the shared
           .input-base, copied verbatim into seven files; the other six are
           untouched here and are Nik's decision, app-wide. */}
-      <style>{`
-        .input-base { width: 100%; border: 1px solid #d4d4d4; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; outline: none; background: white; color: #171717; }
-        .input-base:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,0.25); }
-        .input-base:read-only { background: #f5f5f5; color: #525252; }
-        .input-base::placeholder { color: #a3a3a3; }
-        .line-input { width: 100%; border: 1px solid #d4d4d4; border-radius: 6px; padding: 4px 8px; font-size: 0.8125rem; outline: none; background: white; color: #171717; }
-        .line-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,0.25); }
-        .line-input:disabled { background: #f5f5f5; color: #737373; }
-        .line-input::placeholder { color: #a3a3a3; }
-      `}</style>
     </div>
   );
 }
