@@ -19,6 +19,7 @@ import type {
   BookingLine, CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringRate,
   CateringSetMenuOption, StaffOption,
 } from "./actions";
+import { docMoney } from "@/lib/quote-doc";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -163,6 +164,11 @@ export function BookingScreen({
 
   // ── Price box helpers ──
   const total = lines.reduce((s, l) => s + (toNum(l.amount) ?? 0), 0);
+  // The computed deposit, shown beside the percentage field so whoever agrees
+  // the term sees the figure it produces. Never written anywhere —
+  // deposit_amount records what was actually received. Same arithmetic the
+  // printed documents use, from @/lib/quote-doc where it is tested.
+  const depositDue = docMoney(total, toNum(form.deposit_percent), null).depositDue;
   const suggestedDelivery = useMemo(() => {
     const km = toNum(form.offsite_distance_km);
     if (form.location_type !== "offsite" || km === null) return null;
@@ -364,7 +370,30 @@ export function BookingScreen({
             </select>
             {takers.length === 0 && <p className="mt-1 text-xs text-amber-700">ยังไม่มีใครถูกตั้งเป็นผู้รับงานจอง — ติ๊ก &quot;รับงานจองจัดเลี้ยง&quot; ในหน้าพนักงาน (HR)</p>}
           </Field>
-          <Field label="เงินมัดจำ (บาท)">
+          {/* The agreed TERM, beside the amount actually RECEIVED. Two fields
+              on purpose: a customer may round, or pay in two parts, so the
+              percentage cannot be derived from the amount and the amount must
+              not be overwritten by the percentage. Three states: blank = not
+              yet discussed (prints "______%"), 0 = agreed no deposit (every
+              deposit clause and row is omitted), 1-100 = agreed percent.
+              New bookings pre-fill 30 — a form default only, see blankForm. */}
+          <Field label="มัดจำ (%) ที่ตกลง">
+            <input
+              type="number" min={0} max={100} step="0.01"
+              className="input-base"
+              placeholder="เช่น 30 (0 = ไม่เก็บ)"
+              value={form.deposit_percent}
+              onChange={(e) => set("deposit_percent", e.target.value)}
+            />
+            {toNum(form.deposit_percent) === 0 ? (
+              <p className="mt-1 text-xs text-neutral-500">ตกลงไม่เก็บมัดจำ — เอกสารจะไม่แสดงเงื่อนไขมัดจำ</p>
+            ) : depositDue != null && depositDue > 0 ? (
+              <p className="mt-1 text-xs text-neutral-500">
+                = ฿{fmtBaht(depositDue)} จากยอด ฿{fmtBaht(total)}
+              </p>
+            ) : null}
+          </Field>
+          <Field label="เงินมัดจำที่รับแล้ว (บาท)">
             <input type="number" min={0} className="input-base" value={form.deposit_amount} onChange={(e) => set("deposit_amount", e.target.value)} />
           </Field>
           <Field label="วันที่รับมัดจำ">

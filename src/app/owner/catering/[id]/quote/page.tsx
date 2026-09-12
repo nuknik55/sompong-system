@@ -3,27 +3,51 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
-import { getCateringEvent, getCateringCharges, getCateringSettings } from "../../actions";
-import { QuoteClient } from "./QuoteClient";
+import {
+  getCateringEvent, getCateringCharges, getCateringSettings,
+  getCateringEventMenus, getCateringSetMenuItemsForSets,
+} from "../../actions";
+import { SET_MENU_SECTIONS } from "../../shared-utils";
+import { groupBySection } from "@/lib/function-sheet";
+import { parseDocState, docMoney } from "@/lib/quote-doc";
+import { QuoteClient, type QuoteLine } from "./QuoteClient";
+
+// ── ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ (document C) ─────────────────────────
+//
+// ONE route, three states, ONE number. ?doc=quote|deposit|invoice, defaulting
+// to the quote — the booking screen's existing link carries no parameter and
+// must keep working.
+//
+// They are the same document with different money rows and different
+// conditions, which is why they are not three routes: the letterhead, the
+// customer block, the line items and the dish sub-lines are identical on all
+// three, and three copies of that would drift.
+//
+// The rules — which rows print, what the balance is computed from, and the
+// conditions text — are in @/lib/quote-doc, tested.
 
 export default async function CateringQuotePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ doc?: string }>;
 }) {
   await requireSales();
   const { id } = await params;
+  const doc = parseDocState((await searchParams).doc);
 
-  const [event, charges, settings] = await Promise.all([
+  const [event, charges, settings, eventMenus] = await Promise.all([
     getCateringEvent(id),
     getCateringCharges(id),
     getCateringSettings(),
+    getCateringEventMenus(id),
   ]);
 
   if (!event) notFound();
 
   // A quote_number only exists once issueCateringQuote() has run at least
-  // once — no partial/unissued document is ever renderable here.
+  // once — no partial/unissued document is ever renderable here, in any state.
   if (!event.quote_number) {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
@@ -35,5 +59,37 @@ export default async function CateringQuotePage({
     );
   }
 
-  return <QuoteClient event={event} charges={charges} settings={settings} />;
+  // Dish sub-lines under each package line. The SAME expansion the service
+  // sheet and the kitchen sheet use — one definition of what is inside a
+  // package, so the customer, the floor and the kitchen cannot be told three
+  // different things.
+  const setIdByEventMenu = new Map(
+    eventMenus.filter((m) => m.set_menu_id).map((m) => [m.id, m.set_menu_id as string]),
+  );
+  const itemsBySet = await getCateringSetMenuItemsForSets([...new Set(setIdByEventMenu.values())]);
+
+  const lines: QuoteLine[] = charges.map((c) => {
+    const setId = c.event_menu_id ? setIdByEventMenu.get(c.event_menu_id) : undefined;
+    const groups = setId ? groupBySection(itemsBySet.get(setId) ?? [], SET_MENU_SECTIONS) : [];
+    return {
+      id: c.id,
+      label: c.label,
+      note: c.note,
+      unitPrice: c.unit_price,
+      quantity: c.quantity,
+      amount: c.amount,
+      // Flattened to names only: the customer is being shown what is included,
+      // not a second priced table. Section order is preserved, and a section
+      // with no rows contributes nothing.
+      dishes: groups.flatMap((g) => g.lines.map((l) => l.name)),
+    };
+  });
+
+  const money = docMoney(
+    charges.reduce((s, c) => s + c.amount, 0),
+    event.deposit_percent,
+    event.deposit_amount,
+  );
+
+  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} />;
 }

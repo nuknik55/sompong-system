@@ -150,7 +150,7 @@ function DishPicker({
                       {already && <span className="ml-1.5 text-[10px] text-neutral-400">(อยู่ในชุดแล้ว — เพิ่มจะรวมจำนวน)</span>}
                     </span>
                     <span className="whitespace-nowrap text-xs tabular-nums text-neutral-500">
-                      ขาย ฿{fmtBaht(d.selling_price)} · ทุน ฿{fmtBaht(d.unit_cost)}
+                      ขาย ฿{fmtBaht(d.selling_price)} · ต้นทุน ฿{fmtBaht(d.unit_cost)}
                     </span>
                   </button>
                 );
@@ -440,7 +440,7 @@ export function SetMenusClient({
                           <th className="px-2 py-1.5">หมวดในชุด</th>
                           <th className="px-2 py-1.5 text-right">จำนวน</th>
                           <th className="px-2 py-1.5">หมายเหตุ</th>
-                          <th className="px-2 py-1.5 text-right">ทุนรวม</th>
+                          <th className="px-2 py-1.5 text-right">ต้นทุนรวม</th>
                           <th className="px-2 py-1.5"></th>
                         </tr>
                       </thead>

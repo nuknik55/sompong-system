@@ -70,6 +70,11 @@ export type CateringEvent = {
   music_note: string | null;
   status: string;
   deposit_amount: number | null;
+  /** The AGREED percentage (catering_event_deposit_percent_migration.sql).
+   *  deposit_amount above is what was actually RECEIVED and stays the
+   *  authority — the two are deliberately separate. NULL means not yet
+   *  agreed, which prints as a blank, never as 0. */
+  deposit_percent: number | null;
   deposit_paid_at: string | null;
   detail_note: string | null;
   kitchen_note: string | null;
@@ -203,7 +208,7 @@ const CATERING_EVENT_SELECT = `
   location_type, venue, room_portion, offsite_address, offsite_distance_km, floor_level,
   booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
-  deposit_amount, deposit_paid_at, detail_note, kitchen_note, created_by,
+  deposit_amount, deposit_percent, deposit_paid_at, detail_note, kitchen_note, created_by,
   quote_number, quote_revision, quoted_total, quoted_at, cost_locked_at,
   catering_customers(name, phone, line_id, company_name, address, contact_person),
   catering_event_staff(employee_id),
@@ -247,6 +252,7 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
     music_note: r.music_note as string | null,
     status: r.status as string,
     deposit_amount: r.deposit_amount as number | null,
+    deposit_percent: r.deposit_percent as number | null,
     deposit_paid_at: r.deposit_paid_at as string | null,
     detail_note: r.detail_note as string | null,
     kitchen_note: r.kitchen_note as string | null,
@@ -1257,6 +1263,11 @@ export async function upsertCateringEvent(data: {
   music_note: string | null;
   status: string;
   deposit_amount: number | null;
+  /** The AGREED percentage (catering_event_deposit_percent_migration.sql).
+   *  deposit_amount above is what was actually RECEIVED and stays the
+   *  authority — the two are deliberately separate. NULL means not yet
+   *  agreed, which prints as a blank, never as 0. */
+  deposit_percent: number | null;
   deposit_paid_at: string | null;
   detail_note: string | null;
   kitchen_note: string | null;
@@ -1347,6 +1358,7 @@ export async function upsertCateringEvent(data: {
     music_note: data.music_note?.trim() || null,
     status: data.status,
     deposit_amount: data.deposit_amount,
+    deposit_percent: data.deposit_percent,
     deposit_paid_at: data.deposit_paid_at || null,
     detail_note: data.detail_note?.trim() || null,
     kitchen_note: data.kitchen_note?.trim() || null,

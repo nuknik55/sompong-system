@@ -248,6 +248,7 @@ export type FormState = {
   music_note: string;
   status: string;
   deposit_amount: string;
+  deposit_percent: string;
   deposit_paid_at: string;
   detail_note: string;
   kitchen_note: string;
@@ -270,7 +271,12 @@ export function blankForm(defaultStaffId?: string | null): FormState {
     booking_type: "table", food_format: "",
     table_count: "", reserve_tables: "", table_label: "", guest_count: "",
     music_type: "none", music_note: "",
-    status: "inquiry", deposit_amount: "", deposit_paid_at: "",
+    // deposit_percent pre-fills 30 on a NEW booking only — Nik's starting
+    // point, editable, clearable to blank (NULL = not yet discussed) and
+    // settable to 0 (agreed: no deposit). A FORM default, deliberately not a
+    // column default: existing bookings keep NULL and are never handed terms
+    // retroactively. formFromEvent below reads the stored value untouched.
+    status: "inquiry", deposit_amount: "", deposit_percent: "30", deposit_paid_at: "",
     detail_note: "", kitchen_note: "", staff_ids: defaultStaffId ? [defaultStaffId] : [],
   };
 }
@@ -301,6 +307,7 @@ export function formFromEvent(e: CateringEvent): FormState {
     music_note: e.music_note ?? "",
     status: e.status,
     deposit_amount: e.deposit_amount?.toString() ?? "",
+    deposit_percent: e.deposit_percent?.toString() ?? "",
     deposit_paid_at: e.deposit_paid_at ?? "",
     detail_note: e.detail_note ?? "",
     kitchen_note: e.kitchen_note ?? "",
@@ -347,6 +354,7 @@ export function formToUpsertPayload(form: FormState, id?: string) {
     music_note: form.music_note,
     status: form.status,
     deposit_amount: toNum(form.deposit_amount),
+    deposit_percent: toNum(form.deposit_percent),
     deposit_paid_at: form.deposit_paid_at || null,
     detail_note: form.detail_note,
     kitchen_note: form.kitchen_note,
