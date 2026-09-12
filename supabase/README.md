@@ -766,11 +766,20 @@ separate on the printed sheet.
 ### The rules that are NOT obvious from the layouts
 
 - **B's ราคา column is a PORTION SIZE, not money.** `selling_price x
-  dishes-per-table`, literal, never multiplied — "180 x 1" means one plate of
-  the ฿180 size. It shipped once as price × table count and was **wrong on
-  paper**; Nik's own reading ("หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำ...ไซส์ 180
-  1 จาน") is quoted at the site. No row total, no grand total — the dishes
-  deliberately do not sum to the package price.
+  plates-for-the-whole-job` (per-set count × sets ordered — `plateCount()`),
+  literal, never multiplied. THE MULTIPLIER TOOK THREE READINGS — table
+  count, then per-set count alone, both shipped and both wrong on paper;
+  the paper's "590 x 6" was 1 × 6 sets, which all three readings happened
+  to equal, so only Nik's real 10-set booking could tell them apart. The
+  full history is beside plateCount() in src/lib/kitchen-sheet.ts. No row
+  total, no grand total — the dishes deliberately do not sum to the package
+  price. Extras print price × count too, never a blank. EXCEPT a buffet:
+  `food_format = 'buffet'` blanks the whole ราคา column, because Nik's
+  paper buffet sheet has no per-dish prices — a buffet is cooked to the
+  header's guest count. That is the only buffet rule built; how a buffet
+  booking is shaped, and what its จำนวน column should say, waits for the
+  first REAL buffet booking — deliberately, because the multiplier's three
+  readings showed what guessing from one example costs.
 - **Header colours carry meaning.** B: blue = งานภายใน, red = งานภายนอก;
   an unknown location_type reads as ภายนอก (nobody loads a van for a job they
   think is in-house). C: the green band, white on green. All of them set

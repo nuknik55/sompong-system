@@ -1,7 +1,7 @@
 /** Run with: npm test — the kitchen function sheet's rules (document B). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { thWeekdayFullDate, kitchenHeading, priceCell } from "./kitchen-sheet.ts";
+import { thWeekdayFullDate, kitchenHeading, priceCell, plateCount } from "./kitchen-sheet.ts";
 
 test("the date form is the paper sheet's, not the app's usual one", () => {
   // The example on Nik's paper sheet, to the character.
@@ -38,12 +38,28 @@ test("an unknown location_type reads as ภายนอก rather than ภาย
   assert.equal(kitchenHeading("something_new").offsite, true);
 });
 
-test("ราคา is price x DISHES PER TABLE, printed literally", () => {
-  // Nik reading his own sheet: "หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำหอยตลับผัดฉ่า
-  // ไซส์ 180 1 จาน" — which size, how many plates. Not an event total.
-  assert.equal(priceCell(180, 1), "180 x 1");
-  assert.equal(priceCell(547.06, 1), "547.06 x 1");
-  assert.equal(priceCell(200, 5), "200 x 5");
+test("ราคา is price x PLATES FOR THE WHOLE JOB, printed literally", () => {
+  // The rule took three readings; the history is beside plateCount() in the
+  // module. Nik on the one-set job: "180 x 1 ทำ...ไซส์ 180 1 จาน"; on the
+  // real 10-set booking, a q1 dish must print x 10, not x 1.
+  assert.equal(priceCell(180, plateCount(1, 1)), "180 x 1");
+  assert.equal(priceCell(590, plateCount(1, 10)), "590 x 10");
+  assert.equal(priceCell(200, plateCount(5, 10)), "200 x 50");
+});
+
+test("plateCount is per-set count x sets ordered — the three-readings rule", () => {
+  assert.equal(plateCount(1, 10), 10, "Nik: the chef cooks 10 plates");
+  assert.equal(plateCount(5, 6), 30);
+  // The paper example that could NOT distinguish the three readings: 1 x 6
+  // equals per-set-alone-with-6-tables AND table-count-6. Only q!=1 or
+  // sets!=1 separates them.
+  assert.equal(plateCount(1, 6), 6);
+});
+
+test("extras: the line quantity IS the plate count — no per-set factor", () => {
+  // ข้าวผัดกุ้ง (กลาง) x 10 on the real booking must print "160 x 10",
+  // never a blank cell.
+  assert.equal(priceCell(160, 10), "160 x 10");
 });
 
 test("the cell is never arithmetic", () => {

@@ -5,7 +5,7 @@ import { requireSales } from "@/lib/auth";
 import { getCateringEvent, getCateringEventMenus, getCateringSetMenuItemsForSets } from "../../actions";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
-import { priceCell } from "@/lib/kitchen-sheet";
+import { priceCell, plateCount } from "@/lib/kitchen-sheet";
 import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./KitchenSheetClient";
 
 // ── ใบฟังก์ชั่นงาน — ฝ่ายครัว (document B) ─────────────────────────────────
@@ -17,9 +17,9 @@ import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./Kitche
 // reasoning is in src/lib/kitchen-sheet.ts, where the rule is tested; the
 // short version is that Sompong sells the same dish at several sizes, so the
 // à la carte selling price is how the chef is told which size to plate. The
-// second number is DISHES PER TABLE, so "180 x 1" reads "one plate of the
-// ฿180 size". It prints literally — never multiplied, no row total, no grand
-// total.
+// second number is PLATES FOR THE WHOLE JOB — per-set count × sets ordered,
+// plateCount() — so "200 x 50" reads "fifty plates of the ฿200 size". It
+// prints literally — never multiplied, no row total, no grand total.
 //
 // No cost anywhere: no getCostingContext(), no computeMenuCost(). This is
 // requireSales(), and menus.selling_price is a customer price the sales role
@@ -46,6 +46,16 @@ export default async function CateringKitchenSheetPage({
   // Header only. The ราคา column does NOT use this — see below.
   const tableCount = event.table_count;
 
+  // A BUFFET PRINTS NO PER-DISH PRICES. Nik's paper buffet sheet has none —
+  // a buffet is cooked to the guest count in the header, not per-plate
+  // portions — so the stored food_format blanks the ราคา column. That is the
+  // only buffet rule built so far, because it is the only one the paper
+  // attests: how a buffet BOOKING is even shaped (a per-head set? dish
+  // lines?) has no real data yet, and the multiplier's three readings are
+  // the argument for not guessing — see README, the catering documents
+  // section. The จำนวน semantics wait for the first real buffet booking.
+  const isBuffet = event.food_format === "buffet";
+
   // Package dishes, grouped by section, numbered continuously down the block
   // the way the paper sheet numbers its rows. groupBySection drops any
   // section with no rows, so an absent ขนมหวาน prints nothing at all.
@@ -66,12 +76,10 @@ export default async function CateringKitchenSheetPage({
             id: l.id,
             index: ++n,
             name: l.name,
-            // price × DISHES OF THIS ITEM PER TABLE, from
-            // catering_set_menu_items.quantity — not event.table_count, which
-            // is what this shipped as in 0f14a7f and was wrong on paper.
-            // Nik: "หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำหอยตลับผัดฉ่าไซส์ 180
-            // 1 จาน" — which size, how many plates, for one table.
-            price: priceCell(priceById.get(l.id) ?? null, qtyById.get(l.id) ?? 1),
+            // price × plates for the WHOLE JOB: per-set count × sets
+            // ordered. This rule took three readings — the history is in
+            // @/lib/kitchen-sheet beside plateCount(), where it is tested.
+            price: isBuffet ? null : priceCell(priceById.get(l.id) ?? null, plateCount(qtyById.get(l.id) ?? 1, m.quantity)),
             note: l.note,
           })),
         })),
@@ -87,11 +95,11 @@ export default async function CateringKitchenSheetPage({
       id: m.id,
       index: i + 1,
       name: m.name,
-      // A dish line on the booking carries no menus join here, and its
-      // quantity is a count of servings rather than a portion size. Blank,
-      // for the kitchen to fill in, rather than a number that means
-      // something different from every other number in the column.
-      price: null,
+      // Every dish row gets price × count, extras included (Nik, from the
+      // real 10-table booking: ข้าวผัดกุ้ง (กลาง) × 10 must print
+      // "160 x 10", not a blank). The line quantity already IS the plate
+      // count here — a direct dish line has no per-set factor.
+      price: isBuffet ? null : priceCell(m.selling_price, m.quantity),
       note: m.note,
     }));
 

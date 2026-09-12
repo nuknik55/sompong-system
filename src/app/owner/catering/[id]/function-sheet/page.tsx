@@ -8,6 +8,7 @@ import {
 } from "../../actions";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection, moneyFields, type SheetLine, type SheetPackage } from "@/lib/function-sheet";
+import { plateCount } from "@/lib/kitchen-sheet";
 import { FunctionSheetClient } from "./FunctionSheetClient";
 
 // ── ใบฟังก์ชั่นงาน — ฝ่ายบริการ (document A) ────────────────────────────────
@@ -57,8 +58,14 @@ export default async function CateringFunctionSheetPage({
       quantity: m.quantity,
       note: m.note,
       // Grouped here rather than in the client so the client renders what it
-      // is given: a group that reaches it is a group with rows in it.
-      groups: groupBySection(itemsBySet.get(m.set_menu_id as string) ?? [], SET_MENU_SECTIONS),
+      // is given: a group that reaches it is a group with rows in it. Each
+      // line quantity is plates for the WHOLE JOB — per-set count × sets
+      // ordered, the same plateCount() the kitchen sheet uses, so the two
+      // sheets can never disagree about how many go out.
+      groups: groupBySection(itemsBySet.get(m.set_menu_id as string) ?? [], SET_MENU_SECTIONS).map((g) => ({
+        ...g,
+        lines: g.lines.map((l) => ({ ...l, quantity: plateCount(l.quantity, m.quantity) })),
+      })),
     }));
 
   const extras: SheetLine[] = eventMenus

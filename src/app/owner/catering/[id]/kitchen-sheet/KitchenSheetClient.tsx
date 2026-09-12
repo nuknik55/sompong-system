@@ -10,8 +10,8 @@ export type KitchenRow = {
   /** 1-based, as printed in the ลำดับ column. */
   index: number;
   name: string;
-  /** "180 x 1" — price × dishes per table, literal, never multiplied. null
-   *  prints an empty cell. */
+  /** "200 x 50" — price × plates for the whole job (plateCount), literal,
+   *  never multiplied. null prints an empty cell. */
   price: string | null;
   note: string | null;
 };

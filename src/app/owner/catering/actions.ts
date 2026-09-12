@@ -151,6 +151,10 @@ export type CateringEventMenu = {
   name: string;
   quantity: number;
   note: string | null;
+  /** menus.selling_price for a DISH line — the kitchen sheet prints it as the
+   *  portion size on รายการอาหารเพิ่มเติม rows. null for a set line, whose
+   *  dishes carry their own prices through the set expansion. */
+  selling_price: number | null;
 };
 
 /** Sales-safe: name + sale price only. For the event-menu picker (part B). */
@@ -644,13 +648,13 @@ export async function getCateringEventMenus(eventId: string): Promise<CateringEv
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_event_menus")
-    .select("id, set_menu_id, menu_id, quantity, note, catering_set_menus(name), menus(name)")
+    .select("id, set_menu_id, menu_id, quantity, note, catering_set_menus(name), menus(name, selling_price)")
     .eq("event_id", eventId)
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => {
     const setMenu = r.catering_set_menus as { name: string } | null;
-    const dish = r.menus as { name: string } | null;
+    const dish = r.menus as { name: string; selling_price: number } | null;
     return {
       id: r.id as string,
       set_menu_id: r.set_menu_id as string | null,
@@ -658,6 +662,7 @@ export async function getCateringEventMenus(eventId: string): Promise<CateringEv
       name: setMenu?.name ?? dish?.name ?? "-",
       quantity: r.quantity as number,
       note: r.note as string | null,
+      selling_price: dish?.selling_price ?? null,
     };
   });
 }

@@ -20,17 +20,23 @@
  * dishes come to ฿2,545 against a ฿3,000 package) — a total would be actively
  * misleading.
  *
- * ── WHAT THE SECOND NUMBER IS, CORRECTED ──────────────────────────────────
+ * ── WHAT THE SECOND NUMBER IS — THE RULE TOOK THREE READINGS ──────────────
  *
- * DISHES OF THIS ITEM PER TABLE — catering_set_menu_items.quantity. Not the
- * event's table count, which is what this shipped as in 0f14a7f and was
- * wrong on paper.
+ * PLATES OF THIS DISH FOR THE WHOLE JOB: per-set count × sets ordered
+ * (catering_set_menu_items.quantity × catering_event_menus.quantity).
+ * See plateCount() below. Recorded in full so nobody re-derives it:
  *
- * Nik, reading his own sheet: "ปูไข่ 547.06 x 1 หมายความว่าที่ 1 ตัว" and
- * "หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำหอยตลับผัดฉ่าไซส์ 180 1 จาน". The cell is
- * two instructions to one cook at one table — which size, and how many plates
- * of it — not an event-wide total. The table count is in the header, where it
- * answers a different question, and it stays there.
+ *   1. event.table_count — WRONG (shipped 0f14a7f). A booking's table count
+ *      is not tied to any one package.
+ *   2. per-set quantity alone — WRONG (shipped 62cd336). On Nik's real
+ *      10-set booking it printed "590 x 1"; the chef cooks 10 plates.
+ *   3. per-set × sets ordered — RIGHT, from that booking.
+ *
+ * The paper's "590 x 6" was 1-per-set × 6 sets, a product BOTH earlier
+ * readings happened to equal — the example could not distinguish the three
+ * rules. Only a booking with per-set qty ≠ 1 or sets ≠ 1 could, and the
+ * first real one did. Nik's original readings ("180 x 1 ทำ...ไซส์ 180
+ * 1 จาน") stay true: that job had one set, so plates = per-set count.
  */
 
 const DAYS_FULL = [
@@ -76,17 +82,29 @@ function fmtPortionPrice(n: number): string {
  * The ราคา cell, printed literally and never multiplied.
  *
  *   180, 1   -> "180 x 1"    one plate of the ฿180 size
- *   200, 5   -> "200 x 5"    five plates of the ฿200 size
+ *   200, 50  -> "200 x 50"   fifty plates of the ฿200 size
  *   485, null -> "485"       the size still stands when the count is unknown
  *   0 / null price -> null   blank rather than "0 x 1", which would tell the
  *                            chef a portion size of zero
  *
- * `perTable` is catering_set_menu_items.quantity — dishes of this item per
- * table. See the file header for why it is not the event's table count.
+ * `plates` is plateCount() for a package row, or the line's own quantity for
+ * a dish ordered directly (รายการอาหารเพิ่มเติม) — every dish row on the
+ * sheet gets price × count, extras included.
  */
-export function priceCell(sellingPrice: number | null, perTable: number | null): string | null {
+export function priceCell(sellingPrice: number | null, plates: number | null): string | null {
   if (sellingPrice == null || sellingPrice <= 0) return null;
   const price = fmtPortionPrice(sellingPrice);
-  if (perTable == null || perTable <= 0) return price;
-  return `${price} x ${perTable}`;
+  if (plates == null || plates <= 0) return price;
+  return `${price} x ${plates}`;
+}
+
+/**
+ * Plates of one dish for the whole job: per-set count × sets ordered. The
+ * three readings this rule went through are in the file header — do not
+ * re-derive it from the paper example, which cannot distinguish them.
+ * Used by BOTH function sheets, so the kitchen's plate count and the service
+ * sheet's จำนวน column can never disagree.
+ */
+export function plateCount(perSetQty: number, setsOrdered: number): number {
+  return perSetQty * setsOrdered;
 }
