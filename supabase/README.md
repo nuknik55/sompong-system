@@ -814,6 +814,17 @@ Still open from this stream: item 15 (catering cost — recipes are data entry,
 the mechanism already exists), item 16 (now ready to put to Nik — B and C are
 done), and the verification pass.
 
+**Dates on the booking form (held fallback).** The native date input renders
+in the BROWSER's locale — measured on an en-US Chromium: `lang="th"` at page,
+wrapper and input level all still print 09/14/2026, so no markup forces
+dd/mm/yyyy. Shipped fix: the Thai reading (`thDate`) prints under the field.
+Advice to Nik: set the device/browser display language to Thai and every date
+input renders dd/mm/yyyy natively. HELD fallback, only if he still trips
+after both: a masked dd/mm/yyyy text input. It is held because staff would
+type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
+again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
+rollout to be worth having.
+
 ## The coffee-shop reimbursement, and why it is deliberately not corrected
 
 Sompong buys supplies for the coffee shop, pays up front, and is reimbursed at

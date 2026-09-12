@@ -24,7 +24,7 @@ import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
   LOCATION_TYPE_OPTIONS, VENUE_OPTIONS, BOOKING_TYPE_OPTIONS, FOOD_FORMAT_OPTIONS, STATUS_OPTIONS,
-  VENUE_LABEL, RATE_TYPE_TO_CHARGE_TYPE, blankForm, formFromEvent, formToUpsertPayload, conflictTimeLabel,
+  VENUE_LABEL, RATE_TYPE_TO_CHARGE_TYPE, blankForm, formFromEvent, formToUpsertPayload, conflictTimeLabel, thDate,
   fmtBaht, toNum, staffLabel, Field,
 } from "./shared-utils";
 import type { FormState } from "./shared-utils";
@@ -297,6 +297,14 @@ export function BookingScreen({
         <div className="grid grid-cols-3 gap-3">
           <Field label="วันที่จัดงาน *">
             <input type="date" className="input-base" value={form.event_date} onChange={(e) => set("event_date", e.target.value)} />
+            {/* The native input renders in the BROWSER's locale — measured:
+                lang="th" at page, wrapper and input level all still print
+                09/14/2026 on an en-US Chromium, so no markup can force
+                dd/mm/yyyy. The Thai reading beside it removes the misreading
+                at one line's cost; a masked dd/mm input stays a held
+                fallback (README) because staff would type the Buddhist year
+                into it — the 1968 bug again, per screen. */}
+            {form.event_date && <p className="mt-1 text-xs text-neutral-500">{thDate(form.event_date)}</p>}
           </Field>
           <Field label="เวลาเริ่ม"><Time24Input value={form.start_time} onChange={(v) => set("start_time", v)} /></Field>
           <Field label="เวลาสิ้นสุด"><Time24Input value={form.end_time} onChange={(v) => set("end_time", v)} /></Field>
@@ -502,10 +510,13 @@ export function BookingScreen({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-3 text-sm">
           {/* Two sheets, named for who reads them — the old single
-              "พิมพ์ใบฟังก์ชั่นงาน" was ambiguous once the kitchen got its own. */}
-          {event && <Link href={`/owner/catering/${event.id}/function-sheet`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบฟังก์ชั่นงาน (บริการ)</Link>}
-          {event && <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบฟังก์ชั่นงาน (ครัว)</Link>}
-          {event?.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className="text-neutral-500 hover:text-neutral-800">พิมพ์ใบเสนอราคา</Link>}
+              "พิมพ์ใบฟังก์ชั่นงาน" was ambiguous once the kitchen got its own.
+              BUTTONS, not text links: Nik used the page for a real job and
+              thought there were no print buttons at all. Anything that DOES
+              something looks like a button on this screen. */}
+          {event && <Link href={`/owner/catering/${event.id}/function-sheet`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบฟังก์ชั่นงาน (บริการ)</Link>}
+          {event && <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบฟังก์ชั่นงาน (ครัว)</Link>}
+          {event?.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบเสนอราคา</Link>}
         </div>
         <div className="flex gap-2">
           <button type="button" onClick={() => save(false)} disabled={!canSave}

@@ -15,12 +15,15 @@ import { ActivityLogSection } from "./ActivityLogSection";
  * A booking: the one screen, filled. The former split detail page (booking
  * above, charges below, separate edit and save) is gone.
  *
- * เพิ่มเติม holds the three things that are real but not part of taking a
- * booking: the activity log (who changed what), the customer's own page
- * (which is also what feeds the booking screen's name autocomplete), and
- * the cost P&L for admins. The 12-task sales checklist that used to sit
- * here was deleted — Nik does not use it, and it shares no item with the
- * 13-check venue sheet his team actually fills in by hand.
+ * Below the screen, a secondary row of BUTTONS — the customer's page (which
+ * also feeds the booking screen's name autocomplete), the cost P&L for
+ * admins, and the activity log. These lived behind an เพิ่มเติม collapse
+ * until Nik used the page for a real job: two clicks to reach anything, and
+ * the collapse read as "nothing important here". One click to anything now;
+ * the log still expands in place because it is a section, not a page. The
+ * 12-task sales checklist that once sat here was deleted — Nik does not use
+ * it, and it shares no item with the 13-check venue sheet his team actually
+ * fills in by hand.
  */
 export default async function CateringEventPage({ params }: { params: Promise<{ id: string }> }) {
   const profile = await requireSales();
@@ -56,32 +59,25 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         defaultStaffId={profile.employee_id}
       />
 
-      <details className="mt-6 rounded-xl border border-neutral-300 bg-neutral-50">
-        <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-neutral-700">
-          เพิ่มเติม — ประวัติการแก้ไข · ข้อมูลลูกค้า{isAdmin ? " · ต้นทุน-กำไร" : ""}
-        </summary>
-        <div className="space-y-4 border-t border-neutral-300 bg-white p-5">
-          <div className="flex flex-wrap gap-2">
-            {event.customer_id && (
-              <Link
-                href={`/owner/catering/customers/${event.customer_id}`}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-              >
-                ข้อมูลลูกค้า · ประวัติการจอง
-              </Link>
-            )}
-            {isAdmin && (
-              <Link
-                href={`/owner/catering/${event.id}/cost`}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-              >
-                ต้นทุน-กำไร ของงานนี้
-              </Link>
-            )}
-          </div>
-          <ActivityLogSection entries={activityLog} />
-        </div>
-      </details>
+      <div className="mt-6 flex flex-wrap gap-2">
+        {event.customer_id && (
+          <Link
+            href={`/owner/catering/customers/${event.customer_id}`}
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            ข้อมูลลูกค้า · ประวัติการจอง
+          </Link>
+        )}
+        {isAdmin && (
+          <Link
+            href={`/owner/catering/${event.id}/cost`}
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            ต้นทุน-กำไร ของงานนี้
+          </Link>
+        )}
+        <ActivityLogSection entries={activityLog} />
+      </div>
     </div>
   );
 }

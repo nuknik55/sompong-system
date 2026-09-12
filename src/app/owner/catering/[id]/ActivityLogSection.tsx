@@ -22,28 +22,31 @@ function formatLogTimestamp(iso: string): string {
 
 export function ActivityLogSection({ entries }: { entries: CateringActivityLogEntry[] }) {
   return (
-    // Collapsed by default: supplementary reference info, not something
-    // needed on every visit. It now sits inside the booking's เพิ่มเติม
-    // block, which is collapsed too — two layers, deliberately, because
-    // this answers "who changed this" and nothing else.
-    <details className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
-      <summary className="cursor-pointer font-kanit text-base font-semibold text-neutral-900">
-        กิจกรรม ({entries.length})
+    // One click, one layer. This used to sit inside an เพิ่มเติม collapse —
+    // two clicks to answer "who changed this" — until Nik used the page for
+    // a real job and read the collapse as "nothing important here". The
+    // summary is styled as a button so it sits in the secondary button row;
+    // w-full puts the expanded log on its own lines below the row.
+    <details className="w-full">
+      <summary className="inline-flex cursor-pointer list-none rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+        ประวัติการแก้ไข ({entries.length})
       </summary>
-      {entries.length === 0 ? (
-        <p className="py-3 text-center text-xs text-neutral-400">ยังไม่มีกิจกรรม</p>
-      ) : (
-        <div className="divide-y divide-neutral-100">
-          {entries.map((e) => (
-            <div key={e.id} className="py-2.5 text-sm">
-              <span className="text-neutral-800">{e.description}</span>
-              <span className="ml-2 text-xs text-neutral-400">
-                {e.actor_name ?? "ไม่ทราบ"} · {formatLogTimestamp(e.created_at)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="mt-2 rounded-xl border border-neutral-200 bg-white px-6 py-3">
+        {entries.length === 0 ? (
+          <p className="py-3 text-center text-xs text-neutral-400">ยังไม่มีกิจกรรม</p>
+        ) : (
+          <div className="divide-y divide-neutral-100">
+            {entries.map((e) => (
+              <div key={e.id} className="py-2.5 text-sm">
+                <span className="text-neutral-800">{e.description}</span>
+                <span className="ml-2 text-xs text-neutral-400">
+                  {e.actor_name ?? "ไม่ทราบ"} · {formatLogTimestamp(e.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </details>
   );
 }
