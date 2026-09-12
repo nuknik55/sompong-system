@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { Sarabun } from "next/font/google";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
@@ -25,6 +26,14 @@ import { QuoteClient, type QuoteLine } from "./QuoteClient";
 //
 // The rules — which rows print, what the balance is computed from, and the
 // conditions text — are in @/lib/quote-doc, tested.
+
+// The document face, LOADED rather than merely named. Every print stack in
+// this module says 'Sarabun' first, but the app never loaded it — Geist and
+// Kanit only — so the quote rendered in whatever the device happened to have:
+// TH SarabunNew on a Thai Windows, a generic sans anywhere else. A customer
+// document cannot have a per-device face. Sarabun is the Thai standard for
+// exactly this kind of paper, which is why the stack already named it.
+const sarabun = Sarabun({ weight: ["400", "500", "700"], subsets: ["thai", "latin"], display: "swap" });
 
 export default async function CateringQuotePage({
   params,
@@ -91,5 +100,5 @@ export default async function CateringQuotePage({
     event.deposit_amount,
   );
 
-  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} />;
+  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={sarabun.className} />;
 }

@@ -18,11 +18,20 @@ export type QuoteLine = {
 };
 
 /**
- * The green of the header band on Nik's printed quotation. Defined once and
- * used for the band, its border and the section rules, so "the document's
- * green" is one value rather than three that drift apart.
+ * The greens of Nik's printed quotation, matched to the paper after he
+ * rejected the first cut ("ทำไม่สวยเลย สีก็เข้มไป" — #1f7a45 was far darker
+ * than the paper's soft olive/sage band). One family, three roles:
+ *   BAND   the table head, white on sage — the paper's #8fae5d..#a3b86c range
+ *   RULE   table borders and the letterhead rule, a paler tint of the same
+ *          hue so the grid reads airy, not gridded
+ *   INKG   the green used for TEXT (company name, section labels) — darker
+ *          than BAND because text needs the contrast the band does not
+ * White on sage is LOW contrast by web standards; it is what the paper does,
+ * and the paper is the spec.
  */
-const BAND = "#1f7a45";
+const BAND = "#9ab264";
+const RULE = "#cdd9ae";
+const INKG = "#5c7a34";
 
 export function QuoteClient({
   event,
@@ -30,12 +39,15 @@ export function QuoteClient({
   lines,
   money,
   settings,
+  fontClass,
 }: {
   event: CateringEvent;
   doc: DocState;
   lines: QuoteLine[];
   money: DocMoney;
   settings: CateringSettings | null;
+  /** next/font className for Sarabun — loaded in page.tsx, see the note there. */
+  fontClass: string;
 }) {
   const quotedDate = event.quoted_at ? thFullDate(event.quoted_at.slice(0, 10)) : "-";
   const conditions = conditionsFor(doc, money.percent);
@@ -54,7 +66,9 @@ export function QuoteClient({
           .quote-wrap { max-width: 760px; margin: 0 auto; }
         }
         .quote-wrap table { width: 100%; border-collapse: collapse; }
-        .quote-wrap th, .quote-wrap td { border: 1px solid #9aa39c; padding: 6px 9px; vertical-align: top; }
+        /* Airy, as the paper: pale sage rules, generous row padding. The
+           band supplies the structure; the grid only whispers. */
+        .quote-wrap th, .quote-wrap td { border: 1px solid ${RULE}; padding: 9px 12px; vertical-align: top; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white px-6 py-3">
@@ -82,13 +96,13 @@ export function QuoteClient({
       </div>
 
       <div
-        className="quote-wrap px-6 py-8"
-        style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.65", color: "#000" }}
+        className={`quote-wrap px-6 py-8 ${fontClass}`}
+        style={{ fontSize: "15px", lineHeight: "1.7", color: "#000" }}
       >
         {/* Letterhead */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", borderBottom: `3px solid ${BAND}`, paddingBottom: "10px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px", borderBottom: `2px solid ${BAND}`, paddingBottom: "10px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
           <div>
-            <div style={{ fontSize: "19px", fontWeight: "bold", color: BAND }}>{settings?.company_name ?? "-"}</div>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: INKG }}>{settings?.company_name ?? "-"}</div>
             {settings?.address && <div style={{ fontSize: "13px" }}>{settings.address}</div>}
             <div style={{ fontSize: "13px" }}>
               {settings?.tax_id && `เลขประจำตัวผู้เสียภาษี ${settings.tax_id}`}
@@ -97,7 +111,7 @@ export function QuoteClient({
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "22px", fontWeight: "bold" }}>{DOC_TITLE[doc]}</div>
+            <div style={{ fontSize: "24px", fontWeight: "bold", color: INKG, letterSpacing: "0.5px" }}>{DOC_TITLE[doc]}</div>
             {/* ONE number across all three states, deliberately: they are the
                 same agreement at three moments, and a customer matching a
                 deposit slip to its quote should not have to match two
@@ -111,7 +125,7 @@ export function QuoteClient({
         {/* Customer + event */}
         <div style={{ display: "flex", gap: "24px", marginBottom: "14px" }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "3px" }}>เรียน</div>
+            <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG }}>เรียน</div>
             <div>{event.customer_name ?? "-"}</div>
             {event.customer_company_name && <div>{event.customer_company_name}</div>}
             {event.customer_contact_person && <div>ผู้ติดต่อ: {event.customer_contact_person}</div>}
@@ -119,7 +133,7 @@ export function QuoteClient({
             {event.customer_address && <div>{event.customer_address}</div>}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "3px" }}>รายละเอียดงาน</div>
+            <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG }}>รายละเอียดงาน</div>
             <div>วันที่จัดงาน {thFullDate(event.event_date)}</div>
             <div>เวลา {timeRange(event.start_time, event.end_time)}</div>
             <div>สถานที่ {event.location_type === "in_house" ? locationLabel(event) : (event.offsite_address || "นอกสถานที่")}</div>
@@ -128,7 +142,7 @@ export function QuoteClient({
         </div>
 
         {/* Line items. Column order is the paper's: ราคาต่อหน่วย BEFORE จำนวน. */}
-        <table style={{ marginBottom: "10px" }}>
+        <table style={{ marginBottom: "12px" }}>
           <colgroup>
             <col style={{ width: "7%" }} />
             <col style={{ width: "45%" }} />
@@ -192,8 +206,8 @@ export function QuoteClient({
             was worse. He is being asked to confirm the final wording; treat
             every line as provisional and do not add to it. The list itself
             lives in @/lib/quote-doc. */}
-        <div className="q-avoid-break" style={{ fontSize: "13px", marginBottom: "16px" }}>
-          <div style={{ fontWeight: "bold", marginBottom: "3px", color: BAND, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>เงื่อนไข</div>
+        <div className="q-avoid-break" style={{ fontSize: "12.5px", color: "#333", marginBottom: "16px" }}>
+          <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>เงื่อนไข</div>
           <ol style={{ margin: 0, paddingLeft: "20px" }}>
             {conditions.map((c) => <li key={c}>{c}</li>)}
           </ol>
@@ -201,7 +215,7 @@ export function QuoteClient({
 
         {/* Bank block — on the two documents that ask for money. */}
         {doc !== "quote" && (settings?.bank_name || settings?.bank_account_number) && (
-          <div className="q-avoid-break" style={{ fontSize: "13px", marginBottom: "20px", border: `1px solid ${BAND}`, padding: "9px 13px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+          <div className="q-avoid-break" style={{ fontSize: "13px", marginBottom: "20px", border: `1px solid ${RULE}`, background: "#fafbf6", padding: "9px 13px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
             <div style={{ fontWeight: "bold", marginBottom: "3px" }}>ชำระเงินโอนเข้าบัญชี</div>
             <div>
               {settings?.bank_name}
@@ -211,15 +225,20 @@ export function QuoteClient({
           </div>
         )}
 
-        {/* Signatures */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "28px", gap: "24px" }}>
+        {/* Signatures — two blocks with their ในนาม lines, as the paper has:
+            the left signs on behalf of the company (from settings), the
+            right on behalf of the customer, a rule to write on when the
+            booking has no company name for them. */}
+        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "30px", gap: "24px", fontSize: "14px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
+            <div style={{ marginBottom: "26px" }}>ในนาม {settings?.company_name ?? "................................"}</div>
             <div>ลงชื่อ......................................ผู้เสนอราคา</div>
-            <div style={{ marginTop: "18px" }}>วันที่.........../.........../...........</div>
+            <div style={{ marginTop: "16px" }}>วันที่.........../.........../...........</div>
           </div>
           <div style={{ textAlign: "center", flex: 1 }}>
+            <div style={{ marginBottom: "26px" }}>ในนาม {event.customer_company_name ?? event.customer_name ?? "................................"}</div>
             <div>ลงชื่อ......................................ผู้อนุมัติ/ลูกค้า</div>
-            <div style={{ marginTop: "18px" }}>วันที่.........../.........../...........</div>
+            <div style={{ marginTop: "16px" }}>วันที่.........../.........../...........</div>
           </div>
         </div>
       </div>
