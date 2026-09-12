@@ -76,7 +76,7 @@ export function FunctionSheetClient({
           .fs-wrap { max-width: 760px; margin: 0 auto; }
         }
         .fs-wrap table { width: 100%; border-collapse: collapse; }
-        .fs-wrap th, .fs-wrap td { border: 1px solid #333; padding: 5px 8px; }
+        .fs-wrap th, .fs-wrap td { border: 1px solid #333; padding: 5px 8px; overflow-wrap: anywhere; }
         .fs-wrap th { font-weight: 600; }
       `}</style>
 

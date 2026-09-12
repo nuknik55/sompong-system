@@ -65,10 +65,14 @@ export function QuoteClient({
         @media screen {
           .quote-wrap { max-width: 760px; margin: 0 auto; }
         }
-        .quote-wrap table { width: 100%; border-collapse: collapse; }
-        /* Airy, as the paper: pale sage rules, generous row padding. The
-           band supplies the structure; the grid only whispers. */
-        .quote-wrap th, .quote-wrap td { border: 1px solid ${RULE}; padding: 9px 12px; vertical-align: top; }
+        /* table-layout FIXED, as the kitchen sheet already had: without it
+           the colgroup widths are only suggestions, and one unbroken run
+           (a URL, an English name) pushed the money columns 186px past A4
+           — found by the verification pass's geometry probe. overflow-wrap
+           then breaks such runs INSIDE their fixed cells; Thai wraps by
+           dictionary anyway. */
+        .quote-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .quote-wrap th, .quote-wrap td { border: 1px solid ${RULE}; padding: 9px 12px; vertical-align: top; overflow-wrap: anywhere; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white px-6 py-3">

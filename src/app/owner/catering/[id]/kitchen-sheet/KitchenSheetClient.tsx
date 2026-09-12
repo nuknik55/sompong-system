@@ -28,8 +28,13 @@ export type KitchenBlock = {
 /** "label : value", or a short rule where the booking holds no answer. */
 function HeadLine({ label, value }: { label: string; value: string | null }) {
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
-      {label} : {value ?? <span style={{ display: "inline-block", minWidth: "90px", borderBottom: "1px dotted currentColor" }} />}
+    // nowrap holds "label :" together only — the VALUE must wrap. With
+    // nowrap on the whole span, a long offsite address ran 276px past A4's
+    // printable width (found by the verification pass's geometry probe,
+    // not by eye: clipped text on paper is silent).
+    <span>
+      <span style={{ whiteSpace: "nowrap" }}>{label} :</span>{" "}
+      {value ?? <span style={{ display: "inline-block", minWidth: "90px", borderBottom: "1px dotted currentColor" }} />}
     </span>
   );
 }
@@ -135,7 +140,10 @@ export function KitchenSheetClient({
           .ks-wrap { max-width: 760px; margin: 0 auto; }
         }
         .ks-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .ks-wrap td, .ks-wrap th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+        /* overflow-wrap: a fixed-layout cell CLIPS an unbroken run instead
+           of growing — geometry probes cannot see painted overflow, so this
+           is belt-and-braces from the same verification pass. */
+        .ks-wrap td, .ks-wrap th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; overflow-wrap: anywhere; }
         .ks-wrap th { background: #f3f4f6; font-weight: 600; }
       `}</style>
 
