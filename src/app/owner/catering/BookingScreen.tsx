@@ -229,6 +229,28 @@ export function BookingScreen({
 
   // ── Save ──
   const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending && !conflict;
+  // 7.7: a silently greyed-out save button is the same "is this broken?"
+  // confusion the print links caused. Name what is missing, right where the
+  // buttons are. The room conflict has its own louder message elsewhere.
+  const missingForSave = [
+    ...(form.customerQuery.trim() === "" ? ["ชื่อลูกค้า"] : []),
+    ...(form.event_date === "" ? ["วันที่จัดงาน"] : []),
+  ];
+
+  // 7.4: the same rate on two lines is almost always a slip — Nik's first
+  // real booking quoted three overlapping drink packages on a customer
+  // document. "Almost" is why this WARNS and never blocks: a legitimate
+  // double (two karaoke sets for two rooms) stays saveable.
+  const duplicateRateLabels = (() => {
+    const seen = new Map<string, string>();
+    const dups = new Set<string>();
+    for (const l of lines) {
+      if (l.kind !== "rate" || !l.refId) continue;
+      if (seen.has(l.refId)) dups.add(seen.get(l.refId) as string);
+      else seen.set(l.refId, l.label);
+    }
+    return [...dups];
+  })();
 
   function buildLines(): BookingLine[] {
     return lines
@@ -543,6 +565,17 @@ export function BookingScreen({
           </button>
         </div>
       </div>
+
+      {missingForSave.length > 0 && !isPending && (
+        <p className="text-right text-xs text-neutral-500">
+          กรอก {missingForSave.join(" และ ")} ก่อนบันทึก
+        </p>
+      )}
+      {duplicateRateLabels.length > 0 && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          รายการซ้ำ: {duplicateRateLabels.join(", ")} ถูกเพิ่มไว้มากกว่า 1 บรรทัด — ตรวจสอบก่อนบันทึก (บันทึกได้ตามปกติ)
+        </p>
+      )}
 
       {/* Borders: #d4d4d4 is neutral-300, the app's own commonest control
           border (184 input-shaped className uses against 89 at the 200

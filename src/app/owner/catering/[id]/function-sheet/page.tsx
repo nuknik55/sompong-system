@@ -9,6 +9,7 @@ import {
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection, moneyFields, type SheetLine, type SheetPackage } from "@/lib/function-sheet";
 import { plateCount } from "@/lib/kitchen-sheet";
+import { printFont } from "../print-font";
 import { FunctionSheetClient } from "./FunctionSheetClient";
 
 // ── ใบฟังก์ชั่นงาน — ฝ่ายบริการ (document A) ────────────────────────────────
@@ -84,6 +85,7 @@ export default async function CateringFunctionSheetPage({
       extras={extras}
       money={money}
       staffOptions={staffOptions}
+      fontClass={printFont.className}
     />
   );
 }

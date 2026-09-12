@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import { Sarabun } from "next/font/google";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
@@ -11,6 +10,7 @@ import {
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
 import { parseDocState, docMoney } from "@/lib/quote-doc";
+import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
 
 // ── ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ (document C) ─────────────────────────
@@ -27,13 +27,7 @@ import { QuoteClient, type QuoteLine } from "./QuoteClient";
 // The rules — which rows print, what the balance is computed from, and the
 // conditions text — are in @/lib/quote-doc, tested.
 
-// The document face, LOADED rather than merely named. Every print stack in
-// this module says 'Sarabun' first, but the app never loaded it — Geist and
-// Kanit only — so the quote rendered in whatever the device happened to have:
-// TH SarabunNew on a Thai Windows, a generic sans anywhere else. A customer
-// document cannot have a per-device face. Sarabun is the Thai standard for
-// exactly this kind of paper, which is why the stack already named it.
-const sarabun = Sarabun({ weight: ["400", "500", "700"], subsets: ["thai", "latin"], display: "swap" });
+// The document face is shared by all three documents — see ../print-font.ts.
 
 export default async function CateringQuotePage({
   params,
@@ -44,7 +38,7 @@ export default async function CateringQuotePage({
 }) {
   await requireSales();
   const { id } = await params;
-  const doc = parseDocState((await searchParams).doc);
+  const rawDoc = parseDocState((await searchParams).doc);
 
   const [event, charges, settings, eventMenus] = await Promise.all([
     getCateringEvent(id),
@@ -54,6 +48,11 @@ export default async function CateringQuotePage({
   ]);
 
   if (!event) notFound();
+
+  // 0 = agreed no deposit: the ใบมัดจำ state does not exist for this job —
+  // the tab is hidden client-side, and a direct URL lands on the quote
+  // rather than a deposit document that contradicts its own terms.
+  const doc = rawDoc === "deposit" && event.deposit_percent === 0 ? "quote" : rawDoc;
 
   // A quote_number only exists once issueCateringQuote() has run at least
   // once — no partial/unissued document is ever renderable here, in any state.
@@ -102,5 +101,5 @@ export default async function CateringQuotePage({
     event.deposit_amount,
   );
 
-  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={sarabun.className} />;
+  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={printFont.className} />;
 }

@@ -39,12 +39,15 @@ export function FunctionSheetClient({
   extras,
   money,
   staffOptions,
+  fontClass,
 }: {
   event: CateringEvent;
   packages: SheetPackage[];
   extras: SheetLine[];
   money: MoneyField[];
   staffOptions: StaffOption[];
+  /** Shared print face — ../print-font.ts. */
+  fontClass: string;
 }) {
   const staffById = new Map(staffOptions.map((s) => [s.id, s]));
   const assignedStaff = event.staff_ids.flatMap((id) => {
@@ -74,6 +77,7 @@ export function FunctionSheetClient({
         }
         .fs-wrap table { width: 100%; border-collapse: collapse; }
         .fs-wrap th, .fs-wrap td { border: 1px solid #333; padding: 5px 8px; }
+        .fs-wrap th { font-weight: 600; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3">
@@ -87,8 +91,8 @@ export function FunctionSheetClient({
       </div>
 
       <div
-        className="fs-wrap px-6 py-8"
-        style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.65", color: "#000" }}
+        className={`fs-wrap px-6 py-8 ${fontClass}`}
+        style={{ fontSize: "15px", lineHeight: "1.65", color: "#000" }}
       >
         {/* Title */}
         <div style={{ textAlign: "center", marginBottom: "14px" }}>
@@ -155,6 +159,16 @@ export function FunctionSheetClient({
                 <div key={g.key} style={{ marginBottom: "8px" }}>
                   <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "2px" }}>{g.label}</div>
                   <table>
+                    {/* Headed, as B is now — the same headerless-grid defect
+                        B shipped with; a bordered grid with no headings
+                        reads as an accident on paper. */}
+                    <thead>
+                      <tr style={{ background: "#f3f4f6" }}>
+                        <th style={{ width: "6%", textAlign: "center" }}>ลำดับ</th>
+                        <th style={{ textAlign: "left" }}>รายการ</th>
+                        <th style={{ width: "12%", textAlign: "right" }}>จำนวน</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {g.lines.map((l, i) => (
                         <tr key={l.id}>
@@ -179,6 +193,13 @@ export function FunctionSheetClient({
           <div className="fs-avoid-break" style={{ marginBottom: "14px" }}>
             <div style={{ fontWeight: "bold", marginBottom: "4px" }}>รายการเพิ่มเติม</div>
             <table>
+              <thead>
+                <tr style={{ background: "#f3f4f6" }}>
+                  <th style={{ width: "6%", textAlign: "center" }}>ลำดับ</th>
+                  <th style={{ textAlign: "left" }}>รายการ</th>
+                  <th style={{ width: "12%", textAlign: "right" }}>จำนวน</th>
+                </tr>
+              </thead>
               <tbody>
                 {extras.map((l, i) => (
                   <tr key={l.id}>

@@ -1,7 +1,7 @@
 /** Run with: npm test — the quote/deposit/invoice document's rules (document C). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDocState, docMoney, conditionsFor, moneyRowsFor, DOC_TITLE } from "./quote-doc.ts";
+import { parseDocState, docMoney, conditionsFor, moneyRowsFor, fmtMoneyDoc, DOC_TITLE } from "./quote-doc.ts";
 
 test("the three states, and an unknown one falls back to the quote", () => {
   assert.equal(parseDocState("quote"), "quote");
@@ -59,8 +59,19 @@ test("the deposit document prints the total and the figure due", () => {
 test("the invoice deducts what was received and shows what is left", () => {
   const rows = moneyRowsFor("invoice", docMoney(15000, 30, 5000));
   assert.deepEqual(rows.map((r) => r.label), ["รวมทั้งหมด", "หัก เงินมัดจำที่ชำระแล้ว", "ยอดคงเหลือ"]);
-  assert.equal(rows[1].amount, -5000, "the deduction prints negative");
-  assert.equal(rows[2].amount, 10000);
+  // POSITIVE under the หัก label — the label carries the sign; a minus too
+  // was double negation on a customer document. The balance is unaffected.
+  assert.equal(rows[1].amount, 5000);
+  assert.ok(rows[1].amount > 0);
+  assert.equal(rows[2].amount, 10000, "15,000 - 5,000 regardless of how the deduction PRINTS");
+});
+
+test("customer money prints whole baht whole, satang only when present", () => {
+  assert.equal(fmtMoneyDoc(2500), "2,500");
+  assert.equal(fmtMoneyDoc(547.06), "547.06");
+  assert.equal(fmtMoneyDoc(547.5), "547.50", "half-written satang reads as a typo");
+  assert.equal(fmtMoneyDoc(0), "0");
+  assert.ok(!fmtMoneyDoc(25000).includes(".00"));
 });
 
 test("an invoice with nothing received shows the total alone", () => {

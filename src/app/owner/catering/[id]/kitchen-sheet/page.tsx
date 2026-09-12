@@ -6,6 +6,7 @@ import { getCateringEvent, getCateringEventMenus, getCateringSetMenuItemsForSets
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
 import { priceCell, plateCount } from "@/lib/kitchen-sheet";
+import { printFont } from "../print-font";
 import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./KitchenSheetClient";
 
 // ── ใบฟังก์ชั่นงาน — ฝ่ายครัว (document B) ─────────────────────────────────
@@ -109,6 +110,7 @@ export default async function CateringKitchenSheetPage({
       tableCount={tableCount}
       packages={packages}
       extras={extras}
+      fontClass={printFont.className}
     />
   );
 }

@@ -2,8 +2,8 @@
 
 import type { CateringEvent, CateringSettings } from "../../actions";
 import type { DocState, DocMoney } from "@/lib/quote-doc";
-import { DOC_TITLE, conditionsFor, moneyRowsFor } from "@/lib/quote-doc";
-import { thFullDate, timeRange, locationLabel, fmtBaht } from "../../shared-utils";
+import { DOC_TITLE, conditionsFor, moneyRowsFor, fmtMoneyDoc } from "@/lib/quote-doc";
+import { thFullDate, timeRange, locationLabel } from "../../shared-utils";
 
 export type QuoteLine = {
   id: string;
@@ -77,7 +77,11 @@ export function QuoteClient({
             prints as itself — the browser's print dialog acts on the page it
             is on, not on a tab a component is holding in state. */}
         <div className="flex gap-1 text-sm">
-          {(["quote", "deposit", "invoice"] as const).map((s) => (
+          {/* 0 = agreed no deposit: the ใบมัดจำ state does not exist for this
+              job, so the tab is not offered — a document set must not
+              contradict its own terms. A direct URL is redirected server-side
+              (page.tsx). */}
+          {(["quote", "deposit", "invoice"] as const).filter((s) => s !== "deposit" || money.percent !== 0).map((s) => (
             <a
               key={s}
               href={`/owner/catering/${event.id}/quote?doc=${s}`}
@@ -183,16 +187,16 @@ export function QuoteClient({
                       </ul>
                     )}
                   </td>
-                  <td style={{ textAlign: "right" }}>{fmtBaht(l.unitPrice)}</td>
+                  <td style={{ textAlign: "right" }}>{fmtMoneyDoc(l.unitPrice)}</td>
                   <td style={{ textAlign: "center" }}>{l.quantity}</td>
-                  <td style={{ textAlign: "right" }}>{fmtBaht(l.amount)}</td>
+                  <td style={{ textAlign: "right" }}>{fmtMoneyDoc(l.amount)}</td>
                 </tr>
               ))
             )}
             {moneyRows.map((r) => (
               <tr key={r.label}>
                 <td colSpan={4} style={{ textAlign: "right", fontWeight: r.strong ? "bold" : undefined }}>{r.label}</td>
-                <td style={{ textAlign: "right", fontWeight: r.strong ? "bold" : undefined }}>{fmtBaht(r.amount)}</td>
+                <td style={{ textAlign: "right", fontWeight: r.strong ? "bold" : undefined }}>{fmtMoneyDoc(r.amount)}</td>
               </tr>
             ))}
           </tbody>

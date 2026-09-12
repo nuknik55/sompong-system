@@ -130,6 +130,20 @@ function trimPercent(n: number): string {
 }
 
 /**
+ * Money on the CUSTOMER documents: whole baht prints whole, satang prints
+ * only when present — 2,500 not 2,500.00, but 547.06 stays 547.06 (and
+ * 547.5 prints 547.50, because half-written satang reads as a typo). Forced
+ * .00 everywhere reads as machine output, not a document someone prepared.
+ * Staff screens keep fmtBaht's fixed two decimals; this is print-only.
+ */
+export function fmtMoneyDoc(n: number): string {
+  return n.toLocaleString("th-TH", {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/**
  * Which money rows print under the table, in order, for each state.
  *
  * The quote shows only the total: nothing has been received, and a deposit
@@ -147,7 +161,10 @@ export function moneyRowsFor(state: DocState, m: DocMoney): { label: string; amo
     rows.push({ label: `เงินมัดจำ ${trimPercent(m.percent)}%`, amount: m.depositDue, strong: true });
   }
   if (state === "invoice") {
-    if (m.depositPaid != null) rows.push({ label: "หัก เงินมัดจำที่ชำระแล้ว", amount: -m.depositPaid });
+    // The POSITIVE figure under a หัก label — the label already carries the
+    // sign, and "หัก ... -5,000.00" was double negation on a customer
+    // document. The balance arithmetic is unchanged; only the printed sign.
+    if (m.depositPaid != null) rows.push({ label: "หัก เงินมัดจำที่ชำระแล้ว", amount: m.depositPaid });
     if (m.balance != null) rows.push({ label: "ยอดคงเหลือ", amount: m.balance, strong: true });
   }
   return rows;

@@ -93,11 +93,14 @@ export function KitchenSheetClient({
   tableCount,
   packages,
   extras,
+  fontClass,
 }: {
   event: CateringEvent;
   tableCount: number | null;
   packages: KitchenBlock[];
   extras: KitchenRow[];
+  /** Shared print face — ../print-font.ts. */
+  fontClass: string;
 }) {
   const heading = kitchenHeading(event.location_type);
 
@@ -147,8 +150,8 @@ export function KitchenSheetClient({
       </div>
 
       <div
-        className="ks-wrap px-6 py-8"
-        style={{ fontFamily: "'Sarabun', 'TH SarabunNew', 'Angsana New', Arial, sans-serif", fontSize: "15px", lineHeight: "1.7", color: "#000" }}
+        className={`ks-wrap px-6 py-8 ${fontClass}`}
+        style={{ fontSize: "15px", lineHeight: "1.7", color: "#000" }}
       >
         {/* Centred, boxed, and in the colour that says which kind of job it is. */}
         <div
