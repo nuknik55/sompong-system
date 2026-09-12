@@ -109,6 +109,15 @@ export type CateringCharge = {
   /** Set only when addCateringEventMenu() created this charge; NULL for
    *  every other charge (rate picker, "+ เพิ่มรายการ", hand-typed). */
   event_menu_id: string | null;
+  /** Which rate produced this charge (rate-picker inserts only) — NULL for
+   *  menu lines, hand-typed lines, discounts, and every charge from before
+   *  catering_rate_provenance_migration.sql. */
+  rate_id: string | null;
+  /** The linked rate's type and customer label, joined at read. Structural
+   *  facts the UI used to guess from label text: rate_type drives the price
+   *  box section, rate_display_label the printed name on the quote. */
+  rate_type: string | null;
+  rate_display_label: string | null;
   /** Derived from the linked catering_event_menus row's set_menu_id/menu_id
    *  (see getCateringCharges) — null whenever event_menu_id is null. Purely
    *  a display tag ("ชุดเมนู"/"เมนูเดี่ยว") for the unified line-item table;
@@ -119,7 +128,12 @@ export type CateringCharge = {
 export type CateringRate = {
   id: string;
   rate_type: string;
+  /** Internal name — what staff pick from; stays on the booking screen and
+   *  both function sheets. */
   label: string;
+  /** Customer-facing name, printed on quote/deposit/invoice ONLY. NULL =
+   *  fall back to label. See catering_rate_provenance_migration.sql. */
+  display_label: string | null;
   amount: number;
   unit: string | null;
   note: string | null;
@@ -578,13 +592,14 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_event_charges")
-    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, catering_event_menus(set_menu_id, menu_id)")
+    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, rate_id, catering_event_menus(set_menu_id, menu_id), catering_rates(rate_type, display_label)")
     .eq("event_id", eventId)
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => {
     const linked = r.catering_event_menus as { set_menu_id: string | null; menu_id: string | null } | null;
     const event_menu_kind: "set" | "dish" | null = linked ? (linked.set_menu_id ? "set" : "dish") : null;
+    const rate = r.catering_rates as { rate_type: string; display_label: string | null } | null;
     return {
       id: r.id as string,
       label: r.label as string,
@@ -595,6 +610,9 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
       note: r.note as string | null,
       event_menu_id: r.event_menu_id as string | null,
       event_menu_kind,
+      rate_id: r.rate_id as string | null,
+      rate_type: rate?.rate_type ?? null,
+      rate_display_label: rate?.display_label ?? null,
     };
   });
 }
@@ -604,7 +622,7 @@ export async function getCateringRates(): Promise<CateringRate[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_rates")
-    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
+    .select("id, rate_type, label, display_label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
     .eq("is_active", true)
     .order("rate_type")
     .order("sort_order");
@@ -618,7 +636,7 @@ export async function getAllCateringRates(): Promise<CateringRate[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_rates")
-    .select("id, rate_type, label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
+    .select("id, rate_type, label, display_label, amount, unit, note, min_distance_km, max_distance_km, sort_order, is_active")
     .order("rate_type")
     .order("sort_order");
   if (error) throw error;
@@ -999,6 +1017,7 @@ export async function deleteCateringSetMenu(id: string): Promise<void> {
 export async function addCateringRate(data: {
   rate_type: string;
   label: string;
+  display_label: string | null;
   amount: number;
   unit: string | null;
   note: string | null;
@@ -1026,6 +1045,7 @@ export async function updateCateringRate(
   data: {
     rate_type: string;
     label: string;
+    display_label: string | null;
     amount: number;
     unit: string | null;
     note: string | null;
@@ -1432,7 +1452,7 @@ export async function upsertCateringEvent(data: {
 /** One line of the booking screen's price box. Menu lines reference a set menu or dish; charge lines are rates, hand-typed items, or the discount. */
 export type BookingLine =
   | { kind: "set" | "dish"; refId: string; eventMenuId: string | null; quantity: number }
-  | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null };
+  | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null; rate_id: string | null };
 
 export type SaveBookingResult =
   | { ok: true; id: string; quoteNumber: string | null }
@@ -1489,7 +1509,7 @@ export async function saveBooking(input: {
     const payload: Parameters<typeof saveCateringCharges>[1] = [];
     for (const l of input.lines) {
       if (l.kind === "charge") {
-        payload.push({ label: l.label, charge_type: l.charge_type, unit_price: l.unit_price, quantity: l.quantity, amount: l.amount, note: l.note, event_menu_id: null });
+        payload.push({ label: l.label, charge_type: l.charge_type, unit_price: l.unit_price, quantity: l.quantity, amount: l.amount, note: l.note, event_menu_id: null, rate_id: l.rate_id });
         continue;
       }
       const menuId = l.eventMenuId ?? menuIdByRef.get(l.refId);
@@ -1498,6 +1518,7 @@ export async function saveBooking(input: {
       payload.push({
         label: row.label, charge_type: "food", unit_price: row.unit_price,
         quantity: l.quantity, amount: row.unit_price * l.quantity, note: row.note, event_menu_id: row.event_menu_id,
+        rate_id: null,
       });
     }
     await saveCateringCharges(eventId, payload);
@@ -1529,6 +1550,7 @@ export async function saveCateringCharges(
     amount: number;
     note: string | null;
     event_menu_id: string | null;
+    rate_id: string | null;
   }[],
 ): Promise<void> {
   const profile = await requireSales();
@@ -1572,6 +1594,10 @@ export async function saveCateringCharges(
         amount: c.amount,
         note: c.note?.trim() || null,
         event_menu_id: c.event_menu_id,
+        // Threaded like event_menu_id, and for the same reason: this is a
+        // wholesale replace, so a payload without it silently strips every
+        // charge of its rate provenance on the next unrelated edit.
+        rate_id: c.rate_id,
         sort_order: (i + 1) * 10,
       })),
     );

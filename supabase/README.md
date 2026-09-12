@@ -71,6 +71,7 @@ and `menus.fuel_cost` was dropped on the same day.
 | `drop_catering_task_completions_migration.sql` | 2026-09-11 | Dropped the 12-task sales checklist's table behind a zero-row guard; the guard did not fire. Verified live: the table is gone from the schema cache. Supersedes `catering_task_checklist_migration.sql` — never re-run that one. |
 | `catering_set_menu_sections_migration.sql` | 2026-09-11 | `catering_set_menu_items.section` (`dish | dessert | drink | free`, DEFAULT `'dish'`) — A0 of the document work, the one schema change all three documents share. Verified live the same day: all 13 rows read `dish`, meaning unchanged; and end-to-end the next day, when Nik set a dessert and the section separated on the printed kitchen sheet. |
 | `catering_event_deposit_percent_migration.sql` | 2026-09-12 | One nullable `NUMERIC(5,2)` + CHECK on `catering_events` — the agreed deposit TERM, beside `deposit_amount` which stays the received FACT. No default: both 30% and 50% are attested, so there was no neutral choice. Verified live by selecting the column before C deployed. The original CHECK excluded 0; superseded on that one point by the widening below. |
+| `catering_rate_provenance_migration.sql` | 2026-09-12 | `catering_rates.display_label` (customer-facing name, NULL = fall back to the internal label) and `catering_event_charges.rate_id` (FK, ON DELETE SET NULL). One missing fact behind three symptoms — internal rate names on customer documents, the ดนตรี section reconstructed by label regex, ค่าไฟ unfillable. Verified live before the code deployed: both columns select, and charges with rate_id set = 0 — history was not given provenance it never had. Closes queue item 16. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -626,10 +627,16 @@ In order. Nothing here is started unless it says so.
     either should read both — the flag narrows the population, item 5 changes
     what the population is averaged within.
 
-16. **A `section` column on `catering_event_charges`, so the booking screen's
-    price box does not have to guess on reload.** Not started. B and C are done
-    (2026-09-12), so this is now ready to put to Nik — one decision covering
-    both the ดนตรี label match and the service sheet's ค่าไฟ ruled line.
+16. ~~A `section` column on `catering_event_charges`~~ — **CLOSED 2026-09-12**,
+    solved by `rate_id` rather than a section column
+    (`catering_rate_provenance_migration.sql`): the charge now knows WHICH
+    RATE it came from, which answers the section (rate_type -> section,
+    structural), the customer label (display_label with fallback) and — in
+    principle — ค่าไฟ, in one fact instead of three patches. The label regex
+    in sectionForCharge survives only for pre-migration rows (rate_id NULL
+    forever, by design) and dies with them. ค่าไฟ still prints a ruled line:
+    identifying THE electricity rate among the music rates needs one more
+    decision from Nik, and the field is fillable the day he wants it.
 
     While the booking screen is open, a charge's price-box section is known
     exactly — the row was added from that section's own rate picker. Nothing

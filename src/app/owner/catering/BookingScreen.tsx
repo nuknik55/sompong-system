@@ -63,6 +63,12 @@ const SECTION_BY_CHARGE_TYPE: Record<string, Section> = {
   venue: "room", drink: "drink", transport: "delivery", discount: "discount", food: "menu",
 };
 
+/** rate_type -> price-box section, for charges that KNOW their rate. */
+const SECTION_BY_RATE_TYPE: Record<string, Section> = {
+  room: "room", delivery: "delivery", drink: "drink", music: "music",
+  staff_bonus: "other", food_set: "other", other: "other",
+};
+
 /**
  * Which price-box section a STORED charge belongs to, on reload. While the
  * screen is open the section is known exactly — the row was added from that
@@ -78,15 +84,19 @@ const SECTION_BY_CHARGE_TYPE: Record<string, Section> = {
  * unreachable except for a hand-typed row somebody had set to บริการ. Both
  * charge types are now tested, so the rate-picker path works.
  *
- * It is still a LABEL MATCH, and that is a real limit rather than a tidy
- * ending: a music charge whose label says none of those three words still
- * lands in อื่นๆ, and an อื่นๆ line someone names "ค่าวงดนตรี" will land in
- * ดนตรี. The structural fix is to persist the section on the charge row —
- * catering_event_charges has no column for it — which is a migration and a
- * decision for Nik, not something to slip into a UI commit.
+ * ── NOW STRUCTURAL, WITH A LEGACY TAIL ────────────────────────────────────
+ *
+ * catering_rate_provenance_migration.sql gave charges a rate_id, so a
+ * rate-backed charge maps rate_type -> section directly — no label reading.
+ * The label regex below survives ONLY for legacy rows saved before the
+ * column existed (rate_id NULL forever, by design: history was not given
+ * provenance it never had). It shrinks to nothing as old bookings close,
+ * and it can still misfile a legacy อื่นๆ line named "ค่าวงดนตรี" — known,
+ * bounded, and dying.
  */
 function sectionForCharge(c: CateringCharge): Section {
   if (c.event_menu_id) return "menu";
+  if (c.rate_type) return SECTION_BY_RATE_TYPE[c.rate_type] ?? "other";
   if (c.charge_type === "discount") return "discount";
   if ((c.charge_type === "service" || c.charge_type === "other") && /ดนตรี|คาราโอเกะ|วง/.test(c.label)) return "music";
   return SECTION_BY_CHARGE_TYPE[c.charge_type] ?? "other";
@@ -95,9 +105,12 @@ function sectionForCharge(c: CateringCharge): Section {
 function linesFromCharges(charges: CateringCharge[]): Line[] {
   return charges.map((c) => ({
     key: c.id,
-    kind: c.event_menu_id ? (c.event_menu_kind === "set" ? "set" : "dish") : c.charge_type === "discount" ? "discount" : "manual",
+    // A stored rate-backed row round-trips as kind "rate" with its refId, so
+    // the NEXT save re-sends rate_id instead of silently demoting the row to
+    // a manual line — the same thread-it-through rule as event_menu_id.
+    kind: c.event_menu_id ? (c.event_menu_kind === "set" ? "set" : "dish") : c.rate_id ? "rate" : c.charge_type === "discount" ? "discount" : "manual",
     section: sectionForCharge(c),
-    refId: null,
+    refId: c.rate_id,
     eventMenuId: c.event_menu_id,
     label: c.label,
     unitPrice: String(c.unit_price),
@@ -223,7 +236,7 @@ export function BookingScreen({
       .map((l): BookingLine =>
         l.kind === "set" || l.kind === "dish"
           ? { kind: l.kind, refId: l.refId ?? "", eventMenuId: l.eventMenuId, quantity: Math.max(1, toNum(l.quantity) ?? 1) }
-          : { kind: "charge", label: l.label, charge_type: l.chargeType, unit_price: toNum(l.unitPrice) ?? 0, quantity: toNum(l.quantity) ?? 1, amount: toNum(l.amount) ?? 0, note: null },
+          : { kind: "charge", label: l.label, charge_type: l.chargeType, unit_price: toNum(l.unitPrice) ?? 0, quantity: toNum(l.quantity) ?? 1, amount: toNum(l.amount) ?? 0, note: null, rate_id: l.kind === "rate" ? l.refId : null },
       );
   }
 

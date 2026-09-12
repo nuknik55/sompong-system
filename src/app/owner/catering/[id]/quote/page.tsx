@@ -82,7 +82,9 @@ export default async function CateringQuotePage({
     const groups = setId ? groupBySection(itemsBySet.get(setId) ?? [], SET_MENU_SECTIONS) : [];
     return {
       id: c.id,
-      label: c.label,
+      // The customer-facing name where the rate has one; the stored label
+      // otherwise — which is also every hand-typed line, by construction.
+      label: c.rate_display_label ?? c.label,
       note: c.note,
       unitPrice: c.unit_price,
       quantity: c.quantity,

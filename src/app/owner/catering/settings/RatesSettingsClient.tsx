@@ -12,6 +12,7 @@ import { RATE_TYPE_OPTIONS, RATE_TYPE_LABEL, fmtBaht } from "../shared-utils";
 type RateForm = {
   rate_type: string;
   label: string;
+  display_label: string;
   amount: string;
   unit: string;
   note: string;
@@ -20,13 +21,14 @@ type RateForm = {
 };
 
 function blankForm(rateType: string): RateForm {
-  return { rate_type: rateType, label: "", amount: "", unit: "", note: "", min_distance_km: "", max_distance_km: "" };
+  return { rate_type: rateType, label: "", display_label: "", amount: "", unit: "", note: "", min_distance_km: "", max_distance_km: "" };
 }
 
 function formFromRate(r: CateringRate): RateForm {
   return {
     rate_type: r.rate_type,
     label: r.label,
+    display_label: r.display_label ?? "",
     amount: r.amount.toString(),
     unit: r.unit ?? "",
     note: r.note ?? "",
@@ -69,6 +71,7 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
         const payload = {
           rate_type: f.rate_type,
           label: f.label.trim(),
+          display_label: f.display_label.trim() || null,
           amount: Number(f.amount),
           unit: f.unit.trim() || null,
           note: f.note.trim() || null,
@@ -206,6 +209,16 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
                 <label className="mb-1 block text-xs font-medium text-neutral-600">ชื่อรายการ *</label>
                 <input autoFocus className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none"
                   value={modal.form.label} onChange={(e) => setForm({ label: e.target.value })} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-neutral-600">ชื่อที่แสดงให้ลูกค้า (ใบเสนอราคา)</label>
+                {/* Customer-facing name for the quote/deposit/invoice ONLY —
+                    the internal name above stays what staff pick from and
+                    what the function sheets print. Blank = the documents
+                    fall back to the internal name, so nothing changes until
+                    a row is deliberately filled in. */}
+                <input className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none" placeholder={`เว้นว่าง = ใช้ "${modal.form.label || "ชื่อรายการ"}"`}
+                  value={modal.form.display_label} onChange={(e) => setForm({ display_label: e.target.value })} />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-neutral-600">ราคา (บาท) *</label>
