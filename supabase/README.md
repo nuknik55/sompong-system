@@ -67,6 +67,10 @@ and `menus.fuel_cost` was dropped on the same day.
 | `outsource_import_schema_rpc.sql` | 2026-09-10 | `outsource_imports` provenance (owner-only writes, `expenses_written` flag), partial unique index on `bill_ref LIKE 'OUT-%'`, and `import_outsource_month` — allowlist of 15 codes, `other` required, a budget69-owned month accepts `other` only. Nik reported success; the five refusal probes in the file's footer were not reported back. Verified live by use the same day: August wrote exactly 10 `OUT-` rows and `other` 20,793; Jan–Jul each wrote `other` only with `expenses_written = false`, so the budget69-month rule was exercised seven times in the accepting direction. The refusing direction (entries for an owned month) is exercised only by construction — the page never sends them. |
 | `monthly_covers_migration.sql` | 2026-09-10 | `monthly_covers` (bills, customers, cancelled bills and amount per month, non-negative CHECKs, RLS as `pos_revenue_imports`); **drops the seven-parameter `import_pos_month` and creates the eight-parameter one** with `p_covers` required (NULL refused in the body; the DEFAULT NULL exists only so the old call shape fails readably). Nik reported success and did not run the probes. **Behaviour verified, catalog query unrun:** a seven-argument call — the shape the deployed app still sent at that moment — was refused with "covers are required" and wrote nothing; had the old overload survived, that call would have matched it and written a 2099-01 provenance row. The `pg_proc` one-function query in the file's footer has not been run. Then verified by use: July and August re-imported the same evening, each gaining its covers row with the six revenue types and the three POS entries byte-identical to before. |
 | `coa_cost_behavior_excluded_migration.sql` | 2026-09-10 | `cost_behavior` CHECK widened to `fixed | variable | excluded`; a second CHECK forbids `excluded` on a group header; `998` set to `excluded`; column comment rewritten with the complete rule. Nik reported success. Verified live by reading the column: `998` is `excluded` and August's fixed total through the break-even function fell by exactly its ฿3,614. The header-refusal probe in the file's footer was not reported back. |
+| `employees_takes_bookings_migration.sql` | 2026-09-11 | `employees.takes_bookings BOOLEAN NOT NULL DEFAULT false`; `catering_staff_options` recreated with the column. Nobody pre-ticked, deliberately — two employees share a nickname, so guessing risked flagging the wrong person. Nik ticked six the same day (ดาด้า, จอย, เปา, วุ้น, นิกกี้, ต้อม); the booking sheet's เบ้, เล็ก and เฮง are unticked, raised with him as a question, not a defect. |
+| `drop_catering_task_completions_migration.sql` | 2026-09-11 | Dropped the 12-task sales checklist's table behind a zero-row guard; the guard did not fire. Verified live: the table is gone from the schema cache. Supersedes `catering_task_checklist_migration.sql` — never re-run that one. |
+| `catering_set_menu_sections_migration.sql` | 2026-09-11 | `catering_set_menu_items.section` (`dish | dessert | drink | free`, DEFAULT `'dish'`) — A0 of the document work, the one schema change all three documents share. Verified live the same day: all 13 rows read `dish`, meaning unchanged; and end-to-end the next day, when Nik set a dessert and the section separated on the printed kitchen sheet. |
+| `catering_event_deposit_percent_migration.sql` | 2026-09-12 | One nullable `NUMERIC(5,2)` + CHECK on `catering_events` — the agreed deposit TERM, beside `deposit_amount` which stays the received FACT. No default: both 30% and 50% are attested, so there was no neutral choice. Verified live by selecting the column before C deployed. The original CHECK excluded 0; superseded on that one point by the widening below. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -75,7 +79,9 @@ recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 
 ### Not applied
 
-Nothing outstanding.
+| file | waiting on | while it waits |
+|---|---|---|
+| `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
 
@@ -621,8 +627,9 @@ In order. Nothing here is started unless it says so.
     what the population is averaged within.
 
 16. **A `section` column on `catering_event_charges`, so the booking screen's
-    price box does not have to guess on reload.** Not started; to be put to Nik
-    with documents B and C, 2026-09-11.
+    price box does not have to guess on reload.** Not started. B and C are done
+    (2026-09-12), so this is now ready to put to Nik — one decision covering
+    both the ดนตรี label match and the service sheet's ค่าไฟ ruled line.
 
     While the booking screen is open, a charge's price-box section is known
     exactly — the row was added from that section's own rate picker. Nothing
@@ -729,6 +736,74 @@ and after Nik's import.
 `/owner/hr/schedule/print`, is opened through a computed `printUrl` in
 `ScheduleClient.tsx`. `/owner/accounting/revenue-import` was linked from the
 accounting tool row in the same commit that created it (`d56a5ee`).
+
+## The three catering documents — built 2026-09-11/12
+
+The whole customer- and staff-facing paper of the catering module, rebuilt
+against the documents Nik's team actually uses. His team booked on Excel and
+paper because the module had too many pages and fields; the direction was
+REDUCE, and the paper was the spec.
+
+Confirmation stands where it stands: **B is confirmed on paper by Nik**
+(after two corrections his screenshots caught — the multiplier and the
+missing table head). A's grouping is proven through the same expansion B
+prints. **C has not been printed by him yet** — he is printing all three
+states after running the widening migration below.
+
+| | route | reader | commits |
+|---|---|---|---|
+| **A** ใบฟังก์ชั่นงาน — ฝ่ายบริการ | `[id]/function-sheet` | the floor | `d366869` (+ editor `af825db`) |
+| **B** ใบฟังก์ชั่นงาน — ฝ่ายครัว | `[id]/kitchen-sheet` | the kitchen | `0f14a7f`, corrected `62cd336` |
+| **C** ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ | `[id]/quote?doc=` | the customer | `0b35334` |
+
+All three group a package's food the same way, from ONE expansion
+(`groupBySection` over `catering_set_menu_items.section`): the customer, the
+floor and the kitchen cannot be told three different things. **The print
+contract:** a section with no rows prints nothing at all — no heading, no
+blank row. Verified end-to-end by Nik: setting one dessert made ขนมหวาน
+separate on the printed sheet.
+
+### The rules that are NOT obvious from the layouts
+
+- **B's ราคา column is a PORTION SIZE, not money.** `selling_price x
+  dishes-per-table`, literal, never multiplied — "180 x 1" means one plate of
+  the ฿180 size. It shipped once as price × table count and was **wrong on
+  paper**; Nik's own reading ("หอยตลับผัดฉ่า (เล็ก) 180 x 1 ทำ...ไซส์ 180
+  1 จาน") is quoted at the site. No row total, no grand total — the dishes
+  deliberately do not sum to the package price.
+- **Header colours carry meaning.** B: blue = งานภายใน, red = งานภายนอก;
+  an unknown location_type reads as ภายนอก (nobody loads a van for a job they
+  think is in-house). C: the green band, white on green. All of them set
+  `print-color-adjust` on the element itself, because a browser that drops
+  the colour drops the meaning.
+- **C is one number across three states.** quote/deposit/invoice are the same
+  agreement at three moments; the deposit and invoice add money rows, never a
+  new reference.
+- **The deposit has three states** (`deposit_percent`): NULL = not yet
+  discussed, prints `______%` to write in; **0 = agreed no deposit**, every
+  deposit clause and row omitted (not "0%", not a blank), the 7-day notice
+  kept without its no-refund tail; 1–100 = agreed, printed. The booking form
+  pre-fills 30 on NEW bookings only — a form default, never a column default.
+  The invoice deducts what was RECEIVED (`deposit_amount`), never what the
+  percentage implies: term and fact are two fields on purpose.
+- **C's conditions wording is Nik's, read off photographs of ONE job's
+  paperwork** — 15 days' validity, deposit to confirm, 7 days' notice. Not a
+  stated policy document; he is confirming or amending the final text. It
+  replaced text that was invented outright (30 days / 50%), which was worse.
+- Fields with no column print as ruled lines to write on, stated at each
+  site: **ประเภทงาน** (A and B) and **ค่าไฟ** (A — see queue item 16, the
+  same missing column as the music routing).
+
+The rules live in `src/lib/function-sheet.ts`, `kitchen-sheet.ts` and
+`quote-doc.ts` — pure, ~40 tests — because the pages sit behind login and the
+module held almost no data while they were built; fixtures exercised what the
+database could not. What that leaves UNVERIFIED is layout: A4 fit, long
+labels, page breaks — the verification pass (points 7/8/9 of the original
+plan) is queued as its own item.
+
+Still open from this stream: item 15 (catering cost — recipes are data entry,
+the mechanism already exists), item 16 (now ready to put to Nik — B and C are
+done), and the verification pass.
 
 ## The coffee-shop reimbursement, and why it is deliberately not corrected
 
