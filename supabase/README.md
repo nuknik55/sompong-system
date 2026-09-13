@@ -682,6 +682,17 @@ In order. Nothing here is started unless it says so.
     class for this file. Low stakes (admin screen, order-only), which is why
     it is queued rather than fixed on sight.
 
+18. **Remove `addExpenseEntry` — a dead export in a "use server" file.**
+    Not started; found 2026-09-13 by the item-12 step-2 conversion: zero
+    callers anywhere in src/. A dead export in a "use server" file is not
+    just clutter — every export there is a network-callable endpoint, so
+    unused ones are attack/maintenance surface with no consumer to notice a
+    behaviour change. It was converted with the rest (in scope, harmless);
+    deletion is a one-hunk commit plus this entry's closure. Check the
+    pending-approval flow does not construct the call dynamically before
+    deleting — grep found no string reference either, but say so in the
+    removal commit.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
