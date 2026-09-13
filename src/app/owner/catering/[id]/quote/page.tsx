@@ -9,7 +9,7 @@ import {
 } from "../../actions";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
-import { parseDocState, docMoney } from "@/lib/quote-doc";
+import { parseDocState, docMoney, sortForCustomerDoc } from "@/lib/quote-doc";
 import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
 
@@ -76,7 +76,10 @@ export default async function CateringQuotePage({
   );
   const itemsBySet = await getCateringSetMenuItemsForSets([...new Set(setIdByEventMenu.values())]);
 
-  const lines: QuoteLine[] = charges.map((c) => {
+  // FOOD FIRST, discount last — Nik's paper order, the same order the
+  // booking screen's price box renders in. Insertion order within a type.
+  // The total below is order-independent, so it sums the raw list.
+  const lines: QuoteLine[] = sortForCustomerDoc(charges).map((c) => {
     const setId = c.event_menu_id ? setIdByEventMenu.get(c.event_menu_id) : undefined;
     const groups = setId ? groupBySection(itemsBySet.get(setId) ?? [], SET_MENU_SECTIONS) : [];
     return {

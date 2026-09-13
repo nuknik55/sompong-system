@@ -1,7 +1,7 @@
 /** Run with: npm test — the quote/deposit/invoice document's rules (document C). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDocState, docMoney, conditionsFor, moneyRowsFor, fmtMoneyDoc, DOC_TITLE } from "./quote-doc.ts";
+import { parseDocState, docMoney, conditionsFor, moneyRowsFor, fmtMoneyDoc, sortForCustomerDoc, DOC_TITLE } from "./quote-doc.ts";
 
 test("the three states, and an unknown one falls back to the quote", () => {
   assert.equal(parseDocState("quote"), "quote");
@@ -154,4 +154,47 @@ test("the three states stay distinct: null blanks, 0 omits, 30 prints", () => {
   assert.ok(q(null).some((l) => l.includes("______%")));
   assert.equal(q(0).length, 1, "0 leaves only the validity line on the quote");
   assert.ok(q(30).some((l) => l.includes("30%")));
+});
+
+// ── Food first: the fixed order of the customer documents ──────────────────
+
+test("a shuffled booking prints food first and discount last, in the fixed order", () => {
+  const c = (id: string, charge_type: string, kind: "set" | "dish" | null = null, rate_type: string | null = null) =>
+    ({ id, charge_type, event_menu_kind: kind, rate_type });
+  // Deliberately shuffled: room first, discount in the middle, the set last —
+  // the exact failure Nik saw (a room added before the set menu printed first).
+  const shuffled = [
+    c("room", "venue"),
+    c("karaoke", "other", null, "music"),
+    c("disc", "discount"),
+    c("drink1", "drink", null, "drink"),
+    c("dish", "food", "dish"),
+    c("delivery", "transport", null, "delivery"),
+    c("allowance", "other", null, "staff_bonus"),
+    c("set", "food", "set"),
+  ];
+  assert.deepEqual(sortForCustomerDoc(shuffled).map((x) => x.id),
+    ["set", "dish", "room", "drink1", "delivery", "karaoke", "allowance", "disc"]);
+});
+
+test("insertion order survives within a type — the sort is stable", () => {
+  const c = (id: string) => ({ id, charge_type: "drink", event_menu_kind: null as null, rate_type: "drink" });
+  assert.deepEqual(sortForCustomerDoc([c("first"), c("second"), c("third")]).map((x) => x.id),
+    ["first", "second", "third"]);
+});
+
+test("a legacy music charge (no rate_type) files under other, not music", () => {
+  // Pre-migration rows have rate_id NULL forever, by design; the ordering
+  // treats them the way the price box's legacy tail does — bounded, dying.
+  const legacy = { id: "m", charge_type: "other", event_menu_kind: null as null, rate_type: null };
+  const rateBacked = { id: "r", charge_type: "other", event_menu_kind: null as null, rate_type: "music" };
+  const disc = { id: "d", charge_type: "discount", event_menu_kind: null as null, rate_type: null };
+  assert.deepEqual(sortForCustomerDoc([disc, legacy, rateBacked]).map((x) => x.id), ["r", "m", "d"]);
+});
+
+test("the input array is not mutated", () => {
+  const arr = [{ id: "b", charge_type: "discount", event_menu_kind: null as null, rate_type: null },
+               { id: "a", charge_type: "food", event_menu_kind: "set" as const, rate_type: null }];
+  sortForCustomerDoc(arr);
+  assert.deepEqual(arr.map((x) => x.id), ["b", "a"]);
 });

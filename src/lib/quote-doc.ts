@@ -144,6 +144,37 @@ export function fmtMoneyDoc(n: number): string {
 }
 
 /**
+ * FOOD FIRST on the customer documents, from Nik: his paper always has the
+ * food package as line 1, but charges print in insertion order, so a room
+ * added before the set menu printed first. Fixed order — food packages,
+ * individual dishes, room, drinks, delivery, music, other (service /
+ * allowance / equipment), discount LAST — insertion order within a type
+ * (the sort is stable). This is the SAME order the booking screen's price
+ * box already renders in, so staff see what will print.
+ *
+ * Ranking is structural: menu-linked kinds, then charge_type, with music
+ * recognised by rate_type (its charge_type is 'other'). A LEGACY music
+ * charge (rate_id NULL, from before the provenance migration) has no
+ * rate_type and files under "other" here — known, bounded, dies with the
+ * pre-migration rows, same as the price box's legacy tail.
+ */
+export function customerDocRank(c: { charge_type: string; event_menu_kind: "set" | "dish" | null; rate_type: string | null }): number {
+  if (c.event_menu_kind === "set") return 0;
+  if (c.event_menu_kind === "dish" || c.charge_type === "food") return 1;
+  if (c.charge_type === "discount") return 7;
+  if (c.rate_type === "music") return 5;
+  if (c.charge_type === "venue") return 2;
+  if (c.charge_type === "drink") return 3;
+  if (c.charge_type === "transport") return 4;
+  return 6; // service, equipment, allowances, typed อื่นๆ, legacy music
+}
+
+/** Stable sort by customerDocRank — Array.prototype.sort is spec-stable. */
+export function sortForCustomerDoc<T extends { charge_type: string; event_menu_kind: "set" | "dish" | null; rate_type: string | null }>(charges: T[]): T[] {
+  return [...charges].sort((x, y) => customerDocRank(x) - customerDocRank(y));
+}
+
+/**
  * Which money rows print under the table, in order, for each state.
  *
  * The quote shows only the total: nothing has been received, and a deposit
