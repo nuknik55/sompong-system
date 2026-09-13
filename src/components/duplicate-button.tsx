@@ -16,7 +16,7 @@ export function DuplicateButton({
   originalName: string;
   originalCategory: string | null;
   categories: string[];
-  duplicateAction: (id: string, newName: string, newCategory: string) => Promise<string>;
+  duplicateAction: (id: string, newName: string, newCategory: string) => Promise<{ status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string }>;
   hrefPrefix: string;
 }) {
   const router = useRouter();
@@ -25,16 +25,20 @@ export function DuplicateButton({
   const [category, setCategory] = useState(originalCategory ?? "");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [pendingMsg, setPendingMsg] = useState<string | null>(null);
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-      >
-        คัดลอกสูตรนี้
-      </button>
+      <div className="inline-flex flex-col items-start gap-1">
+        <button
+          type="button"
+          onClick={() => { setOpen(true); setPendingMsg(null); }}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+        >
+          คัดลอกสูตรนี้
+        </button>
+        {pendingMsg && <p className="text-xs text-amber-700">{pendingMsg}</p>}
+      </div>
     );
   }
 
@@ -56,9 +60,21 @@ export function DuplicateButton({
           setError(null);
           startTransition(async () => {
             try {
-              const newId = await duplicateAction(id, name, category);
-              router.push(`${hrefPrefix}/${newId}`);
+              const result = await duplicateAction(id, name, category);
+              if (result.status === "error") { setError(result.message); return; }
+              if (result.status === "pending") {
+                // PRE-EXISTING BUG this type change surfaced: an editor's
+                // duplicate returned the "__pending__" sentinel and this
+                // component navigated to /staff/menu/__pending__ — a 404.
+                // Now the pending outcome is shown where the error would be.
+                setError(null);
+                setPendingMsg("ส่งคำขอคัดลอกแล้ว — รอเจ้าของร้านอนุมัติ");
+                setOpen(false);
+                return;
+              }
+              router.push(`${hrefPrefix}/${result.id}`);
             } catch (e) {
+              // Unexpected only — expected failures come back as values now.
               setError(e instanceof Error ? e.message : "คัดลอกไม่สำเร็จ");
             }
           });

@@ -49,9 +49,11 @@ export function PrepYieldEditor({
             startTransition(async () => {
               try {
                 const result = await updatePrepYield(prepId, Number(qty) || 0, unit, { prepName });
+                if (result.status === "error") { setError(result.message); setSaveStatus("idle"); return; }
                 setError(null);
                 setSaveStatus(result.status);
               } catch (e) {
+                // Unexpected only — expected failures come back as values now.
                 setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
               }
             })

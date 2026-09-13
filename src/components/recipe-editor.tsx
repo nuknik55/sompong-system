@@ -25,7 +25,7 @@ type Props = {
   qFactorPct?: number;
   sellingPrice?: number;
   canEditPrice?: boolean;
-  onSavePrice?: (menuId: string, newPrice: number) => Promise<void>;
+  onSavePrice?: (menuId: string, newPrice: number) => Promise<{ status: "ok" } | { status: "error"; message: string }>;
   readOnly?: boolean;          // staff: no editing at all
   submitMode?: "save" | "pending";  // editor: pending approval flow
   showCosts?: boolean;         // false for staff: hides all cost/profit figures
@@ -135,7 +135,10 @@ export function RecipeEditor({
         setSaveStatus("saved");
 
         if (priceDirty && onSavePrice) {
-          await onSavePrice(parentId, Number(priceInput) || 0);
+          const priceResult = await onSavePrice(parentId, Number(priceInput) || 0);
+          // Items above are already saved; the price message replaces the
+          // generic save error exactly as the thrown message used to.
+          if (priceResult.status === "error") { setSaveError(priceResult.message); return; }
           setSavedPrice(Number(priceInput) || 0);
         }
       } catch (e) {

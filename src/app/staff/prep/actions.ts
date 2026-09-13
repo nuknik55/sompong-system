@@ -5,11 +5,19 @@ import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
 
-export type PrepSaveResult = { status: "saved" } | { status: "pending" };
+// ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
+// Same rule as staff/menu/actions.ts: production redacts thrown Server Action
+// messages, so the Thai text never reached the user. Auth throws stay; truly
+// unexpected exceptions still throw (redaction is correct for those).
+export type PrepActionResult = { status: "ok" } | { status: "error"; message: string };
+/** "pending" replaces the old "__pending__" magic-string id. */
+export type PrepCreateResult = { status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string };
+/** Extended with the error arm — the saved/pending split predates item 12. */
+export type PrepSaveResult = { status: "saved" } | { status: "pending" } | { status: "error"; message: string };
 
-export async function createPrep(name: string, category: string, batchYieldQty: number, batchYieldUnit: string): Promise<string> {
+export async function createPrep(name: string, category: string, batchYieldQty: number, batchYieldUnit: string): Promise<PrepCreateResult> {
   const profile = await requireAdminOrEditor();
-  if (!name.trim()) throw new Error("กรุณาใส่ชื่อของเตรียม");
+  if (!name.trim()) return { status: "error", message: "กรุณาใส่ชื่อของเตรียม" };
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "prep_create", `new:${name.trim()}`, {
@@ -18,7 +26,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       batchYieldQty: batchYieldQty || 1,
       batchYieldUnit: batchYieldUnit.trim() || "กรัม",
     });
-    return "__pending__";
+    return { status: "pending" };
   }
 
   const supabase = await createClient();
@@ -30,7 +38,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   ]);
 
   if (existingIngredient && !existingIngredient.is_prep) {
-    throw new Error(`ชื่อ "${name.trim()}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น`);
+    return { status: "error", message: `ชื่อ "${name.trim()}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น` };
   }
 
   let prepId: string;
@@ -40,7 +48,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       .from("prep_recipes")
       .update({ category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
       .eq("id", existingPrepRecipe.id);
-    if (updatePrepError) throw new Error(updatePrepError.message);
+    if (updatePrepError) return { status: "error", message: updatePrepError.message };
     prepId = existingPrepRecipe.id;
   } else {
     const { data: newPrep, error: insertError } = await supabase
@@ -48,7 +56,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       .insert({ name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
       .select("id")
       .single();
-    if (insertError || !newPrep) throw new Error(insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ");
+    if (insertError || !newPrep) return { status: "error", message: insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ" };
     prepId = newPrep.id;
   }
 
@@ -58,7 +66,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       .from("ingredients")
       .update({ category: category.trim() || "prep", usage_unit: batchYieldUnit.trim() || "กรัม", prep_recipe_id: prepId })
       .eq("id", existingIngredient.id);
-    if (updateError) throw new Error(updateError.message);
+    if (updateError) return { status: "error", message: updateError.message };
   } else {
     const { error: ingredientError } = await supabase.from("ingredients").insert({
       name: name.trim(),
@@ -67,13 +75,13 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
       usage_unit: batchYieldUnit.trim() || "กรัม",
       prep_recipe_id: prepId,
     });
-    if (ingredientError) throw new Error(ingredientError.message);
+    if (ingredientError) return { status: "error", message: ingredientError.message };
   }
 
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
 
-  return prepId;
+  return { status: "ok", id: prepId };
 }
 
 export async function updatePrepYield(
@@ -99,14 +107,14 @@ export async function updatePrepYield(
     .from("prep_recipes")
     .update({ batch_yield_qty: batchYieldQty, batch_yield_unit: batchYieldUnit })
     .eq("id", prepId);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath(`/staff/prep/${prepId}`);
   return { status: "saved" };
 }
 
-export async function duplicatePrep(prepId: string, newName: string, newCategory: string): Promise<string> {
+export async function duplicatePrep(prepId: string, newName: string, newCategory: string): Promise<PrepCreateResult> {
   const profile = await requireAdminOrEditor();
-  if (!newName.trim()) throw new Error("กรุณาใส่ชื่อของเตรียมใหม่");
+  if (!newName.trim()) return { status: "error", message: "กรุณาใส่ชื่อของเตรียมใหม่" };
 
   if (profile.role === "editor") {
     const supabase = await createClient();
@@ -118,12 +126,12 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
       batchYieldUnit: original?.batch_yield_unit ?? "กรัม",
       duplicatedFrom: prepId,
     });
-    return "__pending__";
+    return { status: "pending" };
   }
 
   const supabase = await createClient();
   const { data: original, error: fetchError } = await supabase.from("prep_recipes").select("*").eq("id", prepId).single();
-  if (fetchError || !original) throw new Error(fetchError?.message ?? "ไม่พบของเตรียมต้นฉบับ");
+  if (fetchError || !original) return { status: "error", message: fetchError?.message ?? "ไม่พบของเตรียมต้นฉบับ" };
 
   const { data: originalIngredient } = await supabase.from("ingredients").select("usage_unit").eq("prep_recipe_id", prepId).maybeSingle();
   const { data: newPrep, error: insertError } = await supabase
@@ -131,27 +139,27 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
     .insert({ name: newName.trim(), category: newCategory.trim() || null, batch_yield_qty: original.batch_yield_qty, batch_yield_unit: original.batch_yield_unit, note: original.note })
     .select("id")
     .single();
-  if (insertError || !newPrep) throw new Error(insertError?.message ?? "คัดลอกของเตรียมไม่สำเร็จ");
+  if (insertError || !newPrep) return { status: "error", message: insertError?.message ?? "คัดลอกของเตรียมไม่สำเร็จ" };
 
   // Checked: without this row the new prep recipe has no matching ingredient
   // and can never be used in any menu — the same failure prep_create has in
   // approve/actions.ts.
   {
     const { error } = await supabase.from("ingredients").insert({ name: newName.trim(), category: newCategory.trim() || "prep", is_prep: true, usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id });
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
   const { data: items, error: itemsError } = await supabase.from("prep_recipe_items").select("ingredient_id, quantity, unit, note, sort_order").eq("prep_recipe_id", prepId);
-  if (itemsError) throw new Error(itemsError.message);
+  if (itemsError) return { status: "error", message: itemsError.message };
   if (items && items.length > 0) {
     // Checked: a silent failure here produced a copied prep with ZERO
     // ingredients, whose batch cost then computes as 0.
     const { error } = await supabase.from("prep_recipe_items").insert(items.map((it) => ({ ...it, prep_recipe_id: newPrep.id })));
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
-  return newPrep.id;
+  return { status: "ok", id: newPrep.id };
 }
 
-export async function deletePrep(prepId: string) {
+export async function deletePrep(prepId: string): Promise<PrepActionResult> {
   const profile = await requireAdminOrEditor();
   const supabase = await createClient();
 
@@ -161,19 +169,22 @@ export async function deletePrep(prepId: string) {
       prepId,
       prepName: prep?.name ?? prepId,
     });
-    return;
+    return { status: "ok" };
   }
 
   // Admin — delete directly (requireAdmin alias guards non-admin above)
   await requireAdmin();
   const { error: ingredientError } = await supabase.from("ingredients").delete().eq("prep_recipe_id", prepId);
   if (ingredientError) {
-    throw new Error(
-      ingredientError.code === "23503"
-        ? "ลบไม่ได้ เพราะของเตรียมนี้ถูกใช้อยู่ในเมนูหรือของเตรียมอื่น ต้องลบออกจากที่อื่นก่อน"
-        : ingredientError.message
-    );
+    return {
+      status: "error",
+      message:
+        ingredientError.code === "23503"
+          ? "ลบไม่ได้ เพราะของเตรียมนี้ถูกใช้อยู่ในเมนูหรือของเตรียมอื่น ต้องลบออกจากที่อื่นก่อน"
+          : ingredientError.message,
+    };
   }
   const { error } = await supabase.from("prep_recipes").delete().eq("id", prepId);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
+  return { status: "ok" };
 }

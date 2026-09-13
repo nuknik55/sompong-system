@@ -13,7 +13,7 @@ export function DeleteRecipeButton({
   id: string;
   label: string;
   confirmMessage: string;
-  deleteAction: (id: string) => Promise<void>;
+  deleteAction: (id: string) => Promise<{ status: "ok" } | { status: "error"; message: string }>;
   redirectTo: string;
 }) {
   const router = useRouter();
@@ -30,9 +30,11 @@ export function DeleteRecipeButton({
           setError(null);
           startTransition(async () => {
             try {
-              await deleteAction(id);
+              const result = await deleteAction(id);
+              if (result.status === "error") { setError(result.message); return; }
               router.push(redirectTo);
             } catch (e) {
+              // Unexpected only — expected failures come back as values now.
               setError(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
             }
           });

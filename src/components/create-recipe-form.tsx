@@ -5,17 +5,20 @@ import { useRouter } from "next/navigation";
 import { CategorySelect } from "@/components/category-select";
 import { Plus, Save } from "lucide-react";
 
-const PENDING_SENTINEL = "__pending__";
+// Item 12: the action returns its outcome as a value (ok/pending/error), so
+// the Thai message reaches the user in production — a thrown Server Action
+// message is redacted there. "pending" replaces the "__pending__" magic id.
+type CreateResult = { status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string };
 
 type Props = (
   | {
       kind: "menu";
-      createAction: (name: string, category: string, sellingPrice: number) => Promise<string>;
+      createAction: (name: string, category: string, sellingPrice: number) => Promise<CreateResult>;
       hrefPrefix: string;
     }
   | {
       kind: "prep";
-      createAction: (name: string, category: string, batchYieldQty: number, batchYieldUnit: string) => Promise<string>;
+      createAction: (name: string, category: string, batchYieldQty: number, batchYieldUnit: string) => Promise<CreateResult>;
       hrefPrefix: string;
     }
 ) & { categories: string[]; pendingMode?: boolean };
@@ -37,12 +40,13 @@ export function CreateRecipeForm(props: Props) {
     setShowPendingSuccess(false);
     startTransition(async () => {
       try {
-        const id =
+        const result =
           props.kind === "menu"
             ? await props.createAction(name, category, Number(sellingPrice) || 0)
             : await props.createAction(name, category, Number(batchYieldQty) || 1, batchYieldUnit);
 
-        if (id === PENDING_SENTINEL) {
+        if (result.status === "error") { setError(result.message); return; }
+        if (result.status === "pending") {
           // Editor pending — show success, reset form
           setShowPendingSuccess(true);
           setName(""); setCategory(""); setSellingPrice("");
@@ -51,8 +55,9 @@ export function CreateRecipeForm(props: Props) {
           return;
         }
 
-        router.push(`${props.hrefPrefix}/${id}`);
+        router.push(`${props.hrefPrefix}/${result.id}`);
       } catch (e) {
+        // Unexpected only — expected failures come back as values now.
         setError(e instanceof Error ? e.message : "สร้างไม่สำเร็จ");
       }
     });
