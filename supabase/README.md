@@ -422,54 +422,64 @@ In order. Nothing here is started unless it says so.
     table nobody remembers the purpose of is exactly the kind of thing that
     survives for years.
 
-12. **Defect C — Server Action throws elsewhere in the app.** Not started
-    as a whole. Done page by page so far: coffee-items (`77877f9`),
-    revenue-import (returns values from the start), and on 2026-09-10 the
-    ingredients page (`7a6697b`: its four write actions return
-    `{ status: "error", message }` — `deleteIngredient` had been building a
-    Thai foreign-key message and then throwing it, so production redacted
-    it). **The remainder is this item: about 139 throws across 12 files**,
-    to be converted where a user can trigger them and left where they are
-    unexpected-input paths. The error boundaries (`9fe11e7`) now show the
-    digest for whatever still throws.
+12. ~~Defect C — Server Action throws elsewhere in the app~~ —
+    **CLOSED 2026-09-13**, five steps, one commit each: staff menu+prep
+    (`cc5334c`), accounting (`5ae6f73`), the POS imports (`952180c`),
+    the small files incl. coffee-items (`c338f0f`), HR (`0deaac0`).
+    Catering was converted during the redesign and skipped here.
 
-    The coffee-items page is done: `77877f9` returned the preview's expected
-    failures as values, and the follow-up commit added the parse plausibility
-    guard (`checkPosExportPlausibility` in `src/lib/pos-parse.ts` — Defect B,
-    measured 24 genuine exports passing / 12 refused on named rules) and
-    reworded the save-path throw, which stays: it is an unexpected-input path
-    the screen cannot produce.
+    THE TALLY, re-counted per step rather than trusted from this entry's
+    own table (which was already stale by step 3 — the import redesign had
+    added eight sites):
 
-    Next.js redacts a thrown Server Action message in production; the client
-    sees "An error occurred in the Server Components render" instead of the
-    Thai text. **Every throw a user can trigger** — wrong file, stale form,
-    empty input — needs to become a `{ ok: false, error }` return. Throws a
-    user cannot trigger (Supabase `error.message` rethrows, tamper guards) may
-    stay.
+    | step | sites | converted | kept |
+    |---|---:|---:|---:|
+    | 1 staff menu+prep | 25 | 24 | 1 |
+    | 2 accounting | 37 | 20 | 17 |
+    | 3 POS imports | 27 | 25 | 2 |
+    | 4 sop/staff/approve/settings/ingredients/coffee-items | 20 | 14 | 6 |
+    | 5 HR | 26 | 25 | 1 |
+    | **total** | **135** | **108** | **27** |
 
-    `throw new Error(` per `"use server"` file, comments stripped, measured
-    2026-09-09 — 143 in total. An earlier estimate of ~25 counted only the
-    Thai-message subset; re-derive which are user-triggerable when this
-    starts rather than trusting either number:
+    THE KEPT-THROW CLASSES, each with its reason at the site:
+    - page-load reads — a failed loader is the error boundary's job (16 in
+      accounting + monthEnd, whose only callers are two such reads; the two
+      alias-list reads; the two history reads; getScheduleWeek).
+    - approve's run()/runReturning() — the throw IS the ordering guarantee
+      that keeps a failed write from being recorded as approved; the
+      exported action already catches into { error }. Converting them would
+      have been the conversion defeating its own purpose.
+    - a server-component <form action> with no client
+      (toggleMenuStaffVisible) — a returned value would be silently
+      dropped; the comment names the condition under which it converts.
+    - tamper guards (coffee-items' isCategory) — input no user can produce;
+      redaction is acceptable and the site says so.
+    - the parser layer (parsePosSalesReport) — its messages are the
+      parser's, converted there if ever, not in the action.
+    The rule that decided every case: WHO SEES THE FAILURE, not "is it a
+    throw".
 
-    | file | throws |
-    |---|---:|
-    | `owner/accounting/actions.ts` | 32 |
-    | `owner/hr/actions.ts` | 26 |
-    | `owner/ingredients/pos-import-actions.ts` | 16 |
-    | `staff/prep/actions.ts` | 15 |
-    | `owner/sales-import-actions.ts` | 11 |
-    | `staff/menu/actions.ts` | 10 |
-    | `owner/ingredients/actions.ts` | 8 |
-    | `owner/catering/actions.ts` | 7 |
-    | `sop/actions.ts` | 6 |
-    | `staff/actions.ts` | 5 |
-    | `owner/approve/actions.ts` | 3 |
-    | `owner/catering/[id]/cost/actions.ts` | 3 |
-    | `owner/settings/actions.ts` | 1 |
+    A FINDING IN ITS OWN RIGHT — the silent-failure family, EIGHT members,
+    found only because the conversion forced every catch to be read. Worst
+    first:
+    - pos-price-import handleDeleteAlias: no handling at all AND the row
+      vanished on failure — the screen contradicted the database.
+    - duplicate-button: an editor's duplicate navigated to
+      /staff/menu/__pending__, a 404 (also retired the __pending__ magic
+      string).
+    - SuppliersClient toggle, SopListClient delete, q-factor-setting,
+      UsageItem qty, EmployeeDetailClient save, ReorderClient save: failures
+      swallowed with no message; several showed success UI regardless.
+    All eight fixed with the values the conversion made available; the
+    pattern is UsageItem's — local state moves only on success, so the
+    screen never contradicts the database.
 
-    The nav link landed in `91a503a`; item 11's DROP file is written. Next is
-    the unified revenue import.
+    The HR clients use the okOrThrow adapter (hr-result.ts): their catches
+    own optimistic-rollback logic, and a CLIENT-side throw is never
+    redacted — only the server->client message was. The module comment
+    carries the reasoning.
+
+    Dead exports found along the way went to item 18 (the sweep).
 
 13. **Rename the `coffee-items` route to match its title.** Deferred —
     **conditional, not standalone.** The page is titled จัดหมวดสินค้า POS and
