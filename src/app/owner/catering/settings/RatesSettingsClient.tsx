@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  addCateringRate, updateCateringRate, deleteCateringRate,
+  addCateringRate, updateCateringRate, updateCateringRateDisplayLabel, deleteCateringRate,
   toggleCateringRateActive, reorderCateringRate,
 } from "../actions";
 import type { CateringRate } from "../actions";
@@ -43,6 +43,40 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
   const [rates, setRates] = useState(initialRates);
   const [modal, setModal] = useState<{ editingId: string | null; form: RateForm } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Inline display_label drafts, keyed by rate id — only rows being edited
+  // hold an entry. This component MIRRORS rates into state (useState above),
+  // so after a confirmed write we patch the mirror the way handleDelete and
+  // handleToggleActive already do — router.refresh() alone would leave the
+  // mirrored row stale and the typed label would visibly revert.
+  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
+
+  function clearDraft(id: string) {
+    setLabelDrafts((d) => { const rest = { ...d }; delete rest[id]; return rest; });
+  }
+
+  // Save on blur/Enter. Client normalises the two NULL cases (blank, and a
+  // value equal to the internal label — a copy would go stale on a rename);
+  // the server action enforces the same rule again, because a client rule
+  // alone is a suggestion.
+  function saveDisplayLabel(r: CateringRate) {
+    const draft = labelDrafts[r.id];
+    if (draft === undefined) return;
+    const trimmed = draft.trim();
+    const next = trimmed === "" || trimmed === r.label.trim() ? null : trimmed;
+    if (next === (r.display_label ?? null)) {
+      clearDraft(r.id);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await updateCateringRateDisplayLabel(r.id, next);
+        setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, display_label: next } : x)));
+        clearDraft(r.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "บันทึกชื่อที่แสดงให้ลูกค้าไม่สำเร็จ");
+      }
+    });
+  }
 
   function openAdd(rateType: string) {
     setModal({ editingId: null, form: blankForm(rateType) });
@@ -158,13 +192,27 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
                     key={r.id}
                     className={`group flex items-center gap-3 border-b border-neutral-50 px-4 py-2 last:border-0 hover:bg-neutral-50/50 ${!r.is_active ? "opacity-50" : ""}`}
                   >
-                    <span className="flex-1 text-sm text-neutral-700">
+                    <div className="flex-1 text-sm text-neutral-700">
                       {r.label}
                       {r.rate_type === "delivery" && r.min_distance_km != null && (
                         <span className="ml-1 text-xs text-neutral-400">({r.min_distance_km}-{r.max_distance_km} กม.)</span>
                       )}
                       {r.note && <span className="ml-1 text-xs text-neutral-400">— {r.note}</span>}
-                    </span>
+                      {/* Customer-facing name, inline and ALWAYS visible (not
+                          hover-gated — phones have no hover). Empty shows the
+                          fallback as placeholder, which doubles as the answer
+                          to "what will the customer see?". Enter blurs, and
+                          blur saves, so Enter saves exactly once. */}
+                      <input
+                        className="mt-1 block w-full max-w-xs rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none"
+                        placeholder={`ลูกค้าเห็น: ${r.label}`}
+                        value={labelDrafts[r.id] ?? r.display_label ?? ""}
+                        disabled={isPending}
+                        onChange={(e) => setLabelDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
+                        onBlur={() => saveDisplayLabel(r)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      />
+                    </div>
                     <span className="w-32 shrink-0 text-right text-xs tabular-nums text-neutral-500">
                       {fmtBaht(r.amount)}{r.unit ? ` / ${r.unit}` : ""}
                     </span>

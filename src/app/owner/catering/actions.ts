@@ -1060,6 +1060,31 @@ export async function updateCateringRate(
   revalidatePath("/owner/catering/settings");
 }
 
+/**
+ * One column, inline from the ราคา list rows — the modal field survives, but
+ * filling 20 rates through 20 modals is the kind of chore that does not get
+ * done, and an unfilled display_label is the whole reason a customer still
+ * reads "ระยะ 11-15 กม.".
+ *
+ * NORMALISED TO NULL server-side, not only in the client: blank means "use
+ * the internal label", and a value EQUAL to the internal label saves as NULL
+ * too — otherwise a later rename of the internal label would leave a stale
+ * copy that looks deliberate. NULL-as-fallback is the living link; a copy is
+ * a snapshot pretending to be one.
+ */
+export async function updateCateringRateDisplayLabel(id: string, displayLabel: string | null): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const trimmed = displayLabel?.trim() || null;
+  const { data: row, error: readError } = await supabase
+    .from("catering_rates").select("label").eq("id", id).single();
+  if (readError) throw readError;
+  const value = trimmed !== null && trimmed === (row.label as string).trim() ? null : trimmed;
+  const { error } = await supabase.from("catering_rates").update({ display_label: value }).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/owner/catering/settings");
+}
+
 export async function toggleCateringRateActive(id: string, isActive: boolean): Promise<void> {
   await requireAdmin();
   const supabase = await createClient();
