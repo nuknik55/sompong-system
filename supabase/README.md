@@ -664,6 +664,24 @@ In order. Nothing here is started unless it says so.
     line. One column would answer both. Worth raising with Nik as a single
     decision rather than two.
 
+17. **RatesSettingsClient mirrors `rates` into state and never resyncs —
+    the reorder buttons show stale order until a full reload.** Not started;
+    pre-existing, observed 2026-09-13 while adding the inline display_label
+    field (whose own save patches the mirror correctly, as delete and toggle
+    always did).
+
+    `useState(initialRates)` seeds once; `router.refresh()` re-renders the
+    server component and updates the prop, but the mirror ignores prop
+    updates, so `handleReorder` — which refreshes and patches nothing —
+    leaves the on-screen order stale. Same family as the SetMenusClient
+    mirror that was removed (its comment tells the story: "the component
+    simply rendered its own stale mirror"; blame the mirror first, not the
+    router). Fix candidates, smallest first: patch the mirror after reorder
+    like the other handlers; or remove the mirror and render from the prop,
+    as SetMenusClient now does — the second also retires the whole hazard
+    class for this file. Low stakes (admin screen, order-only), which is why
+    it is queued rather than fixed on sight.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
