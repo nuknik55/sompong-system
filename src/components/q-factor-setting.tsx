@@ -7,6 +7,7 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
   const [value, setValue] = useState(String(initial));
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
@@ -29,7 +30,11 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              await updateQFactor(Number(value) || 0);
+              // Previously no handling at all: a failed save was an unhandled
+              // rejection and the button just did not change (item 12).
+              setError(null);
+              const result = await updateQFactor(Number(value) || 0);
+              if (result.status === "error") { setError(result.message); return; }
               setSaved(true);
             })
           }
@@ -38,6 +43,7 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
           บันทึก
         </button>
       )}
+      {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   );
 }

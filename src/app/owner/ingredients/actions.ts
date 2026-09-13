@@ -5,22 +5,27 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 
-export async function updateMenuItemQty(itemId: string, quantity: number) {
+// Item 12: returned, not thrown. getIngredientHistory (a read) keeps its throw.
+export type QtyUpdateResult = { status: "ok" } | { status: "error"; message: string };
+
+export async function updateMenuItemQty(itemId: string, quantity: number): Promise<QtyUpdateResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("menu_recipe_items").update({ quantity }).eq("id", itemId);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
+  return { status: "ok" };
 }
 
-export async function updatePrepItemQty(itemId: string, quantity: number) {
+export async function updatePrepItemQty(itemId: string, quantity: number): Promise<QtyUpdateResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("prep_recipe_items").update({ quantity }).eq("id", itemId);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
+  return { status: "ok" };
 }
 
 export type IngredientFields = {

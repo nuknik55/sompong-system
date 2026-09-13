@@ -718,26 +718,34 @@ function UsageItem({
   itemId: string;
   quantity: number;
   unit: string | null;
-  onSave: (itemId: string, qty: number) => Promise<void>;
+  onSave: (itemId: string, qty: number) => Promise<{ status: "ok" } | { status: "error"; message: string }>;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(quantity));
   const [localQty, setLocalQty] = useState(quantity);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function save() {
     const n = Number(val) || 0;
     setEditing(false);
     if (n === localQty) return;
+    setSaveError(null);
     startTransition(async () => {
-      await onSave(itemId, n);
+      // Previously fire-and-forget: a failed save was an unhandled rejection
+      // and the row silently kept the old figure with no message (item 12).
+      // localQty moves only on success, so the screen never contradicts the
+      // database.
+      const result = await onSave(itemId, n);
+      if (result.status === "error") { setSaveError(result.message); setVal(String(localQty)); return; }
       setLocalQty(n);
     });
   }
 
   return (
-    <li className="flex items-center gap-2 text-sm">
+    <li className="flex flex-wrap items-center gap-2 text-sm">
       <Link href={href} className="min-w-0 flex-1 truncate text-blue-600 hover:underline">{name}</Link>
+      {saveError && <span className="w-full text-xs text-red-600">{saveError}</span>}
       {editing ? (
         <input
           type="text"

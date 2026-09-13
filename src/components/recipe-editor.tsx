@@ -121,6 +121,7 @@ export function RecipeEditor({
           parentName ? { parentName } : undefined
         );
 
+        if (result.status === "error") { setSaveError(result.message); return; }
         if (result.status === "pending") {
           setDirty(false);
           setDeletedIds([]);

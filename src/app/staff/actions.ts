@@ -25,7 +25,10 @@ export type SavedItem = {
 
 export type SaveResult =
   | { status: "saved"; items: SavedItem[] }
-  | { status: "pending"; items: SavedItem[] };
+  | { status: "pending"; items: SavedItem[] }
+  // Item 12: the message production would redact if thrown. getRecipeHistory
+  // (a read) keeps its throw.
+  | { status: "error"; message: string };
 
 export async function saveRecipeItems(
   target: RecipeTarget,
@@ -37,7 +40,7 @@ export async function saveRecipeItems(
   const profile = await requireProfile();
 
   if (profile.role === "staff") {
-    throw new Error("ไม่มีสิทธิ์แก้ไขสูตร");
+    return { status: "error", message: "ไม่มีสิทธิ์แก้ไขสูตร" };
   }
 
   if (profile.role === "editor") {
@@ -58,7 +61,7 @@ export async function saveRecipeItems(
 
   if (deletedIds.length > 0) {
     const { error } = await supabase.from(table).delete().in("id", deletedIds);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   const result: SavedItem[] = [];
@@ -72,14 +75,14 @@ export async function saveRecipeItems(
         .insert({ [parentColumn]: parentId, ingredient_id: item.ingredient_id, quantity: item.quantity, unit: item.unit, sort_order: index })
         .select("id")
         .single();
-      if (error) throw new Error(error.message);
+      if (error) return { status: "error", message: error.message };
       result.push({ ...item, id: data.id });
     } else {
       const { error } = await supabase
         .from(table)
         .update({ ingredient_id: item.ingredient_id, quantity: item.quantity, unit: item.unit, sort_order: index })
         .eq("id", item.id);
-      if (error) throw new Error(error.message);
+      if (error) return { status: "error", message: error.message };
       result.push(item);
     }
   }

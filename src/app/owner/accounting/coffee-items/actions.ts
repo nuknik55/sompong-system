@@ -192,9 +192,9 @@ export async function previewItemClassification(formData: FormData): Promise<Pre
  */
 export async function saveItemClassification(
   items: { productName: string; category: string; coffeeSharePerUnit: number | null; touched: boolean }[],
-): Promise<{ written: number; skipped: number }> {
+): Promise<{ status: "ok"; written: number; skipped: number } | { status: "error"; message: string }> {
   const profile = await requireAdmin();
-  if (items.length === 0) return { written: 0, skipped: 0 };
+  if (items.length === 0) return { status: "ok", written: 0, skipped: 0 };
 
   // Unexpected-input path, and a throw is the right shape for it: the client
   // only ever sends the six values, so anything else is a tampered or stale
@@ -226,7 +226,7 @@ export async function saveItemClassification(
   if (toWrite.length === 0) {
     // Nothing changed. Deliberately no UPSERT at all, so every untouched row
     // keeps the reviewed_at it earned.
-    return { written: 0, skipped };
+    return { status: "ok", written: 0, skipped };
   }
 
   const rows = toWrite.map((i) => ({
@@ -246,11 +246,14 @@ export async function saveItemClassification(
     const { error } = await supabase
       .from("pos_item_categories")
       .upsert(rows.slice(i, i + CHUNK), { onConflict: "pos_product_name" });
-    if (error) throw new Error(error.message);
+    // Item 12: user-reachable failure (network/DB during save) — returned.
+    // The isCategory throw above stays, per its own comment: tampered input
+    // no user can produce from the screen.
+    if (error) return { status: "error", message: error.message };
   }
 
   revalidatePath("/owner/accounting/coffee-items");
-  return { written: rows.length, skipped };
+  return { status: "ok", written: rows.length, skipped };
 }
 
 export type StoredItem = {

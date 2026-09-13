@@ -38,6 +38,7 @@ export function SopListClient({
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const filtered = items.filter((item) => {
     if (tab === "has" && !item.sopId) return false;
@@ -49,9 +50,13 @@ export function SopListClient({
   function handleDelete(menuId: string, menuName: string) {
     if (!confirm(`ลบ SOP ของ "${menuName}" แน่ใจหรือไม่? ลบแล้วกู้คืนไม่ได้`)) return;
     setDeletingId(menuId);
+    setError(null);
     startTransition(async () => {
       try {
-        await deleteSop(menuId);
+        // This handler showed NOTHING on failure — try/finally only, so a
+        // failed delete looked identical to a successful one (item 12).
+        const result = await deleteSop(menuId, menuName);
+        if (result.status === "error") setError(result.message);
       } finally {
         setDeletingId(null);
       }
@@ -66,6 +71,9 @@ export function SopListClient({
 
   return (
     <div className="space-y-3">
+      {error && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="flex gap-1">
           {TAB_LABELS.map(({ key, label }) => (

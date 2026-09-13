@@ -118,6 +118,10 @@ export function SopForm({
           platingSteps: platingSteps.map((s) => ({ text: s.text, photoUrl: s.photoUrl })),
           checklist: checklist.map((s) => ({ text: s.text, photoUrl: null })),
         }, menuName);
+        // Error BEFORE the dirty flags: a failed save must leave the form
+        // dirty, or navigating away would silently discard the edits the
+        // save just failed to persist.
+        if (result.status === "error") { setError(result.message); return; }
         isDirty.current = false;
         setHasUnsaved(false);
         if (result.status === "pending") {

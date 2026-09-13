@@ -175,7 +175,8 @@ export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: 
               };
             }),
         );
-        setSaved(result);
+        if (result.status === "error") { setError(result.message); return; }
+        setSaved({ written: result.written, skipped: result.skipped });
 
         // Clear the ใหม่ badge without re-parsing the file. Every decided item
         // now has a row — written this time, or already present and skipped —

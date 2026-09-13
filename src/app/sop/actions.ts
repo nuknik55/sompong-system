@@ -22,7 +22,9 @@ export type SopSaveData = {
   checklist: SopStepSave[];
 };
 
-export type SopSaveResult = { status: "saved"; sopId: string } | { status: "pending" };
+// Item 12: the error arm carries the Thai message production would redact
+// if thrown. Auth throws stay; unexpected exceptions still throw.
+export type SopSaveResult = { status: "saved"; sopId: string } | { status: "pending" } | { status: "error"; message: string };
 
 export async function upsertSop(data: SopSaveData, menuName?: string): Promise<SopSaveResult> {
   const profile = await requireAdminOrEditor();
@@ -45,22 +47,22 @@ export async function upsertSop(data: SopSaveData, menuName?: string): Promise<S
     )
     .select("id")
     .single();
-  if (sopErr) throw new Error(sopErr.message);
+  if (sopErr) return { status: "error", message: sopErr.message };
   const sopId = sop.id;
 
   const { error: delNotesErr } = await supabase.from("menu_sop_ingredient_notes").delete().eq("sop_id", sopId);
-  if (delNotesErr) throw new Error(delNotesErr.message);
+  if (delNotesErr) return { status: "error", message: delNotesErr.message };
 
   const noteRows = Object.entries(data.ingredientNotes)
     .filter(([, note]) => note.trim())
     .map(([ingredientId, note]) => ({ sop_id: sopId, ingredient_id: ingredientId, note: note.trim() }));
   if (noteRows.length > 0) {
     const { error } = await supabase.from("menu_sop_ingredient_notes").insert(noteRows);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   const { error: delStepsErr } = await supabase.from("menu_sop_steps").delete().eq("sop_id", sopId);
-  if (delStepsErr) throw new Error(delStepsErr.message);
+  if (delStepsErr) return { status: "error", message: delStepsErr.message };
 
   const stepRows = [
     ...data.prepSteps.map((s, i) => ({ sop_id: sopId, section: "prep", sort_order: i, text: s.text, photo_url: s.photoUrl })),
@@ -71,7 +73,7 @@ export async function upsertSop(data: SopSaveData, menuName?: string): Promise<S
 
   if (stepRows.length > 0) {
     const { error } = await supabase.from("menu_sop_steps").insert(stepRows);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   revalidatePath("/sop");
@@ -80,7 +82,7 @@ export async function upsertSop(data: SopSaveData, menuName?: string): Promise<S
   return { status: "saved", sopId };
 }
 
-export type SopDeleteResult = { status: "saved" } | { status: "pending" };
+export type SopDeleteResult = { status: "saved" } | { status: "pending" } | { status: "error"; message: string };
 
 export async function deleteSop(menuId: string, menuName?: string): Promise<SopDeleteResult> {
   const profile = await requireAdminOrEditor();
@@ -95,7 +97,7 @@ export async function deleteSop(menuId: string, menuName?: string): Promise<SopD
 
   const supabase = await createClient();
   const { error } = await supabase.from("menu_sops").delete().eq("menu_id", menuId);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/sop");
   revalidatePath(`/sop/${menuId}`);
   return { status: "saved" };
