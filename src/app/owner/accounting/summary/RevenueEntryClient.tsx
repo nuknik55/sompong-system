@@ -57,7 +57,8 @@ export function RevenueEntryClient({
           const raw = values[t.key]?.replace(/,/g, "") ?? "";
           const num = raw === "" ? 0 : parseFloat(raw);
           if (!isNaN(num)) {
-            await setMonthlyRevenue(yearMonth, t.key, num);
+            const result = await setMonthlyRevenue(yearMonth, t.key, num);
+            if (result.status === "error") { setError(result.message); return; }
           }
         }
         setSaved(true);

@@ -182,7 +182,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
     setError(null);
     startTransition(async () => {
       try {
-        await upsertSupplier({
+        const result = await upsertSupplier({
           id: editId !== "new" ? editId ?? undefined : undefined,
           name: draft.name.trim(),
           bank: draft.bank?.trim() || null,
@@ -194,6 +194,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
           sort_order: Number(draft.sort_order) || 0,
           is_active: draft.is_active,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setEditId(null);
         router.refresh();
       } catch (err) {
@@ -222,7 +223,10 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
   function handleToggleActive(s: Supplier) {
     startTransition(async () => {
       try {
-        await upsertSupplier({ ...s, is_active: !s.is_active });
+        const result = await upsertSupplier({ ...s, is_active: !s.is_active });
+        // This handler used to swallow failures entirely — the toggle just
+        // silently did not happen. The returned message now shows.
+        if (result.status === "error") { setError(result.message); return; }
         router.refresh();
       } catch (err) {
         unstable_rethrow(err);
@@ -238,7 +242,8 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
     setConfirmDelete(null);
     startTransition(async () => {
       try {
-        await deleteSupplier(id);
+        const result = await deleteSupplier(id);
+        if (result.status === "error") { setError(result.message); return; }
         setSuppliers((prev) => prev.filter((s) => s.id !== id));
         router.refresh();
       } catch (err) {

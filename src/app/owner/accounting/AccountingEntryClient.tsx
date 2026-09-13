@@ -60,7 +60,8 @@ export function AccountingEntryClient({
     if (!confirm("ยืนยันการลบรายการนี้?")) return;
     startTransition(async () => {
       try {
-        await deleteExpenseEntry(id);
+        const result = await deleteExpenseEntry(id);
+        if (result.status === "error") { setError(result.message); return; }
         setEntries((prev) => prev.filter((e) => e.id !== id));
       } catch (err) {
         unstable_rethrow(err);

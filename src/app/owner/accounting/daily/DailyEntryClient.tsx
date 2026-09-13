@@ -399,10 +399,11 @@ export function DailyEntryClient({
     savedScrollRef.current = window.scrollY;
     startTransition(async () => {
       try {
-        await Promise.all([
+        const [bulkResult] = await Promise.all([
           bulkInsertEntries(rows),
           updateEntriesDisplayOrder(displayOrderUpdates),
         ]);
+        if (bulkResult.status === "error") { setError(bulkResult.message); return; }
         setPending([]);
         setSaveMsg(`บันทึกสำเร็จ ${rows.length} รายการ`);
         setTimeout(() => setSaveMsg(null), 3000);
@@ -451,7 +452,7 @@ export function DailyEntryClient({
     savedScrollRef.current = window.scrollY;
     startTransition(async () => {
       try {
-        await updateExpenseEntry(editing.id, {
+        const result = await updateExpenseEntry(editing.id, {
           coa_code: editing.coaCode,
           amount,
           note: editing.detail || null,
@@ -460,6 +461,7 @@ export function DailyEntryClient({
           supplier_id: editing.supplierId || null,
           detail: editing.detail || null,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setEditing(null);
         router.refresh();
       } catch (err) {
@@ -475,7 +477,8 @@ export function DailyEntryClient({
     if (!confirm("ยืนยันการลบรายการนี้?")) return;
     startTransition(async () => {
       try {
-        await deleteExpenseEntry(id);
+        const result = await deleteExpenseEntry(id);
+        if (result.status === "error") { setError(result.message); return; }
         router.refresh();
       } catch (err) {
         unstable_rethrow(err);

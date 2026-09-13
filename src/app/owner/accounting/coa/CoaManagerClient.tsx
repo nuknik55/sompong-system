@@ -38,10 +38,11 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
     if (!editing) return;
     startTransition(async () => {
       try {
-        await updateCoaAccount(editing.code, {
+        const result = await updateCoaAccount(editing.code, {
           name: editing.name.trim(),
           target_pct: editing.target_pct ? parseFloat(editing.target_pct) : null,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setEditing(null);
         flash("แก้ไขสำเร็จ");
         router.refresh();
@@ -73,7 +74,8 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
     setError(null);
     startTransition(async () => {
       try {
-        await deleteCoaAccount(code);
+        const result = await deleteCoaAccount(code);
+        if (result.status === "error") { setError(result.message); return; }
         flash("ลบสำเร็จ");
         router.refresh();
       } catch (err) {
@@ -93,12 +95,13 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
     setError(null);
     startTransition(async () => {
       try {
-        await addCoaAccount({
+        const result = await addCoaAccount({
           code: addingAccount.code.trim(),
           name: addingAccount.name.trim(),
           group_code: addingAccount.groupCode,
           group_name: addingAccount.groupName,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setAddingAccount(null);
         flash("เพิ่มหมวดย่อยสำเร็จ");
         router.refresh();
@@ -118,11 +121,12 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
     setError(null);
     startTransition(async () => {
       try {
-        await addCoaGroup({
+        const result = await addCoaGroup({
           code: newGroup.code.trim(),
           name: newGroup.name.trim(),
           target_pct: newGroup.target_pct ? parseFloat(newGroup.target_pct) : null,
         });
+        if (result.status === "error") { setError(result.message); return; }
         setNewGroup({ code: "", name: "", target_pct: "" });
         setAddingGroup(false);
         flash("เพิ่มกลุ่มสำเร็จ");

@@ -31,6 +31,15 @@ function monthEnd(yearMonth: string): string {
   return `${yearMonth}-${String(daysInMonth(y, m)).padStart(2, "0")}`;
 }
 
+// ── Item 12: expected failures in MUTATIONS are RETURNED, not thrown ────────
+// Production redacts a thrown Server Action message, so the Thai text below
+// never reached the bookkeeper. Read loaders (get*) KEEP their throws — a
+// page load with no data is the error boundary's job, and monthEnd is only
+// called from two such loaders. Auth throws stay; unexpected exceptions
+// still throw (redaction is correct for those).
+export type AccountingActionResult = { status: "ok" } | { status: "error"; message: string };
+export type BulkInsertResult = { status: "ok"; count: number } | { status: "error"; message: string };
+
 export type CoaAccount = {
   code: string;
   name: string;
@@ -196,22 +205,24 @@ export async function upsertSupplier(s: {
   internal_account: string | null;
   sort_order: number;
   is_active: boolean;
-}): Promise<void> {
+}): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = s.id
     ? await supabase.from("suppliers").update({ ...s, id: undefined }).eq("id", s.id)
     : await supabase.from("suppliers").insert(s);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/suppliers");
+  return { status: "ok" };
 }
 
-export async function deleteSupplier(id: string): Promise<void> {
+export async function deleteSupplier(id: string): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("suppliers").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/suppliers");
+  return { status: "ok" };
 }
 
 export async function reorderSupplier(id: string, direction: "up" | "down", allIds: string[]): Promise<void> {
@@ -300,7 +311,7 @@ export async function addCoaGroup(data: {
   code: string;
   name: string;
   target_pct: number | null;
-}): Promise<void> {
+}): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { data: existing } = await supabase
@@ -315,8 +326,9 @@ export async function addCoaGroup(data: {
     sort_order: nextSort,
     is_sensitive: false,
   });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/coa");
+  return { status: "ok" };
 }
 
 export async function addCoaAccount(data: {
@@ -324,7 +336,7 @@ export async function addCoaAccount(data: {
   name: string;
   group_code: string;
   group_name: string;
-}): Promise<void> {
+}): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { data: siblings } = await supabase
@@ -339,23 +351,25 @@ export async function addCoaAccount(data: {
     sort_order: nextSort,
     is_sensitive: false,
   });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/coa");
   revalidatePath("/owner/accounting/daily");
+  return { status: "ok" };
 }
 
 export async function updateCoaAccount(
   code: string,
   data: { name: string; target_pct: number | null }
-): Promise<void> {
+): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase
     .from("coa").update({ name: data.name, target_pct: data.target_pct }).eq("code", code);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/coa");
   revalidatePath("/owner/accounting/daily");
   revalidatePath("/owner/accounting");
+  return { status: "ok" };
 }
 
 export async function reorderCoaAccount(code: string, groupCode: string, direction: "up" | "down"): Promise<{ error?: string }> {
@@ -383,7 +397,7 @@ export async function reorderCoaAccount(code: string, groupCode: string, directi
   return {};
 }
 
-export async function deleteCoaAccount(code: string): Promise<void> {
+export async function deleteCoaAccount(code: string): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   // This count is a referential guard, so it must fail CLOSED. Previously the
@@ -392,13 +406,14 @@ export async function deleteCoaAccount(code: string): Promise<void> {
   // return count: null with no error at all, so both are checked.
   const { count, error: countError } = await supabase
     .from("expense_entries").select("id", { count: "exact", head: true }).eq("coa_code", code);
-  if (countError) throw new Error(countError.message);
-  if (count == null) throw new Error("ไม่สามารถตรวจสอบรายการที่ผูกกับผังบัญชีนี้ได้ จึงยังไม่ลบ");
-  if (count > 0) throw new Error(`ไม่สามารถลบได้ มีรายการบันทึกอยู่ ${count} รายการ`);
+  if (countError) return { status: "error", message: countError.message };
+  if (count == null) return { status: "error", message: "ไม่สามารถตรวจสอบรายการที่ผูกกับผังบัญชีนี้ได้ จึงยังไม่ลบ" };
+  if (count > 0) return { status: "error", message: `ไม่สามารถลบได้ มีรายการบันทึกอยู่ ${count} รายการ` };
   const { error } = await supabase.from("coa").delete().eq("code", code);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting/coa");
   revalidatePath("/owner/accounting/daily");
+  return { status: "ok" };
 }
 
 export async function getCoa(): Promise<CoaAccount[]> {
@@ -536,7 +551,7 @@ export async function addExpenseEntry(data: {
   amount: number;
   note?: string;
   payment_method: PaymentMethod;
-}): Promise<void> {
+}): Promise<AccountingActionResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
 
@@ -549,9 +564,9 @@ export async function addExpenseEntry(data: {
     // assume away.
     const { data: coa, error: coaError } = await supabase
       .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coaError) throw new Error(`ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}`);
-    if (!coa) throw new Error("ไม่พบผังบัญชีนี้");
-    if (coa.is_sensitive) throw new Error("ไม่มีสิทธิ์บันทึกรายการนี้");
+    if (coaError) return { status: "error", message: `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}` };
+    if (!coa) return { status: "error", message: "ไม่พบผังบัญชีนี้" };
+    if (coa.is_sensitive) return { status: "error", message: "ไม่มีสิทธิ์บันทึกรายการนี้" };
   }
 
   const { error } = await supabase.from("expense_entries").insert({
@@ -562,8 +577,9 @@ export async function addExpenseEntry(data: {
     payment_method: data.payment_method,
     created_by: profile.id,
   });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
+  return { status: "ok" };
 }
 
 export async function updateExpenseEntry(
@@ -577,7 +593,7 @@ export async function updateExpenseEntry(
     supplier_id?: string | null;
     detail?: string | null;
   }
-): Promise<void> {
+): Promise<AccountingActionResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
 
@@ -585,9 +601,9 @@ export async function updateExpenseEntry(
     // Fails CLOSED — same reasoning as addExpenseEntry above.
     const { data: coa, error: coaError } = await supabase
       .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coaError) throw new Error(`ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}`);
-    if (!coa) throw new Error("ไม่พบผังบัญชีนี้");
-    if (coa.is_sensitive) throw new Error("ไม่มีสิทธิ์แก้ไขรายการนี้");
+    if (coaError) return { status: "error", message: `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}` };
+    if (!coa) return { status: "error", message: "ไม่พบผังบัญชีนี้" };
+    if (coa.is_sensitive) return { status: "error", message: "ไม่มีสิทธิ์แก้ไขรายการนี้" };
   }
 
   const { error } = await supabase
@@ -602,17 +618,19 @@ export async function updateExpenseEntry(
       detail: data.detail ?? null,
     })
     .eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
   revalidatePath("/owner/accounting/daily");
+  return { status: "ok" };
 }
 
-export async function deleteExpenseEntry(id: string): Promise<void> {
+export async function deleteExpenseEntry(id: string): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("expense_entries").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
+  return { status: "ok" };
 }
 
 export async function getEntriesByIds(ids: string[]): Promise<EntriesResult> {
@@ -665,7 +683,7 @@ export async function bulkInsertEntries(
     supplier_id?: string;
     detail?: string;
   }[]
-): Promise<number> {
+): Promise<BulkInsertResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
   const rows = entries.map((e) => ({
@@ -681,9 +699,9 @@ export async function bulkInsertEntries(
     ...(e.display_order != null ? { display_order: e.display_order } : {}),
   }));
   const { error } = await supabase.from("expense_entries").insert(rows);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
-  return rows.length;
+  return { status: "ok", count: rows.length };
 }
 
 export async function updateEntriesDisplayOrder(
@@ -715,14 +733,15 @@ export async function setMonthlyRevenue(
   yearMonth: string,
   type: RevenueType,
   amount: number
-): Promise<void> {
+): Promise<AccountingActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase
     .from("monthly_revenue")
     .upsert({ year_month: yearMonth, revenue_type: type, amount }, { onConflict: "year_month,revenue_type" });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
+  return { status: "ok" };
 }
 
 /**
