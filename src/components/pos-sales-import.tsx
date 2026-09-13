@@ -52,7 +52,9 @@ export function PosSalesImport() {
       try {
         const formData = new FormData();
         formData.set("file", reading);
-        const result = await previewPosSalesImport(formData);
+        const res = await previewPosSalesImport(formData);
+        if (res.status === "error") { setError(res.message); setPreview(null); return; }
+        const result = res.preview;
         setPreview(result);
         setChecked(Object.fromEntries(result.matched.map((r) => [r.menuId, true])));
         setMergedNames(new Set());
@@ -76,7 +78,8 @@ export function PosSalesImport() {
       try {
         // Saved permanently — every future import will route this product
         // name into the chosen menu automatically, no need to redo this.
-        await upsertPosSalesAlias(productName, targetMenuId, divisor);
+        const result = await upsertPosSalesAlias(productName, targetMenuId, divisor);
+        if (result.status === "error") { setError(result.message); return; }
         setQtyBump((prev) => ({ ...prev, [targetMenuId]: (prev[targetMenuId] ?? 0) + qtySold / divisor }));
         setMergedNames((prev) => new Set(prev).add(productName));
       } catch (err) {
@@ -94,7 +97,8 @@ export function PosSalesImport() {
       try {
         // Saved permanently as an alias on the menu's own name, so future
         // imports of this exact product apply the same divisor automatically.
-        await upsertPosSalesAlias(menuName, menuId, divisor);
+        const result = await upsertPosSalesAlias(menuName, menuId, divisor);
+        if (result.status === "error") { setError(result.message); return; }
         setQtyDivisor((prev) => ({ ...prev, [menuId]: divisor }));
       } catch (err) {
         unstable_rethrow(err);
@@ -117,8 +121,9 @@ export function PosSalesImport() {
     setError(null);
     startTransition(async () => {
       try {
-        const n = await applyPosSalesImport(updates, preview.dateFrom, preview.dateTo);
-        setDoneCount(n);
+        const result = await applyPosSalesImport(updates, preview.dateFrom, preview.dateTo);
+        if (result.status === "error") { setError(result.message); return; }
+        setDoneCount(result.count);
         setPreview(null);
         router.refresh();
       } catch (err) {

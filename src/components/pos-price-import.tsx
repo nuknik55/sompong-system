@@ -181,6 +181,10 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         let stored = 0;
         for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
           const res = await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE), fileName);
+          // A refused chunk stops the run with its own message — the batch
+          // guard and validation texts are the product here, and a thrown
+          // version reached production users as RSC boilerplate (item 12).
+          if (res.status === "error") { setError(res.message); setPreview(null); return; }
           stored += res.inserted;
           setProgress({ sent: Math.min(i + CHUNK_SIZE, rows.length), total: rows.length });
         }
@@ -189,7 +193,9 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         // The preview reads the delivery WINDOW, not this upload. Re-importing
         // a file whose rows are already stored is a legitimate no-op that
         // still produces a full preview.
-        const result = await buildPosImportPreview();
+        const previewResult = await buildPosImportPreview();
+        if (previewResult.status === "error") { setError(previewResult.message); setPreview(null); return; }
+        const result = previewResult.preview;
         setPreview(result);
         // A "changed"-unit row starts unchecked and cannot be checked until
         // resolved; mixed-unit deliveries stay unchecked as before.
@@ -257,8 +263,9 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setError(null);
     startTransition(async () => {
       try {
-        const n = await applyPosImport(updates);
-        setDoneCount(n);
+        const result = await applyPosImport(updates);
+        if (result.status === "error") { setError(result.message); return; }
+        setDoneCount(result.count);
         setPreview(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "อัปเดตราคาไม่สำเร็จ");
@@ -270,7 +277,8 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setAliasError(null);
     startAliasTransition(async () => {
       try {
-        await addPosPriceAlias(newPosName, newIngredientId);
+        const result = await addPosPriceAlias(newPosName, newIngredientId);
+        if (result.status === "error") { setAliasError(result.message); return; }
         const updated = await getPosPriceAliases();
         setAliases(updated);
         setNewPosName("");
@@ -283,7 +291,11 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
 
   function handleDeleteAlias(id: string) {
     startAliasTransition(async () => {
-      await deletePosPriceAlias(id);
+      // This handler had NO error handling at all — a failed delete was an
+      // unhandled rejection and the row vanished from the list anyway. The
+      // returned message now shows, and the row is removed only on success.
+      const result = await deletePosPriceAlias(id);
+      if (result.status === "error") { setAliasError(result.message); return; }
       setAliases((prev) => prev.filter((a) => a.id !== id));
     });
   }

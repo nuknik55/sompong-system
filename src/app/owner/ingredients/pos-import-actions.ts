@@ -106,26 +106,34 @@ export type PriceAliasRow = {
  * It reports only what it observed. import_batch_id is written for forensics —
  * finding and deleting a bad upload — and nothing may depend on it.
  */
+// ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
+// Production redacts thrown Server Action messages, and this file's messages
+// ARE the product — the coverage warnings, the batch-size refusal, the
+// unit-without-yield invariant. Button-invoked previews convert too: they are
+// not page loaders, and their "no data in range" text is instruction, not an
+// exception. getPosPriceAliases (a read) keeps its throw.
+export type PosImportActionResult = { status: "ok" } | { status: "error"; message: string };
+
 export async function ingestPosDeliveries(
   batchId: string,
   rows: unknown,
   sourceFile?: string,
-): Promise<{ received: number; inserted: number }> {
+): Promise<{ status: "ok"; received: number; inserted: number } | { status: "error"; message: string }> {
   const profile = await requireAdmin();
-  if (!UUID_RE.test(batchId)) throw new Error("รหัสชุดข้อมูลไม่ถูกต้อง");
+  if (!UUID_RE.test(batchId)) return { status: "error", message: "รหัสชุดข้อมูลไม่ถูกต้อง" };
 
   const check = validateChunk(rows);
-  if (!check.ok) throw new Error(check.error);
+  if (!check.ok) return { status: "error", message: check.error };
 
   const supabase = await createClient();
   const { count, error: countError } = await supabase
     .from("pos_receipt_deliveries")
     .select("id", { count: "exact", head: true })
     .eq("import_batch_id", batchId);
-  if (countError) throw new Error(countError.message);
-  if (count == null) throw new Error("ตรวจสอบขนาดชุดข้อมูลไม่สำเร็จ จึงยังไม่บันทึก");
+  if (countError) return { status: "error", message: countError.message };
+  if (count == null) return { status: "error", message: "ตรวจสอบขนาดชุดข้อมูลไม่สำเร็จ จึงยังไม่บันทึก" };
   if (count + check.rows.length > MAX_ROWS_PER_BATCH) {
-    throw new Error(`ชุดข้อมูลนี้เกิน ${MAX_ROWS_PER_BATCH} แถว`);
+    return { status: "error", message: `ชุดข้อมูลนี้เกิน ${MAX_ROWS_PER_BATCH} แถว` };
   }
 
   // Report the rows ACTUALLY inserted, not the rows sent — the reverted attempt
@@ -154,9 +162,9 @@ export async function ingestPosDeliveries(
       })),
       { onConflict: "document_number,material_code", ignoreDuplicates: true, count: "exact" },
     );
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
 
-  return { received: check.rows.length, inserted: insertedCount ?? 0 };
+  return { status: "ok", received: check.rows.length, inserted: insertedCount ?? 0 };
 }
 
 /**
@@ -168,7 +176,7 @@ export async function ingestPosDeliveries(
  * anchored to the newest row would keep pricing from stale data when nobody has
  * imported for months.
  */
-export async function buildPosImportPreview(): Promise<PosImportPreview> {
+export async function buildPosImportPreview(): Promise<{ status: "ok"; preview: PosImportPreview } | { status: "error"; message: string }> {
   await requireAdmin();
   const supabase = await createClient();
 
@@ -177,7 +185,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
     .select("window_days")
     .eq("id", 1)
     .maybeSingle();
-  if (settingsError) throw new Error(settingsError.message);
+  if (settingsError) return { status: "error", message: settingsError.message };
   const windowDays = settings?.window_days ?? 90;
   const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
@@ -212,11 +220,11 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
       .eq("is_prep", false),
     supabase.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
   ]);
-  if (ingredientsRes.error) throw new Error(ingredientsRes.error.message);
-  if (aliasesRes.error) throw new Error(aliasesRes.error.message);
+  if (ingredientsRes.error) return { status: "error", message: ingredientsRes.error.message };
+  if (aliasesRes.error) return { status: "error", message: aliasesRes.error.message };
 
   if (deliveries.length === 0) {
-    throw new Error(`ไม่พบข้อมูลการรับของใน ${windowDays} วันที่ผ่านมา กรุณาอัปโหลดไฟล์จาก POS ก่อน`);
+    return { status: "error", message: `ไม่พบข้อมูลการรับของใน ${windowDays} วันที่ผ่านมา กรุณาอัปโหลดไฟล์จาก POS ก่อน` };
   }
 
   const ingredients = ingredientsRes.data ?? [];
@@ -326,7 +334,7 @@ export async function buildPosImportPreview(): Promise<PosImportPreview> {
   matched.sort(
     (a, b) => blockRank(b) - blockRank(a) || Math.abs(b.pctChange ?? 0) - Math.abs(a.pctChange ?? 0),
   );
-  return { matched, unmatched };
+  return { status: "ok", preview: { matched, unmatched } };
 }
 
 type IngredientForImport = {
@@ -415,11 +423,11 @@ export type PosImportUpdate = {
   newYieldQty?: number | null;
 };
 
-export async function applyPosImport(updates: PosImportUpdate[]): Promise<number> {
+export async function applyPosImport(updates: PosImportUpdate[]): Promise<{ status: "ok"; count: number } | { status: "error"; message: string }> {
   // Must match previewPosImport. Relaxing only preview would move the bounce
   // here — after the admin has reviewed the preview and ticked rows.
   await requireAdmin();
-  if (updates.length === 0) return 0;
+  if (updates.length === 0) return { status: "ok", count: 0 };
   const supabase = await createClient();
 
   // The core invariant of this import: a price is meaningless without the
@@ -430,9 +438,10 @@ export async function applyPosImport(updates: PosImportUpdate[]): Promise<number
   // directly.
   for (const u of updates) {
     if (u.newUnitLabel !== undefined && u.newYieldQty === undefined) {
-      throw new Error(
-        `ไม่สามารถเปลี่ยนหน่วยของ "${u.newUnitLabel}" โดยไม่ระบุจำนวนตัดแต่ง (yield) — ราคาและหน่วยต้องอัปเดตพร้อมกัน`,
-      );
+      return {
+        status: "error",
+        message: `ไม่สามารถเปลี่ยนหน่วยของ "${u.newUnitLabel}" โดยไม่ระบุจำนวนตัดแต่ง (yield) — ราคาและหน่วยต้องอัปเดตพร้อมกัน`,
+      };
     }
   }
 
@@ -443,11 +452,11 @@ export async function applyPosImport(updates: PosImportUpdate[]): Promise<number
       patch.yield_qty = u.newYieldQty;
     }
     const { error } = await supabase.from("ingredients").update(patch).eq("id", u.ingredientId);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   revalidatePath("/owner/ingredients");
-  return updates.length;
+  return { status: "ok", count: updates.length };
 }
 
 export async function getPosPriceAliases(): Promise<PriceAliasRow[]> {
@@ -466,21 +475,23 @@ export async function getPosPriceAliases(): Promise<PriceAliasRow[]> {
   }));
 }
 
-export async function addPosPriceAlias(posIngredientName: string, ingredientId: string): Promise<void> {
+export async function addPosPriceAlias(posIngredientName: string, ingredientId: string): Promise<PosImportActionResult> {
   await requireAdmin();
-  if (!posIngredientName.trim() || !ingredientId) throw new Error("กรุณาระบุชื่อ POS และเลือกวัตถุดิบ");
+  if (!posIngredientName.trim() || !ingredientId) return { status: "error", message: "กรุณาระบุชื่อ POS และเลือกวัตถุดิบ" };
   const supabase = await createClient();
   const { error } = await supabase
     .from("pos_price_aliases")
     .upsert({ pos_ingredient_name: posIngredientName.trim(), ingredient_id: ingredientId }, { onConflict: "pos_ingredient_name,ingredient_id" });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/ingredients");
+  return { status: "ok" };
 }
 
-export async function deletePosPriceAlias(id: string): Promise<void> {
+export async function deletePosPriceAlias(id: string): Promise<PosImportActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("pos_price_aliases").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/ingredients");
+  return { status: "ok" };
 }

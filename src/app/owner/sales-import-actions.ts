@@ -20,15 +20,22 @@ export type SalesImportPreview = {
   dateTo: string;
 };
 
-export async function previewPosSalesImport(formData: FormData): Promise<SalesImportPreview> {
+// ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
+// Same rule as pos-import-actions.ts; listPosSalesAliases (a read) keeps its
+// throw. NOTE: parsePosSalesReport itself may still throw on a malformed
+// file — that stays a throw and lands in the client catch as before; its
+// messages belong to the parser layer, not this file.
+export type SalesImportActionResult = { status: "ok" } | { status: "error"; message: string };
+
+export async function previewPosSalesImport(formData: FormData): Promise<{ status: "ok"; preview: SalesImportPreview } | { status: "error"; message: string }> {
   await requireAdmin();
   const file = formData.get("file");
-  if (!(file instanceof File)) throw new Error("ไม่พบไฟล์ที่อัปโหลด");
+  if (!(file instanceof File)) return { status: "error", message: "ไม่พบไฟล์ที่อัปโหลด" };
 
   const buffer = await file.arrayBuffer();
   const report = parsePosSalesReport(buffer);
   if (report.rows.length === 0) {
-    throw new Error('อ่านไฟล์ไม่พบรายการขายเลย ตรวจสอบว่าเป็นไฟล์ "รายงานการขายตามสินค้า" ที่ export มาจาก POS หรือไม่');
+    return { status: "error", message: 'อ่านไฟล์ไม่พบรายการขายเลย ตรวจสอบว่าเป็นไฟล์ "รายงานการขายตามสินค้า" ที่ export มาจาก POS หรือไม่' };
   }
 
   const supabase = await createClient();
@@ -36,8 +43,8 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
     supabase.from("menus").select("id, name, last_period_qty_sold"),
     supabase.from("pos_sales_aliases").select("pos_product_name, menu_id, divisor"),
   ]);
-  if (menusError) throw new Error(menusError.message);
-  if (aliasError) throw new Error(aliasError.message);
+  if (menusError) return { status: "error", message: menusError.message };
+  if (aliasError) return { status: "error", message: aliasError.message };
 
   const menuById = new Map((menus ?? []).map((m) => [m.id, m]));
   const menuByName = new Map((menus ?? []).map((m) => [m.name.trim(), m]));
@@ -82,16 +89,16 @@ export async function previewPosSalesImport(formData: FormData): Promise<SalesIm
 
   matched.sort((a, b) => b.newQty - a.newQty);
   unmatched.sort((a, b) => b.qtySold - a.qtySold);
-  return { matched, unmatched, dateFrom: report.dateFrom, dateTo: report.dateTo };
+  return { status: "ok", preview: { matched, unmatched, dateFrom: report.dateFrom, dateTo: report.dateTo } };
 }
 
 export async function applyPosSalesImport(
   updates: { menuId: string; newQty: number }[],
   dateFrom: string,
   dateTo: string,
-): Promise<number> {
+): Promise<{ status: "ok"; count: number } | { status: "error"; message: string }> {
   await requireAdmin();
-  if (updates.length === 0) return 0;
+  if (updates.length === 0) return { status: "ok", count: 0 };
   const supabase = await createClient();
 
   // Reset ALL menus to 0 first — this is replace-mode, not accumulate-mode.
@@ -99,21 +106,21 @@ export async function applyPosSalesImport(
     .from("menus")
     .update({ last_period_qty_sold: 0 })
     .neq("id", "00000000-0000-0000-0000-000000000000"); // match all rows
-  if (resetError) throw new Error(resetError.message);
+  if (resetError) return { status: "error", message: resetError.message };
 
   for (const u of updates) {
     const { error } = await supabase.from("menus").update({ last_period_qty_sold: u.newQty }).eq("id", u.menuId);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   // Store import date range metadata (single row, upserted on fixed key).
   const { error: metaError } = await supabase
     .from("pos_import_meta")
     .upsert({ id: "last", date_from: dateFrom || null, date_to: dateTo || null, imported_at: new Date().toISOString() }, { onConflict: "id" });
-  if (metaError) throw new Error(metaError.message);
+  if (metaError) return { status: "error", message: metaError.message };
 
   revalidatePath("/owner");
-  return updates.length;
+  return { status: "ok", count: updates.length };
 }
 
 export async function getPosImportMeta(): Promise<{ dateFrom: string; dateTo: string; importedAt: string } | null> {
@@ -148,21 +155,25 @@ export async function listPosSalesAliases(): Promise<PosSalesAlias[]> {
   }));
 }
 
-export async function upsertPosSalesAlias(posProductName: string, menuId: string, divisor: number) {
+export async function upsertPosSalesAlias(posProductName: string, menuId: string, divisor: number): Promise<SalesImportActionResult> {
   await requireAdmin();
-  if (!posProductName.trim() || !menuId) throw new Error("กรุณากรอกชื่อสินค้า POS และเลือกเมนู");
+  if (!posProductName.trim() || !menuId) return { status: "error", message: "กรุณากรอกชื่อสินค้า POS และเลือกเมนู" };
   const supabase = await createClient();
   const { error } = await supabase
     .from("pos_sales_aliases")
     .upsert({ pos_product_name: posProductName.trim(), menu_id: menuId, divisor: divisor || 1 }, { onConflict: "pos_product_name" });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner");
+  return { status: "ok" };
 }
 
-export async function deletePosSalesAlias(id: string) {
+/** ZERO callers today (dead export, queue item 18) — converted while in
+ *  scope so the sweep that removes it deletes a consistent file. */
+export async function deletePosSalesAlias(id: string): Promise<SalesImportActionResult> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("pos_sales_aliases").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner");
+  return { status: "ok" };
 }
