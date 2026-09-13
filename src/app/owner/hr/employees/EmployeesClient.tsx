@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
@@ -111,11 +113,11 @@ export function EmployeesClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertEmployee({
+        okOrThrow(await upsertEmployee({
           ...(editing ? { id: editing.id } : {}),
           ...form,
           probation_end_date: form.employment_type === "probation" ? (form.probation_end_date ?? null) : null,
-        } as Parameters<typeof upsertEmployee>[0]);
+        } as Parameters<typeof upsertEmployee>[0]));
         setShowModal(false);
         // optimistic update
         const dept = departments.find((d) => d.id === form.department_id);

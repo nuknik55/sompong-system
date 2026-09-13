@@ -167,22 +167,31 @@ export async function getDepartments(): Promise<Department[]> {
   return (data ?? []).map((d) => ({ ...d, sort_order: d.sort_order ?? 999 }));
 }
 
-export async function upsertDepartment(d: { id?: string; name: string }): Promise<void> {
+// ── Item 12: expected failures in MUTATIONS are RETURNED, not thrown ────────
+// Production redacts thrown Server Action messages, so the HR screens' Thai
+// errors never reached the user. All 19 mutations below return this union;
+// getScheduleWeek (a read) keeps its throw. Auth throws stay; unexpected
+// exceptions still throw — redaction is correct for those.
+export type HrActionResult = { status: "ok" } | { status: "error"; message: string };
+
+export async function upsertDepartment(d: { id?: string; name: string }): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = d.id
     ? await supabase.from("departments").update({ name: d.name }).eq("id", d.id)
     : await supabase.from("departments").insert({ name: d.name });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr");
+  return { status: "ok" };
 }
 
-export async function setDepartmentActive(id: string, is_active: boolean): Promise<void> {
+export async function setDepartmentActive(id: string, is_active: boolean): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("departments").update({ is_active }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr");
+  return { status: "ok" };
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────
@@ -287,7 +296,7 @@ export async function upsertEmployee(e: {
   takes_bookings: boolean;
   al_quota_override?: number | null;
   probation_end_date?: string | null;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const payload = {
@@ -314,13 +323,14 @@ export async function upsertEmployee(e: {
   const { error } = e.id
     ? await supabase.from("employees").update(payload).eq("id", e.id)
     : await supabase.from("employees").insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/employees");
+  return { status: "ok" };
 }
 
 export async function updateEmployeeSortOrders(
   updates: { id: string; sort_order: number }[]
-): Promise<void> {
+): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   // N separate writes, so a failure part-way leaves the list half-reordered.
@@ -330,9 +340,10 @@ export async function updateEmployeeSortOrders(
   // loudly is what makes that retry possible.
   for (const u of updates) {
     const { error } = await supabase.from("employees").update({ sort_order: u.sort_order }).eq("id", u.id);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
   revalidatePath("/owner/hr");
+  return { status: "ok" };
 }
 
 export type ProbationAlert = {
@@ -389,14 +400,15 @@ export async function upsertLeaveType(lt: {
   is_subject_to_day_multiplier: boolean;
   requires_medical_cert: boolean;
   is_active: boolean;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = lt.id
     ? await supabase.from("leave_types").update(lt).eq("id", lt.id)
     : await supabase.from("leave_types").insert(lt);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/settings");
+  return { status: "ok" };
 }
 
 // ─── Leave Requests ───────────────────────────────────────────────────────────
@@ -455,7 +467,7 @@ export async function upsertLeaveRequest(data: {
   date_to: string;
   total_days: number;
   reason: string;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   let oldDateFrom: string | null = null;
@@ -471,14 +483,14 @@ export async function upsertLeaveRequest(data: {
       .select("date_from,date_to")
       .eq("id", id)
       .single();
-    if (oldErr) throw new Error(oldErr.message);
+    if (oldErr) return { status: "error", message: oldErr.message };
     oldDateFrom = old?.date_from ?? null;
     oldDateTo = old?.date_to ?? null;
     const { error } = await supabase.from("leave_requests").update(rest).eq("id", id);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   } else {
     const { error } = await supabase.from("leave_requests").insert({ ...data, status: "approved" });
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   // Mirror every date in the leave range to attendance_daily (source of truth for payroll/quota/schedule).
@@ -524,7 +536,7 @@ export async function upsertLeaveRequest(data: {
     const { error } = await supabase
       .from("attendance_daily")
       .upsert(dailyRows, { onConflict: "employee_id,work_date" });
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
 
   // On edit: delete attendance_daily rows for dates that dropped out of the new range.
@@ -545,16 +557,17 @@ export async function upsertLeaveRequest(data: {
         .eq("employee_id", data.employee_id)
         .eq("source", "leave_request")
         .in("work_date", toDelete);
-      if (error) throw new Error(error.message);
+      if (error) return { status: "error", message: error.message };
     }
   }
 
   revalidatePath("/owner/hr/leave");
   revalidatePath("/owner/hr/schedule");
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
-export async function deleteLeaveRequest(id: string): Promise<void> {
+export async function deleteLeaveRequest(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   // Read first and insist on it: it is the only record of which dates to
@@ -566,10 +579,10 @@ export async function deleteLeaveRequest(id: string): Promise<void> {
     .select("employee_id,date_from,date_to")
     .eq("id", id)
     .single();
-  if (lrErr) throw new Error(lrErr.message);
+  if (lrErr) return { status: "error", message: lrErr.message };
   {
     const { error } = await supabase.from("leave_requests").delete().eq("id", id);
-    if (error) throw new Error(error.message);
+    if (error) return { status: "error", message: error.message };
   }
   if (lr) {
     const toDelete: string[] = [];
@@ -586,12 +599,13 @@ export async function deleteLeaveRequest(id: string): Promise<void> {
         .eq("employee_id", lr.employee_id)
         .eq("source", "leave_request")
         .in("work_date", toDelete);
-      if (error) throw new Error(error.message);
+      if (error) return { status: "error", message: error.message };
     }
   }
   revalidatePath("/owner/hr/leave");
   revalidatePath("/owner/hr/schedule");
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
 // ─── Holidays ─────────────────────────────────────────────────────────────────
@@ -615,22 +629,24 @@ export async function upsertHoliday(h: {
   pay_type: "multiplier" | "substitute";
   pay_multiplier: number;
   pay_policy: "must_work_bonus" | "comp_day_only";
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = h.id
     ? await supabase.from("holidays").update(h).eq("id", h.id)
     : await supabase.from("holidays").insert({ ...h, is_active: true });
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/settings");
+  return { status: "ok" };
 }
 
-export async function deleteHoliday(id: string): Promise<void> {
+export async function deleteHoliday(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("holidays").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/settings");
+  return { status: "ok" };
 }
 
 // ─── Payroll Periods ──────────────────────────────────────────────────────────
@@ -665,22 +681,24 @@ export async function createPayrollPeriod(p: {
   return data.id;
 }
 
-export async function closePayrollPeriod(id: string): Promise<void> {
+export async function closePayrollPeriod(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   // A close that silently failed left the period editable while the UI showed
   // it locked — the exact state the lock exists to prevent.
   const { error } = await supabase.from("payroll_periods").update({ is_closed: true }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/payroll");
+  return { status: "ok" };
 }
 
-export async function reopenPayrollPeriod(id: string): Promise<void> {
+export async function reopenPayrollPeriod(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("payroll_periods").update({ is_closed: false }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/payroll");
+  return { status: "ok" };
 }
 
 export async function getEmployeePayrollHistory(employeeId: string): Promise<EmployeePayrollHistoryRow[]> {
@@ -884,7 +902,7 @@ export async function upsertScheduleNote(
   noteDate: string,
   note: string,
   noteType: NoteType,
-): Promise<void> {
+): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   // Always upsert — note text is optional, note_type alone is meaningful.
@@ -896,8 +914,9 @@ export async function upsertScheduleNote(
       { employee_id: employeeId, note_date: noteDate, note: note.trim(), note_type: noteType },
       { onConflict: "employee_id,note_date" },
     );
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/schedule");
+  return { status: "ok" };
 }
 
 // ─── Payroll Entries ──────────────────────────────────────────────────────────
@@ -1098,7 +1117,7 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   });
 }
 
-export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" | "employee_code" | "department_name" | "gross_total" | "net_total"> & { id: string | null }): Promise<void> {
+export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" | "employee_code" | "department_name" | "gross_total" | "net_total"> & { id: string | null }): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const gross =
@@ -1127,8 +1146,9 @@ export async function upsertPayrollEntry(e: Omit<PayrollEntry, "employee_name" |
   const { error } = e.id
     ? await supabase.from("payroll_entries").update(payload).eq("id", e.id)
     : await supabase.from("payroll_entries").insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/payroll");
+  return { status: "ok" };
 }
 
 // ─── Attendance Daily ─────────────────────────────────────────────────────────
@@ -1176,21 +1196,22 @@ export async function upsertAttendanceDaily(r: {
   leave_type_id: string | null;
   leave_fraction: number;
   note: string | null;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("attendance_daily").upsert(
     { ...r, source: "manual" },
     { onConflict: "employee_id,work_date" },
   );
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
 export async function deleteAttendanceDailyRecord(
   employeeId: string,
   workDate: string,
-): Promise<void> {
+): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase
@@ -1198,8 +1219,9 @@ export async function deleteAttendanceDailyRecord(
     .delete()
     .eq("employee_id", employeeId)
     .eq("work_date", workDate);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
 // ─── Attendance Punches (legacy / biometric input) ────────────────────────────
@@ -1230,7 +1252,7 @@ export async function upsertAttendancePunch(p: {
   punch_type: "in" | "out";
   punch_time: string;
   note?: string;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   let error: { message: string } | null;
@@ -1240,16 +1262,18 @@ export async function upsertAttendancePunch(p: {
   } else {
     ({ error } = await supabase.from("attendance_punches").insert({ ...p, source: "manual" }));
   }
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
-export async function deleteAttendancePunch(id: string): Promise<void> {
+export async function deleteAttendancePunch(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("attendance_punches").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/attendance");
+  return { status: "ok" };
 }
 
 // ─── Leave Quotas ─────────────────────────────────────────────────────────────
@@ -1519,7 +1543,7 @@ export async function upsertDaySwapRequest(r: {
   compensation: "bank_day" | "extra_pay";
   note: string | null;
   holiday_id?: string | null;
-}): Promise<void> {
+}): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const payload = {
@@ -1534,18 +1558,20 @@ export async function upsertDaySwapRequest(r: {
   const { error } = r.id
     ? await supabase.from("day_swap_requests").update(payload).eq("id", r.id)
     : await supabase.from("day_swap_requests").insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/dayswap");
   revalidatePath("/owner/hr/employees");
+  return { status: "ok" };
 }
 
-export async function deleteDaySwapRequest(id: string): Promise<void> {
+export async function deleteDaySwapRequest(id: string): Promise<HrActionResult> {
   await requireHR();
   const supabase = await createClient();
   const { error } = await supabase.from("day_swap_requests").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/dayswap");
   revalidatePath("/owner/hr/employees");
+  return { status: "ok" };
 }
 
 // ─── Attendance Year Summary ──────────────────────────────────────────────────

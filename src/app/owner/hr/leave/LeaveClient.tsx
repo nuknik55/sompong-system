@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertLeaveRequest, deleteLeaveRequest } from "../actions";
@@ -73,7 +75,7 @@ export function LeaveClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertLeaveRequest({ ...form, total_days });
+        okOrThrow(await upsertLeaveRequest({ ...form, total_days }));
         const emp = employees.find((e) => e.id === form.employee_id);
         const lt = leaveTypes.find((l) => l.id === form.leave_type_id);
         const newReq: LeaveRequest = {
@@ -107,7 +109,7 @@ export function LeaveClient({
     startTransition(async () => {
       setError(null);
       try {
-        await deleteLeaveRequest(id);
+        okOrThrow(await deleteLeaveRequest(id));
         setRequests((prev) => prev.filter((r) => r.id !== id));
         setConfirmDelete(null);
       } catch (err) {

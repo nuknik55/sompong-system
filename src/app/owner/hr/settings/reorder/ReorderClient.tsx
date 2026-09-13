@@ -22,6 +22,7 @@ export function ReorderClient({ initialEmployees }: { initialEmployees: EmpItem[
     groupByDept(initialEmployees).map(([dept, emps]) => ({ dept, emps }))
   );
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -58,8 +59,14 @@ export function ReorderClient({ initialEmployees }: { initialEmployees: EmpItem[
     for (const g of groups) {
       g.emps.forEach((e, i) => updates.push({ id: e.id, sort_order: (i + 1) * 10 }));
     }
+    setError(null);
     startTransition(async () => {
-      await updateEmployeeSortOrders(updates);
+      // Previously fire-and-forget (item 12). A failure now shows its
+      // message, and "บันทึกแล้ว" appears only on success — the absolute
+      // sort orders make a retry of the same list safe, per the action's
+      // own comment.
+      const result = await updateEmployeeSortOrders(updates);
+      if (result.status === "error") { setError(result.message); return; }
       setSaved(true);
       router.refresh();
     });
@@ -71,6 +78,7 @@ export function ReorderClient({ initialEmployees }: { initialEmployees: EmpItem[
         <div>
           <h1 className="text-lg font-semibold text-neutral-900">จัดเรียงพนักงาน</h1>
           <p className="text-xs text-neutral-500 mt-0.5">ลากขึ้น/ลง เพื่อเปลี่ยนลำดับภายในแผนก</p>
+          {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
         </div>
         <button
           onClick={save}

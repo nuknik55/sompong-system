@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertDaySwapRequest, deleteDaySwapRequest } from "../actions";
@@ -75,7 +77,7 @@ export function DaySwapClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertDaySwapRequest({
+        okOrThrow(await upsertDaySwapRequest({
           id: editId ?? undefined,
           employee_id: form.employee_id,
           work_date: form.work_date || null,
@@ -84,7 +86,7 @@ export function DaySwapClient({
           compensation: form.swap_type === "off_first" ? "bank_day" : form.compensation,
           note: form.note || null,
           holiday_id: form.swap_type === "work_first" ? (form.holiday_id || null) : null,
-        });
+        }));
         // optimistic: re-fetch by navigating (server action revalidates)
         setShowForm(false);
         router.refresh();
@@ -101,7 +103,7 @@ export function DaySwapClient({
     startTransition(async () => {
       setError(null);
       try {
-        await deleteDaySwapRequest(id);
+        okOrThrow(await deleteDaySwapRequest(id));
         setSwaps((prev) => prev.filter((s) => s.id !== id));
         setConfirmDelete(null);
       } catch (err) {

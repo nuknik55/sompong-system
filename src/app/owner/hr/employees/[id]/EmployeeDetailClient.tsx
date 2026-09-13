@@ -108,6 +108,7 @@ export function EmployeeDetailClient({
   });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const year = defaultYear;
 
   function setTab(t: TabKey) {
@@ -120,8 +121,12 @@ export function EmployeeDetailClient({
   }
 
   function handleSave() {
+    setSaveError(null);
     startTransition(async () => {
-      await upsertEmployee({
+      // Previously fire-and-forget: a failed save was an unhandled rejection
+      // and "บันทึกแล้ว" never appeared — but neither did any message
+      // (item 12).
+      const result = await upsertEmployee({
         id: employee.id,
         employee_code: form.employee_code ?? "",
         full_name: form.full_name,
@@ -143,6 +148,7 @@ export function EmployeeDetailClient({
         al_quota_override: form.al_quota_override,
         probation_end_date: form.employment_type === "probation" ? form.probation_end_date : null,
       });
+      if (result.status === "error") { setSaveError(result.message); return; }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     });
@@ -492,6 +498,7 @@ export function EmployeeDetailClient({
             <button onClick={handleSave} disabled={isPending} className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
               {isPending ? "กำลังบันทึก…" : "บันทึกการเปลี่ยนแปลง"}
             </button>
+            {saveError && <span className="text-sm text-red-600">{saveError}</span>}
             {saved && <span className="text-sm text-green-600">บันทึกแล้ว ✓</span>}
           </div>
         </div>

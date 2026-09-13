@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -164,7 +166,7 @@ export function ScheduleClient({
     setError(null);
     startTransition(async () => {
       try {
-        await upsertScheduleNote(snap.empId, snap.date, snap.note.trim(), snap.noteType);
+        okOrThrow(await upsertScheduleNote(snap.empId, snap.date, snap.note.trim(), snap.noteType));
       } catch (err) {
         unstable_rethrow(err);
         setNoteMap((m) => {
@@ -190,7 +192,7 @@ export function ScheduleClient({
     setError(null);
     startTransition(async () => {
       try {
-        await upsertScheduleNote(snap.empId, snap.date, "", snap.noteType);
+        okOrThrow(await upsertScheduleNote(snap.empId, snap.date, "", snap.noteType));
       } catch (err) {
         unstable_rethrow(err);
         if (prev) setNoteMap((m) => new Map(m).set(key, prev));

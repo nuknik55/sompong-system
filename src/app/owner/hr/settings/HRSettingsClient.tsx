@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import {
@@ -63,7 +65,7 @@ export function HRSettingsClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertDepartment({ ...(id ? { id } : {}), name: deptName });
+        okOrThrow(await upsertDepartment({ ...(id ? { id } : {}), name: deptName }));
         if (id) {
           setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, name: deptName } : d)));
         } else {
@@ -84,7 +86,7 @@ export function HRSettingsClient({
     startTransition(async () => {
       setError(null);
       try {
-        await setDepartmentActive(d.id, !d.is_active);
+        okOrThrow(await setDepartmentActive(d.id, !d.is_active));
         setDepartments((prev) => prev.map((x) => (x.id === d.id ? { ...x, is_active: !x.is_active } : x)));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
@@ -102,7 +104,7 @@ export function HRSettingsClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertLeaveType({ ...(editingLT ? { id: editingLT.id } : {}), ...ltForm });
+        okOrThrow(await upsertLeaveType({ ...(editingLT ? { id: editingLT.id } : {}), ...ltForm }));
         if (editingLT) {
           setLeaveTypes((prev) => prev.map((x) => (x.id === editingLT.id ? { ...x, ...ltForm } : x)));
         } else {
@@ -130,7 +132,7 @@ export function HRSettingsClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertHoliday({ ...(holidayModal.existing ? { id: holidayModal.existing.id } : {}), holiday_date: holidayModal.date, ...hForm });
+        okOrThrow(await upsertHoliday({ ...(holidayModal.existing ? { id: holidayModal.existing.id } : {}), holiday_date: holidayModal.date, ...hForm }));
         const updated: Holiday = {
           id: holidayModal.existing?.id ?? crypto.randomUUID(),
           holiday_date: holidayModal.date,
@@ -156,7 +158,7 @@ export function HRSettingsClient({
     startTransition(async () => {
       setError(null);
       try {
-        await deleteHoliday(holidayModal.existing!.id);
+        okOrThrow(await deleteHoliday(holidayModal.existing!.id));
         setHolidays((prev) => prev.filter((h) => h.holiday_date !== holidayModal.date));
         setHolidayModal(null);
       } catch (err) {

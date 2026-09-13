@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertAttendanceDaily, deleteAttendanceDailyRecord, upsertDaySwapRequest } from "../actions";
@@ -201,7 +203,7 @@ export function AttendanceClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertAttendanceDaily({
+        okOrThrow(await upsertAttendanceDaily({
           employee_id: rec.employee_id,
           work_date: rec.work_date,
           status: rec.status,
@@ -212,7 +214,7 @@ export function AttendanceClient({
           leave_type_id: rec.leave_type_id,
           leave_fraction: rec.leave_fraction,
           note: rec.note,
-        });
+        }));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
         // unstable_rethrow lets that through instead of showing it as an error.
@@ -241,7 +243,7 @@ export function AttendanceClient({
     startTransition(async () => {
       setError(null);
       try {
-        await deleteAttendanceDailyRecord(empId, date);
+        okOrThrow(await deleteAttendanceDailyRecord(empId, date));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
         // unstable_rethrow lets that through instead of showing it as an error.
@@ -273,14 +275,14 @@ export function AttendanceClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertDaySwapRequest({
+        okOrThrow(await upsertDaySwapRequest({
           employee_id: empId,
           work_date: workDate,
           off_date: offDate,
           swap_type: "work_first",
           compensation,
           note,
-        });
+        }));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
         // unstable_rethrow lets that through instead of showing it as an error.
@@ -376,7 +378,7 @@ export function AttendanceClient({
     startTransition(async () => {
       setError(null);
       try {
-        for (const ds of toClear) await deleteAttendanceDailyRecord(empId, ds);
+        for (const ds of toClear) okOrThrow(await deleteAttendanceDailyRecord(empId, ds));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
         // unstable_rethrow lets that through instead of showing it as an error.

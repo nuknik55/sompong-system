@@ -1,5 +1,7 @@
 "use client";
 
+import { okOrThrow } from "../hr-result";
+
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { createPayrollPeriod, closePayrollPeriod, reopenPayrollPeriod, upsertPayrollEntry } from "../actions";
@@ -71,7 +73,7 @@ export function PayrollClient({
     startTransition(async () => {
       setError(null);
       try {
-        await upsertPayrollEntry({
+        okOrThrow(await upsertPayrollEntry({
           id: updated.id,
           payroll_period_id: selectedPeriodId,
           employee_id: updated.employee_id,
@@ -88,7 +90,7 @@ export function PayrollClient({
           meal_allowance: updated.meal_allowance,
           tip_amount: updated.tip_amount,
           note: updated.note,
-        });
+        }));
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
         // unstable_rethrow lets that through instead of showing it as an error.
@@ -120,7 +122,7 @@ export function PayrollClient({
     startTransition(async () => {
       setError(null);
       try {
-        await closePayrollPeriod(selectedPeriodId);
+        okOrThrow(await closePayrollPeriod(selectedPeriodId));
         router.refresh();
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
@@ -137,7 +139,7 @@ export function PayrollClient({
     startTransition(async () => {
       setError(null);
       try {
-        await reopenPayrollPeriod(selectedPeriodId);
+        okOrThrow(await reopenPayrollPeriod(selectedPeriodId));
         router.refresh();
       } catch (err) {
         // requireHR() redirects, and Next signals a redirect by throwing —
