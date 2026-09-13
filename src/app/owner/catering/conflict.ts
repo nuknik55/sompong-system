@@ -34,10 +34,30 @@ function normTime(t: string | null): string | null {
  * conflict. Missing a time on either side (common for early-stage inquiry
  * bookings) is treated conservatively as a same-day conflict regardless of
  * time, so missing time data can't hide a real double-booking.
+ *
+ * ── MIDNIGHT-CROSSING BOOKINGS: CLAMPED TO END-OF-DAY ─────────────────────
+ *
+ * end ≤ start means the booking runs past midnight (22:00–01:00). Compared
+ * as raw HH:MM strings that is an inverted, EMPTY interval — the
+ * verification pass found a 22:00–01:00 party that failed to conflict with
+ * 23:00–23:30 in the same room, on both client and server, since both share
+ * this module. The rule, from Nik's side: such a booking holds the room from
+ * its start to END OF DAY on its own event_date. "24:00" compares greater
+ * than any real HH:MM, which is the whole trick.
+ *
+ * The after-midnight tail (00:00–01:00 on the NEXT calendar date) stays
+ * deliberately unmodelled: a booking has one event_date, and that is the
+ * boundary. Refusing midnight-crossing times at entry was rejected — a party
+ * running past midnight is a normal booking, and refusing it would punish
+ * the user for the model's limitation.
  */
+function clampEnd(start: string, end: string): string {
+  return end <= start ? "24:00" : end;
+}
+
 function timesOverlap(aStart: string | null, aEnd: string | null, bStart: string | null, bEnd: string | null): boolean {
   if (!aStart || !aEnd || !bStart || !bEnd) return true;
-  return aStart < bEnd && bStart < aEnd;
+  return aStart < clampEnd(bStart, bEnd) && bStart < clampEnd(aStart, aEnd);
 }
 
 /** First candidate (if any) whose room conflicts with `venue` on the same date. */
