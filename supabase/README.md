@@ -702,23 +702,29 @@ In order. Nothing here is started unless it says so.
     line. One column would answer both. Worth raising with Nik as a single
     decision rather than two.
 
-17. **RatesSettingsClient mirrors `rates` into state and never resyncs —
-    the reorder buttons show stale order until a full reload.** Not started;
-    pre-existing, observed 2026-09-13 while adding the inline display_label
-    field (whose own save patches the mirror correctly, as delete and toggle
-    always did).
+17. ~~**RatesSettingsClient mirrors `rates` into state and never resyncs —
+    the reorder buttons show stale order until a full reload.**~~ **CLOSED
+    2026-09-14.** The mirror is gone; the component renders from the prop and
+    every mutation goes server action → `router.refresh()` → new prop, as
+    SetMenusClient does. Done before Nik fills the six display_label words on
+    that screen rather than after. Observed 2026-09-13 while adding the
+    inline display_label field.
 
-    `useState(initialRates)` seeds once; `router.refresh()` re-renders the
-    server component and updates the prop, but the mirror ignores prop
-    updates, so `handleReorder` — which refreshes and patches nothing —
-    leaves the on-screen order stale. Same family as the SetMenusClient
-    mirror that was removed (its comment tells the story: "the component
-    simply rendered its own stale mirror"; blame the mirror first, not the
-    router). Fix candidates, smallest first: patch the mirror after reorder
-    like the other handlers; or remove the mirror and render from the prop,
-    as SetMenusClient now does — the second also retires the whole hazard
-    class for this file. Low stakes (admin screen, order-only), which is why
-    it is queued rather than fixed on sight.
+    The symptom was wider than "order-only": the add/edit modal only ever
+    called `router.refresh()`, so by the same construction a newly added rate
+    did not appear, and an edited one did not change, until a full reload —
+    previously unreported. `useState(initialRates)` seeded once and ignored
+    every later prop; the handlers that looked correct (delete, toggle,
+    display_label) only did because they patched the mirror by hand.
+
+    Dropping the mirror was the right candidate because it carried nothing
+    the prop cannot: the inline drafts are their own state, the modal form
+    its own. The one thing that needed care is the draft's lifetime across
+    the refresh — React 19 does not treat a setState after an `await` as part
+    of the transition unless it is wrapped, and an unwrapped clear would have
+    shown the old stored value for one round-trip; the comment at the save
+    site says so. Toggle also gained the try/catch delete already had: it
+    used to patch the mirror whether or not the write succeeded.
 
 18. **Dead-export sweep of the "use server" files — three found so far.**
     Not started; found by the item-12 conversions (steps 2 and 3), zero

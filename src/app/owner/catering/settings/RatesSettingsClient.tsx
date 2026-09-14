@@ -37,17 +37,21 @@ function formFromRate(r: CateringRate): RateForm {
   };
 }
 
-export function RatesSettingsClient({ initialRates }: { initialRates: CateringRate[] }) {
+// Rendered from the prop — no local copy of `rates` (queue item 17). This
+// component used to mirror initialRates into useState; router.refresh() then
+// updated the prop and the mirror ignored it, so the reorder buttons — and the
+// add/edit modal, by the same construction — showed stale rows until a full
+// reload, while delete/toggle/display_label patched the mirror by hand and
+// looked fine. Every mutation now goes: server action -> router.refresh() ->
+// new prop, as SetMenusClient does. The screen shows only what the database
+// holds; the cost is one round-trip per action on an admin screen.
+export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [rates, setRates] = useState(initialRates);
   const [modal, setModal] = useState<{ editingId: string | null; form: RateForm } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Inline display_label drafts, keyed by rate id — only rows being edited
-  // hold an entry. This component MIRRORS rates into state (useState above),
-  // so after a confirmed write we patch the mirror the way handleDelete and
-  // handleToggleActive already do — router.refresh() alone would leave the
-  // mirrored row stale and the typed label would visibly revert.
+  // hold an entry; a row with no draft renders the stored value from the prop.
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
 
   function clearDraft(id: string) {
@@ -70,8 +74,13 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
     startTransition(async () => {
       try {
         await updateCateringRateDisplayLabel(r.id, next);
-        setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, display_label: next } : x)));
-        clearDraft(r.id);
+        router.refresh();
+        // The draft must outlive the refresh: cleared in the same commit the
+        // fresh prop lands in, or the input would show the OLD stored value
+        // for one round-trip and the typed label would visibly blink out.
+        // After an await, a bare setState is no longer part of this
+        // transition (React 19 documents the limitation), so it is wrapped.
+        startTransition(() => clearDraft(r.id));
       } catch (err) {
         setError(err instanceof Error ? err.message : "บันทึกชื่อที่แสดงให้ลูกค้าไม่สำเร็จ");
       }
@@ -131,7 +140,7 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
     startTransition(async () => {
       try {
         await deleteCateringRate(r.id);
-        setRates((prev) => prev.filter((x) => x.id !== r.id));
+        router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
       }
@@ -139,9 +148,16 @@ export function RatesSettingsClient({ initialRates }: { initialRates: CateringRa
   }
 
   function handleToggleActive(r: CateringRate) {
+    setError(null);
     startTransition(async () => {
-      await toggleCateringRateActive(r.id, !r.is_active);
-      setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: !x.is_active } : x)));
+      try {
+        await toggleCateringRateActive(r.id, !r.is_active);
+        router.refresh();
+      } catch (err) {
+        // Previously unhandled: the mirror was patched whether or not the
+        // write succeeded, so a failure showed the row toggled and said nothing.
+        setError(err instanceof Error ? err.message : "เปลี่ยนสถานะไม่สำเร็จ");
+      }
     });
   }
 

@@ -14,7 +14,7 @@ export default async function CateringSettingsPage() {
       <CateringSubNav isAdmin={true} />
 
       <h1 className="font-kanit text-lg font-semibold text-neutral-900">อัตราค่าบริการจัดเลี้ยง</h1>
-      <RatesSettingsClient initialRates={rates} />
+      <RatesSettingsClient rates={rates} />
     </div>
   );
 }
