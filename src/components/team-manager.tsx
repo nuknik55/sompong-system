@@ -17,7 +17,7 @@ export type EmployeeOption = { id: string; label: string };
 const ALL_ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "owner",  label: "Owner (เจ้าของร้าน)" },
   { value: "admin",  label: "Admin (เข้าถึงทุกอย่าง)" },
-  { value: "hr",     label: "HR (ฝ่ายบุคคล + แจ้งซ่อม)" },
+  { value: "hr",     label: "HR (ฝ่ายบุคคล)" },
   { value: "sales",  label: "Sales (รับจองงานจัดเลี้ยง)" },
   { value: "editor", label: "Editor (แก้ได้ รอ Admin อนุมัติ)" },
   { value: "staff",  label: "Staff (ดูได้เท่านั้น)" },

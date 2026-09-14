@@ -72,6 +72,7 @@ and `menus.fuel_cost` was dropped on the same day.
 | `catering_set_menu_sections_migration.sql` | 2026-09-11 | `catering_set_menu_items.section` (`dish | dessert | drink | free`, DEFAULT `'dish'`) — A0 of the document work, the one schema change all three documents share. Verified live the same day: all 13 rows read `dish`, meaning unchanged; and end-to-end the next day, when Nik set a dessert and the section separated on the printed kitchen sheet. |
 | `catering_event_deposit_percent_migration.sql` | 2026-09-12 | One nullable `NUMERIC(5,2)` + CHECK on `catering_events` — the agreed deposit TERM, beside `deposit_amount` which stays the received FACT. No default: both 30% and 50% are attested, so there was no neutral choice. Verified live by selecting the column before C deployed. The original CHECK excluded 0; superseded on that one point by the widening below. |
 | `catering_rate_provenance_migration.sql` | 2026-09-12 | `catering_rates.display_label` (customer-facing name, NULL = fall back to the internal label) and `catering_event_charges.rate_id` (FK, ON DELETE SET NULL). One missing fact behind three symptoms — internal rate names on customer documents, the ดนตรี section reconstructed by label regex, ค่าไฟ unfillable. Verified live before the code deployed: both columns select, and charges with rate_id set = 0 — history was not given provenance it never had. Closes queue item 16. |
+| `maintenance_resolver_name_migration.sql` | 2026-09-14 | `maintenance_reports.resolver_name TEXT` — who accepted or closed a report, denormalised at write time like `reporter_name`, because `profiles` is select-own under RLS and the list cannot read another user's name. Verified live before the code deployed, with a negative control first (a non-existent column is refused, HTTP 400, so the PASS below is not the API accepting anything): the column selects, and rows carrying a name = 0 — the three `done` rows keep `resolver_id` with no name and print "ไม่ระบุชื่อ", which is the truth of the data. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -740,6 +741,29 @@ In order. Nothing here is started unless it says so.
     so in the removal commit. Steps 4 and 5 of item 12 may add to this list;
     sweep once at the end rather than per step.
 
+19. **แจ้งซ่อม: push into the repair LINE group.** HELD — Nik's decision
+    2026-09-14: in-app badge first, LINE later when convenient; not blocking.
+    **Do not build until he says the OA exists.** Route decided: a LINE
+    Official Account under his existing Business ID (one Business ID holds up
+    to 100 OAs — no new email or phone), Messaging API enabled, the OA invited
+    into the normal repair group like any member (not OpenChat). LINE Notify
+    is discontinued, so this is the only route. `LINE_OA_SETUP.md` is his
+    step-by-step in Thai, marked "when ready": part A (create the OA, enable
+    the API, two values into Vercel, invite it into the group) can be done any
+    time; part B waits for the app.
+
+    What the app builds when he says go: a webhook route
+    (`/api/line/webhook`, signature-verified with `LINE_CHANNEL_SECRET`) that,
+    on the keyword `เชื่อมต่อ` from a group source, stores the group id in a
+    settings row and replies `เชื่อมต่อแล้ว` — the group id is captured by the
+    app, never copied by hand or through a third-party site. Then a push on
+    create (photo, location, description, reporter, a link) and on done, so
+    the reporter learns of it in LINE. **Failure to push must not fail the
+    report** — log it, store the report, say in the UI that the alert did not
+    send. Env: `LINE_CHANNEL_ACCESS_TOKEN` and `LINE_CHANNEL_SECRET`, never
+    printed. Quota counts recipients (one push to five members is five
+    messages; replies are free), so the group stays small.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -907,6 +931,57 @@ after both: a masked dd/mm/yyyy text input. It is held because staff would
 type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
 again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
 rollout to be worth having.
+
+## แจ้งซ่อม — reviewed 2026-09-14, and the premise the data corrected
+
+Nik asked for a review on the premise that nobody uses it. The live table
+said otherwise: six rows — two Owner test entries from launch day
+(2026-07-09) and **four real reports from one editor, ธีรวัฒน์**, three of
+them open: หลังคาสโตร์ 1 น้ำรั่ว โดนกล้อง (2026-08-09, "กำลังซ่อม" since 08-17
+with nobody named), อ่างล้างมือห้องน้ำคนพิการ ปูนยาแนวหลุด and
+เครื่องกรองน้ำพนักงาน (both 2026-09-01, never acknowledged). The feature is not
+unused; it is unanswered. The one person who used it got no response three
+times — the strongest lesson the rest of the staff could be taught about it.
+Those three were handed to Nik as the first action, before any code.
+
+What the review found, in the order that matters:
+
+- **Nobody is told.** No notification, no assignment, no badge — the fixer
+  learned of a report only by opening the page on their own initiative. That
+  was the whole gap; the form (eight taps and typing on a phone, against
+  LINE's five and a buzz) was not.
+- **"แจ้งแล้ว" meant both unseen and ignored**, and "กำลังซ่อม" recorded no
+  name: `resolver_id` was written only at done.
+- **An empty report was accepted** — no field was required — and listed as
+  "อื่นๆ — ไม่ระบุจุด".
+- The HR role's label promised แจ้งซ่อม ("ฝ่ายบุคคล + แจ้งซ่อม") while the
+  update policy admits only owner/admin/editor.
+- Staff have no logins yet; only the head group is on trial. The intended
+  reporters (kitchen and service staff on a phone) cannot report until they
+  do — a fact about accounts, not about the form.
+
+Nik's decisions (2026-09-14): the form stays roughly as it is — he does not
+think the form is the problem; people shout because shouting is easier, and
+the cost of shouting is that the fixer forgets, which is why the feature
+exists. The fixer is a designated person with an admin/editor login who calls
+an outside technician for hard jobs; Nik is not in the loop. **In-app badge
+first, LINE later** (queue item 19). Delete nothing until the loop is proven
+to close — tabs, detail page, after-photo, urgent, category all stay.
+
+Shipped 2026-09-14, after `maintenance_resolver_name_migration.sql`: a red
+count on the แจ้งซ่อม nav entry for the roles that act (open = new +
+in_progress; the layouts pass 0 for everyone else, so reporters see no
+count); "รับเรื่อง" records who took it (`resolver_name`, denormalised at
+write time like `reporter_name`, because `profiles` is select-own under RLS
+and the list cannot read another user's name) and the name prints on the card
+and the detail — rows accepted before the column existed read "ไม่ระบุชื่อ",
+which is the truth; `capture="environment"` on the report photo as a prop of
+the shared upload component, off by default so SOP gallery picks stay;
+location OR description required on client and server; the HR label fixed
+rather than the policy widened — a grant with no consumer is surface, and the
+policy path is four places (RLS + three inline arrays) that can drift. Those
+three inline copies of the role list still exist beside the new
+`canManageMaintenance`; consolidating them is a follow-up, not done now.
 
 ## The coffee-shop reimbursement, and why it is deliberately not corrected
 

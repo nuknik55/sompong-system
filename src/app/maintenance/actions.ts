@@ -13,6 +13,11 @@ export async function createReport(data: {
   photoBefore: string | null;
 }): Promise<{ error?: string }> {
   const profile = await requireProfile();
+  // Location OR description, here and in the form: a report with neither was
+  // accepted and listed as "อื่นๆ — ไม่ระบุจุด" — a defect, not flexibility.
+  if (!data.location.trim() && !data.description.trim()) {
+    return { error: "กรุณาระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง" };
+  }
   const supabase = createAdminClient();
 
   const { error } = await supabase.from("maintenance_reports").insert({
@@ -49,6 +54,9 @@ export async function editReport(
     return { error: "ไม่มีสิทธิ์แก้ไข" };
   }
   if (existing.status !== "new") return { error: "ไม่สามารถแก้ไขได้ — อยู่ระหว่างดำเนินการแล้ว" };
+  if (!data.location.trim() && !data.description.trim()) {
+    return { error: "กรุณาระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง" };
+  }
 
   const { error } = await supabase
     .from("maintenance_reports")
@@ -84,9 +92,17 @@ export async function updateReportStatus(
     updated_at: new Date().toISOString(),
   };
 
+  // Who took it is recorded at ACCEPT, not only at done. "แจ้งแล้ว" with
+  // nobody named was the defect the live data showed — a report in
+  // "กำลังซ่อม" for weeks with no name on it. The name is copied the way
+  // reporter_name is: profiles is select-own under RLS, so the list could
+  // not read it at render time.
+  if (status === "in_progress" || status === "done") {
+    updates.resolver_id = profile.id;
+    updates.resolver_name = profile.full_name ?? "";
+  }
   if (status === "done") {
     updates.resolved_at = new Date().toISOString();
-    updates.resolver_id = profile.id;
     if (opts?.photoAfter) updates.photo_after = opts.photoAfter;
     if (opts?.resolverNote?.trim()) updates.resolver_note = opts.resolverNote.trim();
   }

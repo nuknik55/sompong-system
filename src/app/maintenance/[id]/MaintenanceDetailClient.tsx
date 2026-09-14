@@ -123,6 +123,9 @@ export function MaintenanceDetailClient({
       {/* Meta */}
       <div className="text-xs text-neutral-400 space-y-0.5">
         <p>แจ้งโดย <span className="font-medium text-neutral-600">{report.reporterName || "ไม่ระบุ"}</span> · {fmtDate(report.createdAt)}</p>
+        {report.status !== "new" && (
+          <p>{report.status === "done" ? "ซ่อมโดย" : "รับเรื่องโดย"} <span className="font-medium text-neutral-600">{report.resolverName || "ไม่ระบุชื่อ"}</span></p>
+        )}
         {report.resolvedAt && <p>ดำเนินการเสร็จ {fmtDate(report.resolvedAt)}</p>}
         {report.resolverNote && <p className="text-green-600">✓ {report.resolverNote}</p>}
       </div>

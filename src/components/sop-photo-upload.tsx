@@ -47,11 +47,14 @@ export function SopPhotoUpload({
   onChange,
   bucket = "sop-photos",
   filenamePrefix = "",
+  capture = false,
 }: {
   photoUrl: string | null;
   onChange: (url: string | null) => void;
   bucket?: string;
   filenamePrefix?: string;
+  /** Open the camera directly instead of the camera-or-gallery sheet. Off by default: SOP step photos are often picked from the gallery. */
+  capture?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -103,6 +106,7 @@ export function SopPhotoUpload({
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
+        capture={capture ? "environment" : undefined}
         className="hidden"
         onChange={handleFile}
       />

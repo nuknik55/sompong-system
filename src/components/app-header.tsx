@@ -182,9 +182,12 @@ function SidebarContent({
 export function AppHeader({
   profile,
   pendingCount = 0,
+  openRepairCount = 0,
 }: {
   profile: Profile;
   pendingCount?: number;
+  /** Open maintenance reports. The layouts pass 0 for roles that cannot act, so reporters never see a count — the badge is for the people who act. */
+  openRepairCount?: number;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -200,6 +203,8 @@ export function AppHeader({
   const navLinks: NavItem[] = baseNav.map((item) =>
     item.href === "/owner/approve" && pendingCount > 0
       ? { ...item, badge: pendingCount }
+      : item.href === "/maintenance" && openRepairCount > 0
+      ? { ...item, badge: openRepairCount }
       : item
   );
 

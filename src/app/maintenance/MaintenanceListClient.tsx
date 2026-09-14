@@ -118,6 +118,13 @@ export function MaintenanceListClient({
                     <span className="text-xs text-neutral-400">
                       {r.reporterName || "ไม่ระบุ"} · {relTime(r.createdAt)}
                     </span>
+                    {/* "ไม่ระบุชื่อ" is the truth for rows accepted before the
+                        column existed — the roof leak — not a rendering gap. */}
+                    {r.status !== "new" && (
+                      <span className="text-xs text-neutral-500">
+                        {r.status === "done" ? "ซ่อมโดย" : "รับเรื่องโดย"} {r.resolverName || "ไม่ระบุชื่อ"}
+                      </span>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-1.5">
                     {canEdit && (

@@ -33,6 +33,11 @@ export function MaintenanceForm({
 
   function handleSubmit() {
     setError(null);
+    // Same rule as the server: one of the two must say something.
+    if (!location.trim() && !description.trim()) {
+      setError("กรุณาระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง");
+      return;
+    }
     startTransition(async () => {
       let res: { error?: string };
       if (mode === "create") {
@@ -50,11 +55,15 @@ export function MaintenanceForm({
       {/* Photo */}
       <div>
         <p className="mb-2 text-sm text-neutral-600">ถ่ายรูปสิ่งที่เสียหาย</p>
+        {/* capture: the camera opens straight away. Without it the phone
+            first asks camera-or-gallery — one tap nobody reporting a broken
+            thing needs. SOP photos do not pass it; gallery picks stay there. */}
         <SopPhotoUpload
           photoUrl={photo}
           onChange={setPhoto}
           bucket="sop-photos"
           filenamePrefix="maint-"
+          capture
         />
       </div>
 
@@ -102,6 +111,7 @@ export function MaintenanceForm({
           rows={3}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm"
         />
+        <p className="mt-1 text-xs text-neutral-400">ต้องระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง</p>
       </div>
 
       {/* Urgent toggle */}

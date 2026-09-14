@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getPendingCount } from "@/lib/pending-data";
+import { canManageMaintenance, getOpenRepairCount } from "@/lib/maintenance-data";
 import { AppHeader } from "@/components/app-header";
 
 export default async function OwnerLayout({ children }: { children: React.ReactNode }) {
@@ -15,9 +16,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // out of their own pages.
   if (profile.role === "staff") redirect("/staff");
   const pendingCount = isAdminOrAbove(profile.role) ? await getPendingCount() : 0;
+  const openRepairCount = canManageMaintenance(profile.role) ? await getOpenRepairCount() : 0;
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <AppHeader profile={profile} pendingCount={pendingCount} />
+      <AppHeader profile={profile} pendingCount={pendingCount} openRepairCount={openRepairCount} />
       <main className="flex-1 p-4 sm:p-6">{children}</main>
     </div>
   );
