@@ -150,12 +150,22 @@ but re-running either would not do what it looks like it does.
 no code. The declaration, its policies, its seed rows, and the matching policy
 block in `hr_role_patch.sql` were deleted rather than run.
 
-## The write-check rule is enforced locally, but nothing runs it
+## The write-check rule is enforced locally, and CI runs it on every push
 
 `local/no-unchecked-supabase-write` (in `eslint-rules/`) catches the class of
 bug behind most of this file's history: a Supabase write whose error is
 discarded. It is set to `"error"` in `eslint.config.mjs` and reports **zero**
 violations today.
+
+**Correction to the correction (2026-09-14).** The paragraph below claimed
+"there is no CI at all — no `.github/workflows` directory". That was false
+when it was written: `.github/workflows/ci.yml` has existed since `89ebd31`
+(2026-09-06) and runs `npm run lint` + `npm test` on every push and PR. The
+workflow's absence was asserted, in a commit about verification gaps, without
+ever listing `.github/workflows` — check-the-authoritative-source, missed in
+the one place it would have been most embarrassing. The paragraph stays as
+written, because what it got right (green lint enforces nothing on its own)
+is still the point; read its "no CI" sentence as struck.
 
 **Correction to what this section used to say.** It claimed the rule was "not
 CI-enforced" because lint was not green, which implied a CI gate existed and was
@@ -164,13 +174,15 @@ being held back. There is no CI at all — no `.github/workflows` directory, and
 `npm run lint` by hand. Green lint enforces nothing on its own; something has to
 run it.
 
-So there are two separate pieces of work, and finishing the first does not
-deliver the second:
+So there are two separate pieces of work, and — see the correction above —
+both turn out to be done:
 
 1. **Get `npm run lint` to exit 0.** DONE. All nine are fixed or documented;
    the run is 0 errors, 0 warnings.
-2. **Add a workflow that runs it.** Not started. Until it exists, the rule
-   protects only what someone remembers to check.
+2. **Add a workflow that runs it.** Existed all along — `89ebd31`, five days
+   before this list first said "Not started". What the workflow does not do is
+   put its red X in front of anyone who acts on it; that gap and its fix are
+   queue item 2, closed below.
 
 Do not add `--quiet` or lower the rule severity to get a green run.
 
@@ -201,25 +213,41 @@ lint and silently regressed paging on the category-delete path.
 In order. Nothing here is started unless it says so.
 
 1. ~~Finish the `set-state-in-effect` fixes~~ — DONE.
-2. **Add a CI workflow that runs `npm run lint`.** Not started. Lint is green
-   as of 2026-09-11, so a gate would pass today. Without it, item 1 buys
-   nothing enforceable. See the section above for why this is a separate item
-   rather than the tail of item 1.
+2. ~~**Add a CI workflow that runs `npm run lint`.**~~ **CLOSED 2026-09-14 —
+   the workflow already existed when this entry was written.**
+   `.github/workflows/ci.yml` (`89ebd31`, 2026-09-06) has run `npm run lint`
+   and `npm test` on every push and PR since before item 1 was finished. This
+   entry asserted its absence, in a commit about verification gaps, without
+   ever listing `.github/workflows` — check-the-authoritative-source, missed
+   in the one place it would have been most embarrassing.
 
-   **This item's own evidence, earned the hard way.** From 2026-09-10 to
-   2026-09-11 `npm run lint` exited 1 for the whole repo and nobody noticed.
-   `d4abd73` deleted a 70-line function body from
-   `scripts/seed-item-categories.mjs` and replaced it with an import, leaving
-   the function's closing `}` behind — a syntax error, confirmed by
-   `node --check` against the committed blobs (`bea8cf6` passes, `d4abd73`
-   fails). It was found only because an unrelated change ran lint a day later,
-   and the line above used to claim lint was green while it was red.
+   **This item's own evidence, earned the hard way — now corrected, and the
+   true version is more useful.** From 2026-09-10 to 2026-09-11
+   `npm run lint` exited 1 for the whole repo. `d4abd73` deleted a 70-line
+   function body from `scripts/seed-item-categories.mjs` and replaced it with
+   an import, leaving the function's closing `}` behind — a syntax error,
+   confirmed by `node --check` against the committed blobs (`bea8cf6` passes,
+   `d4abd73` fails). This paragraph used to end: "the only thing that would
+   have caught it the same day is the workflow that does not exist yet."
+   Wrong twice over. The workflow existed, and it caught the brace **the same
+   minute**: `d4abd73` was committed at 2026-09-10T12:30:59Z and its CI run
+   concluded `failure` at 12:32:02Z, 63 seconds later. The red X and its
+   notification email — addressed to the account that pushed, an inbox nobody
+   watches for lint — went unread for a day, and every push on 2026-09-11
+   inherited the red lint and failed CI too, regardless of its own content,
+   until an unrelated change happened to run lint locally.
 
-   So the gap this item describes is not hypothetical: **a one-character
-   regression survived a commit, a push and a production deploy**, and the
-   only thing that would have caught it the same day is the workflow that does
-   not exist yet. Fixed in the commit that wrote this paragraph; the item
-   stays open, because the fix is the brace, not the gate.
+   **So the gap was never the missing gate; it was that the signal reached no
+   one who would act on it.** A one-character regression really did survive a
+   commit, a push and a production deploy — with a red X hanging on it the
+   whole time. The fix adopted 2026-09-14: the deploy-verification loop also
+   reads the CI run's conclusion (`actions/runs?head_sha=`; the rule lives in
+   `AGENTS.md` beside the deploy-status rule), so every push reports two
+   greens, and a red CI leads the report the way a failed deploy does. The
+   upgrade to an actually-blocking gate (PRs + branch protection with
+   "Include administrators") is documented in `ci.yml`'s own header —
+   recorded, not adopted; a PR flow on a two-person push-to-main team is
+   Nik's call.
 3. **The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.
    Investigation first: for each, what it was evidently meant to gate and what
    wiring it would change, so the decision is informed rather than guessed.

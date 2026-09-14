@@ -272,6 +272,39 @@ tell you, assert the precondition yourself — that the sha is 40 characters, th
 the row was found, that the file was non-empty — before believing the empty
 result.
 
+### A push is verified by TWO greens: the deploy AND the CI run
+
+The same public API family answers both, keyed by the same full sha:
+
+```
+FULL=$(git rev-parse HEAD)      # assert 40 characters first, as above
+curl -s ".../deployments?sha=$FULL"        # the Vercel deploy
+curl -s ".../actions/runs?head_sha=$FULL"  # the CI run (lint + tests)
+```
+
+This second check exists because the notifier fired and nobody read it.
+`.github/workflows/ci.yml` caught `d4abd73`'s stray brace **63 seconds after
+the commit** (committed 2026-09-10T12:30:59Z; run concluded `failure` at
+12:32:02Z) — and the red X plus its email, addressed to the account that
+pushed, an inbox nobody watches for lint, went unread for a day while every
+subsequent push inherited the red. The gate existed and fired; the signal
+reached no one who would act on it. The pusher is the one who acts, so the
+pusher reads the conclusion.
+
+Reading the answer, with this section's own rule applied to it:
+
+- A run has `status` and `conclusion`. Only `status: "completed"` carries a
+  meaningful `conclusion`; `queued`/`in_progress` with `conclusion: null`
+  means "not finished yet", never "passed". Poll until completed, as with the
+  deploy.
+- `total_count: 0` is an absence, not a green. Either the sha is wrong (the
+  short-sha trap above) or the commit was not a push head — CI runs once per
+  push, on its head, which is why `90e3d01` shows zero runs: it shipped
+  mid-push under head `d366869`. After `git push`, HEAD **is** the push head,
+  so zero runs is a loud failure to report, never a pass.
+- **If CI is red, say so before anything else in the report**, the same way a
+  failed deploy is reported. Two greens, or the push is not verified.
+
 ### The list itself is the point
 
 Seven instances, all the same shape: **output that reads as an answer when it is
