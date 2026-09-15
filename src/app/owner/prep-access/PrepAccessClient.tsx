@@ -155,14 +155,62 @@ export function PrepAccessClient({
   // "กดที่ชื่อเด้งขึ้นมาดีกว่า อย่างนี้ยาวมาก". The counts stay visible while
   // collapsed, because "who can see how much" is the question this view exists
   // to answer at a glance.
-  const nameById = new Map(recipes.map((r) => [r.id, r.name]));
+  //
+  // THE EXPANDED LIST SHOWS ALL 48, NOT ONLY WHAT THE PERSON HOLDS, and that
+  // is a fix rather than a flourish. It used to list only granted recipes, so
+  // revoking one made its row DISAPPEAR — the action deleted its own undo, and
+  // the only way back was เปิดทั้งหมด and start again, which is worse than the
+  // mistake. Nik hit it on his first use, revoking ข้าวเหนียวมูน from เวช.
+  // Same family as the silent-failure items: the write was correct and its
+  // reversal was unreachable from where it happened. Revoking one recipe is
+  // also the likelier error by far, so that path is the one that must forgive.
+  // Now the row toggles in place.
+  //
+  // Granted first, then not-granted, each under a count — which also makes
+  // this view answer "what can เวช NOT see" without changing tabs. The list is
+  // 48 rows for one expanded person, the same length as the ตามสูตร tab, and
+  // only ever for one person at a time.
+  //
+  // ตามสูตร never had this defect in the other direction: it renders every
+  // person on every recipe and only changes the button, so granting there
+  // leaves the row exactly where it was.
   const byPerson = (
     <div className="space-y-2">
       {people.map((p) => {
         const held = countByPerson.get(p.id) ?? 0;
-        const mine = grants.filter((g) => g.profileId === p.id);
         const open = openPerson === p.id;
         const allKey = `all:${p.id}`;
+        const heldRecipes = recipes.filter((r) => granted.has(key(r.id, p.id)));
+        const notHeldRecipes = recipes.filter((r) => !granted.has(key(r.id, p.id)));
+        // A plain function, deliberately not a component: called inline, it
+        // cannot remount its inputs the way a component declared during render
+        // would (see the note in catering/shared.tsx).
+        const rowFor = (r: PrepAccessRecipe) => {
+          const g = granted.get(key(r.id, p.id));
+          const k = key(r.id, p.id);
+          return (
+            <li key={r.id} className="flex flex-wrap items-center gap-2 border-b border-neutral-50 px-4 py-2 last:border-0">
+              <button
+                type="button"
+                disabled={isPending && busy === k}
+                onClick={() => toggle(r.id, p.id, !!g)}
+                className={`shrink-0 rounded-lg border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                  g
+                    ? "border-green-300 bg-green-50 text-green-800 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                    : "border-neutral-300 bg-white text-neutral-600 hover:border-green-400 hover:bg-green-50 hover:text-green-800"
+                }`}
+              >
+                {busy === k ? "กำลังบันทึก…" : g ? "✓ เห็นสูตรนี้" : "เปิดให้เห็น"}
+              </button>
+              <span className="min-w-0 flex-1 text-sm text-neutral-700">{r.name}</span>
+              {g && (
+                <span className="shrink-0 text-xs text-neutral-400">
+                  เปิดเมื่อ {fmtDate(g.grantedAt)}{g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
+                </span>
+              )}
+            </li>
+          );
+        };
         return (
           <div key={p.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
             <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
@@ -202,33 +250,24 @@ export function PrepAccessClient({
               )}
             </div>
             {open && (
-              mine.length === 0 ? (
-                <p className="border-t border-neutral-100 px-4 py-3 text-xs text-neutral-400">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
-              ) : (
-                <ul className="border-t border-neutral-100">
-                  {mine.map((g) => {
-                    const k = key(g.prepRecipeId, p.id);
-                    return (
-                      <li key={g.prepRecipeId} className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-50 px-4 py-2 last:border-0">
-                        <span className="min-w-0 flex-1 text-sm text-neutral-700">
-                          {nameById.get(g.prepRecipeId) ?? g.prepRecipeId}
-                          <span className="ml-2 text-xs text-neutral-400">
-                            เปิดเมื่อ {fmtDate(g.grantedAt)}{g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          disabled={isPending && busy === k}
-                          onClick={() => toggle(g.prepRecipeId, p.id, true)}
-                          className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
-                        >
-                          {busy === k ? "กำลังบันทึก…" : "ปิดสิทธิ์"}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )
+              <div className="border-t border-neutral-100">
+                <p className="bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500">
+                  เห็นอยู่ ({held})
+                </p>
+                {heldRecipes.length === 0 ? (
+                  <p className="px-4 py-2 text-xs text-neutral-400">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
+                ) : (
+                  <ul>{heldRecipes.map(rowFor)}</ul>
+                )}
+                <p className="bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500">
+                  ยังไม่เห็น ({recipes.length - held})
+                </p>
+                {notHeldRecipes.length === 0 ? (
+                  <p className="px-4 py-2 text-xs text-neutral-400">เห็นครบทุกสูตรแล้ว</p>
+                ) : (
+                  <ul>{notHeldRecipes.map(rowFor)}</ul>
+                )}
+              </div>
             )}
           </div>
         );
