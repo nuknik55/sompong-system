@@ -48,6 +48,41 @@ across the 42 files exist in production.
 2026-08-31, have both landed. `purchase_cost` was widened to numeric(12,4)
 and `menus.fuel_cost` was dropped on the same day.
 
+### What that sweep could not see — policies
+
+**"Applied: everything" was true of what it measured, and that is narrower
+than it sounds.** The 2026-08-31 probe covered "every table, column, view and
+function". **A POLICY IS NONE OF THOSE.** A migration that only drops and
+creates RLS policies changes no structure, so it is invisible to a structural
+probe — it would read as applied whether it had run or not, which is the
+"absence that reads as an answer" failure this repo keeps rediscovering.
+
+One file is in that class: **`costing_tables_rls_migration.sql`** (committed
+`16d7104`, 2026-08-22), which narrows read and write on `ingredients`,
+`prep_recipes`, `menu_recipe_items` and `prep_recipe_items`. It declares no
+table, column, view or function at all.
+
+**Verified applied 2026-09-15**, by Nik running
+`SELECT policyname, cmd, qual FROM pg_policies WHERE tablename IN
+('prep_recipes','prep_recipe_items')` — the authoritative source, which no
+amount of reading the repo could substitute for:
+
+| | live |
+|---|---|
+| SELECT | `owner, admin, editor, staff` (policies `prep_recipes_select`, `prep_recipe_items_select`) |
+| write | `owner, admin` (`prep_recipes_write`, `prep_recipe_items_write`) |
+
+So **sales and hr already cannot read any recipe or cost data**, and the
+population the prep-visibility work restricts is the four editors and the
+staff account — exactly the people who can reach the reverse index on
+`/owner/ingredients`.
+
+Before this was run, the honest state of knowledge was "unverified, and
+unverifiable from here": the service-role key bypasses RLS, so querying with
+it proves nothing about policies. Any future policy-only migration needs the
+same treatment — a `pg_policies` read, by someone with a real session, named
+and dated here.
+
 ### Applied since, with dates
 
 | file | ran | effect |
@@ -208,6 +243,23 @@ A property worth remembering, because it nearly bit during the
 has no opinion about whether the behaviour that effect provided was carried
 over.** Patching the two obvious `onChange` handlers there would have passed
 lint and silently regressed paging on the category-delete path.
+
+## Gates a person runs — they cannot run in CI
+
+CI runs `npm run lint` and `npm test`. Neither has database credentials, so
+any check that needs live data is a gate a **person** runs, and it is written
+here because a gate nobody can find is not a gate.
+
+| gate | when to run it | what it proves |
+|---|---|---|
+| `scripts/verify-prep-unit-costs.mjs` | after `prep_recipe_access_migration.sql`, and after ANY change to `prep_unit_costs()` **or** to `rawUnitCost()`/`resolveUnitCosts()` in `src/lib/costing.ts` | the SQL cost channel and the TS resolver still agree on all 48 preps |
+
+**Why that gate has to exist.** `prep_unit_costs()` re-implements the prep
+nesting rule in SQL, and the app change that follows deletes the TS
+prep-resolution branch so the hard part lives in one place. What still exists
+twice is `rawUnitCost` — five lines of money arithmetic, in SQL and in
+TypeScript. Nothing automatic can catch those two drifting apart, so this does,
+and only if someone runs it. A green CI says nothing about it.
 
 ## Queued work
 
@@ -931,6 +983,40 @@ after both: a masked dd/mm/yyyy text input. It is held because staff would
 type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
 again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
 rollout to be worth having.
+
+## The accounts — who has had access is not answerable from the profile list
+
+Checked 2026-09-15 by activity, not by name, while scoping prep visibility.
+The guess from the names inverts:
+
+| account | role | activity |
+|---|---|---|
+| **admin** | admin | **34 recipe edits, 41 approvals resolved, 11 order sessions** — the second-busiest account in the system |
+| เฮง | admin | 36 recipe edits, 43 pending changes submitted, 6 order sessions |
+| Owner | owner | 115 approvals resolved, 11 order sessions, 2 maintenance rows |
+| เวช | editor | 13 pending changes, last 2026-08-14 |
+| ธีรวัฒน์ | editor | 4 maintenance rows, 1 order session |
+| Editor | editor | 2 pending changes, last 2026-08-22 — lightly used, but used |
+| อู๋ | admin | 1 approval resolved |
+| แหงน, Staff, HR, sale | editor/staff/hr/sales | **no activity anywhere** |
+
+**`admin` looks like a placeholder and is not one.** It needs a real name, not
+retirement; retiring it would take out whoever is behind 34 recipe edits and 41
+approvals. `Editor` is lightly used. `Staff`, `HR` and `sale` show nothing at
+all, and are the safe ones to retire before any grant is made.
+
+**Two accounts (เฮง and `admin`) account for 70 of the 119 recipe edits.** The
+realistic pool of people to name on a prep recipe is far smaller than eleven
+rows suggests.
+
+**And the limit of all of the above:** 99 of 157 pending changes, and 13 of 42
+order sessions, were submitted by profile ids **that no longer exist** —
+accounts deleted at some point, with their work still referenced. So the
+current profile list cannot answer who has had access historically, and
+nothing in the schema can: there is no view or access log on any table (the
+only recipe-related log, `recipe_item_history`, records edits, not reads).
+Whoever has already read the prep recipes, has already read them; this work
+closes the door from here on, and cannot audit what went through it.
 
 ## แจ้งซ่อม — reviewed 2026-09-14, and the premise the data corrected
 
