@@ -51,16 +51,43 @@ export function PrepAccessClient({
   // has been granted everything.
   const unheld = recipes.filter((r) => !countByRecipe.get(r.id)).length;
 
+  // ── Why these handlers catch, and why they use finally ─────────────────
+  //
+  // Item 12 made EXPECTED failures return a Thai message instead of throwing,
+  // because production redacts thrown Server Action messages. It could not do
+  // anything about failures BELOW that layer, which still throw: a stale
+  // Server Action id after a deploy (the client bundle holds action hashes
+  // from the build it was loaded from), a dropped connection, a redeploy while
+  // a tab sits open.
+  //
+  // Without the catch, such a rejection was completely invisible — no message,
+  // nothing moved — and because setBusy(null) sat after the await it never
+  // ran, leaving that row reading "กำลังบันทึก…" for good. So the finally is
+  // not tidiness; it is the half that unsticks the button.
+  //
+  // This matters more here than on any other screen: once the RLS policies are
+  // narrowed, this is the ONLY tool for repairing access, and a repair tool
+  // that fails silently is a locked door with no handle.
+  //
+  // The message names the fix rather than the fault, because refreshing is
+  // exactly what resolves the likeliest cause.
+  const RETRY_MESSAGE = "บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
   function toggle(prepId: string, personId: string, isGranted: boolean) {
     setError(null);
     setBusy(key(prepId, personId));
     startTransition(async () => {
-      const result = isGranted ? await revokePrepAccess(prepId, personId) : await grantPrepAccess(prepId, personId);
-      setBusy(null);
-      // The screen moves only on success, so it can never contradict the
-      // database — the same rule as everywhere else in this app.
-      if (result.status === "error") { setError(result.message); return; }
-      router.refresh();
+      try {
+        const result = isGranted ? await revokePrepAccess(prepId, personId) : await grantPrepAccess(prepId, personId);
+        // The screen moves only on success, so it can never contradict the
+        // database — the same rule as everywhere else in this app.
+        if (result.status === "error") { setError(result.message); return; }
+        router.refresh();
+      } catch {
+        setError(RETRY_MESSAGE);
+      } finally {
+        setBusy(null);
+      }
     });
   }
 
@@ -72,10 +99,15 @@ export function PrepAccessClient({
     setError(null);
     setBusy(`all:${person.id}`);
     startTransition(async () => {
-      const result = mode === "grant" ? await grantAllPreps(person.id) : await revokeAllPreps(person.id);
-      setBusy(null);
-      if (result.status === "error") { setError(result.message); return; }
-      router.refresh();
+      try {
+        const result = mode === "grant" ? await grantAllPreps(person.id) : await revokeAllPreps(person.id);
+        if (result.status === "error") { setError(result.message); return; }
+        router.refresh();
+      } catch {
+        setError(RETRY_MESSAGE);
+      } finally {
+        setBusy(null);
+      }
     });
   }
 
