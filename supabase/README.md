@@ -816,6 +816,76 @@ In order. Nothing here is started unless it says so.
     printed. Quota counts recipients (one push to five members is five
     messages; replies are free), so the group stays small.
 
+20. **A thrown Server Action is invisible in 46 of 120 client handlers.**
+    Not started, found 2026-09-15 by scanning every `startTransition(async …)`
+    in `src/`. **Per-file triage, NOT a mechanical sweep** — the right
+    handling differs by screen and so does the severity.
+
+    **Item 12 was scoped to the SERVER side**: expected failures now RETURN a
+    Thai message instead of throwing, because production redacts thrown
+    Server Action messages. This is the CLIENT half, which was never in that
+    scope. A returned error is handled everywhere; a THROWN one — a stale
+    Server Action id after a deploy (a client bundle carries the action
+    hashes of the build it was loaded from), a dropped connection, a redeploy
+    while a tab sits open — rejects the `await` inside the transition, and
+    without a catch nothing renders at all.
+
+    **Severity is not uniform, which is why a sweep is the wrong tool.** Many
+    of the 46 end in a success indicator that simply never appears, reading
+    as "nothing happened" — bad, but not a false success. The dangerous ones
+    are those whose failure leaves the screen claiming something untrue, or
+    leaves a manual pending flag stuck because the `setBusy(null)` sits after
+    the `await` rather than in a `finally` (that second half is easy to miss;
+    it leaves a button reading "กำลังบันทึก…" for good).
+
+    The split, 2026-09-15:
+
+    - **8 shipped this session** — `MaintenanceForm`,
+      `MaintenanceDetailClient` (×2), `RatesSettingsClient`, `ReorderClient`,
+      `EmployeeDetailClient`, `q-factor-setting`, `ingredient-manager`.
+    - **36 pre-existing**, concentrated in a few files:
+      `owner/stations/[id]/template/TemplateClient` (7),
+      `staff/inventory/template/TemplateClient` (7),
+      `staff/inventory/[id]/SessionActions` (5), `team-manager` (5),
+      the three accounting import clients (6), `ApproveClient` (2).
+    - **2 already fixed** (`211fcc4`), on the prep grant screen, because
+      migration 2 makes that screen the only tool for repairing access and a
+      repair tool that fails silently is a locked door with no handle.
+
+21. **`prep_recipe_access` records grants and forgets revocations.** Not
+    started; approved in shape 2026-09-15, size to go to Nik before it is
+    built.
+
+    `granted_at` and `granted_by` exist, so a live grant carries its
+    provenance — but a DELETE leaves nothing at all. When เวช's
+    ข้าวเหนียวมูน grant was reported as succeeding and was absent an hour
+    later, the question "did a row exist and get removed?" could only be
+    answered from the ABSENCE of a fresh timestamp plus the absence of any
+    mechanism that could have deleted one. **That is the second time this
+    week an answer rested on absence of evidence rather than on a record**
+    (the first: nothing logs reads, so who has already seen the prep recipes
+    is unanswerable). This table gates the restaurant's core asset.
+
+    Shape, on the `recipe_item_history` pattern that already works here: a
+    `prep_recipe_access_history` table (action `grant | revoke`,
+    `prep_recipe_id`, `profile_id`, `changed_by`, `changed_at`), written by a
+    SECURITY DEFINER trigger on INSERT and DELETE of `prep_recipe_access`, so
+    the record cannot be bypassed by whichever path does the writing — the
+    grant screen, a SQL script, or a future bulk action. Owner-only SELECT.
+
+    **Size, both options:**
+
+    - **Migration only — one file, no app change, no deploy.** ~50 lines:
+      table, trigger function, trigger, RLS. The history exists from that
+      moment and the owner can query it. This is the whole of the value:
+      the question becomes answerable.
+    - **Plus a panel on the grant screen** — a loader and a history list per
+      person or per recipe: roughly half a session on top, and only worth it
+      if Nik would actually read it there rather than ask for a query.
+
+    Recommend the migration alone first; the panel can follow if he asks for
+    it twice.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
