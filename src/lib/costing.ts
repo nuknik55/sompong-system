@@ -62,70 +62,44 @@ export function rawUnitCost(ing: IngredientRow): number | null {
 
 export type UnitCostMap = Map<string, number | null>; // ingredient_id -> cost per usage_unit
 
+/** prep_recipe_id -> cost per usage unit, from public.prep_unit_costs(). */
+export type PrepUnitCostMap = Map<string, number | null>;
+
 /**
- * Resolves a unit cost for every ingredient, including prep items whose cost
- * depends on their own recipe (which may itself reference other prep items).
- * Runs multiple passes so any depth of prep-within-prep nesting resolves;
- * an ingredient stays `null` if its cost (or one of its components') is unknown.
+ * Resolves a unit cost for every ingredient.
+ *
+ * THE PREP NESTING RULE IS NOT HERE ANY MORE. It used to be a multi-pass
+ * fixpoint in this function; it now lives in public.prep_unit_costs(), and
+ * this takes the answer as an argument. That is not tidying — it is what
+ * makes prep visibility possible at all: RLS hides prep_recipe_items from a
+ * user who has not been granted the recipe, so a resolver that read those
+ * rows would compute null for them and 112 of 244 dishes would report an
+ * incomplete cost to exactly the people who are supposed to keep working.
+ * A cost is a number and a recipe is a list; only the list is restricted.
+ *
+ * Do not "restore" the fixpoint here. Two implementations of the same
+ * arithmetic is precisely the failure the SQL side was chosen to avoid, and
+ * scripts/verify-prep-unit-costs.mjs exists to prove the one that remains
+ * still agrees with it.
+ *
+ * An ingredient is `null` when its cost is unknown — unpriced, or a prep the
+ * function could not price. Never 0: a dish with an unknown component must
+ * read as incomplete, not as cheap.
  */
 export function resolveUnitCosts(
   ingredients: IngredientRow[],
-  prepRecipes: PrepRecipeRow[],
-  prepItems: PrepRecipeItemRow[]
+  prepUnitCosts: PrepUnitCostMap
 ): UnitCostMap {
   const costs: UnitCostMap = new Map();
-  const prepByRecipeId = new Map(prepRecipes.map((p) => [p.id, p]));
-  const itemsByPrepRecipeId = new Map<string, PrepRecipeItemRow[]>();
-  for (const item of prepItems) {
-    const list = itemsByPrepRecipeId.get(item.prep_recipe_id) ?? [];
-    list.push(item);
-    itemsByPrepRecipeId.set(item.prep_recipe_id, list);
-  }
-
   for (const ing of ingredients) {
-    if (!ing.is_prep) costs.set(ing.id, rawUnitCost(ing));
-  }
-
-  const prepIngredients = ingredients.filter((i) => i.is_prep && i.prep_recipe_id);
-  let remaining = [...prepIngredients];
-
-  for (let pass = 0; pass < prepIngredients.length + 1 && remaining.length > 0; pass++) {
-    const stillUnresolved: typeof remaining = [];
-    for (const ing of remaining) {
-      const recipe = prepByRecipeId.get(ing.prep_recipe_id!);
-      const items = itemsByPrepRecipeId.get(ing.prep_recipe_id!) ?? [];
-      if (!recipe || items.length === 0) {
-        costs.set(ing.id, null);
-        continue;
-      }
-      let total = 0;
-      let allKnown = true;
-      for (const item of items) {
-        const componentCost = costs.get(item.ingredient_id);
-        if (componentCost === undefined) {
-          allKnown = false;
-          break;
-        }
-        if (componentCost === null) {
-          allKnown = false;
-          break;
-        }
-        total += item.quantity * componentCost;
-      }
-      if (!allKnown) {
-        stillUnresolved.push(ing);
-        continue;
-      }
-      costs.set(ing.id, recipe.batch_yield_qty > 0 ? total / recipe.batch_yield_qty : null);
+    if (!ing.is_prep) {
+      costs.set(ing.id, rawUnitCost(ing));
+      continue;
     }
-    if (stillUnresolved.length === remaining.length) {
-      // No progress this pass — remaining items have a missing/cyclic dependency.
-      for (const ing of stillUnresolved) costs.set(ing.id, null);
-      break;
-    }
-    remaining = stillUnresolved;
+    // A prep with no prep_recipe_id is an orphan, and a prep_recipe_id absent
+    // from the map is one the function returned no row for. Both are unknown.
+    costs.set(ing.id, ing.prep_recipe_id ? prepUnitCosts.get(ing.prep_recipe_id) ?? null : null);
   }
-
   return costs;
 }
 

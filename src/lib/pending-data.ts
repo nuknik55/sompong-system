@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { getPrepVisibility } from "@/lib/prep-access";
 
 export type ChangeType =
   | "recipe_edit"
@@ -58,6 +59,20 @@ export async function getPendingCount(): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Which prep recipe a pending change is about, or null when it is not about
+ * one. Used to keep a prep's composition out of the approve queue for an
+ * admin who has not been granted that recipe — a recipe_edit payload carries
+ * the entire item list.
+ */
+function prepIdOfChange(changeType: string, targetId: string, payload: PendingPayload): string | null {
+  const p = payload as Record<string, unknown>;
+  if (changeType === "recipe_edit") return p.target === "prep" ? (p.parentId as string) ?? targetId : null;
+  if (changeType === "prep_yield_edit") return targetId;
+  if (changeType === "prep_delete") return (p.prepId as string) ?? targetId;
+  return null;
+}
+
 export async function getPendingList(): Promise<PendingChange[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -74,18 +89,25 @@ export async function getPendingList(): Promise<PendingChange[]> {
     .in("id", editorIds);
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
 
-  return data.map((d) => ({
-    id: d.id,
-    editorId: d.editor_id,
-    editorName: nameById.get(d.editor_id) ?? "ไม่ทราบชื่อ",
-    changeType: d.change_type as ChangeType,
-    targetId: d.target_id,
-    payload: d.payload as PendingPayload,
-    status: d.status as PendingStatus,
-    adminNote: d.admin_note,
-    createdAt: d.created_at,
-    resolvedAt: d.resolved_at,
-  }));
+  const prepVisibility = await getPrepVisibility();
+
+  return data
+    .filter((d) => {
+      const prepId = prepIdOfChange(d.change_type as string, d.target_id, d.payload as PendingPayload);
+      return prepId === null || prepVisibility.canSee(prepId);
+    })
+    .map((d) => ({
+      id: d.id,
+      editorId: d.editor_id,
+      editorName: nameById.get(d.editor_id) ?? "ไม่ทราบชื่อ",
+      changeType: d.change_type as ChangeType,
+      targetId: d.target_id,
+      payload: d.payload as PendingPayload,
+      status: d.status as PendingStatus,
+      adminNote: d.admin_note,
+      createdAt: d.created_at,
+      resolvedAt: d.resolved_at,
+    }));
 }
 
 export async function resolvePendingChange(

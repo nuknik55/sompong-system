@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
+import { canSeePrep, PREP_FORBIDDEN } from "@/lib/prep-access";
 
 // ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
 // Same rule as staff/menu/actions.ts: production redacts thrown Server Action
@@ -91,6 +92,7 @@ export async function updatePrepYield(
   pendingInfo?: { prepName: string }
 ): Promise<PrepSaveResult> {
   const profile = await requireAdminOrEditor();
+  if (!(await canSeePrep(prepId))) return { status: "error", message: PREP_FORBIDDEN };
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "prep_yield_edit", prepId, {
@@ -115,6 +117,9 @@ export async function updatePrepYield(
 export async function duplicatePrep(prepId: string, newName: string, newCategory: string): Promise<PrepCreateResult> {
   const profile = await requireAdminOrEditor();
   if (!newName.trim()) return { status: "error", message: "กรุณาใส่ชื่อของเตรียมใหม่" };
+  // Copying is reading. Without this, a hidden recipe could be duplicated into
+  // a new one the copier owns outright — the composition out through the back.
+  if (!(await canSeePrep(prepId))) return { status: "error", message: PREP_FORBIDDEN };
 
   if (profile.role === "editor") {
     const supabase = await createClient();
@@ -161,6 +166,7 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
 
 export async function deletePrep(prepId: string): Promise<PrepActionResult> {
   const profile = await requireAdminOrEditor();
+  if (!(await canSeePrep(prepId))) return { status: "error", message: PREP_FORBIDDEN };
   const supabase = await createClient();
 
   if (profile.role === "editor") {

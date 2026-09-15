@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { canSeePrep, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { requireProfile } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 
@@ -41,6 +42,13 @@ export async function saveRecipeItems(
 
   if (profile.role === "staff") {
     return { status: "error", message: "ไม่มีสิทธิ์แก้ไขสูตร" };
+  }
+
+  // Admins are named per recipe like everyone else, so the role check above is
+  // not the whole answer for a prep. Refused rather than silently ignored: an
+  // edit that appears to save and does not is worse than a message.
+  if (target === "prep" && !(await canSeePrep(parentId))) {
+    return { status: "error", message: PREP_FORBIDDEN };
   }
 
   if (profile.role === "editor") {
@@ -103,6 +111,12 @@ export type RecipeHistoryEntry = {
 
 export async function getRecipeHistory(target: RecipeTarget, parentId: string): Promise<RecipeHistoryEntry[]> {
   await requireProfile();
+  // A prep's edit history is a second copy of its composition: ingredient
+  // names with old and new quantities, enough to rebuild the recipe. This
+  // action takes an arbitrary parentId, so requireProfile() alone let any
+  // logged-in user read any prep's history by id. Empty rather than an error:
+  // a hidden prep should look absent, not defended.
+  if (target === "prep" && !(await canSeePrep(parentId))) return [];
   const supabase = await createClient();
 
   const { data: history, error } = await supabase

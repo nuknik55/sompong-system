@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import {
   resolveUnitCosts,
+  type PrepUnitCostMap,
   type IngredientRow,
   type MenuRecipeItemRow,
   type MenuRow,
@@ -99,16 +100,55 @@ export async function getQFactorPct(): Promise<number> {
   return data?.q_factor_pct ?? 3;
 }
 
-/** Loads everything needed to compute live costs anywhere in the app. */
+/**
+ * Cost per usage unit for every prep recipe, from the SECURITY DEFINER
+ * function. This is the ONLY read in the app that deliberately sees past prep
+ * visibility, and it can only ever return (uuid, numeric) — no ingredient
+ * list, by the function's return type rather than by our good behaviour.
+ *
+ * Returns an empty map for a caller whose role may not see cost at all (the
+ * function's own guard, which is how a sales session gets nothing). Empty is
+ * indistinguishable from "no preps priced", and that is the correct outcome
+ * for such a caller: every cost reads unknown rather than wrong.
+ */
+export async function getPrepUnitCosts(): Promise<PrepUnitCostMap> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("prep_unit_costs");
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as { prep_recipe_id: string; unit_cost: number | string | null }[];
+  return new Map(rows.map((r) => [r.prep_recipe_id, r.unit_cost === null ? null : Number(r.unit_cost)]));
+}
+
+/**
+ * Loads everything needed to compute live costs anywhere in the app.
+ *
+ * ── THIS OBJECT IS DELIBERATELY INCONSISTENT. DO NOT "FIX" IT. ─────────────
+ *
+ * `prepRecipes` and `prepItems` are FILTERED FOR DISPLAY: they arrive through
+ * the caller's own session, so once the prep RLS policies are live they
+ * contain only the recipes this user has been granted. Every surface that
+ * renders prep contents should use them and will then show the right subset.
+ *
+ * `unitCosts` is COMPLETE FOR ARITHMETIC: prep costs come from
+ * getPrepUnitCosts(), which is not filtered by visibility at all. A dish that
+ * uses a hidden prep still costs what it costs.
+ *
+ * So the same object says "you may see 3 preps" and "here is what all 48 of
+ * them cost", and both are correct. Making them agree in either direction is
+ * a bug: filter the costs and half the menu reports an incomplete cost to the
+ * people who need it; widen the items and the composition leaks. The two
+ * answer different questions.
+ */
 export async function getCostingContext() {
-  const [ingredients, prepRecipes, prepItems, menus, menuItems, qFactorPct] = await Promise.all([
+  const [ingredients, prepRecipes, prepItems, menus, menuItems, qFactorPct, prepUnitCosts] = await Promise.all([
     getIngredients(),
     getPrepRecipes(),
     getPrepRecipeItems(),
     getMenus(),
     getMenuRecipeItems(),
     getQFactorPct(),
+    getPrepUnitCosts(),
   ]);
-  const unitCosts = resolveUnitCosts(ingredients, prepRecipes, prepItems);
+  const unitCosts = resolveUnitCosts(ingredients, prepUnitCosts);
   return { ingredients, prepRecipes, prepItems, menus, menuItems, unitCosts, qFactorPct };
 }

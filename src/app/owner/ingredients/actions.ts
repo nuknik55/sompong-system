@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { canSeePrep, prepRecipeIdForItem, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 
@@ -20,6 +21,11 @@ export async function updateMenuItemQty(itemId: string, quantity: number): Promi
 
 export async function updatePrepItemQty(itemId: string, quantity: number): Promise<QtyUpdateResult> {
   await requireAdmin();
+  // Admin is not enough: admins are named per recipe like everyone else. The
+  // row is reached by ITEM id here, so the prep it belongs to has to be looked
+  // up before the write — a missing row refuses rather than allows.
+  const prepId = await prepRecipeIdForItem(itemId);
+  if (!prepId || !(await canSeePrep(prepId))) return { status: "error", message: PREP_FORBIDDEN };
   const supabase = await createClient();
   const { error } = await supabase.from("prep_recipe_items").update({ quantity }).eq("id", itemId);
   if (error) return { status: "error", message: error.message };

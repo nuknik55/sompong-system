@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { getCurrentProfile } from "@/lib/auth";
+import { canSeePrep } from "@/lib/prep-access";
 import { RecipeEditor } from "@/components/recipe-editor";
 import { PrepYieldEditor } from "@/components/prep-yield-editor";
 import { DuplicateButton } from "@/components/duplicate-button";
@@ -23,6 +24,13 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
 
   const { data: prep } = prepResult;
   if (!prep) notFound();
+
+  // Absent, not locked (Nik's rule 2): a prep nobody granted you does not
+  // render as a greyed row with a padlock — the URL simply does not resolve,
+  // exactly as /staff/menu/[id] treats a menu hidden from staff. The RLS
+  // policies say the same thing at the database; this is the app saying it
+  // too, so the page is right even before those policies are flipped.
+  if (!(await canSeePrep(id))) notFound();
 
   const { ingredients, prepRecipes, prepItems, unitCosts } = costingCtx;
   const items = prepItems.filter((it) => it.prep_recipe_id === id);

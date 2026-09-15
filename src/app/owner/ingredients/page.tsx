@@ -1,5 +1,6 @@
 import { getCostingContext } from "@/lib/data";
 import { requireAdminOrEditor } from "@/lib/auth";
+import { getPrepVisibility } from "@/lib/prep-access";
 import { IngredientManager } from "@/components/ingredient-manager";
 import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
@@ -9,13 +10,25 @@ import { PosPriceImport } from "@/components/pos-price-import";
 
 export default async function OwnerIngredientsPage() {
   const profile = await requireAdminOrEditor();
-  const { ingredients, unitCosts, menus, menuItems, prepRecipes, prepItems } = await getCostingContext();
+  const [{ ingredients, unitCosts, menus, menuItems, prepRecipes, prepItems }, prepVisibility] = await Promise.all([
+    getCostingContext(),
+    getPrepVisibility(),
+  ]);
   const raw = ingredients.filter((i) => !i.is_prep);
 
-  const menuById = new Map(menus.map((m) => [m.id, m.name]));
-  const prepById = new Map(prepRecipes.map((p) => [p.id, p.name]));
+  // THE REVERSE INDEX WAS THE WORST LEAK ON THIS SCREEN, and it is not on a
+  // prep screen at all. usageMap below ships, for every raw ingredient, which
+  // preps use it AND in what quantity. Transposed, that is the whole of
+  // prep_recipe_items — every secret recipe, rebuildable from the ingredients
+  // tab without ever opening a prep page. Filtered here, on the server, before
+  // the map is built: a prep you cannot see contributes nothing to it.
+  const visiblePreps = prepRecipes.filter((p) => prepVisibility.canSee(p.id));
+  const visiblePrepIds = new Set(visiblePreps.map((p) => p.id));
 
-  const prepCategories = [...new Set(prepRecipes.map((p) => p.category).filter((c): c is string => !!c))].sort((a, b) =>
+  const menuById = new Map(menus.map((m) => [m.id, m.name]));
+  const prepById = new Map(visiblePreps.map((p) => [p.id, p.name]));
+
+  const prepCategories = [...new Set(visiblePreps.map((p) => p.category).filter((c): c is string => !!c))].sort((a, b) =>
     a.localeCompare(b, "th")
   );
 
@@ -29,6 +42,7 @@ export default async function OwnerIngredientsPage() {
     if (name) ensure(item.ingredient_id).menus.push({ id: item.menu_id, name, itemId: item.id, quantity: item.quantity });
   }
   for (const item of prepItems) {
+    if (!visiblePrepIds.has(item.prep_recipe_id)) continue;
     const name = prepById.get(item.prep_recipe_id);
     if (name) ensure(item.ingredient_id).preps.push({ id: item.prep_recipe_id, name, itemId: item.id, quantity: item.quantity });
   }
@@ -71,12 +85,15 @@ export default async function OwnerIngredientsPage() {
             ),
           },
           {
-            label: `ของ prep (${prepRecipes.length})`,
+            label: `ของ prep (${visiblePreps.length})`,
             content: (
               <div className="space-y-3">
                 <CreateRecipeForm kind="prep" createAction={createPrep} hrefPrefix="/staff/prep" categories={prepCategories} pendingMode={!isAdmin} />
+                {/* The list is the filter — CategoryFilterList searches
+                    client-side over exactly what it is given, so a hidden prep
+                    is unreachable by search without a separate fix. */}
                 <CategoryFilterList
-                  items={prepRecipes.map((p) => ({
+                  items={visiblePreps.map((p) => ({
                     id: p.id,
                     name: p.name,
                     category: p.category ?? null,
