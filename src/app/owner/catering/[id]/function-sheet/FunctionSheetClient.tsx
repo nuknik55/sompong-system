@@ -121,10 +121,12 @@ export function FunctionSheetClient({
           </div>
           <div style={{ display: "flex", gap: "20px" }}>
             <HeaderField label="จำนวนแขก" value={event.guest_count != null ? `${event.guest_count} ท่าน` : null} />
-            {/* ประเภทงาน (เลี้ยงสัมมนาบริษัท, งานแต่ง…) has no column on
-                catering_events — booking_type is จองโต๊ะ/จองห้อง/จองงานจัดเลี้ยง,
-                which is a different question — so it is always a ruled line. */}
-            <HeaderField label="ประเภทงาน" value={null} />
+            {/* Stored since catering_event_type_migration.sql. NULL stays a
+                ruled line on purpose — a booking can be taken before anyone
+                asks what the party is for, and the sheet must stay writable
+                on paper. booking_type is a different question
+                (จองโต๊ะ/จองห้อง/จองงานจัดเลี้ยง) and is not this. */}
+            <HeaderField label="ประเภทงาน" value={event.event_type_label} />
           </div>
         </div>
 

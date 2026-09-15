@@ -2,14 +2,15 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
-import { getCateringCustomers, getStaffOptions, getCateringRates, getCateringSetMenuOptions, getCateringDishOptions } from "../actions";
+import { getCateringCustomers, getStaffOptions, getCateringRates, getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions } from "../actions";
 import { BookingScreen } from "../BookingScreen";
 
 /** A new booking: the one screen, empty. Replaces the create modal on the list page. */
 export default async function NewBookingPage() {
   const profile = await requireSales();
-  const [customers, staffOptions, rates, setMenuOptions, dishOptions] = await Promise.all([
-    getCateringCustomers(), getStaffOptions(), getCateringRates(), getCateringSetMenuOptions(), getCateringDishOptions(),
+  const [customers, staffOptions, rates, eventTypes, setMenuOptions, dishOptions] = await Promise.all([
+    getCateringCustomers(), getStaffOptions(), getCateringRates(), getCateringEventTypes(),
+    getCateringSetMenuOptions(), getCateringDishOptions(),
   ]);
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
@@ -23,6 +24,7 @@ export default async function NewBookingPage() {
         customers={customers}
         staffOptions={staffOptions}
         rates={rates}
+        eventTypes={eventTypes}
         setMenuOptions={setMenuOptions}
         dishOptions={dishOptions}
         defaultStaffId={profile.employee_id}

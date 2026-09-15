@@ -61,6 +61,14 @@ export type CateringEvent = {
   offsite_distance_km: number | null;
   floor_level: number | null;
   booking_type: string;
+  /** ประเภทงาน — what the party is FOR. NULL is normal: a booking can be
+   *  taken before anyone asks. Distinct from booking_type above, which is
+   *  จองโต๊ะ/จองห้อง/จองงานจัดเลี้ยง. */
+  event_type_id: string | null;
+  /** Joined from catering_event_types. The label lives only there, so a
+   *  rename reaches every booking — see the migration header for why this is
+   *  a FK and not a copied label the way charges keep theirs. */
+  event_type_label: string | null;
   food_format: string | null;
   table_count: number | null;
   reserve_tables: number | null;
@@ -224,11 +232,12 @@ export type CateringSetMenuItem = {
 const CATERING_EVENT_SELECT = `
   id, created_at, updated_at, customer_id, event_date, start_time, end_time,
   location_type, venue, room_portion, offsite_address, offsite_distance_km, floor_level,
-  booking_type, food_format, table_count, reserve_tables, table_label, guest_count,
+  booking_type, event_type_id, food_format, table_count, reserve_tables, table_label, guest_count,
   music_type, music_note, status,
   deposit_amount, deposit_percent, deposit_paid_at, detail_note, kitchen_note, created_by,
   quote_number, quote_revision, quoted_total, quoted_at, cost_locked_at,
   catering_customers(name, phone, line_id, company_name, address, contact_person),
+  catering_event_types(label),
   catering_event_staff(employee_id),
   profiles(full_name)
 `;
@@ -261,6 +270,8 @@ function mapEventRow(r: Record<string, unknown>): CateringEvent {
     offsite_distance_km: r.offsite_distance_km as number | null,
     floor_level: r.floor_level as number | null,
     booking_type: r.booking_type as string,
+    event_type_id: r.event_type_id as string | null,
+    event_type_label: (r.catering_event_types as { label: string } | null)?.label ?? null,
     food_format: r.food_format as string | null,
     table_count: r.table_count as number | null,
     reserve_tables: r.reserve_tables as number | null,
@@ -1125,6 +1136,194 @@ export async function reorderCateringRate(id: string, rateType: string, directio
   return {};
 }
 
+// ─── ประเภทงาน (catering_event_types) ──────────────────────────────────────
+//
+// Mirrors the rate management above — same is_active convention, same
+// sort_order in tens, same reorder-by-swap — with ONE deliberate difference,
+// in deleteCateringEventType: a type a booking uses cannot be deleted.
+//
+// These return a discriminated result instead of throwing, unlike the rate
+// actions a few lines up. Item 12 converted the rest of the app and
+// deliberately skipped catering; new code here follows the converted shape
+// because the delete refusal is a message a person must READ, and production
+// redacts thrown Server Action messages.
+
+export type CateringEventType = {
+  id: string;
+  label: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type EventTypeResult = { status: "ok" } | { status: "error"; message: string };
+
+function mapEventType(r: Record<string, unknown>): CateringEventType {
+  return {
+    id: r.id as string,
+    label: r.label as string,
+    sort_order: (r.sort_order as number) ?? 0,
+    is_active: (r.is_active as boolean) ?? true,
+  };
+}
+
+/** The picker: ACTIVE types only, so a retired one disappears from new bookings. */
+export async function getCateringEventTypes(): Promise<CateringEventType[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("catering_event_types")
+    .select("id, label, sort_order, is_active")
+    .eq("is_active", true)
+    .order("sort_order");
+  return (data ?? []).map(mapEventType);
+}
+
+/** The settings screen: every type, active or not. */
+export async function getAllCateringEventTypes(): Promise<CateringEventType[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("catering_event_types")
+    .select("id, label, sort_order, is_active")
+    .order("sort_order");
+  return (data ?? []).map(mapEventType);
+}
+
+/** How many bookings carry each type — so the delete refusal can say a number. */
+export async function getCateringEventTypeUsage(): Promise<Record<string, number>> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("catering_events")
+    .select("event_type_id")
+    .not("event_type_id", "is", null);
+  const counts: Record<string, number> = {};
+  for (const r of data ?? []) {
+    const id = r.event_type_id as string;
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export async function addCateringEventType(label: string): Promise<EventTypeResult> {
+  await requireAdmin();
+  const name = label.trim();
+  if (!name) return { status: "error", message: "กรุณาใส่ชื่อประเภทงาน" };
+  const supabase = await createClient();
+
+  const { data: last } = await supabase
+    .from("catering_event_types")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
+
+  const { error } = await supabase.from("catering_event_types").insert({ label: name, sort_order: nextSort });
+  // 23505 is the UNIQUE (label) constraint. Two types reading the same on a
+  // printed sheet would be worse than a refusal.
+  if (error) {
+    return {
+      status: "error",
+      message: error.code === "23505" ? `มี "${name}" อยู่แล้ว` : error.message,
+    };
+  }
+  revalidatePath("/owner/catering/settings");
+  return { status: "ok" };
+}
+
+export async function renameCateringEventType(id: string, label: string): Promise<EventTypeResult> {
+  await requireAdmin();
+  const name = label.trim();
+  if (!name) return { status: "error", message: "กรุณาใส่ชื่อประเภทงาน" };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("catering_event_types")
+    .update({ label: name, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) {
+    return {
+      status: "error",
+      message: error.code === "23505" ? `มี "${name}" อยู่แล้ว` : error.message,
+    };
+  }
+  // A rename reaches every booking of that kind, by design — the label lives
+  // only in this table. Both function sheets read it through the join.
+  revalidatePath("/owner/catering", "layout");
+  return { status: "ok" };
+}
+
+export async function toggleCateringEventTypeActive(id: string, isActive: boolean): Promise<EventTypeResult> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("catering_event_types")
+    .update({ is_active: isActive, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { status: "error", message: error.message };
+  revalidatePath("/owner/catering", "layout");
+  return { status: "ok" };
+}
+
+/**
+ * Nik's rule: a type no booking uses is deleted outright; a type in use is
+ * NOT — it must be ปิดใช้ instead, so the bookings carrying it keep printing
+ * it. The count is read first so the refusal can name how many, and the FK is
+ * ON DELETE RESTRICT so the rule still holds if someone assigns the type
+ * between this count and the delete.
+ */
+export async function deleteCateringEventType(id: string): Promise<EventTypeResult> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("catering_events")
+    .select("id", { count: "exact", head: true })
+    .eq("event_type_id", id);
+  if ((count ?? 0) > 0) {
+    return {
+      status: "error",
+      message: `ลบไม่ได้ — มีการจอง ${count} รายการใช้ประเภทนี้อยู่ ให้กด "ปิดใช้" แทน (งานเดิมจะยังพิมพ์ชื่อนี้ได้)`,
+    };
+  }
+
+  const { error } = await supabase.from("catering_event_types").delete().eq("id", id);
+  if (error) {
+    // The database's own refusal, if a booking took this type in the moment
+    // between the count above and here.
+    return {
+      status: "error",
+      message: error.code === "23503"
+        ? 'ลบไม่ได้ — มีการจองใช้ประเภทนี้อยู่ ให้กด "ปิดใช้" แทน'
+        : error.message,
+    };
+  }
+  revalidatePath("/owner/catering/settings");
+  return { status: "ok" };
+}
+
+/** Same swap-with-neighbour approach as reorderCateringRate. */
+export async function reorderCateringEventType(id: string, direction: "up" | "down"): Promise<EventTypeResult> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: siblings } = await supabase
+    .from("catering_event_types").select("id,sort_order").order("sort_order");
+  if (!siblings) return { status: "error", message: "ไม่พบข้อมูล" };
+
+  const idx = siblings.findIndex((s) => s.id === id);
+  if (idx < 0) return { status: "error", message: "ไม่พบรายการ" };
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return { status: "ok" };
+
+  try {
+    await swapSortOrder(supabase, "catering_event_types", "id", siblings[idx]!.id, siblings[swapIdx]!.id);
+  } catch (e) {
+    return { status: "error", message: e instanceof Error ? e.message : "สลับลำดับไม่สำเร็จ" };
+  }
+
+  revalidatePath("/owner/catering/settings");
+  return { status: "ok" };
+}
+
 // ─── Internal transfer-cost rate management ────────────────────────────────
 // owner/admin ONLY — see catering_transfer_cost_rates_rw RLS. Unlike
 // catering_rates, sales has zero access here, not even read, so there is no
@@ -1304,6 +1503,7 @@ export async function upsertCateringEvent(data: {
   offsite_distance_km: number | null;
   floor_level: number | null;
   booking_type: string;
+  event_type_id: string | null;
   food_format: string | null;
   table_count: number | null;
   reserve_tables: number | null;
@@ -1399,6 +1599,7 @@ export async function upsertCateringEvent(data: {
     offsite_distance_km: data.offsite_distance_km,
     floor_level: data.floor_level,
     booking_type: data.booking_type,
+    event_type_id: data.event_type_id || null,
     food_format: data.food_format || null,
     table_count: data.table_count,
     reserve_tables: data.reserve_tables,

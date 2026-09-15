@@ -181,10 +181,11 @@ export function KitchenSheetClient({
             <HeadLine label="ประเภทอาหาร" value={foodLine} />
           </div>
           <div style={{ marginTop: "2px" }}>
-            {/* ประเภทงาน (เลี้ยงสัมมนาบริษัท, งานแต่ง…) has no column on
-                catering_events, so it is always a rule to write on. Same
-                field the service sheet leaves blank, same reason. */}
-            <HeadLine label="ประเภทงาน" value={null} />
+            {/* Stored since catering_event_type_migration.sql. NULL keeps the
+                dotted rule, same as the service sheet and for the same
+                reason: the field is optional and the paper must stay
+                writable. */}
+            <HeadLine label="ประเภทงาน" value={event.event_type_label} />
           </div>
         </div>
 

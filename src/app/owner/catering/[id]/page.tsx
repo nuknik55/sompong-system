@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
-  getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog,
+  getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog,
 } from "../actions";
 import { thFullDate, StatusBadge } from "../shared-utils";
 import { BookingScreen } from "../BookingScreen";
@@ -29,9 +29,9 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
   const profile = await requireSales();
   const { id } = await params;
 
-  const [event, customers, staffOptions, charges, rates, setMenuOptions, dishOptions, activityLog] = await Promise.all([
+  const [event, customers, staffOptions, charges, rates, eventTypes, setMenuOptions, dishOptions, activityLog] = await Promise.all([
     getCateringEvent(id), getCateringCustomers(), getStaffOptions(), getCateringCharges(id), getCateringRates(),
-    getCateringSetMenuOptions(), getCateringDishOptions(), getCateringActivityLog(id),
+    getCateringEventTypes(), getCateringSetMenuOptions(), getCateringDishOptions(), getCateringActivityLog(id),
   ]);
   if (!event) notFound();
 
@@ -54,6 +54,7 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         customers={customers}
         staffOptions={staffOptions}
         rates={rates}
+        eventTypes={eventTypes}
         setMenuOptions={setMenuOptions}
         dishOptions={dishOptions}
         defaultStaffId={profile.employee_id}

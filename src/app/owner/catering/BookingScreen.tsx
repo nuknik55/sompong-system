@@ -16,8 +16,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getRoomConflictCandidates, saveBooking } from "./actions";
 import type {
-  BookingLine, CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringRate,
-  CateringSetMenuOption, StaffOption,
+  BookingLine, CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringEventType,
+  CateringRate, CateringSetMenuOption, StaffOption,
 } from "./actions";
 import { docMoney } from "@/lib/quote-doc";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
@@ -133,6 +133,7 @@ export function BookingScreen({
   customers,
   staffOptions,
   rates,
+  eventTypes,
   setMenuOptions,
   dishOptions,
   defaultStaffId,
@@ -142,6 +143,10 @@ export function BookingScreen({
   customers: CateringCustomer[];
   staffOptions: StaffOption[];
   rates: CateringRate[];
+  /** ACTIVE ประเภทงาน only. A booking whose type was later ปิดใช้ keeps it —
+   *  the value is still stored and still prints — but it cannot be chosen
+   *  again from here, which is the whole point of retiring one. */
+  eventTypes: CateringEventType[];
   setMenuOptions: CateringSetMenuOption[];
   dishOptions: CateringDishOption[];
   /** The login's linked employee; pre-selected as taker on a new booking. */
@@ -382,6 +387,28 @@ export function BookingScreen({
           <Field label="ประเภทการจอง *">
             <select className="input-base" value={form.booking_type} onChange={(e) => set("booking_type", e.target.value)}>
               {BOOKING_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+          {/* ประเภทงาน sits beside ประเภทการจอง because the two get confused
+              in conversation and seeing them together is the fastest way to
+              tell them apart: this is what the party is FOR, that one is what
+              is being booked. NOT required — a booking is often taken before
+              anyone asks. */}
+          <Field label="ประเภทงาน">
+            <select className="input-base" value={form.event_type_id} onChange={(e) => set("event_type_id", e.target.value)}>
+              <option value="">– ไม่ระบุ –</option>
+              {eventTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {/* PREVENTS A SCREEN FROM CHANGING STORED DATA BY BEING LOOKED
+                  AT. A type that was ปิดใช้ after this booking was saved is
+                  not in the list above, so the select would match no option,
+                  fall back to ไม่ระบุ, and the next save would write that
+                  blank over a real answer — without anyone touching the
+                  field. Rendering the stored value as one extra option is
+                  what stops it. Same family as the stale-mirror items: the
+                  screen must never quietly disagree with the database. */}
+              {form.event_type_id && !eventTypes.some((t) => t.id === form.event_type_id) && (
+                <option value={form.event_type_id}>{event?.event_type_label ?? "(ปิดใช้แล้ว)"}</option>
+              )}
             </select>
           </Field>
           <Field label="รูปแบบอาหาร">

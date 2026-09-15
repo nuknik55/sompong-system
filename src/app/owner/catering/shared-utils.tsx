@@ -239,6 +239,8 @@ export type FormState = {
   offsite_distance_km: string;
   floor_level: string;
   booking_type: string;
+  /** ประเภทงาน. "" = not chosen, which is normal and saves as NULL. */
+  event_type_id: string;
   food_format: string;
   table_count: string;
   reserve_tables: string;
@@ -268,7 +270,7 @@ export function blankForm(defaultStaffId?: string | null): FormState {
     event_date: "", start_time: "", end_time: "",
     location_type: "in_house", venue: "room_v2", room_portion: "",
     offsite_address: "", offsite_distance_km: "", floor_level: "",
-    booking_type: "table", food_format: "",
+    booking_type: "table", event_type_id: "", food_format: "",
     table_count: "", reserve_tables: "", table_label: "", guest_count: "",
     music_type: "none", music_note: "",
     // deposit_percent pre-fills 30 on a NEW booking only — Nik's starting
@@ -298,6 +300,7 @@ export function formFromEvent(e: CateringEvent): FormState {
     offsite_distance_km: e.offsite_distance_km?.toString() ?? "",
     floor_level: e.floor_level?.toString() ?? "",
     booking_type: e.booking_type,
+    event_type_id: e.event_type_id ?? "",
     food_format: e.food_format ?? "",
     table_count: e.table_count?.toString() ?? "",
     reserve_tables: e.reserve_tables?.toString() ?? "",
@@ -345,6 +348,7 @@ export function formToUpsertPayload(form: FormState, id?: string) {
     offsite_distance_km: form.location_type === "offsite" ? toNum(form.offsite_distance_km) : null,
     floor_level: form.location_type === "offsite" ? toNum(form.floor_level) : null,
     booking_type: form.booking_type,
+    event_type_id: form.event_type_id || null,
     food_format: form.food_format || null,
     table_count: toNum(form.table_count),
     reserve_tables: toNum(form.reserve_tables),

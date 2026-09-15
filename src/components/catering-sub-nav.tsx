@@ -32,7 +32,10 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     { href: "/owner/catering", label: "การจอง", exact: true },
     { href: "/owner/catering/calendar", label: "ปฏิทิน" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
-    ...(isAdmin ? [{ href: "/owner/catering/settings", label: "ราคา" }] : []),
+    // "ราคา" until 2026-09-15, when ประเภทงาน joined the rates on that page.
+    // The sub-nav stays at four items — keeping it short was the point of the
+    // reduction from seven, so a second settings screen would have undone it.
+    ...(isAdmin ? [{ href: "/owner/catering/settings", label: "ตั้งค่า" }] : []),
   ];
 
   return (
