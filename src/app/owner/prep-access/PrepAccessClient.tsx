@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs } from "@/components/tabs";
-import { grantPrepAccess, revokePrepAccess } from "./actions";
+import { grantPrepAccess, revokePrepAccess, grantAllPreps, revokeAllPreps } from "./actions";
 import type { PrepAccessRecipe, PrepAccessPerson, PrepAccessGrant } from "@/lib/prep-access";
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", editor: "Editor", staff: "Staff" };
@@ -35,6 +35,7 @@ export function PrepAccessClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [openRecipe, setOpenRecipe] = useState<string | null>(null);
+  const [openPerson, setOpenPerson] = useState<string | null>(null);
 
   const key = (prepId: string, personId: string) => `${prepId}:${personId}`;
   const granted = new Map(grants.map((g) => [key(g.prepRecipeId, g.profileId), g]));
@@ -58,6 +59,21 @@ export function PrepAccessClient({
       setBusy(null);
       // The screen moves only on success, so it can never contradict the
       // database — the same rule as everywhere else in this app.
+      if (result.status === "error") { setError(result.message); return; }
+      router.refresh();
+    });
+  }
+
+  function bulk(person: PrepAccessPerson, mode: "grant" | "revoke", held: number) {
+    // Revoking silently is not recoverable by the person it happens to — they
+    // simply stop seeing recipes they were working from. Granting is undone by
+    // revoking, so only one of these asks.
+    if (mode === "revoke" && !confirm(`ปิดสิทธิ์ทั้งหมดของ ${person.fullName} (${held} สูตร) ใช่ไหม?`)) return;
+    setError(null);
+    setBusy(`all:${person.id}`);
+    startTransition(async () => {
+      const result = mode === "grant" ? await grantAllPreps(person.id) : await revokeAllPreps(person.id);
+      setBusy(null);
       if (result.status === "error") { setError(result.message); return; }
       router.refresh();
     });
@@ -134,45 +150,85 @@ export function PrepAccessClient({
     </div>
   );
 
+  // One line per person, expanded on tap. It used to render every person's
+  // full list at once — 8 people against 48 recipes — and Nik's verdict was
+  // "กดที่ชื่อเด้งขึ้นมาดีกว่า อย่างนี้ยาวมาก". The counts stay visible while
+  // collapsed, because "who can see how much" is the question this view exists
+  // to answer at a glance.
+  const nameById = new Map(recipes.map((r) => [r.id, r.name]));
   const byPerson = (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {people.map((p) => {
+        const held = countByPerson.get(p.id) ?? 0;
         const mine = grants.filter((g) => g.profileId === p.id);
-        const nameById = new Map(recipes.map((r) => [r.id, r.name]));
+        const open = openPerson === p.id;
+        const allKey = `all:${p.id}`;
         return (
           <div key={p.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-            <div className="flex items-center justify-between gap-3 border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
-              <span className="text-sm font-semibold text-neutral-800">
-                {p.fullName} <span className="ml-1 text-xs font-normal text-neutral-400">{ROLE_LABEL[p.role] ?? p.role}</span>
-              </span>
-              <span className="text-xs text-neutral-500">{countByPerson.get(p.id) ?? 0} / {recipes.length} สูตร</span>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+              {/* The toggle and the bulk buttons are siblings, never nested —
+                  a button inside a button is invalid and swallows taps. */}
+              <button
+                type="button"
+                onClick={() => setOpenPerson(open ? null : p.id)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                <span className={`text-xs text-neutral-400 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+                <span className="min-w-0 truncate text-sm font-medium text-neutral-800">{p.fullName}</span>
+                <span className="shrink-0 text-xs text-neutral-400">{ROLE_LABEL[p.role] ?? p.role}</span>
+                <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${held === 0 ? "bg-neutral-100 text-neutral-500" : "bg-green-100 text-green-700"}`}>
+                  {held} / {recipes.length} สูตร
+                </span>
+              </button>
+              {held < recipes.length && (
+                <button
+                  type="button"
+                  disabled={isPending && busy === allKey}
+                  onClick={() => bulk(p, "grant", held)}
+                  className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-green-400 hover:bg-green-50 hover:text-green-800 disabled:opacity-40"
+                >
+                  {busy === allKey ? "กำลังบันทึก…" : `เปิดทั้งหมด (${recipes.length})`}
+                </button>
+              )}
+              {held > 0 && (
+                <button
+                  type="button"
+                  disabled={isPending && busy === allKey}
+                  onClick={() => bulk(p, "revoke", held)}
+                  className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                >
+                  {busy === allKey ? "กำลังบันทึก…" : "ปิดทั้งหมด"}
+                </button>
+              )}
             </div>
-            {mine.length === 0 ? (
-              <p className="px-4 py-3 text-xs text-neutral-400">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
-            ) : (
-              <ul>
-                {mine.map((g) => {
-                  const k = key(g.prepRecipeId, p.id);
-                  return (
-                    <li key={g.prepRecipeId} className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-50 px-4 py-2 last:border-0">
-                      <span className="min-w-0 flex-1 text-sm text-neutral-700">
-                        {nameById.get(g.prepRecipeId) ?? g.prepRecipeId}
-                        <span className="ml-2 text-xs text-neutral-400">
-                          เปิดเมื่อ {fmtDate(g.grantedAt)}{g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
+            {open && (
+              mine.length === 0 ? (
+                <p className="border-t border-neutral-100 px-4 py-3 text-xs text-neutral-400">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
+              ) : (
+                <ul className="border-t border-neutral-100">
+                  {mine.map((g) => {
+                    const k = key(g.prepRecipeId, p.id);
+                    return (
+                      <li key={g.prepRecipeId} className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-50 px-4 py-2 last:border-0">
+                        <span className="min-w-0 flex-1 text-sm text-neutral-700">
+                          {nameById.get(g.prepRecipeId) ?? g.prepRecipeId}
+                          <span className="ml-2 text-xs text-neutral-400">
+                            เปิดเมื่อ {fmtDate(g.grantedAt)}{g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
+                          </span>
                         </span>
-                      </span>
-                      <button
-                        type="button"
-                        disabled={isPending && busy === k}
-                        onClick={() => toggle(g.prepRecipeId, p.id, true)}
-                        className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
-                      >
-                        {busy === k ? "กำลังบันทึก…" : "ปิดสิทธิ์"}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        <button
+                          type="button"
+                          disabled={isPending && busy === k}
+                          onClick={() => toggle(g.prepRecipeId, p.id, true)}
+                          className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                        >
+                          {busy === k ? "กำลังบันทึก…" : "ปิดสิทธิ์"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
             )}
           </div>
         );

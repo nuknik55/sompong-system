@@ -57,3 +57,59 @@ export async function revokePrepAccess(prepRecipeId: string, profileId: string):
   revalidatePath("/staff", "layout");
   return { status: "ok" };
 }
+
+// ── Whole-person grants ─────────────────────────────────────────────────────
+//
+// Both people granted so far needed a SQL script, because the screen could
+// only grant one recipe at a time and "all 48" is the common case for a
+// section head. A third person would have meant a third script, and a screen
+// that sends the owner back to SQL is a screen he stops opening.
+//
+// ONE statement each, the way those scripts did it — not 48 round trips from
+// the client, which would be slow, would half-finish on a dropped connection,
+// and would fire 48 revalidations.
+
+export async function grantAllPreps(profileId: string): Promise<PrepAccessResult> {
+  const owner = await requireOwner();
+  // An empty id here would build a row set against nobody; refuse rather than
+  // write something meaningless.
+  if (!profileId) return { status: "error", message: "ไม่พบผู้ใช้" };
+  const supabase = await createClient();
+
+  const { data: recipes, error: readError } = await supabase.from("prep_recipes").select("id");
+  if (readError) return { status: "error", message: readError.message };
+  const rows = (recipes ?? []).map((r) => ({
+    prep_recipe_id: r.id as string,
+    profile_id: profileId,
+    granted_by: owner.id,
+  }));
+  if (rows.length === 0) return { status: "ok" };
+
+  // ignoreDuplicates mirrors the ON CONFLICT DO NOTHING in the grant scripts:
+  // re-granting is a no-op, and a person who already holds some recipes keeps
+  // the granted_at on those rather than having it reset.
+  const { error } = await supabase
+    .from("prep_recipe_access")
+    .upsert(rows, { onConflict: "prep_recipe_id,profile_id", ignoreDuplicates: true });
+  if (error) return { status: "error", message: error.message };
+
+  revalidatePath("/owner", "layout");
+  revalidatePath("/staff", "layout");
+  return { status: "ok" };
+}
+
+export async function revokeAllPreps(profileId: string): Promise<PrepAccessResult> {
+  await requireOwner();
+  // This one deletes by profile_id alone. Without this guard a falsy id would
+  // send a delete with no usable filter — the one call on this screen whose
+  // worst case is everybody's access at once.
+  if (!profileId) return { status: "error", message: "ไม่พบผู้ใช้" };
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("prep_recipe_access").delete().eq("profile_id", profileId);
+  if (error) return { status: "error", message: error.message };
+
+  revalidatePath("/owner", "layout");
+  revalidatePath("/staff", "layout");
+  return { status: "ok" };
+}
