@@ -76,3 +76,63 @@ export async function prepRecipeIdForItem(itemId: string): Promise<string | null
 
 /** The one Thai message every refusal uses, so they cannot drift apart. */
 export const PREP_FORBIDDEN = "ไม่มีสิทธิ์เข้าถึงสูตรของเตรียมนี้";
+
+export type PrepAccessRecipe = { id: string; name: string; category: string | null };
+export type PrepAccessPerson = { id: string; fullName: string; role: string };
+export type PrepAccessGrant = {
+  prepRecipeId: string;
+  profileId: string;
+  grantedAt: string;
+  grantedByName: string | null;
+};
+
+/**
+ * Everything the owner's grant screen renders. Owner-only by construction:
+ * `profiles` is select-own under RLS except for the owner, so this returns one
+ * row of people to anyone else — the screen's requireOwner() is the guard, and
+ * this is what happens anyway if that guard is ever wrong.
+ *
+ * Candidates are admin, editor and staff. The OWNER IS NOT IN THE LIST, and
+ * that is not an oversight: the owner's access comes from the role inside
+ * can_see_prep(), never from a row here, so there is nothing to tick or untick
+ * and a checkbox would imply a grant that could be revoked. Sales and hr are
+ * excluded too — they cannot read the prep tables at all
+ * (costing_tables_rls_migration.sql), so granting them would be a row that
+ * changes nothing.
+ */
+export async function getPrepAccessBoard(): Promise<{
+  recipes: PrepAccessRecipe[];
+  people: PrepAccessPerson[];
+  grants: PrepAccessGrant[];
+}> {
+  const supabase = await createClient();
+  const [{ data: recipes }, { data: people }, { data: grants }] = await Promise.all([
+    supabase.from("prep_recipes").select("id, name, category").order("name"),
+    supabase.from("profiles").select("id, full_name, role").in("role", ["admin", "editor", "staff"]).order("full_name"),
+    supabase.from("prep_recipe_access").select("prep_recipe_id, profile_id, granted_at, granted_by"),
+  ]);
+
+  const grantRows = (grants ?? []) as {
+    prep_recipe_id: string; profile_id: string; granted_at: string; granted_by: string | null;
+  }[];
+
+  // granted_by is a profile id; resolve it to a name for the provenance line.
+  // Read separately rather than joined: the granter is normally the owner, who
+  // is deliberately absent from `people` above.
+  const granterIds = [...new Set(grantRows.map((g) => g.granted_by).filter((v): v is string => !!v))];
+  const { data: granters } = granterIds.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", granterIds)
+    : { data: [] as { id: string; full_name: string }[] };
+  const granterName = new Map((granters ?? []).map((g) => [g.id as string, g.full_name as string]));
+
+  return {
+    recipes: (recipes ?? []).map((r) => ({ id: r.id as string, name: r.name as string, category: (r.category as string | null) ?? null })),
+    people: (people ?? []).map((p) => ({ id: p.id as string, fullName: p.full_name as string, role: p.role as string })),
+    grants: grantRows.map((g) => ({
+      prepRecipeId: g.prep_recipe_id,
+      profileId: g.profile_id,
+      grantedAt: g.granted_at,
+      grantedByName: g.granted_by ? granterName.get(g.granted_by) ?? null : null,
+    })),
+  };
+}

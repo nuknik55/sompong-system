@@ -21,6 +21,7 @@ import {
   PartyPopper,
   Menu,
   X,
+  Lock,
 } from "lucide-react";
 
 type NavItem = {
@@ -31,9 +32,14 @@ type NavItem = {
   badge?: number;
 };
 
+// OWNER_NAV carries one entry the admin navs deliberately do not:
+// /owner/prep-access. Granting sight of a prep recipe is owner-only, so an
+// admin must not even be shown the door — and the page's own requireOwner()
+// plus the RLS policy refuse it regardless of what the nav says.
 const OWNER_NAV: Omit<NavItem, "badge">[] = [
   { href: "/owner", label: "ภาพรวมต้นทุน", exact: true, icon: <LayoutDashboard size={16} /> },
   { href: "/staff", label: "สูตรอาหาร", exact: false, icon: <UtensilsCrossed size={16} /> },
+  { href: "/owner/prep-access", label: "สิทธิ์ดูสูตรของเตรียม", exact: true, icon: <Lock size={16} /> },
   { href: "/owner/ingredients", label: "จัดการวัตถุดิบ", exact: true, icon: <ShoppingBasket size={16} /> },
   { href: "/staff/inventory", label: "สั่งของ", exact: false, icon: <ShoppingCart size={16} /> },
   { href: "/owner/team", label: "ผู้ใช้งาน/สิทธิ์", exact: true, icon: <Users size={16} /> },
