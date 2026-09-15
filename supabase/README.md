@@ -108,6 +108,11 @@ and dated here.
 | `catering_event_deposit_percent_migration.sql` | 2026-09-12 | One nullable `NUMERIC(5,2)` + CHECK on `catering_events` — the agreed deposit TERM, beside `deposit_amount` which stays the received FACT. No default: both 30% and 50% are attested, so there was no neutral choice. Verified live by selecting the column before C deployed. The original CHECK excluded 0; superseded on that one point by the widening below. |
 | `catering_rate_provenance_migration.sql` | 2026-09-12 | `catering_rates.display_label` (customer-facing name, NULL = fall back to the internal label) and `catering_event_charges.rate_id` (FK, ON DELETE SET NULL). One missing fact behind three symptoms — internal rate names on customer documents, the ดนตรี section reconstructed by label regex, ค่าไฟ unfillable. Verified live before the code deployed: both columns select, and charges with rate_id set = 0 — history was not given provenance it never had. Closes queue item 16. |
 | `maintenance_resolver_name_migration.sql` | 2026-09-14 | `maintenance_reports.resolver_name TEXT` — who accepted or closed a report, denormalised at write time like `reporter_name`, because `profiles` is select-own under RLS and the list cannot read another user's name. Verified live before the code deployed, with a negative control first (a non-existent column is refused, HTTP 400, so the PASS below is not the API accepting anything): the column selects, and rows carrying a name = 0 — the three `done` rows keep `resolver_id` with no name and print "ไม่ระบุชื่อ", which is the truth of the data. |
+| `prep_recipe_access_migration.sql` | 2026-09-15 | Step 1 of prep visibility: `prep_recipe_access` (composite PK, owner-only writes at the policy level), `can_see_prep()` with the owner arm reading the ROLE rather than a grant row, `prep_unit_costs()` as the SECURITY DEFINER cost channel, and the `recipe_item_history` policy replacing 0004's open `auth.uid() is not null`. Deliberately inert on the prep tables. Verified: 48 rows to an impersonated admin / 43 priced / 5 null, **zero rows to an impersonated sales session** (the negative control, run first), and the algebra proven against the shipped `resolveUnitCosts` before it was offered to be run. |
+| `grant_prep_access_heng.sql` | 2026-09-15 | Granted เฮง all 48 preps. Both people resolved live (name + role), exactly-one assertions, `ON CONFLICT DO NOTHING`, and a postcondition rolling back unless he ended holding every prep. |
+| `grant_prep_access_wetch.sql` | 2026-09-15 | Granted เวช (หัวหน้า prep) all 48. Identified by the TRIPLE login + full_name + role — the login lives in `auth.users.email` as `wetch2527@staff.local`, not in `profiles`, and name alone sat one row from the placeholder account "Editor / editor". |
+| `prep_recipe_access_rls_migration.sql` | 2026-09-15 | Step 2: SELECT on `prep_recipes`/`prep_recipe_items` narrowed to `can_see_prep()`, writes to `role IN (owner,admin) AND can_see_prep()` with a WITH CHECK that omits the predicate so creation still works. Step 0 read `pg_policies` at run time and would have aborted on drift. **Verified by Nik, negative control first: an ungranted editor reads 0 recipes and 0 items; เฮง reads 48 and 248; an ungranted editor's direct UPDATE touches 0 rows.** Then the cost channel confirmed against a PRE-REGISTERED expectation — 48 / 43 priced / 5 null / sum 651.387003 / min 0.024527 / max 99.861334, all six matching figures published before the result was seen. No dish cost moved. |
+| `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -260,6 +265,43 @@ prep-resolution branch so the hard part lives in one place. What still exists
 twice is `rawUnitCost` — five lines of money arithmetic, in SQL and in
 TypeScript. Nothing automatic can catch those two drifting apart, so this does,
 and only if someone runs it. A green CI says nothing about it.
+
+### The gate was broken by the very change it existed to guard
+
+**A check nobody runs is not a check**, and this is the sharpest instance of
+that in the repo. `scripts/verify-prep-unit-costs.mjs` was written calling
+`resolveUnitCosts(ingredients, prepRecipes, prepItems)`. That signature
+changed in `e34a530` — the commit the gate exists to guard — and the script
+was not changed with it. `scripts/*.mjs` is outside `tsc`, outside eslint and
+outside `npm test`, so **five consecutive green gates said nothing**, and it
+surfaced only when a person finally ran it, days later.
+
+**What would have caught it:** running the gate as part of the commit that
+altered `resolveUnitCosts`'s signature — not later, not "before the next
+release". A gate excluded from CI has exactly one moment where it is cheap to
+verify, and that is inside the change that could break it.
+
+Repairing it also exposed a second, quieter fault: after `e34a530` the
+TypeScript side has **no prep implementation left** — `resolveUnitCosts` takes
+the function's answer — so checking `prep_unit_costs()` against it would have
+compared the function to itself and **passed for the wrong reason**. The gate
+now imports the real `rawUnitCost` (the genuinely duplicated part) and
+transcribes the nesting from the CTE in the script itself, which is
+deliberately a second implementation because a differential test needs two
+sides.
+
+It proved itself on the first repaired run, flagging `ผักคะน้าฮ่องกง(กำ)` at
+9.2121 against a captured 3.7323. The inputs were untouched, which left
+`batch_yield_qty`, and solving backwards reproduced the old value exactly:
+`8 × (95 ÷ 5.5) = 138.1818`, over `37.0230` is `3.732323641569246` to the last
+digit, over `15` is `9.212121212121213`. Nik confirmed he had changed that
+yield himself.
+
+**The verification that closed step 2 was PRE-REGISTERED**, which is the shape
+to copy when a result has to be read back from someone else: the six expected
+figures (48 / 43 / 5 / sum 651.387003 / min 0.024527 / max 99.861334) were
+published from the TypeScript side *before* the database result arrived, so
+agreement could not be retrofitted to whatever came back.
 
 ## Queued work
 
@@ -886,6 +928,28 @@ In order. Nothing here is started unless it says so.
     Recommend the migration alone first; the panel can follow if he asks for
     it twice.
 
+22. **`updatePrepYield` does not set `updated_at`, so a yield change leaves
+    no timestamp.** Not started; one line. Found 2026-09-15 the hard way.
+
+    `prep_recipes` has `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` — a
+    DEFAULT, not a trigger — and `updatePrepYield` writes
+    `{ batch_yield_qty, batch_yield_unit }` without touching it. So changing
+    a batch yield, which changes the cost of every dish using that prep,
+    records nothing about when it happened or by whom.
+
+    It surfaced when `ผักคะน้าฮ่องกง(กำ)` was found to have moved 2.47×: the
+    change could only be DATED BY SOLVING THE ARITHMETIC BACKWARDS (138.1818
+    over 37.0230 reproduces the old value exactly), because the row's
+    `updated_at` still read 08:00 that morning and was therefore useless as
+    evidence. Same class as item 21 — an answer resting on inference rather
+    than a record.
+
+    The one-line fix is adding `updated_at: new Date().toISOString()` to that
+    update, as the maintenance actions already do. **Worth checking the other
+    write paths in the same pass**, since nothing enforces this repo-wide:
+    a trigger on the tables that matter would be the durable answer, and is
+    the same decision as item 21's.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -1053,6 +1117,64 @@ after both: a masked dd/mm/yyyy text input. It is held because staff would
 type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
 again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
 rollout to be worth having.
+
+## Prep-recipe visibility — CLOSED 2026-09-15, in four steps
+
+The 48 prep recipes are the restaurant's actual asset: a dish recipe is
+useless to a competitor without น้ำจิ้มซีฟู๊ด, น้ำนึ่งซีอิ๊ว and the rest.
+Nik's review of staff permissions concluded that almost nothing else needs
+restricting — nobody has misused access, the head-of-department group works
+across each other's areas deliberately, SOPs and dish recipes can be copied
+out anyway — so **no role was added**. Six is enough. This is a third
+instance of the existing capability-flag idea (`employees.takes_bookings`,
+`coa.is_sensitive`), not a new mechanism.
+
+**His two rules.** Closed by default: all 48 start hidden and he opens them
+one at a time to named people, with a prep created later hidden from the
+moment it exists. And no name leak: someone without access does not see the
+row at all — absent from the list, and the URL does not serve it.
+
+**Why it took four steps rather than one.** Flipping the RLS policies first
+would have hidden `prep_recipe_items` from the session the server components
+run as, so `resolveUnitCosts` would have computed NULL for those preps and
+**112 of 244 dishes** would have reported an incomplete cost to exactly the
+people meant to keep working. A cost is a number and a recipe is a list; only
+the list is restricted. So:
+
+| step | what | commit |
+|---|---|---|
+| 1 | `prep_recipe_access`, `can_see_prep()`, `prep_unit_costs()`, and the `recipe_item_history` policy. Inert on the prep tables. | `706cc82` |
+| 2 | The app: cost path onto the RPC with the TS prep-resolution branch deleted, and every leak surface filtered. | `e34a530` |
+| 3 | Grants — เฮง and เวช, by script, then the owner-only grant screen so no third person needs SQL. | `104188b`, `cada5bb`, `ae8a88f` |
+| 4 | The RLS policies narrowed, closing direct PostgREST reads. | `659791b` |
+
+**The leak that would have defeated it was not on a prep screen.**
+`/owner/ingredients` shipped a `usageMap` to the browser containing, per raw
+ingredient, which preps use it AND in what quantity — transposed, that is all
+248 `prep_recipe_items` rows, every secret recipe rebuildable from the
+ingredients tab without opening a prep page. Two more full copies existed:
+`recipe_item_history` (open to every authenticated role, never narrowed since
+0004) and a direct PostgREST read, which no amount of app-layer filtering can
+close. That last one is why RLS had to be the enforcement and the app layer
+only the presentation.
+
+**What decision 3 bought.** Prep NAMES stay on dish recipes and in the
+ingredient picker — a cook must know the dish contains the sauce — and that
+cost nothing, because a dish line's prep name comes from `ingredients` (the
+`is_prep` row), never from `prep_recipes`. Rules 2 and 3 land on different
+tables and never compete.
+
+**Two things deliberately left as they are.** An admin who creates a prep
+recipe cannot open it until the owner grants it — the WITH CHECK omits
+`can_see_prep` so creation works at all, which makes the rule "you may
+create, but you may not modify or delete what you cannot see". And
+`getCostingContext()` returns prep items FILTERED FOR DISPLAY beside unit
+costs COMPLETE FOR ARITHMETIC; that inconsistency is the design, is the most
+fixable-looking thing in it, and carries a comment saying so.
+
+**Found along the way, both queued rather than folded in:** a thrown Server
+Action is invisible in 46 of 120 client handlers (item 20), and
+`prep_recipe_access` records grants but forgets revocations (item 21).
 
 ## The accounts — who has had access is not answerable from the profile list
 
