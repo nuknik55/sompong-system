@@ -152,6 +152,37 @@ Every hit should be a comment on the deleted symbol. One that is not is
 collateral damage — restore it. Prefer ending the slice at the *next symbol's
 comment* rather than at its `export`.
 
+### And the mirror image: deleting dead code can take LIVE documentation
+
+The rule above is about a comment that belongs to the neighbour. This one is
+worse, because nothing in the diff looks wrong at all: **a SURVIVING
+function's comment points AT the function being deleted**, so the explanation
+of a rule that still runs lives inside the code being removed.
+
+Found removing `addExpenseEntry` (queue item 18, a dead export with zero
+callers). The surviving `updateExpenseEntry` carries the same permission
+check, and its entire comment was:
+
+```
+// Fails CLOSED — same reasoning as addExpenseEntry above.
+```
+
+The reasoning — that a discarded error leaves `coa` null, so
+`coa?.is_sensitive` is undefined, which is falsy, and a non-owner is let
+through — existed once, inside the function about to disappear. Deleting it
+would have left a live permission check commented with a pointer to nothing,
+and the next reader no way to learn why it must fail closed.
+
+**Before deleting a symbol, grep for its name in COMMENTS, not only in code.**
+A hit means some other code is documented by reference to the thing you are
+removing: move the explanation to where it is still needed BEFORE the
+deletion, then assert afterwards that the name appears nowhere AT ALL,
+comments included — otherwise the reference is left dangling.
+
+Note the assertion has to be structural, for the reason in section 2: on this
+very deletion, checking that `PosSalesAlias` was gone reported it still
+present, because it is a substring of the surviving `upsertPosSalesAlias`.
+
 ## 2. A verification check that matches text will match your own prose
 
 Twice now:

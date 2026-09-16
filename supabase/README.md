@@ -625,9 +625,66 @@ In order. Nothing here is started unless it says so.
     | this README (3) and the memory note (1) | text |
     | `CoffeeItemsClient` identifier | cosmetic; rename in the same commit or not at all |
 
-14. **`/owner/ingredients` throws an RSC error on saving a NEW ingredient, but
-    the save succeeds.** Not started. Reported by Nik from production,
-    2026-09-09.
+14. ~~**`/owner/ingredients` throws an RSC error on saving a NEW ingredient,
+    but the save succeeds.**~~ **CLOSED 2026-09-16 without a root cause, on
+    the evidence rather than on the clock** — the entry's own criterion was a
+    month without recurrence and it has been one week. Closed deliberately:
+    the code cannot settle it, the candidate that could be removed has been,
+    and a recurrence now hands over its own digest. Reported 2026-09-09; has
+    not recurred.
+
+    **THE STALE-SERVER-ACTION-ID SHAPE DOES NOT FIT THIS, and ruling it out
+    is the main thing this pass adds.** That shape was diagnosed on the prep
+    grant screen, and the two reports look alike from outside: acted, screen
+    said something odd, second attempt clean, both within minutes of a
+    deploy. Two independent facts separate them:
+
+    1. **The save SUCCEEDED.** A stale action id means the action never runs
+       — the request is rejected before the body executes. Nik's ingredient
+       was stored and appeared in the list, so the action ran and its id was
+       valid.
+    2. **The message is the wrong one.** "An error occurred in the Server
+       Components render" is what Next.js shows when a SERVER COMPONENT
+       RENDER throws. A rejected action call surfaces as a client-side
+       promise rejection, which renders no such page.
+
+    The lesson worth keeping: *once-only failure near a deploy* is a SYMPTOM
+    CLASS, not a cause. Almost every transient produces it — a cold lambda, a
+    network blip, a revalidation race, deploy skew — so matching two reports
+    on that shape alone is matching on nothing.
+
+    **What can now be ruled out that could not be when it was reported**,
+    three changes, only the first of which was item-14 work:
+
+    - `window.location.reload()` became `router.refresh()` inside the
+      transition (`7a6697b`), removing the reload-fires-during-revalidation
+      abort outright.
+    - **`createIngredient` was converted by ITEM 12 to RETURN its failures.**
+      At the time of the report it threw, so a thrown expected failure was a
+      whole candidate class on this path. It no longer exists.
+    - The handler has a try/catch (confirmed by item 20's sweep), so a
+      client-side rejection now renders a Thai message rather than an error
+      page.
+
+    Taken together: **if the same trigger happened today, the visible outcome
+    would differ for every candidate except a genuine throw inside the server
+    render.** That remaining candidate is the one the code cannot see — a
+    transient read failure during the RSC render after revalidation leaves no
+    trace in source, only in the digest.
+
+    **IF IT RECURS, what to send** (the error boundary from `9fe11e7` puts all
+    of it on screen with one-tap copy, so Vercel is not needed):
+
+    - the **digest** — the key to the real message in the logs
+    - the **route** and the **time**
+    - whether the ingredient still got saved
+    - whether a deploy had just happened
+
+    Without the digest there is nothing further to read: the structural
+    investigation already found no throw on that path that fires once and not
+    again, every read being identical on both attempts.
+
+    The original report, kept because it is the only first-hand account:
 
     **Observed, exactly:**
 
