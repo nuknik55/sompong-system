@@ -20,7 +20,7 @@ export default async function CateringCostSettingsPage() {
         </p>
       </div>
 
-      <TransferCostSettingsClient initialRates={rates} />
+      <TransferCostSettingsClient rates={rates} />
     </div>
   );
 }

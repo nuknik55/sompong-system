@@ -29,10 +29,20 @@ function formFromRate(r: CateringTransferCostRate): CostRateForm {
   };
 }
 
-export function TransferCostSettingsClient({ initialRates }: { initialRates: CateringTransferCostRate[] }) {
+// Rendered from the prop — no local copy of `rates`. This screen mirrored
+// initialRates into useState the way the ราคา screen did before queue item
+// 17: router.refresh() updated the prop and the mirror ignored it, so the
+// reorder buttons showed stale order until a full reload, while delete and
+// toggle patched the mirror by hand and only looked correct. The last known
+// instance of that hazard class.
+//
+// The mirror carried nothing the prop cannot: the modal form is its own
+// state and so is the error. Every mutation now goes server action ->
+// router.refresh() -> new prop, so the screen shows only what the database
+// holds.
+export function TransferCostSettingsClient({ rates }: { rates: CateringTransferCostRate[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [rates, setRates] = useState(initialRates);
   const [modal, setModal] = useState<{ editingId: string | null; form: CostRateForm } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,7 +95,7 @@ export function TransferCostSettingsClient({ initialRates }: { initialRates: Cat
     startTransition(async () => {
       try {
         await deleteCateringTransferCostRate(r.id);
-        setRates((prev) => prev.filter((x) => x.id !== r.id));
+        router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
       }
@@ -93,16 +103,15 @@ export function TransferCostSettingsClient({ initialRates }: { initialRates: Cat
   }
 
   function handleToggleActive(r: CateringTransferCostRate) {
-    // Item 20, and the only TIER-1 site left outside the template screens: the
-    // mirrored row was flipped whether or not the write succeeded, and there
-    // was no handling of any kind — not a returned error, not a throw. The
-    // screen simply showed the new state. Now the mirror moves only after the
-    // write lands, which is the same rule the rates screen learned in item 17.
+    // Item 20 gave this its first error handling of any kind — it used to flip
+    // the mirrored row whether or not the write succeeded. With the mirror
+    // gone the row moves only when the refreshed prop says so, which is the
+    // same rule by a simpler route.
     setError(null);
     startTransition(async () => {
       try {
         await toggleCateringTransferCostRateActive(r.id, !r.is_active);
-        setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: !x.is_active } : x)));
+        router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "เปลี่ยนสถานะไม่สำเร็จ");
       }
