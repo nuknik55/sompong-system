@@ -1255,7 +1255,11 @@ In order. Nothing here is started unless it says so.
     the same decision as item 21's.
 
 23. **The q-factor write policy admits admins; the app says owner-only.**
-    Not started. Same class as the prep leak, and pre-existing.
+    **Nik's answer, 2026-09-16: OWNER ONLY**, matching the screen. A
+    migration was drafted the same day (the policy on `is_owner_only()`;
+    negative control: an admin's no-op update must touch 0 rows). It is
+    **HELD to ride with the HR rebuild**: not urgent, since the screen already
+    refuses admins. Same class as the prep leak, and pre-existing.
     `0002_q_factor.sql`'s `app_settings_owner_write` is
     `USING (is_owner()) WITH CHECK (is_owner())`, and `is_owner()` has meant
     owner OR admin since `006`. `updateQFactor` is guarded by
@@ -1361,7 +1365,13 @@ In order. Nothing here is started unless it says so.
     and editors' requests last came on 2026-08-22.
 
 28. **Exported server actions with NO auth guard: 24 reads, 22 of them HR,
-    with RLS as their only layer.** Not started, found 2026-09-16.
+    with RLS as their only layer.** Found 2026-09-16. **HELD for the HR
+    rebuild** (Nik, 2026-09-16): HR is not in use yet, and the module will
+    be rebuilt and audited as a whole rather than fixed piecemeal. Held with
+    it: the guards, the guard scan as a CI test, the live HR access check
+    recorded at the end of this entry, and the q-factor migration (item
+    23). NOT held: the anonymous hole in `day_swap_requests` (see
+    "Anonymous access" below).
 
     **`getAttendancePunches` had no guard at all.** It was a
     network-callable endpoint that any signed-in session could call, and it
@@ -1398,6 +1408,51 @@ In order. Nothing here is started unless it says so.
     read to its callers rather than blanket-applying one guard. Then make the
     scan a test like `paged-reads.test.ts`, so CI fails an exported action
     with no guard. One commit each.
+
+    **The live HR access check, kept for the rebuild** (not run). Block 1
+    reads the live policies:
+
+    ```sql
+    SELECT c.relname AS table_name, c.relrowsecurity AS rls_on,
+           p.policyname, p.cmd, p.roles, p.qual, p.with_check
+      FROM pg_class c
+      LEFT JOIN pg_policies p ON p.schemaname = 'public' AND p.tablename = c.relname
+     WHERE c.relnamespace = 'public'::regnamespace
+       AND c.relname IN ('payroll_entries','payroll_periods','employees','departments','leave_types',
+                         'leave_requests','holidays','attendance_daily','day_swap_requests',
+                         'schedule_notes','attendance_punches')
+     ORDER BY c.relname, p.policyname;
+    ```
+
+    Block 2 runs once per account, negative controls first (sales, then
+    `admin`, then HR and owner). It prints the account in its first column
+    and rolls back:
+
+    ```sql
+    BEGIN;
+      SELECT set_config('request.jwt.claims', json_build_object('sub', <WHO>)::text, true);
+      SELECT set_config('role', 'authenticated', true);
+      WITH upd AS (UPDATE public.day_swap_requests SET note = note RETURNING 1)
+      SELECT public.current_role() AS who,
+             (SELECT count(*) FROM public.payroll_entries)   AS payroll_entries,
+             (SELECT count(*) FROM public.payroll_periods)   AS payroll_periods,
+             (SELECT count(*) FROM public.employees)         AS employees,
+             (SELECT count(*) FROM public.holidays)          AS holidays,
+             (SELECT count(*) FROM public.attendance_daily)  AS attendance_daily,
+             (SELECT count(*) FROM public.day_swap_requests) AS day_swap_read,
+             (SELECT count(*) FROM upd)                      AS day_swap_written;
+    ROLLBACK;
+    ```
+
+    Expected on 2026-09-16, from the repo:
+    - payroll 0/0 for sales AND admin (admins are the population most
+      likely to be let in by mistake), 2/2 for HR and owner;
+    - employees 0 for sales, 47 for admin (which includes `base_salary`,
+      by the current design);
+    - holidays 0 for admin.
+
+    Row counts change, so re-derive them first; a check against an empty
+    table passes for nothing.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
@@ -1588,6 +1643,75 @@ type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
 again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
 rollout to be worth having.
 
+## Anonymous access: `day_swap_requests` and `pos_import_meta`, found 2026-09-16
+
+**Demonstrated.** A read-only request with the public anon key (it ships in
+the app's JavaScript) and no login returned:
+
+- all 7 `day_swap_requests` rows: employee ids, work and off dates, swap
+  type, compensation, notes;
+- the one `pos_import_meta` row: the last POS sales import's date range
+  and time.
+
+Every table and view the API exposes (63) was read the same way; these were
+the only two that answered.
+
+**Inferred, not tested: anonymous WRITES.** Both policies were
+`FOR ALL USING (true) WITH CHECK (true)` with no `TO` clause, so they applied
+to `anon` as well. A write made from outside cannot be rolled back, so none
+was tried. The `compensation` column accepts `extra_pay`, which is a payroll
+input; all 7 current rows are `bank_day`.
+
+**Why it has not mattered: HR is not in use yet** (Nik, 2026-09-16). The 7
+rows date from 2026-07-26/27, entered in the module's first week.
+
+**The template is the defect.** Both policies were named "owner can manage
+<table>": a restriction by name and none by rule. Same family as
+`is_owner()`: the name is not evidence. Closed by
+`close_open_template_policies_migration.sql` (`3248e39`), which Nik runs
+straight away and is NOT held for the HR rebuild. `day_swap_requests` gets
+the other HR tables' shape (read owner/hr/admin, write owner/hr);
+`pos_import_meta` is read by any signed-in user and written by owner/admin.
+Every new policy is TO authenticated. Its verification is the same
+anonymous scan.
+
+### Did the 2026-07-31 HR audit predate the table, or miss it? It MISSED it.
+
+**The table came first.**
+- 2026-07-24: `hr_role_patch.sql` (`5913585`) rewrote the policies of every
+  HR table that existed that day.
+- 2026-07-25: `day_swap_requests` arrived with the day-swap page
+  (`30550da`), in its own file (`day_swap_migration.sql`) and with the old
+  open template.
+- 2026-07-26/27: its 7 rows were written.
+- 2026-07-30/31: the audit ran.
+
+**The audit knew the table.** Its own record notes day-swap data ("not
+imported for 15 service dept employees"), and the session worked with it
+at length.
+
+**It missed the policy for two reasons,** both visible in that session's
+transcript:
+
+1. **It never read the live database.** Querying `pg_policies` through the
+   REST API failed ("RLS status was UNKNOWN because we couldn't query
+   pg_policies via REST"), so it read the migration FILES instead, and
+   `hr_role_patch.sql` does not contain the day-swap policy. The result was
+   recorded as "RLS policies ✓" without saying it came from the files. A
+   check that falls back to a weaker source and reports as the stronger one
+   is the same shape as the August P&L recomputation that shared the page's
+   paging.
+2. **Its conclusion was wider than its scope.** It checked four tables
+   (employees, payroll_entries, payroll_periods, leave_requests) and
+   recorded "staff role has no access to any HR table".
+
+**For the rebuild's single audit:**
+- read the LIVE policies (`pg_policies`, plus `pg_class.relrowsecurity`);
+- take the table list from the catalogue or from the code's `.from(`
+  calls, not from memory;
+- if a check falls back to a weaker source, say so in its result;
+- run the anonymous scan (every exposed relation, public key, no login).
+  It is cheap, and it is the check that found this.
 ## Prep-recipe visibility — closed 2026-09-15 in four steps; OPEN TO ADMINS until 2026-09-16
 
 The 48 prep recipes are the restaurant's actual asset: a dish recipe is
