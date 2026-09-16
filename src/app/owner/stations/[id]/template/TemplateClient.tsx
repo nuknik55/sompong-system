@@ -248,6 +248,39 @@ export function TemplateClient({
     });
   }
 
+  // ── Why every write on this screen goes through one runner ─────────────
+  //
+  // This screen is optimistic: it moves rows on screen and then writes. Every
+  // handler used to revert ONLY when the action RETURNED an error — so a
+  // THROWN failure (a stale Server Action id after a deploy, a dropped
+  // connection, a redeploy while the tab sat open) left the optimistic change
+  // standing with no message. The screen then showed a template the database
+  // did not have, which on this screen means ordering the wrong things.
+  //
+  // A returned error and a thrown one must do the SAME TWO THINGS here: say
+  // so, and undo the optimistic change. That is all this runner is.
+  //
+  // Item 20, first file. Queue-ranked by what a silent failure makes someone
+  // believe, and this file was first because five of its seven writes move
+  // rows before the write lands.
+  const RETRY_MESSAGE = "บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
+  function runWrite<T extends { error?: string }>(
+    fn: () => Promise<T>,
+    opts?: { onOk?: (result: T) => void; revert?: () => void },
+  ) {
+    startTransition(async () => {
+      try {
+        const result = await fn();
+        if (result.error) { setError(result.error); opts?.revert?.(); return; }
+        opts?.onOk?.(result);
+      } catch {
+        setError(RETRY_MESSAGE);
+        opts?.revert?.();
+      }
+    });
+  }
+
   function handleRemoveSingle(id: string) {
     const row = rows.find((r) => r.id === id);
     if (!row) return;
@@ -279,23 +312,18 @@ export function TemplateClient({
       })),
     ]);
     setChecked(new Set());
-    startTransition(async () => {
-      const result = await removeFromTemplate(station.id, ids);
-      if (result.error) {
-        setError(result.error);
-        // Revert
+    runWrite(() => removeFromTemplate(station.id, ids), {
+      revert: () => {
         setRows((prev) => [...prev, ...removed]);
         setAvailable((prev) => prev.filter((a) => !removed.some((r) => r.ingredientId === a.id)));
-      }
+      },
     });
   }
 
   function handleUpdateRow(id: string, fields: UpdateFields) {
     setError(null);
-    startTransition(async () => {
-      const result = await updateTemplateRow(station.id, id, fields);
-      if (result.error) { setError(result.error); return; }
-      setRows((prev) =>
+    runWrite(() => updateTemplateRow(station.id, id, fields), {
+      onOk: () => setRows((prev) =>
         prev.map((r) => {
           if (r.id !== id) return r;
           return {
@@ -306,7 +334,7 @@ export function TemplateClient({
             ...(fields.freezer_unit !== undefined ? { freezerUnit: fields.freezer_unit } : {}),
           };
         })
-      );
+      ),
     });
   }
 
@@ -314,31 +342,41 @@ export function TemplateClient({
     const newGroup = newName.trim() || null;
     if (newGroup === oldKey) return;
     setError(null);
-    // Optimistic
+    // Optimistic, and now with the snapshot that undoes it. Before this, a
+    // rename the server REFUSED stayed on screen: the error was shown and
+    // nothing was reverted, so the group read as renamed and was not.
+    const prevRows = rows;
     setRows((prev) =>
       prev.map((r) => {
         const key = r.customGroup !== null ? r.customGroup : (r.ingredientCategory ?? null);
         return key === oldKey ? { ...r, customGroup: newGroup } : r;
       })
     );
-    startTransition(async () => {
-      const result = await renameGroup(station.id, oldKey, newGroup);
-      if (result.error) setError(result.error);
-    });
+    runWrite(() => renameGroup(station.id, oldKey, newGroup), { revert: () => setRows(prevRows) });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    setRows((prev) => {
-      const oldIdx = prev.findIndex((r) => r.id === active.id);
-      const newIdx = prev.findIndex((r) => r.id === over.id);
-      const next = arrayMove(prev, oldIdx, newIdx).map((r, i) => ({ ...r, sortOrder: i }));
-      startTransition(async () => {
-        await reorderTemplateRows(station.id, next.map((r) => ({ id: r.id, sort_order: r.sortOrder })));
-      });
-      return next;
-    });
+    setError(null);
+    // The write used to be fired INSIDE the setRows updater. A state updater
+    // must be PURE — React is free to call it more than once (StrictMode, and
+    // again on a concurrent re-render), and each call started another
+    // transition, so one drag could write the reorder twice. Computed here
+    // from the current rows instead, and the transition starts exactly once.
+    //
+    // It also had no failure handling of any kind: not a returned error, not
+    // a throw. A refused reorder simply stood on screen.
+    const oldIdx = rows.findIndex((r) => r.id === active.id);
+    const newIdx = rows.findIndex((r) => r.id === over.id);
+    if (oldIdx < 0 || newIdx < 0) return;
+    const prevRows = rows;
+    const next = arrayMove(rows, oldIdx, newIdx).map((r, i) => ({ ...r, sortOrder: i }));
+    setRows(next);
+    runWrite(
+      () => reorderTemplateRows(station.id, next.map((r) => ({ id: r.id, sort_order: r.sortOrder }))),
+      { revert: () => setRows(prevRows) },
+    );
   }
 
   function handleBulkRemove() {
@@ -354,14 +392,14 @@ export function TemplateClient({
   function commitBulkMove() {
     const newGroup = bulkGroupName.trim() || null;
     setError(null);
-    // Optimistic
+    // Optimistic, with the snapshot that undoes it — same gap as the rename
+    // above: a refused move used to stay on screen.
+    const prevRows = rows;
+    const movingIds = [...checked];
     setRows((prev) => prev.map((r) => checked.has(r.id) ? { ...r, customGroup: newGroup } : r));
     setChecked(new Set());
     setShowBulkGroup(false);
-    startTransition(async () => {
-      const result = await bulkMoveGroup(station.id, [...checked], newGroup);
-      if (result.error) setError(result.error);
-    });
+    runWrite(() => bulkMoveGroup(station.id, movingIds, newGroup), { revert: () => setRows(prevRows) });
   }
 
   function handleAdd() {
@@ -395,11 +433,8 @@ export function TemplateClient({
     setAddSelected(new Set());
     setAddSearch("");
 
-    startTransition(async () => {
-      const result = await addToTemplate(station.id, selectedIngIds);
-      if (result.error) {
-        setError(result.error);
-        // Revert
+    runWrite(() => addToTemplate(station.id, selectedIngIds), {
+      revert: () => {
         setRows((prev) => prev.filter((r) => !r.id.startsWith("temp-")));
         setAvailable((prev) => [
           ...prev,
@@ -419,10 +454,10 @@ export function TemplateClient({
             freezerUnit: null,
           })),
         ]);
-        return;
-      }
-      // Replace temp rows with real rows returned from server
-      if (result.rows) {
+      },
+      onOk: (result) => {
+        // Replace temp rows with the real rows the server returned.
+        if (!result.rows) return;
         const realByIngId = new Map(result.rows.map((r) => [r.ingredientId, r]));
         setRows((prev) =>
           prev.map((r) => {
@@ -430,7 +465,7 @@ export function TemplateClient({
             return realByIngId.get(r.ingredientId) ?? r;
           })
         );
-      }
+      },
     });
   }
 
@@ -441,11 +476,7 @@ export function TemplateClient({
     setError(null);
     setShowCopy(false);
     setCopyFrom("");
-    startTransition(async () => {
-      const result = await copyFromStation(station.id, copyFrom);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
-    });
+    runWrite(() => copyFromStation(station.id, copyFrom), { onOk: () => router.refresh() });
   }
 
   const filteredAvailable = available.filter(
