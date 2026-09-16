@@ -377,10 +377,24 @@ node -e 'const b=require("fs").readFileSync(f);let cr=0;for(const x of b)if(x===
 and run a counter on a file whose answer you already know before believing
 it on one you do not.
 
+### A paged read with no total order returns a steady, wrong total
+
+Ninth. `getMonthlySummary` paged `expense_entries` through `fetchAllRows`
+with no ORDER BY. It worked until August 2026 passed 1,000 entries. After
+that, every load returned 1,003 rows of which only 1,000 were distinct:
+three accounts doubled, three missing, the P&L ฿72,785.91 short. It was
+the same figure every time, with no error and no warning, which is exactly
+what makes it look like the truth. A queue entry had even recorded the
+risk, as "not currently biting", against two queries that were in fact
+safe.
+
+**Every paged query ends its ORDER BY on a unique key.** And count
+DISTINCT ids when you check one, not rows: the row count was right.
+
 ### The list itself is the point
 
-Eight instances, all the same shape: **output that reads as an answer when it is
-an absence** — or, in the eighth, when it is not an answer at all. Nobody
+Nine instances, all the same shape: **output that reads as an answer when it is
+an absence** — or, from the eighth on, when it is a wrong answer. Nobody
 recognises the next one from first principles in the moment; they recognise it
 because the earlier ones are written down. Add the next one here
 rather than assuming it is too obvious to record.

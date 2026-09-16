@@ -351,7 +351,38 @@ In order. Nothing here is started unless it says so.
 4. **`ScheduleClient.tsx:5` static `xlsx` import** — bundle size only, no
    correctness stake. And **retry-from-here on POS chunk failure**.
 5. **Menu Engineering should classify within category, not across all menus.**
-   Not started, raised by Nik.
+   Not started, raised by Nik. **Surveyed 2026-09-16; the premise below was
+   wrong, and the decisions now sit with Nik.**
+
+   **What the data says** (the survey used the real `classifyMenuEngineering`,
+   `computeMenuCost` and `resolveUnitCosts` on live data):
+
+   - **There are no drinks in `menus`.** 245 menus, 197 with sales, in 12
+     named categories plus 2 that sold nothing (เมนูใหม่, เทศกาลเจ). The only
+     dessert category, ของหวาน, has 2 dishes, one of them ข้าวเหนียวมะม่วง, the
+     #3 seller. "Drinks lift the popularity average" cannot be happening.
+   - **The category tabs on `/owner` already classify within their
+     category** (`owner/page.tsx` classifies only the visible subset). Only
+     the ทั้งหมด tab, and `/staff` always, use one global pool.
+   - **The real distortion in the global pool is PRICE TIER, not course.**
+     The global profit bar is ฿165.08 a unit, while category bars run from
+     ฿62.84 (อาหารจานเดียว) to ฿292.99 (ปู กั้ง). So 27 of 43 one-plate dishes
+     are Dogs globally, against 8 within their own category. Across all
+     categories **77 of 197 dishes change class**.
+   - Small categories make the within-category bar meaningless: ของหวาน
+     n=2, จานร้อน หม้อไฟ n=4.
+   - One junk row: `test`, no category, price ฿0, 1 sold.
+   - 0 catering-prefixed rows. `pos_item_categories` is the ACCOUNTING axis
+     (coffee, souvenirs and so on), not a menu course, and the wrong
+     grouping for this.
+
+   **Three questions for Nik before anything is built:**
+   (1) should small categories be shown as unranked, or pooled with a
+   neighbour; (2) what minimum count makes a category rankable (5 is the
+   proposal); (3) may the `test` row be deleted. Then the ทั้งหมด tab and
+   `/staff` would rank each dish within its own category.
+
+   The original entry, whose premise about drinks was wrong:
 
    Star / Plow Horse / Puzzle / Dog is currently computed against a single
    global average of popularity and margin, mixing food, drinks and desserts in
@@ -485,8 +516,44 @@ In order. Nothing here is started unless it says so.
 
    Recording the rule somewhere visible matters more than the hint.
 
-10. **`fetchAllRows` callers that order by a non-unique column.** Not started,
-    not currently biting.
+10. ~~**`fetchAllRows` callers that order by a non-unique column.**~~
+    **CLOSED 2026-09-16 (`ea9a251`), and "not currently biting" was
+    wrong: it was biting the August P&L.**
+
+    **The premise below named the wrong two queries.** `ingredients.name`
+    and `prep_recipes.name` are UNIQUE (`0001_init.sql`), so ordering by name
+    was already total. The exposure was in calls this entry never listed:
+
+    - **`getMonthlySummary` paged `expense_entries` with NO order at all.**
+      August 2026 passed 1,000 entries at **2026-09-10 14:43 UTC**. From
+      then on the page boundary returned 650, 752 and 753 twice and dropped
+      790 (฿205,000), 951 and 952. The August P&L, its print/xlsx and the
+      break-even page read **฿3,568,941.77 instead of ฿3,641,727.68,
+      ฿72,785.91 short**: the same wrong figure on every load, and no error
+      anywhere. Replayed read-only with the app's exact query; the
+      replay ran without RLS while the app runs as the owner, so the
+      owner's query plan may differ, but the fix is right either way.
+      **Any August P&L printed or exported between then and `ea9a251`
+      deploying is wrong for those six accounts**, and so are the August
+      break-even figures in the break-even closure below.
+    - **The price-import window** (4,079 deliveries ordered by material and
+      date, 232 of them in tied groups) doubled 19 rows and lost 19 others,
+      all of one material, KI602 เนื้อหมูสันใน.
+    - The recent-entries list (date, created_at; an import writes hundreds
+      of rows with one created_at) and the two recipe-item reads
+      (menu_recipe_items is 1,801 rows; ordered by menu_id, sort_order, with
+      no ties today only by luck) were exposed the same way and happened to
+      read correctly.
+
+    **All eight now end on `id`**, and `fetchAllRows`' comment states the
+    rule. Checked on the parsed code with HEAD as the control: 8 of 12
+    calls did not end on a unique key; now 0. The checker's first version
+    missed `getMonthlySummary`, the actual defect, because a query with no
+    ORDER BY compared `undefined === undefined` and passed. Replayed after
+    the fix: 1,003 distinct August rows summing ฿3,641,727.68, and 4,079
+    distinct deliveries.
+
+    The original entry:
 
     `fetchAllRows` issues no `ORDER BY` of its own — it takes a query callback
     and pages it with `.range()`, so a deterministic sort is the caller's
@@ -515,7 +582,11 @@ In order. Nothing here is started unless it says so.
     rather than fixed because that round was scoped to one module and this
     touches shared data-access code used by the costing engine.
 
-11. **Drop the orphaned `pos_coffee_items` table.** File written
+11. ~~**Drop the orphaned `pos_coffee_items` table.**~~ **DONE 2026-09-08.**
+    The applied-migrations table recorded it that day ("Closes queue item
+    11") and this entry was never updated. Re-checked 2026-09-16: the
+    table answers PGRST205 (not in the schema), and no code in `src`
+    references it. The original entry: File written
     (`drop_pos_coffee_items_migration.sql`), Nik to run. One line, but
     it needs to happen or an empty table with a misleading name lives forever.
 
@@ -880,8 +951,15 @@ In order. Nothing here is started unless it says so.
     site says so. Toggle also gained the try/catch delete already had: it
     used to patch the mirror whether or not the write succeeded.
 
-18. **Dead-export sweep of the "use server" files — three found so far.**
-    Not started; found by the item-12 conversions (steps 2 and 3), zero
+18. ~~**Dead-export sweep of the "use server" files — three found so far.**~~
+    **The three named below were removed on 2026-09-16 (`0635a99`), and
+    this entry was not updated at the time.** `addExpenseEntry`'s
+    fail-closed explanation was moved to the surviving
+    `updateExpenseEntry` first; see AGENTS.md, "deleting dead code can
+    take LIVE documentation". The wider sweep this entry asks for is
+    recorded below.
+
+    Found by the item-12 conversions (steps 2 and 3), zero
     callers each:
     - `addExpenseEntry` (owner/accounting/actions.ts)
     - `listPosSalesAliases` and `deletePosSalesAlias` (sales-import-actions.ts)
@@ -1120,10 +1198,10 @@ In order. Nothing here is started unless it says so.
 
     The lookups' errors are now checked. A failed lookup read as "nothing
     found" would have inserted a prep and then failed on the ingredient's
-    UNIQUE name. **Not witnessed in the app:** Nik typing an existing prep's
-    name should get มีของเตรียมชื่อ "…" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข
-    and no change to that prep. Until then the unit tests and the live check
-    are the evidence.
+    UNIQUE name. **Confirmed in the app by Nik, 2026-09-16:** creating a
+    prep named น้ำจิ้มซีฟู๊ด refused with the can-see message (มีของเตรียมชื่อ
+    "…" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข), and the existing
+    recipe was untouched. That was the one part marked unconfirmed.
 
     **The same class, smaller, not fixed here.** `duplicatePrep` and
     approving a `prep_create` do not check the name first. They insert the
@@ -1198,6 +1276,13 @@ one and the safety margin *higher*. August 2569 with 998 excluded: margin
 643,677, 2,244 bills (≈73/day against 87). July: margin 50.3%, break-even
 90.3%, safety 309,510. No table, no chart, no trend — a history or per-day
 view is a different item and was not started.
+
+**THE AUGUST FIGURES ABOVE ARE SUSPECT (found 2026-09-16).** They were
+written at 15:41 UTC on 2026-09-10, 58 minutes after August passed 1,000
+entries. From that moment `getMonthlySummary` read 650, 752 and 753 twice
+and dropped 790, 951 and 952 (item 10). Re-read the break-even page for
+August after `ea9a251` deploys, and replace these figures with what it says.
+July (390 entries) was never affected.
 
 **Closed 2026-09-10 — `monthly_covers`, bills and customers per month**
 (`dd24e2c` migration, `3bd7eec`, `545e14f`, was item 15). Written by
