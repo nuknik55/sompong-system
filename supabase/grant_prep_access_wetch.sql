@@ -51,6 +51,11 @@
 -- prep_recipe_access permits writes only to the owner (prep_recipe_access_write,
 -- USING public.is_owner()). The SQL editor runs as the table owner and
 -- bypasses RLS. The policy governs the application, not Nik at the database.
+--
+-- CORRECTED 2026-09-16: "writes only to the owner" was not true when this
+-- ran. is_owner() admits admins too (migrations/006_owner_role.sql). The
+-- policy has used is_owner_only() since
+-- prep_owner_only_predicate_migration.sql.
 -- ============================================================================
 
 BEGIN;

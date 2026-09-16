@@ -1,21 +1,42 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
-import { canSeePrep, PREP_FORBIDDEN } from "@/lib/prep-access";
+import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage } from "@/lib/prep-access";
 
 // ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
 // Same rule as staff/menu/actions.ts: production redacts thrown Server Action
 // messages, so the Thai text never reached the user. Auth throws stay; truly
 // unexpected exceptions still throw (redaction is correct for those).
 export type PrepActionResult = { status: "ok" } | { status: "error"; message: string };
-/** "pending" replaces the old "__pending__" magic-string id. */
-export type PrepCreateResult = { status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string };
+/**
+ * "pending" replaces the old "__pending__" magic-string id.
+ *
+ * "hidden": the prep was created, but its creator may not open it. Closed by
+ * default applies to the person who made it too; admins, เฮง included, see it
+ * only once the owner grants it. The form says so instead of navigating to a
+ * page that would answer not-found.
+ */
+export type PrepCreateResult =
+  | { status: "ok"; id: string }
+  | { status: "hidden"; name: string }
+  | { status: "pending" }
+  | { status: "error"; message: string };
 /** Extended with the error arm — the saved/pending split predates item 12. */
 export type PrepSaveResult = { status: "saved" } | { status: "pending" } | { status: "error"; message: string };
 
+// ── Why a new prep's id is made HERE, and the row is never read back ───────
+//
+// Reading the id back (.insert(...).select("id")) is INSERT ... RETURNING, and
+// Postgres checks a RETURNED row against the table's SELECT policy. A prep
+// nobody has been granted fails that check for everyone but the owner, so the
+// insert itself is refused, not just the read. The read-back only ever worked
+// because can_see_prep() said yes to every admin, which was the leak closed by
+// supabase/prep_owner_only_predicate_migration.sql. duplicatePrep below and
+// approveChange's prep_create case follow the same rule.
 export async function createPrep(name: string, category: string, batchYieldQty: number, batchYieldUnit: string): Promise<PrepCreateResult> {
   const profile = await requireAdminOrEditor();
   if (!name.trim()) return { status: "error", message: "กรุณาใส่ชื่อของเตรียม" };
@@ -52,13 +73,13 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
     if (updatePrepError) return { status: "error", message: updatePrepError.message };
     prepId = existingPrepRecipe.id;
   } else {
-    const { data: newPrep, error: insertError } = await supabase
+    // See the note above createPrep: the id is made here, not read back.
+    const newId = randomUUID();
+    const { error: insertError } = await supabase
       .from("prep_recipes")
-      .insert({ name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
-      .select("id")
-      .single();
-    if (insertError || !newPrep) return { status: "error", message: insertError?.message ?? "สร้างของเตรียมไม่สำเร็จ" };
-    prepId = newPrep.id;
+      .insert({ id: newId, name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" });
+    if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, name.trim()) };
+    prepId = newId;
   }
 
   if (existingIngredient?.is_prep) {
@@ -82,6 +103,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
 
+  if (!(await canSeePrep(prepId))) return { status: "hidden", name: name.trim() };
   return { status: "ok", id: prepId };
 }
 
@@ -139,12 +161,12 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
   if (fetchError || !original) return { status: "error", message: fetchError?.message ?? "ไม่พบของเตรียมต้นฉบับ" };
 
   const { data: originalIngredient } = await supabase.from("ingredients").select("usage_unit").eq("prep_recipe_id", prepId).maybeSingle();
-  const { data: newPrep, error: insertError } = await supabase
+  // See the note above createPrep: the id is made here, not read back.
+  const newPrep = { id: randomUUID() };
+  const { error: insertError } = await supabase
     .from("prep_recipes")
-    .insert({ name: newName.trim(), category: newCategory.trim() || null, batch_yield_qty: original.batch_yield_qty, batch_yield_unit: original.batch_yield_unit, note: original.note })
-    .select("id")
-    .single();
-  if (insertError || !newPrep) return { status: "error", message: insertError?.message ?? "คัดลอกของเตรียมไม่สำเร็จ" };
+    .insert({ id: newPrep.id, name: newName.trim(), category: newCategory.trim() || null, batch_yield_qty: original.batch_yield_qty, batch_yield_unit: original.batch_yield_unit, note: original.note });
+  if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, newName.trim()) };
 
   // Checked: without this row the new prep recipe has no matching ingredient
   // and can never be used in any menu — the same failure prep_create has in
@@ -161,6 +183,9 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
     const { error } = await supabase.from("prep_recipe_items").insert(items.map((it) => ({ ...it, prep_recipe_id: newPrep.id })));
     if (error) return { status: "error", message: error.message };
   }
+  // Seeing the original does not mean seeing the copy: the copy is a new
+  // recipe with no grant row, so for anyone but the owner it starts hidden.
+  if (!(await canSeePrep(newPrep.id))) return { status: "hidden", name: newName.trim() };
   return { status: "ok", id: newPrep.id };
 }
 

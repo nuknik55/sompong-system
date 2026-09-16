@@ -19,44 +19,73 @@ import { getCurrentProfile } from "@/lib/auth";
  * correct for everyone through public.prep_unit_costs(); see getCostingContext
  * in @/lib/data.
  *
- * The database is the enforcement (RLS keyed on the same can_see_prep()); this
- * module is the presentation. Both exist deliberately: the app layer keeps a
- * hidden prep off the screen, and RLS keeps it out of a direct PostgREST call
- * from an editor's own session, which no amount of app-layer filtering can.
+ * TWO LAYERS, AND THEY MUST NOT SHARE LOGIC. The database enforces through RLS
+ * keyed on the SQL function can_see_prep(); this module decides what the
+ * screen shows by reading the same DATA (profiles.role, prep_recipe_access)
+ * and applying the rule itself, here, in TypeScript. RLS is still the only
+ * thing that can stop a direct PostgREST call from someone's own session.
+ *
+ * Two layers calling the same predicate are one layer. Until 2026-09-16 this
+ * module asked the database's own can_see_prep() for single recipes, and
+ * trusted prep_recipe_access's SELECT policy to narrow the list. Both rested
+ * on is_owner(), which has meant owner OR admin since
+ * migrations/006_owner_role.sql, so one misreading opened both layers at once
+ * and every admin saw every prep. See
+ * supabase/prep_owner_only_predicate_migration.sql.
  */
 export type PrepVisibility = {
   /** True when the current user may see this prep recipe's composition. */
   canSee: (prepRecipeId: string | null | undefined) => boolean;
 };
 
+const CLOSED: PrepVisibility = { canSee: () => false };
+const OPEN: PrepVisibility = { canSee: () => true };
+
 /**
- * One query, then a predicate — for surfaces that filter a list. Asking
- * can_see_prep() 48 times would be 48 round trips for the same answer.
+ * The rule, once, in TypeScript. Its SQL twin is can_see_prep(), and the two
+ * are kept apart on purpose (see above).
  *
- * The read is itself defended: prep_recipe_access's own SELECT policy returns
- * a user only their own rows, so even a mistake in the role check here cannot
- * widen what comes back.
+ * Every grant read is filtered by profile_id HERE rather than left to the
+ * table's SELECT policy. Leaving it to the policy is what made this layer a
+ * copy of the database's: while the policy's owner arm admitted admins, the
+ * unfiltered read returned all 96 grant rows to every admin, and the list
+ * showed them all 48 preps.
+ *
+ * Fails closed: no session, or a failed read, means nothing is visible.
  */
-export async function getPrepVisibility(): Promise<PrepVisibility> {
+async function visibility(onlyPrepRecipeId?: string): Promise<PrepVisibility> {
   const profile = await getCurrentProfile();
-  if (profile?.role === "owner") return { canSee: () => true };
+  if (!profile) return CLOSED;
+  // Rule 4: the owner's access is the ROLE, never a grant row.
+  if (profile.role === "owner") return OPEN;
 
   const supabase = await createClient();
-  const { data } = await supabase.from("prep_recipe_access").select("prep_recipe_id");
+  let query = supabase.from("prep_recipe_access").select("prep_recipe_id").eq("profile_id", profile.id);
+  if (onlyPrepRecipeId !== undefined) query = query.eq("prep_recipe_id", onlyPrepRecipeId);
+  const { data, error } = await query;
+  if (error) return CLOSED;
+
   const granted = new Set((data ?? []).map((r) => r.prep_recipe_id as string));
   return { canSee: (id) => !!id && granted.has(id) };
 }
 
 /**
- * Single-recipe check, for a detail page or a mutation guard. Goes through the
- * same SQL predicate the RLS policies use, so app and database can never
- * disagree about who may see what.
+ * One query, then a predicate — for surfaces that filter a list. Asking once
+ * per recipe would be 48 round trips for the same answer.
+ */
+export async function getPrepVisibility(): Promise<PrepVisibility> {
+  return visibility();
+}
+
+/**
+ * Single-recipe check, for a detail page or a mutation guard. The same rule as
+ * getPrepVisibility, reading one grant row instead of all of them.
+ *
+ * Deliberately NOT supabase.rpc("can_see_prep"): that is the function RLS
+ * calls, and asking it here would make the detail page one layer, not two.
  */
 export async function canSeePrep(prepRecipeId: string): Promise<boolean> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("can_see_prep", { p_prep_recipe_id: prepRecipeId });
-  if (error) return false;
-  return data === true;
+  return (await visibility(prepRecipeId)).canSee(prepRecipeId);
 }
 
 /**
@@ -77,6 +106,19 @@ export async function prepRecipeIdForItem(itemId: string): Promise<string | null
 /** The one Thai message every refusal uses, so they cannot drift apart. */
 export const PREP_FORBIDDEN = "ไม่มีสิทธิ์เข้าถึงสูตรของเตรียมนี้";
 
+/**
+ * A failed prep_recipes INSERT, in Thai. Every caller generates the new id
+ * itself, so a 23505 is the UNIQUE (name) constraint. For anyone but the owner
+ * that is usually a prep they have not been granted: they cannot see it, so
+ * the orphan-reuse lookup in createPrep did not find it either. The message
+ * offers both ways out without saying which one applies.
+ */
+export function prepInsertErrorMessage(error: { code?: string; message: string }, name: string): string {
+  return error.code === "23505"
+    ? `มีของเตรียมชื่อ "${name}" อยู่แล้ว — ใช้ชื่ออื่น หรือขอให้เจ้าของร้านเปิดสิทธิ์สูตรนั้นให้`
+    : error.message;
+}
+
 export type PrepAccessRecipe = { id: string; name: string; category: string | null };
 export type PrepAccessPerson = { id: string; fullName: string; role: string };
 export type PrepAccessGrant = {
@@ -87,10 +129,20 @@ export type PrepAccessGrant = {
 };
 
 /**
- * Everything the owner's grant screen renders. Owner-only by construction:
- * `profiles` is select-own under RLS except for the owner, so this returns one
- * row of people to anyone else — the screen's requireOwner() is the guard, and
- * this is what happens anyway if that guard is ever wrong.
+ * Everything the owner's grant screen renders. The screen's requireOwner() is
+ * what keeps this owner-only.
+ *
+ * NOT owner-only by construction, although an earlier version of this comment
+ * said so. The `profiles` SELECT policy in version control is
+ * `id = auth.uid() OR is_owner()`, and is_owner() admits admins
+ * (migrations/006_owner_role.sql), so an admin reaching this would get every
+ * person. (The live database may carry more profiles policies than the repo
+ * shows; see profile_employee_link_migration.sql.)
+ *
+ * What IS narrowed for an admin, since prep_owner_only_predicate_migration.sql,
+ * is the other two reads: only the recipes and grant rows they hold. The
+ * profiles policy is not changed here: /owner/team and other admin screens may
+ * depend on it.
  *
  * Candidates are admin, editor and staff. The OWNER IS NOT IN THE LIST, and
  * that is not an oversight: the owner's access comes from the role inside

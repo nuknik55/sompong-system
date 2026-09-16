@@ -5,6 +5,14 @@
 -- Run once in the Supabase SQL editor. Safe to re-run: every CREATE is guarded
 -- or OR REPLACE, and the one policy replacement drops first.
 --
+-- !! SUPERSEDED IN PART, 2026-09-16 — DO NOT RE-RUN THIS FILE ANY MORE. !!
+-- Every public.is_owner() below was meant as "role = owner", the 0001_init.sql
+-- definition. It has meant "owner OR admin" since migrations/006_owner_role.sql,
+-- so as written this file broke rules 4 and 5 below for every admin.
+-- prep_owner_only_predicate_migration.sql moved can_see_prep() and both
+-- prep_recipe_access policies to is_owner_only(). Re-running THIS file would
+-- put is_owner() back and reopen the leak.
+--
 -- Nik's rules (2026-09-14):
 --   1. CLOSED BY DEFAULT. All 48 preps start hidden; he opens them one at a
 --      time to named people. A prep created later is hidden from the moment it

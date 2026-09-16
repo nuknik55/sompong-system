@@ -13,8 +13,13 @@ import { createClient } from "@/lib/supabase/server";
 // account grant themselves every secret recipe in the restaurant.
 //
 // The database says the same thing independently: prep_recipe_access_write is
-// USING public.is_owner(), so a non-owner session is refused by RLS even if
-// these guards were wrong. Two layers, on purpose.
+// USING public.is_owner_only(), so a non-owner session is refused by RLS even
+// if these guards were wrong. Two layers, on purpose.
+//
+// That sentence was FALSE until 2026-09-16: the policy said is_owner(), which
+// has admitted admins since migrations/006_owner_role.sql, so for an admin the
+// only layer was these guards. Fixed by
+// supabase/prep_owner_only_predicate_migration.sql.
 //
 // Item 12: expected failures are RETURNED, not thrown — production redacts
 // thrown Server Action messages, so the Thai text would never reach the owner.

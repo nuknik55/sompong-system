@@ -8,7 +8,13 @@ import { Plus, Save } from "lucide-react";
 // Item 12: the action returns its outcome as a value (ok/pending/error), so
 // the Thai message reaches the user in production — a thrown Server Action
 // message is redacted there. "pending" replaces the "__pending__" magic id.
-type CreateResult = { status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string };
+// "hidden" is prep-only: created, but closed to its own creator until the
+// owner grants it (see PrepCreateResult in staff/prep/actions.ts).
+type CreateResult =
+  | { status: "ok"; id: string }
+  | { status: "hidden"; name: string }
+  | { status: "pending" }
+  | { status: "error"; message: string };
 
 type Props = (
   | {
@@ -33,11 +39,13 @@ export function CreateRecipeForm(props: Props) {
   const [batchYieldUnit, setBatchYieldUnit] = useState("กรัม");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [showPendingSuccess, setShowPendingSuccess] = useState(false);
+  // What happened to a create that did not navigate: sent for approval, or
+  // created but not yet open to its creator.
+  const [notice, setNotice] = useState<string | null>(null);
 
   function submit() {
     setError(null);
-    setShowPendingSuccess(false);
+    setNotice(null);
     startTransition(async () => {
       try {
         const result =
@@ -46,9 +54,14 @@ export function CreateRecipeForm(props: Props) {
             : await props.createAction(name, category, Number(batchYieldQty) || 1, batchYieldUnit);
 
         if (result.status === "error") { setError(result.message); return; }
-        if (result.status === "pending") {
-          // Editor pending — show success, reset form
-          setShowPendingSuccess(true);
+        if (result.status === "pending" || result.status === "hidden") {
+          // Neither has a page to go to: an editor's request is not a recipe
+          // yet, and a hidden prep would answer not-found. Say which, reset.
+          setNotice(
+            result.status === "pending"
+              ? "⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ"
+              : `สร้าง "${result.name}" แล้ว — จะเปิดดูสูตรได้เมื่อเจ้าของร้านเปิดสิทธิ์ให้`,
+          );
           setName(""); setCategory(""); setSellingPrice("");
           setBatchYieldQty("1"); setBatchYieldUnit("กรัม");
           setOpen(false);
@@ -68,15 +81,13 @@ export function CreateRecipeForm(props: Props) {
       <div className="flex flex-col items-start gap-1.5">
         <button
           type="button"
-          onClick={() => { setOpen(true); setShowPendingSuccess(false); }}
+          onClick={() => { setOpen(true); setNotice(null); }}
           className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
         >
           <Plus className="h-4 w-4" />
           {props.kind === "menu" ? "สร้างเมนูใหม่" : "สร้างของ prep ใหม่"}
         </button>
-        {showPendingSuccess && (
-          <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>
-        )}
+        {notice && <p className="text-xs text-amber-600">{notice}</p>}
       </div>
     );
   }

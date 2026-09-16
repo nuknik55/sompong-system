@@ -16,7 +16,17 @@ export function DuplicateButton({
   originalName: string;
   originalCategory: string | null;
   categories: string[];
-  duplicateAction: (id: string, newName: string, newCategory: string) => Promise<{ status: "ok"; id: string } | { status: "pending" } | { status: "error"; message: string }>;
+  duplicateAction: (
+    id: string,
+    newName: string,
+    newCategory: string,
+  ) => Promise<
+    | { status: "ok"; id: string }
+    // prep-only: copied, but closed to its creator until the owner grants it
+    | { status: "hidden"; name: string }
+    | { status: "pending" }
+    | { status: "error"; message: string }
+  >;
   hrefPrefix: string;
 }) {
   const router = useRouter();
@@ -69,6 +79,14 @@ export function DuplicateButton({
                 // Now the pending outcome is shown where the error would be.
                 setError(null);
                 setPendingMsg("ส่งคำขอคัดลอกแล้ว — รอเจ้าของร้านอนุมัติ");
+                setOpen(false);
+                return;
+              }
+              if (result.status === "hidden") {
+                // The copy is a new recipe with no grant row, so its page
+                // would answer not-found. Stay here and say why.
+                setError(null);
+                setPendingMsg(`คัดลอกเป็น "${result.name}" แล้ว — จะเปิดดูสูตรได้เมื่อเจ้าของร้านเปิดสิทธิ์ให้`);
                 setOpen(false);
                 return;
               }

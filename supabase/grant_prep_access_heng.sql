@@ -33,6 +33,11 @@
 -- that is why it works here and would NOT work from an admin's session in the
 -- app. The policy is not being circumvented; it governs the application, and
 -- the SQL editor is Nik acting as the database owner.
+--
+-- CORRECTED 2026-09-16: "writes only to the owner" was not true when this
+-- ran. is_owner() admits admins too (migrations/006_owner_role.sql), so an
+-- admin's session could write here. The policy has used is_owner_only() since
+-- prep_owner_only_predicate_migration.sql.
 -- ============================================================================
 
 BEGIN;

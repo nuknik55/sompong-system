@@ -14,8 +14,10 @@ import { PrepAccessClient } from "./PrepAccessClient";
 // recipe to anyone who can already reach /owner.
 //
 // The RLS policy on prep_recipe_access says the same thing (writes are
-// is_owner() only), so this guard and the database agree; neither is load
-// bearing alone.
+// is_owner_only()), so this guard and the database agree; neither is load
+// bearing alone. Until 2026-09-16 the policy said is_owner(), which also
+// admits admins, so for an admin this guard WAS the only layer. See
+// supabase/prep_owner_only_predicate_migration.sql.
 
 export default async function PrepAccessPage() {
   await requireOwner();

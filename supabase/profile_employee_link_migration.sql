@@ -40,3 +40,12 @@ COMMENT ON COLUMN public.profiles.employee_id IS
 -- !! live database almost certainly carries additional profiles policies that
 -- !! this repo does not describe. Whether a non-owner admin can read another
 -- !! user's employee_id therefore depends on live policy, not on this file.
+--
+-- CORRECTED 2026-09-16: "owner-only" above is wrong. is_owner() has returned
+-- true for owner AND admin since migrations/006_owner_role.sql (confirmed
+-- live with pg_get_functiondef), so both policies already admit admins to
+-- other people's profile rows. HYPOTHESIS, not verified: that alone may
+-- explain how a non-owner admin manages /owner/team, and the "uncommitted
+-- policy" inferred above may not be needed to explain it. The
+-- owner_admin_delete_profiles policy that deleteUser() documents is a separate
+-- question. See supabase/README.md.

@@ -21,6 +21,15 @@
 --     is_owner() has always rejected admin's own writes at the RLS layer —
 --     this migration is what actually makes admin's writes work, not a
 --     preservation of prior behavior.
+--
+--     CORRECTED 2026-09-16 — THE TWO SENTENCES ABOVE ARE WRONG. is_owner()
+--     has returned true for owner AND admin since migrations/006_owner_role.sql
+--     (confirmed live with pg_get_functiondef). Admin's writes already worked
+--     here, so for admins this migration preserved behaviour rather than
+--     creating it. The name misled this file, and then misled the prep
+--     visibility work into an admin leak; see
+--     prep_owner_only_predicate_migration.sql. The SQL below is unaffected:
+--     it names roles explicitly.
 --   - menu_recipe_items / prep_recipe_items: "auth.uid() is not null" — ANY
 --     authenticated role, including sales and staff. staff's own app-level
 --     guard in saveRecipeItems() explicitly throws "ไม่มีสิทธิ์แก้ไขสูตร" for

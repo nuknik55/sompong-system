@@ -14,6 +14,14 @@
 -- duplicate/delete/yield/save paths (e34a530). เฮง and เวช hold all 48, so
 -- they see no difference; everyone else already sees nothing.
 --
+-- CORRECTED 2026-09-16: "everyone else already sees nothing" was false for
+-- อู๋ and the admin account, and "the same can_see_prep()" is why. Both layers
+-- asked one predicate, which rested on is_owner() (owner OR admin, since
+-- migrations/006_owner_role.sql), so one misreading opened both. Two layers
+-- calling the same predicate are one layer. The app layer now applies the
+-- rule itself (src/lib/prep-access.ts); see
+-- prep_owner_only_predicate_migration.sql.
+--
 -- SO A VISIBLE CHANGE AFTER THIS RUNS IS NOT THIS MIGRATION WORKING. It is
 -- evidence that some screen was reading prep rows the app layer failed to
 -- filter, and it should be reported rather than shrugged at.
@@ -165,6 +173,15 @@ COMMIT;
 -- for everyone and proves nothing either way.
 --
 -- 1. NEGATIVE CONTROL — an UNGRANTED editor. Expect 0 and 0.
+--
+--    CORRECTED 2026-09-16 — THIS WAS THE WRONG CONTROL. The rule under test
+--    was "admins are named, not implicit", and is_owner() is false for an
+--    editor whether or not the rule holds, so this passed for a reason
+--    unrelated to the rule. The ungranted ADMINS (อู๋, admin) were leaking
+--    the whole time: is_owner() means owner OR admin
+--    (migrations/006_owner_role.sql). A negative control has to come from the
+--    population the rule is about; prep_owner_only_predicate_migration.sql
+--    uses ungranted admins, with เฮง as the same-role positive control.
 --
 --   BEGIN;
 --     SELECT set_config('role', 'authenticated', true);

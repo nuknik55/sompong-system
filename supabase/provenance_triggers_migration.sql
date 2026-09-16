@@ -8,6 +8,12 @@
 -- CREATE is OR REPLACE or guarded, every trigger is dropped first), and it
 -- REWRITES NO DATA — no row's updated_at moves as a result of running this.
 --
+-- !! NOT RE-RUNNABLE ANY MORE, 2026-09-16 !! Its last policy,
+-- prep_recipe_access_history_select, says is_owner(), which admits admins
+-- (migrations/006_owner_role.sql), not only the owner as the comment beside it
+-- intends. prep_owner_only_predicate_migration.sql moved that policy to
+-- is_owner_only(). Re-running this file would put is_owner() back.
+--
 -- NO APPLICATION CODE CHANGES WITH THIS, and nothing needs deploying. That is
 -- the point of choosing a trigger: there is nothing left for the code to do.
 --

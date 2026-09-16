@@ -1,8 +1,10 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { resolvePendingChange } from "@/lib/pending-data";
+import { prepInsertErrorMessage } from "@/lib/prep-access";
 import { createClient } from "@/lib/supabase/server";
 
 export type ApproveResult = { error?: string };
@@ -147,16 +149,22 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       case "prep_create": {
         // NOT ATOMIC: two writes. A failure on the second leaves a prep recipe
         // with no matching ingredient row (so it can never be used in a menu).
-        const newPrep = await runReturning<{ id: string }>(
+        //
+        // The id is made here and the row is NOT read back (so not
+        // runReturning): INSERT ... RETURNING is checked against the SELECT
+        // policy, and a prep nobody has been granted fails it for every admin.
+        // Full note above createPrep in staff/prep/actions.ts.
+        const newPrepId = randomUUID();
+        await run(
           "สร้างสูตร prep",
           supabase
             .from("prep_recipes")
-            .insert({ name: p.name, category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
-            .select("id").single(),
+            .insert({ id: newPrepId, name: p.name, category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
+            .then(({ error }) => ({ error: error && { message: prepInsertErrorMessage(error, p.name as string) } })),
         );
         await run(
           "สร้างวัตถุดิบสำหรับ prep",
-          supabase.from("ingredients").insert({ name: p.name, category: p.category || "prep", is_prep: true, usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: newPrep.id }),
+          supabase.from("ingredients").insert({ name: p.name, category: p.category || "prep", is_prep: true, usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: newPrepId }),
         );
         revalidatePath("/owner/ingredients");
         break;
