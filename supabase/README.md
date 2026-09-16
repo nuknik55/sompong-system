@@ -114,6 +114,7 @@ and dated here.
 | `prep_recipe_access_rls_migration.sql` | 2026-09-15 | Step 2: SELECT on `prep_recipes`/`prep_recipe_items` narrowed to `can_see_prep()`, writes to `role IN (owner,admin) AND can_see_prep()` with a WITH CHECK that omits the predicate so creation still works. Step 0 read `pg_policies` at run time and would have aborted on drift. **Verified by Nik, negative control first: an ungranted editor reads 0 recipes and 0 items; เฮง reads 48 and 248; an ungranted editor's direct UPDATE touches 0 rows.** Then the cost channel confirmed against a PRE-REGISTERED expectation — 48 / 43 priced / 5 null / sum 651.387003 / min 0.024527 / max 99.861334, all six matching figures published before the result was seen. No dish cost moved. |
 | `provenance_triggers_migration.sql` | 2026-09-16 | Items 21+22. `touch_updated_at()` installed on the **16** tables carrying the column (a DO block asserts the column exists on each before creating anything, then asserts it made 16), and `prep_recipe_access_history` written by an AFTER INSERT/DELETE trigger with the recipe, person and actor names copied at write time. **Verified including the one check SQL cannot do:** the owner granted and revoked through the app, and both rows came back naming him — `grant · Test เตรียม · เฮง · Owner` and `revoke · … · Owner`. That was the whole question item 21 existed to answer, since `changed_by_name` NULL from an app write would have meant the trigger never sees the session. **Two behaviour notes: (a) a bulk migration now moves `updated_at` on every row it touches — a mass timestamp shift after some future backfill is this trigger working, not a defect; (b) the 8 call sites that already stamp `updated_at` by hand are redundant and were deliberately left, since the trigger overwrites with the same `now()`.** |
 | `prep_owner_only_predicate_migration.sql` | 2026-09-16 | **The admin leak closed** (see the prep-visibility section). `is_owner_only()` added; `can_see_prep()`'s body replaced in place so the five policies calling it follow; `prep_recipe_access_select`/`_write` and `prep_recipe_access_history_select` recreated on it. `is_owner()` deliberately untouched. Step 0 read the live definitions and policies and would have aborted on drift; step 3 called the predicates AS all 11 profiles against all 48 preps before COMMIT and would have rolled everything back on one disagreement. **Verified at the app, in both directions; footer checks 1–7 were NOT run.** As `admin`, a new prep was created and the prep tab on `/owner/ingredients` (ของ prep) read 0; as owner, the same tab read 49. The section below says what that leaves unwitnessed. |
+| `close_open_template_policies_migration.sql` | 2026-09-16 | **Anonymous access closed** on `day_swap_requests` (7 HR rows were readable with the public key and no login) and `pos_import_meta`. Both had a template policy named "owner can manage …" that was `USING (true)` for every role. Replaced by role-listed policies TO authenticated. Self-check before COMMIT: 6 policies, all bound to authenticated, RLS on. **Verified: the anonymous scan returns 0 of 63** (was 2); the service key still sees 7 and 1, which proves no data was lost but, since it bypasses RLS, not signed-in access (see "Anonymous access"). |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
@@ -1256,8 +1257,10 @@ In order. Nothing here is started unless it says so.
 
 23. **The q-factor write policy admits admins; the app says owner-only.**
     **Nik's answer, 2026-09-16: OWNER ONLY**, matching the screen. A
-    migration was drafted the same day (the policy on `is_owner_only()`;
-    negative control: an admin's no-op update must touch 0 rows). It is
+    migration was written the same day and committed HELD (`54e0f39`,
+    `q_factor_owner_only_migration.sql`, with HELD in its first three
+    lines): the policy moves to `is_owner_only()`, and its negative control
+    is an admin's no-op update, which must touch 0 rows. It is
     **HELD to ride with the HR rebuild**: not urgent, since the screen already
     refuses admins. Same class as the prep leak, and pre-existing.
     `0002_q_factor.sql`'s `app_settings_owner_write` is
@@ -1668,12 +1671,25 @@ rows date from 2026-07-26/27, entered in the module's first week.
 **The template is the defect.** Both policies were named "owner can manage
 <table>": a restriction by name and none by rule. Same family as
 `is_owner()`: the name is not evidence. Closed by
-`close_open_template_policies_migration.sql` (`3248e39`), which Nik runs
-straight away and is NOT held for the HR rebuild. `day_swap_requests` gets
+`close_open_template_policies_migration.sql` (`3248e39`), which Nik ran on
+2026-09-16; it was NOT held for the HR rebuild. `day_swap_requests` gets
 the other HR tables' shape (read owner/hr/admin, write owner/hr);
 `pos_import_meta` is read by any signed-in user and written by owner/admin.
-Every new policy is TO authenticated. Its verification is the same
-anonymous scan.
+Every new policy is TO authenticated.
+
+**Verified the same day, and what that proves.**
+
+- The anonymous scan returns **0 of 63**, against 2 before.
+- Read with the service key, the rows are still there (7 and 1). The
+  service key BYPASSES RLS, so this proves no data was lost, and NOT that
+  signed-in users can still read. A migration that shut everyone out
+  would show the same 7 and 1.
+- The signed-in side rests on two things. First, the migration's own
+  pre-COMMIT check: six policies, all TO authenticated, RLS on. Second,
+  for `pos_import_meta`, the "last import" line on the `/owner` home page,
+  which any signed-in account sees.
+- A signed-in read of `day_swap_requests` is the HR access check, held for
+  the rebuild.
 
 ### Did the 2026-07-31 HR audit predate the table, or miss it? It MISSED it.
 
@@ -1706,12 +1722,25 @@ transcript:
    recorded "staff role has no access to any HR table".
 
 **For the rebuild's single audit:**
-- read the LIVE policies (`pg_policies`, plus `pg_class.relrowsecurity`);
-- take the table list from the catalogue or from the code's `.from(`
-  calls, not from memory;
-- if a check falls back to a weaker source, say so in its result;
-- run the anonymous scan (every exposed relation, public key, no login).
-  It is cheap, and it is the check that found this.
+
+1. **Whenever a check falls back to a weaker source, SAY SO IN ITS
+   RESULT.** This comes first because it is the general form of everything
+   that went wrong this week:
+   - this audit recorded "RLS ✓" from migration files after the live
+     query failed;
+   - the August P&L was "recomputed the page's way" with the page's own
+     paging;
+   - the prep design read `is_owner()`'s first definition instead of the
+     live one.
+
+   Each time, a weaker check was reported as if it were the stronger one.
+   The result must name its source, e.g. "from the files, not live", or
+   it is not a result.
+2. Read the LIVE policies (`pg_policies`, plus `pg_class.relrowsecurity`).
+3. Take the table list from the catalogue or from the code's `.from(`
+   calls, not from memory.
+4. Run the anonymous scan (every exposed relation, public key, no login).
+   It is cheap, and it is the check that found this.
 ## Prep-recipe visibility — closed 2026-09-15 in four steps; OPEN TO ADMINS until 2026-09-16
 
 The 48 prep recipes are the restaurant's actual asset: a dish recipe is
