@@ -21,10 +21,10 @@ export type SalesImportPreview = {
 };
 
 // ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
-// Same rule as pos-import-actions.ts; listPosSalesAliases (a read) keeps its
-// throw. NOTE: parsePosSalesReport itself may still throw on a malformed
-// file — that stays a throw and lands in the client catch as before; its
-// messages belong to the parser layer, not this file.
+// Same rule as pos-import-actions.ts. NOTE: parsePosSalesReport itself may
+// still throw on a malformed file — that stays a throw and lands in the
+// client catch as before; its messages belong to the parser layer, not this
+// file.
 export type SalesImportActionResult = { status: "ok" } | { status: "error"; message: string };
 
 export async function previewPosSalesImport(formData: FormData): Promise<{ status: "ok"; preview: SalesImportPreview } | { status: "error"; message: string }> {
@@ -130,31 +130,6 @@ export async function getPosImportMeta(): Promise<{ dateFrom: string; dateTo: st
   return { dateFrom: data.date_from ?? "", dateTo: data.date_to ?? "", importedAt: data.imported_at ?? "" };
 }
 
-export type PosSalesAlias = {
-  id: string;
-  posProductName: string;
-  menuId: string;
-  menuName: string;
-  divisor: number;
-};
-
-export async function listPosSalesAliases(): Promise<PosSalesAlias[]> {
-  await requireAdmin();
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("pos_sales_aliases")
-    .select("id, pos_product_name, divisor, menu_id, menus(name)")
-    .order("pos_product_name");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    posProductName: r.pos_product_name,
-    menuId: r.menu_id,
-    menuName: (r.menus as unknown as { name: string } | null)?.name ?? "?",
-    divisor: r.divisor,
-  }));
-}
-
 export async function upsertPosSalesAlias(posProductName: string, menuId: string, divisor: number): Promise<SalesImportActionResult> {
   await requireAdmin();
   if (!posProductName.trim() || !menuId) return { status: "error", message: "กรุณากรอกชื่อสินค้า POS และเลือกเมนู" };
@@ -167,13 +142,3 @@ export async function upsertPosSalesAlias(posProductName: string, menuId: string
   return { status: "ok" };
 }
 
-/** ZERO callers today (dead export, queue item 18) — converted while in
- *  scope so the sweep that removes it deletes a consistent file. */
-export async function deletePosSalesAlias(id: string): Promise<SalesImportActionResult> {
-  await requireAdmin();
-  const supabase = await createClient();
-  const { error } = await supabase.from("pos_sales_aliases").delete().eq("id", id);
-  if (error) return { status: "error", message: error.message };
-  revalidatePath("/owner");
-  return { status: "ok" };
-}

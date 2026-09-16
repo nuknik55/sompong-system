@@ -545,43 +545,6 @@ export async function getRecentEntries(yearMonth: string): Promise<EntriesResult
   return { entries, withheldCount };
 }
 
-export async function addExpenseEntry(data: {
-  entry_date: string;
-  coa_code: string;
-  amount: number;
-  note?: string;
-  payment_method: PaymentMethod;
-}): Promise<AccountingActionResult> {
-  const profile = await requireAdmin();
-  const supabase = await createClient();
-
-  // Prevent non-owners from adding sensitive account entries
-  if (profile.role !== "owner") {
-    // Permission check — must fail CLOSED. A discarded error left `coa` null,
-    // so `coa?.is_sensitive` was undefined, which is falsy, and a non-owner
-    // was allowed through. An unknown coa_code has the same effect, so that
-    // is refused too: sensitivity you cannot read is not sensitivity you can
-    // assume away.
-    const { data: coa, error: coaError } = await supabase
-      .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coaError) return { status: "error", message: `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}` };
-    if (!coa) return { status: "error", message: "ไม่พบผังบัญชีนี้" };
-    if (coa.is_sensitive) return { status: "error", message: "ไม่มีสิทธิ์บันทึกรายการนี้" };
-  }
-
-  const { error } = await supabase.from("expense_entries").insert({
-    entry_date: data.entry_date,
-    coa_code: data.coa_code,
-    amount: data.amount,
-    note: data.note || null,
-    payment_method: data.payment_method,
-    created_by: profile.id,
-  });
-  if (error) return { status: "error", message: error.message };
-  revalidatePath("/owner/accounting");
-  return { status: "ok" };
-}
-
 export async function updateExpenseEntry(
   id: string,
   data: {
@@ -598,7 +561,11 @@ export async function updateExpenseEntry(
   const supabase = await createClient();
 
   if (profile.role !== "owner") {
-    // Fails CLOSED — same reasoning as addExpenseEntry above.
+    // Permission check — must fail CLOSED. A discarded error would leave
+    // `coa` null, so `coa?.is_sensitive` would be undefined, which is falsy,
+    // and a non-owner would be allowed through. An unknown coa_code has the
+    // same effect, so that is refused too: sensitivity you cannot read is not
+    // sensitivity you can assume away.
     const { data: coa, error: coaError } = await supabase
       .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
     if (coaError) return { status: "error", message: `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}` };
