@@ -893,10 +893,11 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
         .select("coa_code,amount")
         .filter("entry_date", "gte", `${yearMonth}-01`)
         .filter("entry_date", "lte", monthEnd(yearMonth))
-        // THE ORDER IS THE FIX, not decoration. Without it, August 2026's
-        // 1,003 entries came back with three rows twice and three missing
-        // (650/752/753 doubled; 790, 951, 952 absent) — ฿72,785.91 short on
-        // every August P&L from 2026-09-10 on. See fetchAllRows.
+        // THE ORDER IS THE FIX, not decoration. Without it, a replay on
+        // 2026-09-16 returned August 2026's 1,003 entries with three rows
+        // twice and three missing (650/752/753 doubled; 790, 951, 952
+        // absent): operating expense 42,646.31 low, no tax line. See
+        // fetchAllRows and supabase/README.md item 10.
         .order("id")
         .range(from, to),
     ),

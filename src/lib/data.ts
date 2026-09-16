@@ -28,13 +28,15 @@ const PAGE_SIZE = 1000;
  * EVERY QUERY PASSED HERE MUST END ITS ORDER BY ON A UNIQUE KEY — `id`, or
  * the table's primary key. Pages are separate LIMIT/OFFSET queries, and
  * without a total order Postgres may return the same row on two pages and
- * another on none. That is not theoretical: getMonthlySummary had NO order,
- * and once August 2026 passed 1,000 entries (2026-09-10) the page boundary
- * returned 650, 752 and 753 twice and dropped 790, 951 and 952, so the
- * August P&L read ฿72,785.91 short, consistently and with no error. The
+ * another on none. That is not theoretical. getMonthlySummary had NO order,
+ * and August 2026 has held 1,003 entries since 2026-09-10 11:30 UTC. A
+ * replay of its exact query on 2026-09-16 returned 650, 752 and 753 twice
+ * and dropped 790, 951 and 952: operating expense 42,646.31 low and the tax
+ * line empty, the same wrong answer on every run and no error. The
  * price-import read, ordered by (material, date), doubled 19 deliveries and
- * lost 19 others. A non-unique ordering can work for months and then stop
- * the day a tie lands on a boundary; ending on `id` makes that impossible.
+ * lost 19 in the same kind of replay. A non-unique ordering can look right
+ * and then stop being right when the query plan changes; ending on `id`
+ * makes that impossible.
  */
 export async function fetchAllRows<T>(
   query: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>

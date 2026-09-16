@@ -212,8 +212,10 @@ export async function buildPosImportPreview(): Promise<{ status: "ok"; preview: 
         .gte("document_date", windowStart)
         .order("material_code")
         .order("document_date")
-        // Many deliveries share (material, date): without this the window
-        // read doubled 19 rows and lost 19 on 2026-09-16. See fetchAllRows.
+        // Many deliveries share (material, date): without this, a replay on
+        // 2026-09-16 doubled 19 rows and lost 19 (a non-food material, so no
+        // price moved; every price written since paging began was checked).
+        // See fetchAllRows.
         .order("id")
         .range(from, to),
     ),

@@ -380,16 +380,51 @@ it on one you do not.
 ### A paged read with no total order returns a steady, wrong total
 
 Ninth. `getMonthlySummary` paged `expense_entries` through `fetchAllRows`
-with no ORDER BY. It worked until August 2026 passed 1,000 entries. After
-that, every load returned 1,003 rows of which only 1,000 were distinct:
-three accounts doubled, three missing, the P&L ฿72,785.91 short. It was
-the same figure every time, with no error and no warning, which is exactly
-what makes it look like the truth. A queue entry had even recorded the
-risk, as "not currently biting", against two queries that were in fact
-safe.
+with no ORDER BY. August 2026 has held 1,003 entries since 2026-09-10. On
+that day the read gave the right answer; by 2026-09-16 a replay of the
+same query returned 1,003 rows of which only 1,000 were distinct: three
+accounts doubled, three missing, operating profit 8.8% instead of 7.7%.
+It gave the same figure on every run, with no error and no warning, which
+is exactly what makes it look like the truth. A queue entry had even
+recorded the risk, as "not currently biting", against two queries that
+were in fact safe.
 
 **Every paged query ends its ORDER BY on a unique key.** And count
 DISTINCT ids when you check one, not rows: the row count was right.
+
+#### What would have caught it, and why nothing did
+
+`fetchAllRows` exists because of the 1,000-row cap, which was hit on the
+coffee-items page and on the price-import preview (`a36ae74`, 58 of 251
+materials). The rule written then was "any read that can exceed 1,000 rows
+goes through this". That rule fixed TRUNCATION and said nothing about
+order. The monthly P&L was paged the same way four days later
+(`e572736`), and the check that followed compared the paged result with
+**another read made the same way**:
+
+- the August P&L was "recomputed the page's way", and that session's
+  transcript shows the read it used: the page's own unordered
+  `offset`/`limit` paging, with no ORDER BY. It agreed with the page
+  because it was the same query.
+
+That is baseline rule 2 broken in the one place it matters most. The
+comparison shared the layer under test (the paging), so it could only
+confirm it. And the row count, the one number anyone looked at, was
+right the whole time.
+
+So, for any read that pages:
+
+1. **Check it against a source that does not page the same way:** the
+   database's own `count=exact`, a SQL `sum()`, or a read ordered by the
+   primary key. Compare DISTINCT ids and the sum, not the row count.
+2. **Make the check fail for the right reason first.** The structural scan
+   that found these (every `fetchAllRows` call must end its ORDER BY on
+   `id` or the table's primary key) was run against HEAD before the fix.
+   It had to flag the known defect, and its first version did not, because
+   a query with no ORDER BY compared `undefined === undefined` and passed.
+3. **A rule that says how to page must say how to order.** A rule that
+   solves half a problem reads as the whole solution, so the next person
+   copies the half.
 
 ### The list itself is the point
 

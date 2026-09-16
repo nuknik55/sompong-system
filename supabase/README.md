@@ -517,8 +517,62 @@ In order. Nothing here is started unless it says so.
    Recording the rule somewhere visible matters more than the hint.
 
 10. ~~**`fetchAllRows` callers that order by a non-unique column.**~~
-    **CLOSED 2026-09-16 (`ea9a251`), and "not currently biting" was
-    wrong: it was biting the August P&L.**
+    **CLOSED 2026-09-16 (`ea9a251`). "Not currently biting" was wrong
+    about the risk, but the figures recorded from it held — see the
+    correction just below, which supersedes parts of this entry and of
+    `ea9a251`'s commit message.**
+
+    **CORRECTION, same day, after recomputing every recorded figure.**
+    `ea9a251` and the first version of this entry claimed more than was
+    proven:
+
+    - **The August figures recorded on 2026-09-10 are CORRECT.**
+      Recomputed from an ordered read, with getMonthlySummary's aggregation
+      transcribed and the real `breakEven`, they reproduce to the satang:
+      - operating expense 3,581,458.08 (92.3%), operating profit
+        299,186.92 = **7.7%**, COGS 46.1%;
+      - variable 2,055,097.69, fixed 1,522,746.39, excluded 63,883.60,
+        margin 47.0%, **break-even 3,236,967.97 = 83.4%**, safety
+        643,677.03, 2,244 bills.
+
+      That match is also what validates the transcription. What Nik was
+      told needs no correction.
+    - **What the unordered read produces TODAY** (a replay of the exact
+      query, run without RLS; the app runs as the owner, and RLS adds only
+      an uncorrelated role check):
+      - operating expense 3,538,811.77 (91.2%), profit 341,833.23 = 8.8%;
+      - tax 0 instead of 30,139.60;
+      - Marketing 6.6% (true 4.0%), G&A 3.3% (true 8.6%), Delivery & GP
+        3.2% (true 1.7%);
+      - break-even 3,074,630.57 = 79.2%, margin 42.9%, safety 806,014.43,
+        2,132 bills.
+
+      The ฿72,785.91 is the difference in all expense entries including
+      tax. The operating difference is 42,646.31.
+    - **When the page showed that is NOT established.** August has held
+      1,003 entries since **2026-09-10 11:30 UTC** (the outsource import),
+      not from 14:43 as first written: the POS import at 14:43 deleted and
+      re-inserted 650/752/753 with the same amounts. Nik's 7.7% was read at
+      11:41, over the limit, and was right. So the unordered read gave
+      correct pages at least then, and gives wrong ones now. Which query
+      plan the owner's page used on any day in between cannot be
+      recovered. **Anyone who read an August P&L of about 8.8%, or saw no
+      tax line for August, saw the defect.**
+    - **The delivery read changed no ingredient cost.** The replay's
+      doubled and lost rows are OT203 ค่าขนส่งวัตถุดิบ, which is on the
+      non-food list and never priced; KI602, first named here, came from
+      a replay that selected fewer columns and so took a different plan.
+      Every one of the 108 prices written since that read was paged
+      (`a36ae74`, 2026-09-02 12:24 UTC) was recomputed from the deliveries
+      that existed at that moment, with the pricing code deployed then
+      (taken from git). 106 match exactly. The other 2 have no POS
+      deliveries at all and are manual edits: ขิงเส้น 0→105 on 09-12 and
+      กะทิขวด 28→165 on 09-16.
+    - **Other months:** only August 2026 has more than 1,000 entries (then
+      September 435, July 390). July and September recompute identically
+      both ways.
+
+    The rest of this entry as first written:
 
     **The premise below named the wrong two queries.** `ingredients.name`
     and `prep_recipes.name` are UNIQUE (`0001_init.sql`), so ordering by name
@@ -1319,12 +1373,12 @@ one and the safety margin *higher*. August 2569 with 998 excluded: margin
 90.3%, safety 309,510. No table, no chart, no trend — a history or per-day
 view is a different item and was not started.
 
-**THE AUGUST FIGURES ABOVE ARE SUSPECT (found 2026-09-16).** They were
-written at 15:41 UTC on 2026-09-10, 58 minutes after August passed 1,000
-entries. From that moment `getMonthlySummary` read 650, 752 and 753 twice
-and dropped 790, 951 and 952 (item 10). Re-read the break-even page for
-August after `ea9a251` deploys, and replace these figures with what it says.
-July (390 entries) was never affected.
+**The August figures above were re-verified on 2026-09-16 and are
+CORRECT** (item 10's correction), so an earlier note calling them suspect
+was wrong. They reproduce to the satang from an ordered read. What the
+unordered read produces today is break-even 3,074,631 = 79.2%, and that
+is what the page would have shown whenever the query plan matched the
+replay.
 
 **Closed 2026-09-10 — `monthly_covers`, bills and customers per month**
 (`dd24e2c` migration, `3bd7eec`, `545e14f`, was item 15). Written by
