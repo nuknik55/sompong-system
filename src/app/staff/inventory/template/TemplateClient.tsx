@@ -135,15 +135,40 @@ export function TemplateClient({
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
+  // Same runner, same reason, as owner/stations/[id]/template (83cc517):
+  // this screen moves rows on screen and then writes, and it reverted only
+  // when the action RETURNED an error. A THROWN failure left the optimistic
+  // change standing with no message — a template on screen that the database
+  // does not have, which on an ordering screen means ordering the wrong
+  // things. A returned error and a thrown one do the same two things here:
+  // say so, and undo.
+  const RETRY_MESSAGE = "บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
+  function runWrite<T extends { error?: string }>(
+    fn: () => Promise<T>,
+    opts?: { onOk?: (result: T) => void; revert?: () => void },
+  ) {
+    startTransition(async () => {
+      try {
+        const result = await fn();
+        if (result.error) { setError(result.error); opts?.revert?.(); return; }
+        opts?.onOk?.(result);
+      } catch {
+        setError(RETRY_MESSAGE);
+        opts?.revert?.();
+      }
+    });
+  }
+
   function handleCreate() {
     if (!createName.trim()) return;
     setError(null);
-    startTransition(async () => {
-      const result = await createTemplate(createName.trim());
-      if (result.error) { setError(result.error); return; }
-      setShowCreate(false);
-      setCreateName("");
-      router.push(`/staff/inventory/template?t=${result.id}`);
+    runWrite(() => createTemplate(createName.trim()), {
+      onOk: (result) => {
+        setShowCreate(false);
+        setCreateName("");
+        router.push(`/staff/inventory/template?t=${result.id}`);
+      },
     });
   }
 
@@ -152,11 +177,13 @@ export function TemplateClient({
     const trimmed = nameVal.trim();
     if (!trimmed || trimmed === currentTemplate.name) { setEditingName(false); return; }
     setError(null);
-    startTransition(async () => {
-      const result = await renameTemplate(currentTemplate.id, trimmed);
-      if (result.error) setError(result.error);
-      setEditingName(false);
-      router.refresh();
+    // setEditingName(false) and the refresh ran unconditionally, so a
+    // refused rename at least closed the editor and re-read the real name.
+    // On a THROW neither ran: the editor stayed open with the typed name in
+    // it and nothing said why. Both now happen either way.
+    runWrite(() => renameTemplate(currentTemplate.id, trimmed), {
+      onOk: () => { setEditingName(false); router.refresh(); },
+      revert: () => { setEditingName(false); router.refresh(); },
     });
   }
 
@@ -164,15 +191,15 @@ export function TemplateClient({
     if (!currentTemplate) return;
     if (!confirm(`ลบ template "${currentTemplate.name}"?\n(รายการทั้งหมดในนี้จะหายไปด้วย)`)) return;
     setError(null);
-    startTransition(async () => {
-      const result = await deleteTemplate(currentTemplate.id);
-      if (result.error) { setError(result.error); return; }
-      const remaining = templates.filter((t) => t.id !== currentTemplate.id);
-      router.push(
-        remaining.length > 0
-          ? `/staff/inventory/template?t=${remaining[0].id}`
-          : "/staff/inventory/template"
-      );
+    runWrite(() => deleteTemplate(currentTemplate.id), {
+      onOk: () => {
+        const remaining = templates.filter((t) => t.id !== currentTemplate.id);
+        router.push(
+          remaining.length > 0
+            ? `/staff/inventory/template?t=${remaining[0].id}`
+            : "/staff/inventory/template"
+        );
+      },
     });
   }
 
@@ -189,22 +216,18 @@ export function TemplateClient({
         customGroup: null, customUnit: null, defaultQty: null, kitchenUnit: null, freezerUnit: null,
       })),
     ]);
-    startTransition(async () => {
-      const result = await removeItemsFromTemplate(ids);
-      if (result.error) {
-        setError(result.error);
+    runWrite(() => removeItemsFromTemplate(ids), {
+      revert: () => {
         setItems((prev) => [...prev, ...removed]);
         setAvailable((prev) => prev.filter((a) => !removed.some((r) => r.ingredientId === a.id)));
-      }
+      },
     });
   }
 
   function handleUpdateItem(id: string, fields: UpdateFields) {
     setError(null);
-    startTransition(async () => {
-      const result = await updateTemplateItem(id, fields);
-      if (result.error) { setError(result.error); return; }
-      setItems((prev) =>
+    runWrite(() => updateTemplateItem(id, fields), {
+      onOk: () => setItems((prev) =>
         prev.map((r) => r.id !== id ? r : {
           ...r,
           ...(fields.order_unit !== undefined ? { orderUnit: fields.order_unit } : {}),
@@ -212,7 +235,7 @@ export function TemplateClient({
           ...(fields.kitchen_unit !== undefined ? { kitchenUnit: fields.kitchen_unit } : {}),
           ...(fields.freezer_unit !== undefined ? { freezerUnit: fields.freezer_unit } : {}),
         })
-      );
+      ),
     });
   }
 
@@ -222,13 +245,18 @@ export function TemplateClient({
     const next = [...items];
     [next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]];
     const updated = next.map((item, i) => ({ ...item, sortOrder: i }));
+    // Optimistic with no check at all before this: neither a returned error
+    // nor a throw was handled, so a refused reorder simply stood on screen.
+    const prevItems = items;
+    setError(null);
     setItems(updated);
-    startTransition(async () => {
-      await reorderTemplateItems([
+    runWrite(
+      () => reorderTemplateItems([
         { id: updated[fromIdx].id, sort_order: updated[fromIdx].sortOrder },
         { id: updated[toIdx].id, sort_order: updated[toIdx].sortOrder },
-      ]);
-    });
+      ]),
+      { revert: () => setItems(prevItems) },
+    );
   }
 
   function handleAdd() {
@@ -251,10 +279,8 @@ export function TemplateClient({
     setAddSelected(new Set());
     setAddSearch("");
     setAddCategory(null);
-    startTransition(async () => {
-      const result = await addItemsToTemplate(currentTemplate.id, selectedIngIds);
-      if (result.error) {
-        setError(result.error);
+    runWrite(() => addItemsToTemplate(currentTemplate.id, selectedIngIds), {
+      revert: () => {
         setItems((prev) => prev.filter((r) => !r.id.startsWith("temp-")));
         setAvailable((prev) => [
           ...prev,
@@ -265,14 +291,14 @@ export function TemplateClient({
             customGroup: null, customUnit: null, defaultQty: null, kitchenUnit: null, freezerUnit: null,
           })),
         ]);
-        return;
-      }
-      if (result.items) {
+      },
+      onOk: (result) => {
+        if (!result.items) return;
         const realById = new Map(result.items.map((r) => [r.ingredientId, r]));
         setItems((prev) =>
           prev.map((r) => r.id.startsWith("temp-") ? (realById.get(r.ingredientId) ?? r) : r)
         );
-      }
+      },
     });
   }
 
