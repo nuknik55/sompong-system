@@ -112,6 +112,7 @@ and dated here.
 | `grant_prep_access_heng.sql` | 2026-09-15 | Granted เฮง all 48 preps. Both people resolved live (name + role), exactly-one assertions, `ON CONFLICT DO NOTHING`, and a postcondition rolling back unless he ended holding every prep. |
 | `grant_prep_access_wetch.sql` | 2026-09-15 | Granted เวช (หัวหน้า prep) all 48. Identified by the TRIPLE login + full_name + role — the login lives in `auth.users.email` as `wetch2527@staff.local`, not in `profiles`, and name alone sat one row from the placeholder account "Editor / editor". |
 | `prep_recipe_access_rls_migration.sql` | 2026-09-15 | Step 2: SELECT on `prep_recipes`/`prep_recipe_items` narrowed to `can_see_prep()`, writes to `role IN (owner,admin) AND can_see_prep()` with a WITH CHECK that omits the predicate so creation still works. Step 0 read `pg_policies` at run time and would have aborted on drift. **Verified by Nik, negative control first: an ungranted editor reads 0 recipes and 0 items; เฮง reads 48 and 248; an ungranted editor's direct UPDATE touches 0 rows.** Then the cost channel confirmed against a PRE-REGISTERED expectation — 48 / 43 priced / 5 null / sum 651.387003 / min 0.024527 / max 99.861334, all six matching figures published before the result was seen. No dish cost moved. |
+| `provenance_triggers_migration.sql` | 2026-09-16 | Items 21+22. `touch_updated_at()` installed on the **16** tables carrying the column (a DO block asserts the column exists on each before creating anything, then asserts it made 16), and `prep_recipe_access_history` written by an AFTER INSERT/DELETE trigger with the recipe, person and actor names copied at write time. **Verified including the one check SQL cannot do:** the owner granted and revoked through the app, and both rows came back naming him — `grant · Test เตรียม · เฮง · Owner` and `revoke · … · Owner`. That was the whole question item 21 existed to answer, since `changed_by_name` NULL from an app write would have meant the trigger never sees the session. **Two behaviour notes: (a) a bulk migration now moves `updated_at` on every row it touches — a mass timestamp shift after some future backfill is this trigger working, not a defect; (b) the 8 call sites that already stamp `updated_at` by hand are redundant and were deliberately left, since the trigger overwrites with the same `now()`.** |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
@@ -894,9 +895,22 @@ In order. Nothing here is started unless it says so.
       migration 2 makes that screen the only tool for repairing access and a
       repair tool that fails silently is a locked door with no handle.
 
-21. **`prep_recipe_access` records grants and forgets revocations.** Not
-    started; approved in shape 2026-09-15, size to go to Nik before it is
-    built.
+21. ~~**`prep_recipe_access` records grants and forgets revocations.**~~
+    **CLOSED 2026-09-16** by `provenance_triggers_migration.sql`, together
+    with item 22 — one decision about how provenance is recorded, in two
+    places. Written by trigger rather than by application code because that
+    is already the convention here (recipe_item_history, ingredient_price_history,
+    both trigger-written, neither ever written by the app) and because a
+    trigger cannot be bypassed: the two grant scripts wrote 96 rows without
+    touching application code, and those were precisely the writes needed
+    when เวช's ข้าวเหนียวมูน grant went missing. Names are COPIED at write
+    time — 40 of recipe_item_history's rows already point at deleted
+    accounts — and the table has no foreign keys, since a key to
+    prep_recipes would cascade the history away with the recipe. Deleting a
+    recipe cascades its grants, and the parent is gone by the time the child
+    trigger fires, so the name falls back to the last one this table itself
+    recorded; a cascade-revoke still reads as a sentence. Not backfilled, so
+    the negative control stayed falsifiable.
 
     `granted_at` and `granted_by` exist, so a live grant carries its
     provenance — but a DELETE leaves nothing at all. When เวช's
@@ -928,8 +942,21 @@ In order. Nothing here is started unless it says so.
     Recommend the migration alone first; the panel can follow if he asks for
     it twice.
 
-22. **`updatePrepYield` does not set `updated_at`, so a yield change leaves
-    no timestamp.** Not started; one line. Found 2026-09-15 the hard way.
+22. ~~**`updatePrepYield` does not set `updated_at`, so a yield change
+    leaves no timestamp.**~~ **CLOSED 2026-09-16** by
+    `provenance_triggers_migration.sql`. NOT the one-line fix this entry
+    first proposed: a scan found **58 `.update({` call sites in `src/`, of
+    which 8 stamp `updated_at` and 50 do not**, across 27 tables. That is a
+    missing mechanism rather than 50 edits, so a generic `touch_updated_at()`
+    BEFORE UPDATE trigger went on the 16 tables that have the column — every
+    future write is correct by default. **A bulk migration now moves
+    `updated_at` on every row it touches**, which is correct semantics and
+    is recorded here so a mass timestamp shift after some later backfill is
+    read as the trigger working. The 8 hand-stamping sites were left alone:
+    the trigger overwrites with the same `now()`, so they are redundant and
+    harmless, and eight edits for zero behaviour change is not worth it.
+    Found the hard way — dating ผักคะน้าฮ่องกง's 37.0230 → 15 required
+    solving the arithmetic backwards.
 
     `prep_recipes` has `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` — a
     DEFAULT, not a trigger — and `updatePrepYield` writes
