@@ -24,6 +24,17 @@ const PAGE_SIZE = 1000;
  * 58 of 251 materials, and silently offered a fifth of the catalogue for
  * repricing. Any read of a table that can exceed 1,000 rows goes through
  * this.
+ *
+ * EVERY QUERY PASSED HERE MUST END ITS ORDER BY ON A UNIQUE KEY — `id`, or
+ * the table's primary key. Pages are separate LIMIT/OFFSET queries, and
+ * without a total order Postgres may return the same row on two pages and
+ * another on none. That is not theoretical: getMonthlySummary had NO order,
+ * and once August 2026 passed 1,000 entries (2026-09-10) the page boundary
+ * returned 650, 752 and 753 twice and dropped 790, 951 and 952, so the
+ * August P&L read ฿72,785.91 short, consistently and with no error. The
+ * price-import read, ordered by (material, date), doubled 19 deliveries and
+ * lost 19 others. A non-unique ordering can work for months and then stop
+ * the day a tie lands on a boundary; ending on `id` makes that impossible.
  */
 export async function fetchAllRows<T>(
   query: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
@@ -48,6 +59,7 @@ export async function getIngredients(): Promise<IngredientRow[]> {
       .from("ingredients")
       .select("id, name, category, is_prep, purchase_unit_label, purchase_cost, receive_qty, yield_qty, usage_unit, prep_recipe_id, par_level")
       .order("name")
+      .order("id")
       .range(from, to)
   );
 }
@@ -55,7 +67,7 @@ export async function getIngredients(): Promise<IngredientRow[]> {
 export async function getPrepRecipes(): Promise<PrepRecipeRow[]> {
   const supabase = await createClient();
   return fetchAllRows<PrepRecipeRow>(({ from, to }) =>
-    supabase.from("prep_recipes").select("id, name, category, batch_yield_qty, batch_yield_unit").order("name").range(from, to)
+    supabase.from("prep_recipes").select("id, name, category, batch_yield_qty, batch_yield_unit").order("name").order("id").range(from, to)
   );
 }
 
@@ -67,6 +79,7 @@ export async function getPrepRecipeItems(): Promise<PrepRecipeItemRow[]> {
       .select("id, prep_recipe_id, ingredient_id, quantity")
       .order("prep_recipe_id")
       .order("sort_order")
+      .order("id")
       .range(from, to)
   );
 }
@@ -78,6 +91,7 @@ export async function getMenus(): Promise<MenuRow[]> {
       .from("menus")
       .select("id, name, category, selling_price, last_period_qty_sold, staff_visible")
       .order("name")
+      .order("id")
       .range(from, to)
   );
 }
@@ -90,6 +104,7 @@ export async function getMenuRecipeItems(): Promise<MenuRecipeItemRow[]> {
       .select("id, menu_id, ingredient_id, quantity")
       .order("menu_id")
       .order("sort_order")
+      .order("id")
       .range(from, to)
   );
 }

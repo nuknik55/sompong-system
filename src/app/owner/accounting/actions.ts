@@ -514,6 +514,8 @@ export async function getRecentEntries(yearMonth: string): Promise<EntriesResult
       .lte("entry_date", monthEnd(yearMonth))
       .order("entry_date", { ascending: false })
       .order("created_at", { ascending: false })
+      // An import writes hundreds of rows with one created_at; see fetchAllRows.
+      .order("id")
       .range(from, to),
   );
 
@@ -891,6 +893,11 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
         .select("coa_code,amount")
         .filter("entry_date", "gte", `${yearMonth}-01`)
         .filter("entry_date", "lte", monthEnd(yearMonth))
+        // THE ORDER IS THE FIX, not decoration. Without it, August 2026's
+        // 1,003 entries came back with three rows twice and three missing
+        // (650/752/753 doubled; 790, 951, 952 absent) — ฿72,785.91 short on
+        // every August P&L from 2026-09-10 on. See fetchAllRows.
+        .order("id")
         .range(from, to),
     ),
     supabase.from("coa").select("*").order("sort_order"),

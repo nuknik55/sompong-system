@@ -212,6 +212,9 @@ export async function buildPosImportPreview(): Promise<{ status: "ok"; preview: 
         .gte("document_date", windowStart)
         .order("material_code")
         .order("document_date")
+        // Many deliveries share (material, date): without this the window
+        // read doubled 19 rows and lost 19 on 2026-09-16. See fetchAllRows.
+        .order("id")
         .range(from, to),
     ),
     supabase
