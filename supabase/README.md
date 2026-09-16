@@ -859,10 +859,34 @@ In order. Nothing here is started unless it says so.
     printed. Quota counts recipients (one push to five members is five
     messages; replies are free), so the group stays small.
 
-20. **A thrown Server Action is invisible in 46 of 120 client handlers.**
-    Not started, found 2026-09-15 by scanning every `startTransition(async …)`
-    in `src/`. **Per-file triage, NOT a mechanical sweep** — the right
-    handling differs by screen and so does the severity.
+20. ~~**A thrown Server Action is invisible in 46 of 120 client
+    handlers.**~~ **CLOSED 2026-09-16.** A re-scan reports **0 of 101**
+    `startTransition(async …)` blocks with an awaited action and no
+    try/catch. Done per file in cost order, not as a sweep, across six
+    commits: `83cc517` `cdb6bb6` `bdfdbfd` `8b3b547` `c9283d8` (and
+    `211fcc4`, the prep grant screen, which prompted the whole item).
+
+    **Four sites actually lied on a throw** — the tier-1 shape, state moved
+    before the write with nothing to put it back:
+    `stations/template` (remove, rename, drag-reorder, bulk-move),
+    `inventory/template` (remove, reorder, add), `team-manager`'s role
+    dropdown, and `TransferCostSettingsClient`'s active toggle.
+
+    **THE TRIAGE TURNED UP THREE DEFECTS WORTH MORE THAN THE CATCHES THAT
+    FOUND THEM**, none of which are missing-catch bugs at all:
+    - `handleDragEnd` fired its write INSIDE a `setRows` updater. Updaters
+      must be pure; React may call one more than once, and each call started
+      another transition — **one drag could write the reorder twice**.
+    - `handleRenameGroup` and `commitBulkMove` never reverted **even on a
+      RETURNED error**: the server refused, the message appeared, and the
+      change stayed on screen reading as applied. That is the false-success
+      shape hiding behind the silent-failure one.
+    - `TransferCostSettingsClient.handleToggleActive` had no handling of any
+      kind and patched its mirror regardless.
+
+    **Noted, not fixed:** `TransferCostSettingsClient` still mirrors `rates`
+    into state the way `RatesSettingsClient` did before item 17 — the same
+    hazard class, queued rather than folded in.
 
     **Item 12 was scoped to the SERVER side**: expected failures now RETURN a
     Thai message instead of throwing, because production redacts thrown
