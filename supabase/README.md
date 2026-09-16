@@ -1104,11 +1104,36 @@ In order. Nothing here is started unless it says so.
     he intended? If admins should change it, the fix is the guard, not the
     policy.
 
-24. **`createPrep` silently overwrites a live prep when the name matches.**
-    Not started. **A data-corruption path with no error attached.**
-    **NEXT, after the ต้นทุนภายใน link** (decided 2026-09-16), rather than
-    queued indefinitely. Nik has been told not to reuse an existing prep name
-    until it lands.
+24. ~~**`createPrep` silently overwrites a live prep when the name
+    matches.**~~ **CLOSED 2026-09-16, the same day it was found.** Only a
+    TRUE orphan is reused now. The decision is `planPrepCreate`
+    (`src/lib/prep-create.ts`), a pure function with 10 tests, the first
+    named after the defect. "Orphan" comes from the schema:
+    `ingredients.prep_recipe_id` is ON DELETE SET NULL, so a non-null value
+    proves the prep exists even when RLS hides it from the caller.
+
+    **Verified against live data with the real function** (read-only):
+    - all 48 existing prep names are refused: `live_prep` for someone who can
+      see the prep, `name_taken` for someone who cannot;
+    - the old branch would have rewritten all 48;
+    - all 378 raw ingredient names still get the raw-ingredient refusal.
+
+    The lookups' errors are now checked. A failed lookup read as "nothing
+    found" would have inserted a prep and then failed on the ingredient's
+    UNIQUE name. **Not witnessed in the app:** Nik typing an existing prep's
+    name should get มีของเตรียมชื่อ "…" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข
+    and no change to that prep. Until then the unit tests and the live check
+    are the evidence.
+
+    **The same class, smaller, not fixed here.** `duplicatePrep` and
+    approving a `prep_create` do not check the name first. They insert the
+    prep, then the ingredient row, and a name already held by an ingredient
+    fails the second insert. That leaves an ORPHAN prep (no live data
+    changes; the new rule can reuse it safely later) plus an error, or a
+    change that stays pending. Worth folding into `planPrepCreate` when
+    either path is next touched.
+
+    The original entry:
 
     The "reuse orphan" branch finds a `prep_recipes` row by name and updates
     its category and batch yield, then rewrites the matching `ingredients`

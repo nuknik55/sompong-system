@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
-import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage } from "@/lib/prep-access";
+import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage, prepNameTakenMessage } from "@/lib/prep-access";
+import { planPrepCreate } from "@/lib/prep-create";
 
 // ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
 // Same rule as staff/menu/actions.ts: production redacts thrown Server Action
@@ -52,46 +53,76 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   }
 
   const supabase = await createClient();
+  const trimmed = name.trim();
 
-  // Check for existing ingredient or prep_recipe with same name (orphans from partial deletes)
-  const [{ data: existingIngredient }, { data: existingPrepRecipe }] = await Promise.all([
-    supabase.from("ingredients").select("id, is_prep").eq("name", name.trim()).maybeSingle(),
-    supabase.from("prep_recipes").select("id").eq("name", name.trim()).maybeSingle(),
+  // What already holds this name. Only an ORPHAN may be reused; the rule and
+  // its cases are in planPrepCreate (queue item 24). The errors are checked:
+  // a failed lookup read as "nothing found" would insert a prep and then fail
+  // on the ingredient's UNIQUE name, leaving exactly the orphan this avoids.
+  const [ingredientRead, prepRead] = await Promise.all([
+    supabase.from("ingredients").select("id, is_prep, prep_recipe_id").eq("name", trimmed).maybeSingle(),
+    supabase.from("prep_recipes").select("id").eq("name", trimmed).maybeSingle(),
   ]);
+  if (ingredientRead.error) return { status: "error", message: ingredientRead.error.message };
+  if (prepRead.error) return { status: "error", message: prepRead.error.message };
+  const existingIngredient = ingredientRead.data as { id: string; is_prep: boolean; prep_recipe_id: string | null } | null;
+  const existingPrepRecipe = prepRead.data as { id: string } | null;
 
-  if (existingIngredient && !existingIngredient.is_prep) {
-    return { status: "error", message: `ชื่อ "${name.trim()}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น` };
+  // Is the prep that was found in use? Any ingredients row pointing at it
+  // makes it live, whatever that row is called. A null count is read as "in
+  // use": failing closed refuses a create; failing open rewrites a recipe.
+  let prepIsLinked = false;
+  if (existingPrepRecipe) {
+    const { count, error } = await supabase
+      .from("ingredients")
+      .select("id", { count: "exact", head: true })
+      .eq("prep_recipe_id", existingPrepRecipe.id);
+    if (error) return { status: "error", message: error.message };
+    prepIsLinked = count !== 0;
+  }
+
+  const plan = planPrepCreate({ ingredient: existingIngredient, prep: existingPrepRecipe, prepIsLinked });
+  if (plan.kind === "refuse") {
+    const message =
+      plan.reason === "raw_ingredient"
+        ? `ชื่อ "${trimmed}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น`
+        : plan.reason === "live_prep"
+          ? `มีของเตรียมชื่อ "${trimmed}" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข`
+          : prepNameTakenMessage(trimmed);
+    return { status: "error", message };
   }
 
   let prepId: string;
-  if (existingPrepRecipe) {
-    // Reuse orphan prep_recipe (its ingredient was deleted) — update fields to match new request
+  if (plan.reusePrepId) {
+    // A TRUE orphan: no ingredient points at it (checked above), so no dish
+    // is costed from it and rewriting its yield moves nothing.
     const { error: updatePrepError } = await supabase
       .from("prep_recipes")
       .update({ category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" })
-      .eq("id", existingPrepRecipe.id);
+      .eq("id", plan.reusePrepId);
     if (updatePrepError) return { status: "error", message: updatePrepError.message };
-    prepId = existingPrepRecipe.id;
+    prepId = plan.reusePrepId;
   } else {
     // See the note above createPrep: the id is made here, not read back.
     const newId = randomUUID();
     const { error: insertError } = await supabase
       .from("prep_recipes")
-      .insert({ id: newId, name: name.trim(), category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" });
-    if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, name.trim()) };
+      .insert({ id: newId, name: trimmed, category: category.trim() || null, batch_yield_qty: batchYieldQty || 1, batch_yield_unit: batchYieldUnit.trim() || "กรัม" });
+    if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, trimmed) };
     prepId = newId;
   }
 
-  if (existingIngredient?.is_prep) {
-    // Orphan prep ingredient — relink to the (new or reused) prep_recipe
+  if (plan.relinkIngredientId) {
+    // A TRUE orphan ingredient (is_prep, prep_recipe_id NULL). Relinking it
+    // gives a cost back to any dish that still lists it.
     const { error: updateError } = await supabase
       .from("ingredients")
       .update({ category: category.trim() || "prep", usage_unit: batchYieldUnit.trim() || "กรัม", prep_recipe_id: prepId })
-      .eq("id", existingIngredient.id);
+      .eq("id", plan.relinkIngredientId);
     if (updateError) return { status: "error", message: updateError.message };
   } else {
     const { error: ingredientError } = await supabase.from("ingredients").insert({
-      name: name.trim(),
+      name: trimmed,
       category: category.trim() || "prep",
       is_prep: true,
       usage_unit: batchYieldUnit.trim() || "กรัม",
@@ -103,7 +134,7 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   revalidatePath("/staff", "layout");
   revalidatePath("/owner", "layout");
 
-  if (!(await canSeePrep(prepId))) return { status: "hidden", name: name.trim() };
+  if (!(await canSeePrep(prepId))) return { status: "hidden", name: trimmed };
   return { status: "ok", id: prepId };
 }
 

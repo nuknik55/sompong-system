@@ -114,9 +114,12 @@ export const PREP_FORBIDDEN = "ไม่มีสิทธิ์เข้าถ�
  * offers both ways out without saying which one applies.
  */
 export function prepInsertErrorMessage(error: { code?: string; message: string }, name: string): string {
-  return error.code === "23505"
-    ? `มีของเตรียมชื่อ "${name}" อยู่แล้ว — ใช้ชื่ออื่น หรือขอให้เจ้าของร้านเปิดสิทธิ์สูตรนั้นให้`
-    : error.message;
+  return error.code === "23505" ? prepNameTakenMessage(name) : error.message;
+}
+
+/** The name is held by a live prep the caller may not be able to see. */
+export function prepNameTakenMessage(name: string): string {
+  return `มีของเตรียมชื่อ "${name}" อยู่แล้ว — ใช้ชื่ออื่น หรือขอให้เจ้าของร้านเปิดสิทธิ์สูตรนั้นให้`;
 }
 
 export type PrepAccessRecipe = { id: string; name: string; category: string | null };
