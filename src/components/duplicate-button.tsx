@@ -47,7 +47,11 @@ export function DuplicateButton({
         >
           คัดลอกสูตรนี้
         </button>
-        {pendingMsg && <p className="text-xs text-amber-700">{pendingMsg}</p>}
+        {/* Boxed for the same reason as CreateRecipeForm's notice: bare
+            coloured text under a button reads as an error. */}
+        {pendingMsg && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{pendingMsg}</p>
+        )}
       </div>
     );
   }

@@ -87,7 +87,13 @@ export function CreateRecipeForm(props: Props) {
           <Plus className="h-4 w-4" />
           {props.kind === "menu" ? "สร้างเมนูใหม่" : "สร้างของ prep ใหม่"}
         </button>
-        {notice && <p className="text-xs text-amber-600">{notice}</p>}
+        {/* A BOX, not bare coloured text. Bare text-amber-600 is #dd7400 in
+            Tailwind 4, and sitting where an error would, it was read as one
+            (Nik, 2026-09-16) — a success in error colours teaches people to
+            distrust the colour. Same shape as the app's other amber notices. */}
+        {notice && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{notice}</p>
+        )}
       </div>
     );
   }
