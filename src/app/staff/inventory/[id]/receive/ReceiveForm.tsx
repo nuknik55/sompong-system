@@ -40,11 +40,18 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
       return;
     }
 
+    // Item 20: a throw skipped the redirect too, so the form just sat there
+    // with the quantities still typed in and nothing said. Receiving stock is
+    // the write where "I think I already did that" costs the most.
     startTransition(async () => {
-      const result = await receiveOrderItems(session.id, payload);
-      if (result.error) { setError(result.error); return; }
-      // Let detail page decide if session closed — redirect there
-      router.push(`/staff/inventory/${session.id}`);
+      try {
+        const result = await receiveOrderItems(session.id, payload);
+        if (result.error) { setError(result.error); return; }
+        // Let detail page decide if session closed — redirect there
+        router.push(`/staff/inventory/${session.id}`);
+      } catch {
+        setError("บันทึกรับของไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

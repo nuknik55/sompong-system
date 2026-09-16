@@ -143,10 +143,17 @@ export function OrderForm({ stations, allIngredients, templateItems, prefillFrom
       })
       .filter((i) => i.qtyOrdered > 0 || i.remainingKitchenQty !== null || i.remainingFreezerQty !== null);
 
+    // Item 20: on a throw the redirect never ran either, so the filled-in
+    // order sat on screen with no message — and a second attempt would have
+    // created a second session if the first had in fact landed.
     startTransition(async () => {
-      const result = await createOrderSession(stationId || null, note.trim() || null, items);
-      if (result.error) { setError(result.error); return; }
-      router.push(`/staff/inventory/${result.sessionId}`);
+      try {
+        const result = await createOrderSession(stationId || null, note.trim() || null, items);
+        if (result.error) { setError(result.error); return; }
+        router.push(`/staff/inventory/${result.sessionId}`);
+      } catch {
+        setError("สร้างใบสั่งของไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

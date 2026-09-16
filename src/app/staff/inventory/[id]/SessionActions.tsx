@@ -77,31 +77,41 @@ export function SessionActions({
     });
   }
 
+  // Item 20. Nothing on this screen updates optimistically, so a throw does
+  // not leave a lie on screen — it leaves NOTHING: no message, no movement,
+  // and the person tries again or assumes it worked. These are stock
+  // movements (an order reviewed, returned, sent, received), so "assumes it
+  // worked" is the expensive half.
+  const RETRY_MESSAGE = "บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
+  function runWrite<T extends { error?: string }>(
+    fn: () => Promise<T>,
+    opts?: { onOk?: (result: T) => void },
+  ) {
+    startTransition(async () => {
+      try {
+        const result = await fn();
+        if (result.error) { setError(result.error); return; }
+        opts?.onOk?.(result);
+      } catch {
+        setError(RETRY_MESSAGE);
+      }
+    });
+  }
+
   function handleReview() {
     setError(null);
-    startTransition(async () => {
-      const result = await reviewOrderSession(session.id);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
-    });
+    runWrite(() => reviewOrderSession(session.id), { onOk: () => router.refresh() });
   }
 
   function handleReturn() {
     setError(null);
-    startTransition(async () => {
-      const result = await returnOrderSession(session.id, returnNote.trim() || undefined);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
-    });
+    runWrite(() => returnOrderSession(session.id, returnNote.trim() || undefined), { onOk: () => router.refresh() });
   }
 
   function handleMarkSent() {
     setError(null);
-    startTransition(async () => {
-      const result = await markOrderSent(session.id);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
-    });
+    runWrite(() => markOrderSent(session.id), { onOk: () => router.refresh() });
   }
 
   function handleUpdateAndResubmit() {
@@ -118,11 +128,7 @@ export function SessionActions({
         orderUnit: row.unit.trim() || null,
       };
     });
-    startTransition(async () => {
-      const result = await updateItemsAndResubmit(session.id, items);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
-    });
+    runWrite(() => updateItemsAndResubmit(session.id, items), { onOk: () => router.refresh() });
   }
 
   function startEditQty(itemId: string, currentQty: number) {
@@ -133,14 +139,15 @@ export function SessionActions({
   function saveQtyEdit(itemId: string) {
     const val = parseFloat(editQtyVal);
     const isReviewStage = session.status === "reviewed";
-    startTransition(async () => {
-      const result = isReviewStage
-        ? await saveReviewerItemEdit(itemId, isNaN(val) ? null : val, session.id)
-        : await saveEditorItemEdit(itemId, isNaN(val) ? null : val, session.id);
-      if (result.error) { setError(result.error); return; }
-      setEditingQty(null);
-      router.refresh();
-    });
+    setError(null);
+    // The edit box stays open on failure, deliberately: the typed figure is
+    // still there to retry with, and the message now says why.
+    runWrite(
+      () => isReviewStage
+        ? saveReviewerItemEdit(itemId, isNaN(val) ? null : val, session.id)
+        : saveEditorItemEdit(itemId, isNaN(val) ? null : val, session.id),
+      { onOk: () => { setEditingQty(null); router.refresh(); } },
+    );
   }
 
   // effective qty: purchaser edit > reviewer edit > original
