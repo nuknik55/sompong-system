@@ -873,13 +873,44 @@ In order. Nothing here is started unless it says so.
     while a tab sits open — rejects the `await` inside the transition, and
     without a catch nothing renders at all.
 
-    **Severity is not uniform, which is why a sweep is the wrong tool.** Many
-    of the 46 end in a success indicator that simply never appears, reading
-    as "nothing happened" — bad, but not a false success. The dangerous ones
-    are those whose failure leaves the screen claiming something untrue, or
-    leaves a manual pending flag stuck because the `setBusy(null)` sits after
-    the `await` rather than in a `finally` (that second half is easy to miss;
-    it leaves a button reading "กำลังบันทึก…" for good).
+    **THE RULE THAT MAKES THE REST OF THIS TRIAGE FAST, and it is not the
+    obvious one.** The first attempt ranked these by what each handler does
+    AFTER the await — navigates away, sets "saved", clears the form — and was
+    wrong. WHEN THE AWAIT THROWS, EVERYTHING AFTER IT IS SKIPPED: the handler
+    cannot navigate, cannot claim success, cannot clear the form. So none of
+    those can lie. **What survives a throw is only what was set BEFORE the
+    write**, and that is what decides the cost:
+
+    | tier | a silent failure means | n |
+    |---|---|---|
+    | 1 | state moved before the write — **the screen disagrees with the database** | 10 |
+    | 2 | a flag set before the write never clears — a control sticks, silently | 22 |
+    | 3 | nothing moves and nothing is said; the user retries blind | 12 |
+
+    Rank a new site by asking only: *what did this set before the await, and
+    what was supposed to undo it afterwards?* A `setBusy` whose reset sits
+    after the await is tier 2 — the reset never runs, so the button reads
+    "กำลังบันทึก…" for good, which is why every fix puts it in a `finally`.
+
+    Tier 1 turned out to be almost entirely ORDER TEMPLATES, which is the
+    stock domain reached by a different route — so the mechanism and the
+    domain stakes agree on the order rather than competing.
+
+    **Verify tier 1 by reading, not by trusting the classifier.** Doing so
+    corrected it twice: `ingredient-manager`'s `UsageItem` is NOT tier 1
+    (localQty moves only on success, so the row stays truthful and the
+    item-12 comment there is accurate), and several "stuck" flags are merely
+    `setError`, which is harmless.
+
+    ORDER, approved 2026-09-16: stations template → staff inventory template →
+    stock movements (SessionActions, ReceiveForm, OrderForm) → team-manager
+    (access) → ApproveClient → the accounting imports → the singles.
+
+    Done: `owner/stations/[id]/template/TemplateClient` (`83cc517`), which
+    turned up two defects worth more than the catch that found them — a write
+    fired inside a state updater, so one drag could reorder twice; and a
+    rename and a bulk-move that never reverted even on a RETURNED error, so a
+    refusal read as success.
 
     The split, 2026-09-15:
 
