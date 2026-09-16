@@ -40,6 +40,16 @@ type Point = {
   profitPerUnit: number;
   qtySold: number;
   menuClass: MenuEngineeringClass;
+  /** Why an Unranked dish has no class; null for a ranked dish. */
+  unrankedNote?: string | null;
+};
+
+const CLASS_TH: Record<MenuEngineeringClass, string> = {
+  Star: "พระเอก",
+  Horse: "ขายดีกำไรบาง",
+  Puzzle: "กำไรดีแต่ขายน้อย",
+  Dog: "ตัวถ่วง",
+  Unranked: "ยังจัดอันดับไม่ได้",
 };
 
 function fullDomain(values: number[]): [number, number] {
@@ -66,7 +76,7 @@ function niceYTicks(lo: number, hi: number, count = 5): number[] {
   return [...new Set(ticks)].sort((a, b) => a - b);
 }
 
-export function MenuEngineeringChart({ data }: { data: Point[] }) {
+export function MenuEngineeringChart({ data, note }: { data: Point[]; note?: string }) {
   const plotData = data;
 
   const [xMin, xMax] = fullDomain(plotData.map((d) => d.popularPct));
@@ -91,10 +101,11 @@ export function MenuEngineeringChart({ data }: { data: Point[] }) {
         ))}
         <span className="flex items-center gap-1.5 text-xs text-neutral-400">
           <span className="inline-block h-3 w-3 flex-shrink-0 rounded-full border border-neutral-300" style={{ backgroundColor: COLOR.Unranked }} />
-          ยังไม่มีข้อมูลยอดขาย
+          ยังจัดอันดับไม่ได้
         </span>
       </div>
 
+      {note && <p className="mb-1 text-xs text-neutral-500">{note}</p>}
       <p className="mb-2 text-xs text-neutral-400">
         * แกนครอบคลุมทุกเมนู เมนูขายดีมากๆ อาจทำให้จุดอื่นกระจุกกันที่มุมซ้าย — ดูตัวเลขจริงในตารางด้านล่าง หรือชี้ที่จุดเพื่อดูรายละเอียด
       </p>
@@ -134,7 +145,8 @@ export function MenuEngineeringChart({ data }: { data: Point[] }) {
                   <p>ยอดขาย: {p.qtySold.toLocaleString("th-TH")} จาน</p>
                   <p>ความนิยม: {p.popularPct.toFixed(2)}%</p>
                   <p>กำไรต่อจาน: {p.profitPerUnit.toFixed(2)} บาท</p>
-                  <p>กลุ่ม: {p.menuClass}</p>
+                  <p>กลุ่ม: {CLASS_TH[p.menuClass]}</p>
+                  {p.unrankedNote && <p className="max-w-56 text-neutral-500">{p.unrankedNote}</p>}
                 </div>
               );
             }}

@@ -28,7 +28,7 @@ const CLASS_LABEL: Record<MenuEngineeringClass, string> = {
   Horse:    "ขายดีกำไรบาง",
   Puzzle:   "กำไรดีขายน้อย",
   Dog:      "ตัวถ่วง",
-  Unranked: "ไม่มีข้อมูล",
+  Unranked: "ยังจัดอันดับไม่ได้",
 };
 
 const CLASS_SUBLABEL: Record<MenuEngineeringClass, string> = {
@@ -107,7 +107,7 @@ export function MenuEngineeringSection({ rows, classCounts }: Props) {
             onClick={() => setHideUnranked((p) => !p)}
             className="ml-auto text-xs text-neutral-400 underline hover:text-neutral-700"
           >
-            {hideUnranked ? `แสดง Unranked (${unrankedCount} เมนู)` : `ซ่อน Unranked (${unrankedCount} เมนู)`}
+            {hideUnranked ? `แสดงเมนูที่ยังจัดอันดับไม่ได้ (${unrankedCount})` : `ซ่อนเมนูที่ยังจัดอันดับไม่ได้ (${unrankedCount})`}
           </button>
         )}
       </div>

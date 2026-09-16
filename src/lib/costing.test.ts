@@ -1,7 +1,17 @@
 /** Run with: npm test — the cost rules that stayed in TypeScript. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rawUnitCost, resolveUnitCosts, computeMenuCost, type IngredientRow } from "./costing.ts";
+import {
+  rawUnitCost,
+  resolveUnitCosts,
+  computeMenuCost,
+  classifyMenuEngineering,
+  classifyWithinCategory,
+  unrankedReasonText,
+  MIN_RANKABLE_GROUP,
+  type IngredientRow,
+  type MenuCost,
+} from "./costing.ts";
 
 // This file exists because resolveUnitCosts had NO test coverage at all while
 // it carried the prep-nesting fixpoint, and it was changed shape when that
@@ -99,4 +109,79 @@ test("an unknown component makes the DISH incomplete rather than cheaper", () =>
   );
   assert.equal(cost.hasUnknownCost, true);
   assert.equal(cost.ingredientCost, 20, "the known part still totals; the unknown part is flagged, not guessed");
+});
+
+// ── Menu Engineering within category (queue item 5) ────────────────────────
+
+/** A dish with a given category, units sold and profit per unit. */
+function dish(id: string, category: string | null, qty: number, profit: number): MenuCost {
+  return {
+    menu: { id, name: id, category, selling_price: profit + 10, last_period_qty_sold: qty, staff_visible: true },
+    ingredientCost: 10,
+    qFactorAmount: 0,
+    totalCost: 10,
+    foodCostPct: null,
+    profitPerUnit: profit,
+    hasUnknownCost: false,
+  };
+}
+const byId = <T extends { menu: { id: string } }>(rows: T[]) => new Map(rows.map((r) => [r.menu.id, r]));
+
+test("within category: the best dish of a cheap category is a Star there, whatever the global pool says", () => {
+  // The one-plate case in miniature: a low-margin category beside a
+  // high-margin one. Globally, plate-top sits under the pooled profit bar.
+  const plates = [dish("plate-top", "plates", 60, 90), ...["a", "b", "c", "d"].map((x) => dish("plate-" + x, "plates", 10, 40))];
+  const crabs = ["a", "b", "c", "d", "e"].map((x) => dish("crab-" + x, "crab", 10, 300));
+  const all = [...plates, ...crabs];
+
+  assert.equal(byId(classifyMenuEngineering(all)).get("plate-top")!.menuClass, "Horse", "the global pool reads it as low-margin");
+  const within = byId(classifyWithinCategory(all));
+  assert.equal(within.get("plate-top")!.menuClass, "Star");
+  assert.equal(within.get("plate-top")!.unrankedReason, null);
+});
+
+test("within category: a category below the minimum is Unranked with the small-group reason, not pooled", () => {
+  const all = [
+    dish("dessert-mango", "desserts", 478, 104), // a top seller: still no verdict
+    dish("dessert-other", "desserts", 5, 50),
+    ...["a", "b", "c", "d", "e"].map((x) => dish("fish-" + x, "fish", 10, 100)),
+  ];
+  const r = byId(classifyWithinCategory(all)).get("dessert-mango")!;
+  assert.equal(r.menuClass, "Unranked");
+  assert.equal(r.profitClass, null);
+  assert.deepEqual(r.unrankedReason, { kind: "small_group", group: "desserts", dishesWithSales: 2, minimum: MIN_RANKABLE_GROUP });
+  assert.match(unrankedReasonText(r.unrankedReason!), /หมวด "desserts" มีเมนูที่มียอดขาย 2 รายการ/);
+});
+
+test("within category: the minimum counts dishes WITH SALES, not dishes", () => {
+  // Six dishes, four sold: below the floor.
+  const group = [...["a", "b", "c", "d"].map((x) => dish(x, "g", 10, 50)), dish("e", "g", 0, 50), dish("f", "g", 0, 50)];
+  const rows = classifyWithinCategory(group);
+  assert.ok(rows.every((r) => r.menuClass === "Unranked"));
+  assert.equal(rows.filter((r) => r.unrankedReason?.kind === "small_group").length, 4);
+  assert.equal(rows.filter((r) => r.unrankedReason?.kind === "no_sales").length, 2);
+});
+
+test("within category: exactly the minimum is rankable", () => {
+  const rows = classifyWithinCategory(["a", "b", "c", "d", "e"].map((x, i) => dish(x, "g", 10 + i * 20, 50 + i * 10)));
+  assert.ok(rows.every((r) => r.menuClass !== "Unranked"));
+});
+
+test("within category: a dish with no sales is 'no sales' even in a big category", () => {
+  const all = [...["a", "b", "c", "d", "e"].map((x) => dish(x, "g", 10, 50)), dish("new", "g", 0, 80)];
+  const r = byId(classifyWithinCategory(all)).get("new")!;
+  assert.equal(r.menuClass, "Unranked");
+  assert.deepEqual(r.unrankedReason, { kind: "no_sales" });
+  assert.equal(unrankedReasonText(r.unrankedReason!), "ยังไม่มียอดขาย");
+});
+
+test("within category: dishes with no category form one group, and the reason says so", () => {
+  const rows = classifyWithinCategory([dish("test", null, 1, -10)]);
+  assert.equal(rows[0]!.group, null);
+  assert.match(unrankedReasonText(rows[0]!.unrankedReason!), /^เมนูที่ไม่มีหมวด มีเมนูที่มียอดขาย 1 รายการ/);
+});
+
+test("within category: output keeps the input order", () => {
+  const all = [dish("x1", "b", 1, 1), dish("y1", "a", 1, 1), dish("x2", "b", 1, 1)];
+  assert.deepEqual(classifyWithinCategory(all).map((r) => r.menu.id), ["x1", "y1", "x2"]);
 });

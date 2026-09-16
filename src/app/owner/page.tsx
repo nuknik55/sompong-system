@@ -1,7 +1,7 @@
 import { getCostingContext } from "@/lib/data";
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { computeMenuCost, classifyMenuEngineering, type MenuEngineeringClass } from "@/lib/costing";
+import { computeMenuCost, classifyWithinCategory, unrankedReasonText, MIN_RANKABLE_GROUP, type MenuEngineeringClass } from "@/lib/costing";
 import { MenuEngineeringChart } from "@/components/menu-engineering-chart";
 import { MenuEngineeringSection } from "@/components/menu-engineering-section";
 import { QFactorSetting } from "@/components/q-factor-setting";
@@ -43,25 +43,28 @@ export default async function OwnerDashboardPage({
     ...new Set(menus.map((m) => m.category).filter((c): c is string => !!c)),
   ].sort((a, b) => a.localeCompare(b, "th"));
 
-  // Filter to selected category (or all).
-  const visibleMenus =
-    selectedCategory === "all"
-      ? menus
-      : menus.filter((m) => m.category === selectedCategory);
-
-  const visibleMenuIds = new Set(visibleMenus.map((m) => m.id));
-  const visibleItems = menuItems.filter((it) => visibleMenuIds.has(it.menu_id));
-
-  // Classify only the visible subset so thresholds reflect this category.
-  const menuCosts = visibleMenus.map((menu) =>
-    computeMenuCost(
-      menu,
-      visibleItems.filter((it) => it.menu_id === menu.id),
-      unitCosts,
-      qFactorPct,
-    ),
+  // Every dish is ranked WITHIN ITS OWN CATEGORY (queue item 5), always over
+  // all menus, and the tab only filters what is shown. So a dish carries the
+  // same verdict on ทั้งหมด, on its category tab and on /staff. A category
+  // with fewer than MIN_RANKABLE_GROUP dishes with sales is not ranked at
+  // all, and each of its dishes says why.
+  const itemsByMenu = new Map<string, typeof menuItems>();
+  for (const it of menuItems) {
+    const list = itemsByMenu.get(it.menu_id);
+    if (list) list.push(it);
+    else itemsByMenu.set(it.menu_id, [it]);
+  }
+  const allRanked = classifyWithinCategory(
+    menus.map((menu) => computeMenuCost(menu, itemsByMenu.get(menu.id) ?? [], unitCosts, qFactorPct)),
   );
-  const ranked = classifyMenuEngineering(menuCosts).sort((a, b) => b.qtySold - a.qtySold);
+  const ranked = allRanked
+    .filter((r) => selectedCategory === "all" || r.menu.category === selectedCategory)
+    .sort((a, b) => b.qtySold - a.qtySold);
+
+  // Chart position is the dish's share of the sales SHOWN: all sales on
+  // ทั้งหมด, its category's on a tab. The colour is its within-category class.
+  const shownQty = ranked.reduce((s, r) => s + r.qtySold, 0);
+  const smallGroup = selectedCategory === "all" ? null : ranked.find((r) => r.unrankedReason?.kind === "small_group")?.unrankedReason ?? null;
 
   const premiumThreshold = computePremiumThreshold(menus.map((m) => m.selling_price));
 
@@ -92,9 +95,18 @@ export default async function OwnerDashboardPage({
         <PosSalesImport />
         <div className="space-y-1.5">
           <CategoryTabs categories={allCategories} selected={selectedCategory} />
-          {selectedCategory !== "all" && (
+          {selectedCategory === "all" ? (
+            <p className="text-xs text-neutral-400">
+              Star/Horse/Puzzle/Dog เทียบกับเมนูในหมวดเดียวกันเท่านั้น — หมวดที่มีเมนูที่มียอดขายน้อยกว่า {MIN_RANKABLE_GROUP} รายการจะยังไม่จัดอันดับ
+            </p>
+          ) : (
             <p className="text-xs text-neutral-400">
               แสดงเฉพาะหมวด &quot;{selectedCategory}&quot; — Star/Horse/Puzzle/Dog คำนวณจากเมนูในหมวดนี้เท่านั้น
+            </p>
+          )}
+          {smallGroup && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ยังจัดอันดับหมวดนี้ไม่ได้: {unrankedReasonText(smallGroup)}
             </p>
           )}
         </div>
@@ -126,9 +138,11 @@ export default async function OwnerDashboardPage({
 
       {/* Scatter chart (always shows all visible points) */}
       <MenuEngineeringChart
+        note={selectedCategory === "all" ? "สีของจุด = กลุ่มเมื่อเทียบกับเมนูในหมวดเดียวกัน · ตำแหน่ง = เทียบกับยอดขายทุกเมนู" : undefined}
         data={ranked.map((r) => ({
           name: r.menu.name,
-          popularPct: r.popularPct ?? 0,
+          popularPct: shownQty > 0 ? (r.qtySold / shownQty) * 100 : 0,
+          unrankedNote: r.unrankedReason ? unrankedReasonText(r.unrankedReason) : null,
           profitPerUnit: r.profitPerUnit,
           qtySold: r.qtySold,
           menuClass: r.menuClass,
@@ -147,6 +161,7 @@ export default async function OwnerDashboardPage({
           foodCostPct: r.foodCostPct,
           profitPerUnit: r.profitPerUnit,
           menuClass: r.menuClass,
+          unrankedNote: r.unrankedReason ? unrankedReasonText(r.unrankedReason) : null,
           hasUnknownCost: r.hasUnknownCost,
           isPremium: r.menu.selling_price >= premiumThreshold,
         }))}

@@ -1,5 +1,5 @@
 import { getCostingContext } from "@/lib/data";
-import { computeMenuCost, classifyMenuEngineering } from "@/lib/costing";
+import { computeMenuCost, classifyWithinCategory } from "@/lib/costing";
 import { getCurrentProfile } from "@/lib/auth";
 import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
@@ -15,10 +15,13 @@ export default async function StaffHomePage() {
   const isStaffOnly = profile?.role === "staff" || profile?.role === "editor";
   const visibleMenus = isStaffOnly ? menus.filter((m) => m.staff_visible) : menus;
 
-  const menuCosts = visibleMenus.map((menu) =>
-    computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct),
+  // Ranked over ALL menus, within category (the same helper as /owner), and
+  // only then narrowed to what this person may see. Ranking the visible
+  // subset would give a staff member different verdicts from the owner's.
+  // The class is used only by the list's "sort by class" option here.
+  const ranked = classifyWithinCategory(
+    menus.map((menu) => computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct)),
   );
-  const ranked = classifyMenuEngineering(menuCosts);
   const meClassById = new Map(ranked.map((r) => [r.menu.id, r.menuClass]));
 
   const categories = [...new Set(visibleMenus.map((m) => m.category).filter((c): c is string => !!c))].sort((a, b) =>

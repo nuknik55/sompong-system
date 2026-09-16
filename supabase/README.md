@@ -351,9 +351,84 @@ In order. Nothing here is started unless it says so.
    wiring it would change, so the decision is informed rather than guessed.
 4. **`ScheduleClient.tsx:5` static `xlsx` import** — bundle size only, no
    correctness stake. And **retry-from-here on POS chunk failure**.
-5. **Menu Engineering should classify within category, not across all menus.**
-   Not started, raised by Nik. **Surveyed 2026-09-16; the premise below was
-   wrong, and the decisions now sit with Nik.**
+5. ~~**Menu Engineering should classify within category, not across all menus.**~~
+   **CLOSED 2026-09-16.** Raised by Nik, decided by Nik the same day.
+
+   **THE HEADLINE, to tell Nik before he opens the new view: 81 of the 197
+   dishes with sales change verdict** against the old ทั้งหมด view (and
+   `/staff`'s sort). 74 are reclassified and 7 are now unranked.
+   - Mix before: Star 32, Horse 28, Puzzle 69, Dog 68.
+   - Mix after: Star 32, Horse 33, Puzzle 74, Dog 51, unranked 7.
+   - Largest moves: Dog→Puzzle 26, Puzzle→Dog 15, Star→Horse 9,
+     Horse→Star 8, Puzzle→Star 5.
+   - The category TABS already ranked within their category, so a tab
+     reader sees only the 7 unranked dishes change.
+
+   These figures come from the shipped `classifyMenuEngineering` (old) and
+   `classifyWithinCategory` (new), run on live data.
+
+   **The worked case: ข้าวผัดเนื้อปูก้อน (ใหญ่), Horse → Star.**
+   - The dish: price ฿270, cost ฿150.83, **profit ฿119.17 a plate**, 317 sold.
+   - Globally it sat under the pooled profit bar of ฿165.08, so it read as
+     "sells well, thin margin: reprice this".
+   - Its own category's bar (อาหารจานเดียว) is ฿62.84. Its margin is
+     **1.90× its category's average**, and it takes 12.32% of the category's
+     sales against a popularity bar of 1.86%. It is a Star, and the old
+     verdict was advice to damage one.
+
+   **Nik's three decisions:**
+   1. **A category with too few dishes is NOT ranked, and not pooled**; it
+      shows ยังจัดอันดับไม่ได้ with the reason. Honesty over a forced
+      verdict. The reason reads "หมวด … มีเมนูที่มียอดขาย N รายการ — ต้องมี
+      อย่างน้อย 5 จึงจะจัดอันดับได้", distinct from "ยังไม่มียอดขาย", so a
+      blank never reads as "no data".
+   2. **The floor is 5 dishes WITH SALES** (`MIN_RANKABLE_GROUP`). The 7
+      unranked:
+      - ของหวาน (2): ข้าวเหนียวมะม่วง (เล็ก), 457 sold, the #3 seller overall
+        and formerly a Horse; ขนมบ้าบิ่น (Dog).
+      - จานร้อน หม้อไฟ (4): **ออส่วนจีน and ออส่วนสเปเชียล, both formerly
+        Stars**; ออส่วนจีนทะเล (Puzzle); ซีฟู๊ดกระทะร้อน (Dog).
+      - No category: `test`.
+   3. **The ฿0 `test` menu will be deleted by Nik, from the app** (see
+      below).
+
+   **How it is built.**
+   - `classifyWithinCategory` in `src/lib/costing.ts` groups by
+     `menus.category` (a missing category is one group), ranks each group
+     with the unchanged spreadsheet formula, and returns rows in input order
+     with a typed `unrankedReason`. `unrankedReasonText` gives the one Thai
+     sentence every screen uses.
+   - `/owner` ranks ALL menus this way and the tab only filters, so a dish
+     has one verdict on ทั้งหมด, on its tab and on `/staff`. On ทั้งหมด the
+     chart note says colour is within-category and position is share of
+     all sales. A tab below the floor shows why in an amber notice.
+   - `/staff` (where the class only drives "sort by class") now ranks all
+     menus. It used to rank only the dishes a staff member could see, so a
+     staff member and the owner could get different verdicts.
+   - The table, CSV and tooltip show the Thai label and the reason; the
+     table showed the English class name before.
+   - Seven tests, the first of which asserts that the same dish is a Horse
+     in the global pool, so it proves the switch rather than assuming it.
+
+   **Deleting the `test` menu: what Nik should expect.** It deletes cleanly
+   from `/staff/menu/<id>`:
+   - It has no recipe lines, no POS sales alias, and is in no catering set
+     menu or booking. Those two references are ON DELETE RESTRICT and would
+     have blocked it.
+   - Its "1 sale" is only `last_period_qty_sold` on the row itself; no
+     sales history points at it. If the POS still has a product called
+     "test", the next sales import lists it as unmatched, which is
+     harmless.
+   - **It takes an SOP with it:** 10 steps, 8 with photos, built through 4
+     approved requests on 2026-07-03. The cascade deletes the SOP and its
+     steps. **The 8 photo files stay in the public `sop-photos` bucket,**
+     still reachable by URL; nothing deletes them. If that SOP is a real
+     dish's draft, Nik should look at it before deleting.
+   - The approvals history keeps its 4 entries, labelled `test` from the
+     stored request, and has no link to break.
+
+   **The survey that decided it** (the premise first recorded here was
+   wrong):
 
    **What the data says** (the survey used the real `classifyMenuEngineering`,
    `computeMenuCost` and `resolveUnitCosts` on live data):
@@ -362,14 +437,16 @@ In order. Nothing here is started unless it says so.
      named categories plus 2 that sold nothing (เมนูใหม่, เทศกาลเจ). The only
      dessert category, ของหวาน, has 2 dishes, one of them ข้าวเหนียวมะม่วง, the
      #3 seller. "Drinks lift the popularity average" cannot be happening.
-   - **The category tabs on `/owner` already classify within their
-     category** (`owner/page.tsx` classifies only the visible subset). Only
-     the ทั้งหมด tab, and `/staff` always, use one global pool.
+   - **The category tabs on `/owner` already classified within their
+     category** (before this change, `owner/page.tsx` classified only the
+     visible subset). Only the ทั้งหมด tab, and `/staff` always, used one
+     global pool.
    - **The real distortion in the global pool is PRICE TIER, not course.**
      The global profit bar is ฿165.08 a unit, while category bars run from
      ฿62.84 (อาหารจานเดียว) to ฿292.99 (ปู กั้ง). So 27 of 43 one-plate dishes
      are Dogs globally, against 8 within their own category. Across all
-     categories **77 of 197 dishes change class**.
+     categories **77 of 197 dishes change class** before the floor of 5;
+     81 with it (see the headline above).
    - Small categories make the within-category bar meaningless: ของหวาน
      n=2, จานร้อน หม้อไฟ n=4.
    - One junk row: `test`, no category, price ฿0, 1 sold.
@@ -377,11 +454,6 @@ In order. Nothing here is started unless it says so.
      (coffee, souvenirs and so on), not a menu course, and the wrong
      grouping for this.
 
-   **Three questions for Nik before anything is built:**
-   (1) should small categories be shown as unranked, or pooled with a
-   neighbour; (2) what minimum count makes a category rankable (5 is the
-   proposal); (3) may the `test` row be deleted. Then the ทั้งหมด tab and
-   `/staff` would rank each dish within its own category.
 
    The original entry, whose premise about drinks was wrong:
 

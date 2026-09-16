@@ -188,3 +188,83 @@ export function classifyMenuEngineering(menuCosts: MenuCost[]): MenuEngineeringR
     return { ...m, qtySold, popularPct, profitClass, popularClass, menuClass };
   });
 }
+
+/**
+ * A category needs at least this many dishes WITH SALES before its dishes are
+ * ranked against each other (Nik, 2026-09-16). Below it, an average of two or
+ * four dishes is not a benchmark, and a verdict would be invented.
+ */
+export const MIN_RANKABLE_GROUP = 5;
+
+/** Why a dish carries no Star/Horse/Puzzle/Dog. The UI must say which. */
+export type UnrankedReason =
+  | { kind: "no_sales" }
+  | { kind: "small_group"; group: string | null; dishesWithSales: number; minimum: number };
+
+export type CategoryRankedRow = MenuEngineeringRow & {
+  /** menus.category, the group the dish was ranked in (null = no category). */
+  group: string | null;
+  /** null exactly when menuClass is a real class. */
+  unrankedReason: UnrankedReason | null;
+};
+
+/**
+ * Star / Horse / Puzzle / Dog WITHIN each category, merged back in input order.
+ * Queue item 5, decided by Nik 2026-09-16.
+ *
+ * Why: one global pool compared every dish against a single profit bar
+ * (฿165.08 a unit on 2026-09-16) while category bars ran from ฿62.84
+ * (อาหารจานเดียว) to ฿292.99 (ปู กั้ง). The pool was sorting dishes by PRICE
+ * TIER: 27 of 43 one-plate dishes read as Dogs globally, 8 within their own
+ * category. The premise first recorded for this item (drinks lifting the
+ * average) was wrong; there are no drinks in `menus`.
+ *
+ * A category with fewer than `minimum` dishes with sales is NOT ranked and
+ * not pooled with a neighbour: every dish in it is "Unranked" with a
+ * small_group reason, so the screen can say "below the minimum" rather than
+ * leave a blank that reads as "no data". A dish with no sales is Unranked
+ * with no_sales, whichever group it is in.
+ *
+ * Both /owner (every tab) and /staff use this, over ALL menus, so a dish has
+ * one verdict wherever it is shown.
+ */
+export function classifyWithinCategory(
+  menuCosts: MenuCost[],
+  minimum: number = MIN_RANKABLE_GROUP,
+): CategoryRankedRow[] {
+  const groups = new Map<string | null, MenuCost[]>();
+  for (const m of menuCosts) {
+    const key = m.menu.category ?? null;
+    const list = groups.get(key);
+    if (list) list.push(m);
+    else groups.set(key, [m]);
+  }
+
+  const byMenu = new Map<MenuCost, CategoryRankedRow>();
+  for (const [group, members] of groups) {
+    const dishesWithSales = members.filter((m) => m.menu.last_period_qty_sold > 0).length;
+    const rankable = dishesWithSales >= minimum;
+    classifyMenuEngineering(members).forEach((row, i) => {
+      const noSales = row.qtySold <= 0;
+      const unrankedReason: UnrankedReason | null = noSales
+        ? { kind: "no_sales" }
+        : rankable
+          ? null
+          : { kind: "small_group", group, dishesWithSales, minimum };
+      byMenu.set(
+        members[i]!,
+        unrankedReason
+          ? { ...row, profitClass: null, popularClass: null, menuClass: "Unranked", group, unrankedReason }
+          : { ...row, group, unrankedReason },
+      );
+    });
+  }
+  return menuCosts.map((m) => byMenu.get(m)!);
+}
+
+/** The Thai sentence for an unranked dish, shared by every screen. */
+export function unrankedReasonText(reason: UnrankedReason): string {
+  if (reason.kind === "no_sales") return "ยังไม่มียอดขาย";
+  const where = reason.group ? `หมวด "${reason.group}"` : "เมนูที่ไม่มีหมวด";
+  return `${where} มีเมนูที่มียอดขาย ${reason.dishesWithSales} รายการ — ต้องมีอย่างน้อย ${reason.minimum} จึงจะจัดอันดับได้`;
+}

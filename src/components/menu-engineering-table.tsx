@@ -13,6 +13,8 @@ export type MenuTableRow = {
   foodCostPct: number | null;
   profitPerUnit: number;
   menuClass: MenuEngineeringClass;
+  /** Why an Unranked dish has no class. Shown under the label, never blank. */
+  unrankedNote?: string | null;
   hasUnknownCost: boolean;
   isPremium?: boolean;
 };
@@ -37,7 +39,7 @@ const CLASS_LABEL_TH: Record<MenuEngineeringClass, string> = {
   Horse: "ขายดีกำไรบาง",
   Puzzle: "กำไรดีขายน้อย",
   Dog: "ตัวถ่วง",
-  Unranked: "ไม่มีข้อมูล",
+  Unranked: "ยังจัดอันดับไม่ได้",
 };
 
 function ClassBadge({ cls }: { cls: MenuEngineeringClass }) {
@@ -86,7 +88,7 @@ function exportCsv(rows: MenuTableRow[]) {
       r.totalCost.toFixed(2),
       r.foodCostPct != null ? `${(r.foodCostPct * 100).toFixed(1)}%` : "",
       r.profitPerUnit.toFixed(2),
-      r.menuClass,
+      r.unrankedNote ? `${CLASS_LABEL_TH[r.menuClass]}: ${r.unrankedNote}` : CLASS_LABEL_TH[r.menuClass],
     ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(",")
@@ -213,7 +215,10 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatBaht(r.profitPerUnit)}</td>
                 <td className="px-3 py-2">
-                  <span className={`rounded px-2 py-0.5 text-xs ${CLASS_COLOR[r.menuClass]}`}>{r.menuClass}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs ${CLASS_COLOR[r.menuClass]}`}>
+                    <ClassBadge cls={r.menuClass} />
+                  </span>
+                  {r.unrankedNote && <p className="mt-0.5 max-w-56 text-xs text-neutral-500">{r.unrankedNote}</p>}
                 </td>
               </tr>
             ))}
@@ -245,6 +250,7 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
                 <ClassBadge cls={r.menuClass} />
               </span>
             </div>
+            {r.unrankedNote && <p className="mb-2 text-xs text-neutral-500">{r.unrankedNote}</p>}
             {/* Key figures as label-value grid */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <span className="text-neutral-500">ขาย</span>
