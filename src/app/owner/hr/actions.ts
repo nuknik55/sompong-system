@@ -131,15 +131,6 @@ export type PayrollEntry = {
   note: string | null;
 };
 
-export type AttendancePunch = {
-  id: string;
-  employee_id: string;
-  work_date: string;
-  punch_type: "in" | "out";
-  punch_time: string;
-  note: string | null;
-};
-
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
 // Format a Date back to YYYY-MM-DD using its LOCAL components.
@@ -1219,58 +1210,6 @@ export async function deleteAttendanceDailyRecord(
     .delete()
     .eq("employee_id", employeeId)
     .eq("work_date", workDate);
-  if (error) return { status: "error", message: error.message };
-  revalidatePath("/owner/hr/attendance");
-  return { status: "ok" };
-}
-
-// ─── Attendance Punches (legacy / biometric input) ────────────────────────────
-
-export async function getAttendancePunches(
-  employeeId: string,
-  year: number,
-  month: number,
-): Promise<AttendancePunch[]> {
-  const supabase = await createClient();
-  const m = String(month).padStart(2, "0");
-  const { data, error } = await supabase
-    .from("attendance_punches")
-    .select("id,employee_id,work_date,punch_type,punch_time,note")
-    .eq("employee_id", employeeId)
-    .gte("work_date", `${year}-${m}-01`)
-    .lte("work_date", `${year}-${m}-${new Date(year, month, 0).getDate()}`)
-    .order("work_date")
-    .order("punch_time");
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function upsertAttendancePunch(p: {
-  id?: string;
-  employee_id: string;
-  work_date: string;
-  punch_type: "in" | "out";
-  punch_time: string;
-  note?: string;
-}): Promise<HrActionResult> {
-  await requireHR();
-  const supabase = await createClient();
-  let error: { message: string } | null;
-  if (p.id) {
-    const { id, ...rest } = p;
-    ({ error } = await supabase.from("attendance_punches").update({ ...rest, source: "manual" }).eq("id", id));
-  } else {
-    ({ error } = await supabase.from("attendance_punches").insert({ ...p, source: "manual" }));
-  }
-  if (error) return { status: "error", message: error.message };
-  revalidatePath("/owner/hr/attendance");
-  return { status: "ok" };
-}
-
-export async function deleteAttendancePunch(id: string): Promise<HrActionResult> {
-  await requireHR();
-  const supabase = await createClient();
-  const { error } = await supabase.from("attendance_punches").delete().eq("id", id);
   if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/hr/attendance");
   return { status: "ok" };

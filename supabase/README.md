@@ -956,8 +956,33 @@ In order. Nothing here is started unless it says so.
     this entry was not updated at the time.** `addExpenseEntry`'s
     fail-closed explanation was moved to the surviving
     `updateExpenseEntry` first; see AGENTS.md, "deleting dead code can
-    take LIVE documentation". The wider sweep this entry asks for is
-    recorded below.
+    take LIVE documentation".
+
+    **The wider sweep, 2026-09-16: every "use server" file, parsed.** The
+    scanner reads each file's exports and every import in `src`: static
+    imports, re-exports, and `const { x } = await import(...)`. It was run
+    first against `0635a99^`, where it had to list the three above, and did.
+    On HEAD, 24 files, 208 exports, 9 imported nowhere:
+
+    - **Deleted, four dead actions:** `updateCateringEventStatus` (the inline
+      status control it served went in the booking-screen rebuild), and
+      `getAttendancePunches` / `upsertAttendancePunch` /
+      `deleteAttendancePunch` with their `AttendancePunch` type (the
+      legacy punch input). **`getAttendancePunches` had no auth guard at
+      all.** The `attendance_punches` table stays: it exists, holds 0 rows,
+      and nothing reads it; dropping it is a separate, trivial migration if
+      Nik wants it.
+    - **Un-exported, five live helpers:** `upsertCateringEvent`,
+      `saveCateringCharges`, `addCateringEventMenu`,
+      `removeCateringEventMenu`, `issueCateringQuote`. They are the steps
+      of `saveBooking` and are called only there, but as exports they were
+      endpoints a sales session could call on their own, outside the
+      order `saveBooking` relies on. Behaviour is unchanged;
+      `saveBooking`'s comment says not to re-export them.
+
+    After: 199 exports, 0 imported nowhere. None of the deleted names
+    appears anywhere in `src`, `supabase` or `AGENTS.md`, comments
+    included.
 
     Found by the item-12 conversions (steps 2 and 3), zero
     callers each:

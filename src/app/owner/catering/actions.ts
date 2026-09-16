@@ -7,7 +7,6 @@ import { swapSortOrder } from "@/lib/reorder";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
-import { STATUS_LABEL, isValidCateringStatus } from "./event-status";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -781,39 +780,6 @@ async function assertCostNotLocked(
   }
 }
 
-/**
- * Status-only update, for the inline status control on the event detail
- * page. Deliberately NOT routed through upsertCateringEvent: that function
- * rewrites all ~20 event fields from a full form payload and re-runs the
- * room-conflict check, so using it here would mean a status change could
- * fail on an unrelated pre-existing conflict, or silently rewrite fields
- * from stale form state. requireSales() matches upsertCateringEvent's own
- * gate exactly — same roles that can change status via the edit form can
- * change it here, no more, no less.
- *
- * status is validated against event-status.ts's shared list before the
- * write; the column has its own CHECK constraint too (see
- * catering_migration.sql), this just fails with a readable message instead
- * of a raw Postgres error.
- */
-export async function updateCateringEventStatus(eventId: string, status: string): Promise<void> {
-  const profile = await requireSales();
-  const supabase = await createClient();
-
-  if (!isValidCateringStatus(status)) throw new Error("สถานะไม่ถูกต้อง");
-
-  const { error } = await supabase
-    .from("catering_events")
-    .update({ status })
-    .eq("id", eventId);
-  if (error) throw error;
-
-  await logCateringActivity(supabase, eventId, profile.id, "status_changed", `เปลี่ยนสถานะเป็น: ${STATUS_LABEL[status]}`);
-
-  revalidatePath("/owner/catering");
-  revalidatePath(`/owner/catering/${eventId}`);
-}
-
 export async function getCateringSetMenuOptions(): Promise<CateringSetMenuOption[]> {
   await requireSales();
   const supabase = await createClient();
@@ -1476,7 +1442,7 @@ export async function deleteCateringEventLabor(id: string, eventId: string): Pro
 
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
-export async function upsertCateringEvent(data: {
+async function upsertCateringEvent(data: {
   id?: string;
   /** Existing customer. Mutually exclusive with new_customer. */
   customer_id?: string | null;
@@ -1707,6 +1673,13 @@ export type SaveBookingResult =
  * mid-way leaves the booking saved with whatever lines landed, which the
  * screen shows on refresh; nothing here can double a line, because step 4
  * replaces the charge list wholesale.
+ *
+ * THE FIVE STEPS ARE NOT EXPORTED, deliberately, since 2026-09-16. Every
+ * export of a "use server" file is a network-callable endpoint, and until
+ * then a sales session could call saveCateringCharges or issueCateringQuote
+ * on its own, outside the order above, although nothing in the app did.
+ * Each keeps its own requireSales(); the only way in is this function.
+ * Do not re-export one to reuse it: call saveBooking.
  */
 export async function saveBooking(input: {
   event: Parameters<typeof upsertCateringEvent>[0];
@@ -1766,7 +1739,7 @@ export async function saveBooking(input: {
  * catering_event_staff above: simpler than diffing, and the row count per
  * event is tiny.
  */
-export async function saveCateringCharges(
+async function saveCateringCharges(
   eventId: string,
   charges: {
     label: string;
@@ -1874,7 +1847,7 @@ export async function saveCateringCharges(
  * Resolves name/price from catering_set_menus or menus only — both already
  * sales-readable sale-price data, never touching ingredients/menu_recipe_items.
  */
-export async function addCateringEventMenu(
+async function addCateringEventMenu(
   eventId: string,
   item: { kind: "set" | "dish"; id: string; quantity: number; note: string | null },
 ): Promise<void> {
@@ -2004,7 +1977,7 @@ export async function addCateringEventMenu(
  * so an explicit single-row delete here would miss the rest. No separate
  * catering_event_charges delete needed.
  */
-export async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
+async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
   const profile = await requireSales();
   const supabase = await createClient();
   await assertCostNotLocked(supabase, eventId);
@@ -2039,7 +2012,7 @@ export async function removeCateringEventMenu(id: string, eventId: string): Prom
  * supabase/catering_quote_sequence_function.sql) and never changes after
  * that; quote_revision increments on every subsequent call.
  */
-export async function issueCateringQuote(eventId: string): Promise<void> {
+async function issueCateringQuote(eventId: string): Promise<void> {
   const profile = await requireSales();
   const supabase = await createClient();
 
