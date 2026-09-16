@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { resolvePendingChange } from "@/lib/pending-data";
 import { prepInsertErrorMessage } from "@/lib/prep-access";
+import { planPrepCreate } from "@/lib/prep-create";
+import { lookupPrepName, prepRefusalMessage } from "@/lib/prep-name";
 import { createClient } from "@/lib/supabase/server";
 
 export type ApproveResult = { error?: string };
@@ -150,22 +152,61 @@ export async function approveChange(id: string): Promise<ApproveResult> {
         // NOT ATOMIC: two writes. A failure on the second leaves a prep recipe
         // with no matching ingredient row (so it can never be used in a menu).
         //
+        // The name is checked BEFORE any write, by the same rule as createPrep
+        // (planPrepCreate, create mode: this makes a new, empty recipe). Until
+        // 2026-09-16 it inserted the prep first, so a name already held by an
+        // ingredient failed the second write, left an orphan prep behind, and
+        // kept the change pending with no retry that could ever succeed. A
+        // refusal throws before anything is written, so the change stays
+        // pending with the reason shown.
+        //
         // The id is made here and the row is NOT read back (so not
         // runReturning): INSERT ... RETURNING is checked against the SELECT
         // policy, and a prep nobody has been granted fails it for every admin.
         // Full note above createPrep in staff/prep/actions.ts.
-        const newPrepId = randomUUID();
-        await run(
-          "สร้างสูตร prep",
-          supabase
-            .from("prep_recipes")
-            .insert({ id: newPrepId, name: p.name, category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
-            .then(({ error }) => ({ error: error && { message: prepInsertErrorMessage(error, p.name as string) } })),
-        );
-        await run(
-          "สร้างวัตถุดิบสำหรับ prep",
-          supabase.from("ingredients").insert({ name: p.name, category: p.category || "prep", is_prep: true, usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: newPrepId }),
-        );
+        //
+        // KNOWN GAP, not fixed here: a request an editor made by DUPLICATING a
+        // prep (payload.duplicatedFrom) is approved as an EMPTY recipe; the
+        // original's items are not copied. See queue item 24's closure.
+        const prepName = p.name as string;
+        const lookup = await lookupPrepName(supabase, prepName);
+        if (!lookup.ok) throw new Error(`ตรวจชื่อสูตร prep: ${lookup.message}`);
+        const plan = planPrepCreate(lookup.found, "create");
+        if (plan.kind === "refuse") throw new Error(`สร้างสูตร prep: ${prepRefusalMessage(plan.reason, prepName)}`);
+
+        const prepId = plan.reusePrepId ?? randomUUID();
+        if (plan.reusePrepId) {
+          // A true orphan (nothing points at it), so rewriting it moves no cost.
+          await run(
+            "ใช้สูตร prep ที่ค้างอยู่",
+            supabase
+              .from("prep_recipes")
+              .update({ category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
+              .eq("id", plan.reusePrepId),
+          );
+        } else {
+          await run(
+            "สร้างสูตร prep",
+            supabase
+              .from("prep_recipes")
+              .insert({ id: prepId, name: prepName, category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
+              .then(({ error }) => ({ error: error && { message: prepInsertErrorMessage(error, prepName) } })),
+          );
+        }
+        if (plan.relinkIngredientId) {
+          await run(
+            "ผูกวัตถุดิบ prep ที่ค้างอยู่",
+            supabase
+              .from("ingredients")
+              .update({ category: p.category || "prep", usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: prepId })
+              .eq("id", plan.relinkIngredientId),
+          );
+        } else {
+          await run(
+            "สร้างวัตถุดิบสำหรับ prep",
+            supabase.from("ingredients").insert({ name: prepName, category: p.category || "prep", is_prep: true, usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: prepId }),
+          );
+        }
         revalidatePath("/owner/ingredients");
         break;
       }

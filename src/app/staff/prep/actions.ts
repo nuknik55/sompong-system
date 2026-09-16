@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
-import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage, prepNameTakenMessage } from "@/lib/prep-access";
+import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage } from "@/lib/prep-access";
 import { planPrepCreate } from "@/lib/prep-create";
+import { lookupPrepName, prepRefusalMessage } from "@/lib/prep-name";
 
 // ── Item 12: expected failures are RETURNED, not thrown ─────────────────────
 // Same rule as staff/menu/actions.ts: production redacts thrown Server Action
@@ -56,41 +57,12 @@ export async function createPrep(name: string, category: string, batchYieldQty: 
   const trimmed = name.trim();
 
   // What already holds this name. Only an ORPHAN may be reused; the rule and
-  // its cases are in planPrepCreate (queue item 24). The errors are checked:
-  // a failed lookup read as "nothing found" would insert a prep and then fail
-  // on the ingredient's UNIQUE name, leaving exactly the orphan this avoids.
-  const [ingredientRead, prepRead] = await Promise.all([
-    supabase.from("ingredients").select("id, is_prep, prep_recipe_id").eq("name", trimmed).maybeSingle(),
-    supabase.from("prep_recipes").select("id").eq("name", trimmed).maybeSingle(),
-  ]);
-  if (ingredientRead.error) return { status: "error", message: ingredientRead.error.message };
-  if (prepRead.error) return { status: "error", message: prepRead.error.message };
-  const existingIngredient = ingredientRead.data as { id: string; is_prep: boolean; prep_recipe_id: string | null } | null;
-  const existingPrepRecipe = prepRead.data as { id: string } | null;
-
-  // Is the prep that was found in use? Any ingredients row pointing at it
-  // makes it live, whatever that row is called. A null count is read as "in
-  // use": failing closed refuses a create; failing open rewrites a recipe.
-  let prepIsLinked = false;
-  if (existingPrepRecipe) {
-    const { count, error } = await supabase
-      .from("ingredients")
-      .select("id", { count: "exact", head: true })
-      .eq("prep_recipe_id", existingPrepRecipe.id);
-    if (error) return { status: "error", message: error.message };
-    prepIsLinked = count !== 0;
-  }
-
-  const plan = planPrepCreate({ ingredient: existingIngredient, prep: existingPrepRecipe, prepIsLinked });
-  if (plan.kind === "refuse") {
-    const message =
-      plan.reason === "raw_ingredient"
-        ? `ชื่อ "${trimmed}" มีในวัตถุดิบดิบแล้ว กรุณาใช้ชื่ออื่น`
-        : plan.reason === "live_prep"
-          ? `มีของเตรียมชื่อ "${trimmed}" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข`
-          : prepNameTakenMessage(trimmed);
-    return { status: "error", message };
-  }
+  // its cases are in planPrepCreate (queue item 24), the reads in
+  // lookupPrepName.
+  const lookup = await lookupPrepName(supabase, trimmed);
+  if (!lookup.ok) return { status: "error", message: lookup.message };
+  const plan = planPrepCreate(lookup.found, "create");
+  if (plan.kind === "refuse") return { status: "error", message: prepRefusalMessage(plan.reason, trimmed) };
 
   let prepId: string;
   if (plan.reusePrepId) {
@@ -192,18 +164,36 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
   if (fetchError || !original) return { status: "error", message: fetchError?.message ?? "ไม่พบของเตรียมต้นฉบับ" };
 
   const { data: originalIngredient } = await supabase.from("ingredients").select("usage_unit").eq("prep_recipe_id", prepId).maybeSingle();
+  const trimmed = newName.trim();
+
+  // The name is checked BEFORE any write, the same rule as createPrep. Until
+  // 2026-09-16 this inserted the prep first, and a name already held by an
+  // ingredient then failed the second insert and left an orphan prep behind.
+  // A copy is a fresh recipe, so an orphan prep with this name is refused
+  // (copy mode), while an orphan ingredient is relinked to the copy.
+  const lookup = await lookupPrepName(supabase, trimmed);
+  if (!lookup.ok) return { status: "error", message: lookup.message };
+  const plan = planPrepCreate(lookup.found, "copy");
+  if (plan.kind === "refuse") return { status: "error", message: prepRefusalMessage(plan.reason, trimmed) };
+
   // See the note above createPrep: the id is made here, not read back.
   const newPrep = { id: randomUUID() };
   const { error: insertError } = await supabase
     .from("prep_recipes")
-    .insert({ id: newPrep.id, name: newName.trim(), category: newCategory.trim() || null, batch_yield_qty: original.batch_yield_qty, batch_yield_unit: original.batch_yield_unit, note: original.note });
-  if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, newName.trim()) };
+    .insert({ id: newPrep.id, name: trimmed, category: newCategory.trim() || null, batch_yield_qty: original.batch_yield_qty, batch_yield_unit: original.batch_yield_unit, note: original.note });
+  if (insertError) return { status: "error", message: prepInsertErrorMessage(insertError, trimmed) };
 
   // Checked: without this row the new prep recipe has no matching ingredient
   // and can never be used in any menu — the same failure prep_create has in
   // approve/actions.ts.
-  {
-    const { error } = await supabase.from("ingredients").insert({ name: newName.trim(), category: newCategory.trim() || "prep", is_prep: true, usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id });
+  if (plan.relinkIngredientId) {
+    const { error } = await supabase
+      .from("ingredients")
+      .update({ category: newCategory.trim() || "prep", usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id })
+      .eq("id", plan.relinkIngredientId);
+    if (error) return { status: "error", message: error.message };
+  } else {
+    const { error } = await supabase.from("ingredients").insert({ name: trimmed, category: newCategory.trim() || "prep", is_prep: true, usage_unit: originalIngredient?.usage_unit ?? "กรัม", prep_recipe_id: newPrep.id });
     if (error) return { status: "error", message: error.message };
   }
   const { data: items, error: itemsError } = await supabase.from("prep_recipe_items").select("ingredient_id, quantity, unit, note, sort_order").eq("prep_recipe_id", prepId);
@@ -216,7 +206,7 @@ export async function duplicatePrep(prepId: string, newName: string, newCategory
   }
   // Seeing the original does not mean seeing the copy: the copy is a new
   // recipe with no grant row, so for anyone but the owner it starts hidden.
-  if (!(await canSeePrep(newPrep.id))) return { status: "hidden", name: newName.trim() };
+  if (!(await canSeePrep(newPrep.id))) return { status: "hidden", name: trimmed };
   return { status: "ok", id: newPrep.id };
 }
 

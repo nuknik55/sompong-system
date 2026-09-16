@@ -64,6 +64,39 @@ test("a raw ingredient's name is refused, whatever else was found", () => {
   }
 });
 
+// ── copy mode: duplicatePrep ────────────────────────────────────────────────
+
+test("copy: an orphan prep is refused, because the copied items would land on its own", () => {
+  const plan = planPrepCreate({ ingredient: null, prep: { id: P }, prepIsLinked: false }, "copy");
+  assert.deepEqual(plan, { kind: "refuse", reason: "orphan_prep" });
+});
+
+test("copy: an orphan ingredient is still relinked to the fresh copy", () => {
+  const plan = planPrepCreate({ ingredient: orphanIngredient, prep: null, prepIsLinked: false }, "copy");
+  assert.deepEqual(plan, { kind: "create", reusePrepId: null, relinkIngredientId: "ing-1" });
+});
+
+test("copy: a live prep and a raw ingredient refuse exactly as in create mode", () => {
+  const cases = [
+    { ingredient: liveIngredient(P), prep: { id: P }, prepIsLinked: true },
+    { ingredient: liveIngredient(P), prep: null, prepIsLinked: false },
+    { ingredient: rawIngredient, prep: null, prepIsLinked: false },
+  ];
+  for (const found of cases) {
+    assert.deepEqual(planPrepCreate(found, "copy"), planPrepCreate(found, "create"));
+  }
+});
+
+test("copy: a new name creates a fresh row", () => {
+  const plan = planPrepCreate({ ingredient: null, prep: null, prepIsLinked: false }, "copy");
+  assert.deepEqual(plan, { kind: "create", reusePrepId: null, relinkIngredientId: null });
+});
+
+test("create is the default mode", () => {
+  const found = { ingredient: null, prep: { id: P }, prepIsLinked: false };
+  assert.deepEqual(planPrepCreate(found), planPrepCreate(found, "create"));
+});
+
 test("prepIsLinked means nothing when no prep was found", () => {
   const plan = planPrepCreate({ ingredient: null, prep: null, prepIsLinked: true });
   assert.deepEqual(plan, { kind: "create", reusePrepId: null, relinkIngredientId: null });

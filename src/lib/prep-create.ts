@@ -1,6 +1,8 @@
 /**
- * What createPrep may do with a name, decided only from what its lookups
- * found. Pure, so every case is a test rather than a hope.
+ * What a new prep may do with its name, decided only from what the lookups
+ * found (lookupPrepName in @/lib/prep-name). Used by createPrep,
+ * duplicatePrep and approving an editor's prep_create. Pure, so every case is
+ * a test rather than a hope.
  *
  * Queue item 24. The branch this replaces reused ANY prep_recipes row with
  * the requested name and rewrote its category and batch yield. On 2026-09-16
@@ -39,8 +41,11 @@ export type PrepCreatePlan =
        * live_prep      — a prep the caller can see, and it is in use.
        * name_taken     — a live prep holds the name, and the caller cannot
        *                  see that prep (or the name and link disagree).
+       * orphan_prep    — copy mode only: an orphan prep holds the name. A
+       *                  copy needs a clean recipe, and an orphan may still
+       *                  carry items that the copied ones would land on top of.
        */
-      reason: "raw_ingredient" | "live_prep" | "name_taken";
+      reason: "raw_ingredient" | "live_prep" | "name_taken" | "orphan_prep";
     }
   | {
       kind: "create";
@@ -50,7 +55,16 @@ export type PrepCreatePlan =
       relinkIngredientId: string | null;
     };
 
-export function planPrepCreate(found: PrepNameLookup): PrepCreatePlan {
+/**
+ * `create` — createPrep, and approving an editor's prep_create: a new, empty
+ *            recipe, so an orphan prep may be taken over.
+ * `copy`   — duplicatePrep: the new recipe receives the original's items, so
+ *            it must be a fresh row. An orphan ingredient may still be
+ *            relinked; it carries no items.
+ */
+export type PrepCreateMode = "create" | "copy";
+
+export function planPrepCreate(found: PrepNameLookup, mode: PrepCreateMode = "create"): PrepCreatePlan {
   const { ingredient, prep, prepIsLinked } = found;
 
   if (ingredient && !ingredient.is_prep) return { kind: "refuse", reason: "raw_ingredient" };
@@ -66,6 +80,8 @@ export function planPrepCreate(found: PrepNameLookup): PrepCreatePlan {
   // A visible prep that something points at is live, even if the ingredient
   // pointing at it carries a different name.
   if (prep && prepIsLinked) return { kind: "refuse", reason: "live_prep" };
+
+  if (prep && mode === "copy") return { kind: "refuse", reason: "orphan_prep" };
 
   return {
     kind: "create",

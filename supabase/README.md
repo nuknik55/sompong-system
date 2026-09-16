@@ -1203,13 +1203,17 @@ In order. Nothing here is started unless it says so.
     "…" อยู่แล้ว — ใช้ชื่ออื่น หรือเปิดสูตรเดิมเพื่อแก้ไข), and the existing
     recipe was untouched. That was the one part marked unconfirmed.
 
-    **The same class, smaller, not fixed here.** `duplicatePrep` and
-    approving a `prep_create` do not check the name first. They insert the
-    prep, then the ingredient row, and a name already held by an ingredient
-    fails the second insert. That leaves an ORPHAN prep (no live data
-    changes; the new rule can reuse it safely later) plus an error, or a
-    change that stays pending. Worth folding into `planPrepCreate` when
-    either path is next touched.
+    **The same class, smaller, FOLDED IN the same day.** `duplicatePrep`
+    and approving a `prep_create` did not check the name first. They
+    inserted the prep, then the ingredient row, and a name already held by
+    an ingredient failed the second insert. That left an ORPHAN prep plus
+    an error, or a change stuck pending that no retry could approve. Both
+    now check the name before any write, through one shared lookup
+    (`lookupPrepName` in `src/lib/prep-name.ts`, with one set of refusal
+    messages). The approval uses create mode; `duplicatePrep` uses a new
+    COPY mode, where an orphan prep is refused (the copied items would land
+    on its own) and an orphan ingredient is still relinked. Six more tests.
+    Found while doing it: queue item 27.
 
     The original entry:
 
@@ -1256,6 +1260,19 @@ In order. Nothing here is started unless it says so.
     Nothing links to it since it was deliberately taken off the sub-nav,
     because the booking list already filters by status, so deletion is the
     likelier answer.
+
+27. **An editor's DUPLICATE is approved as an EMPTY recipe.** Not started,
+    found 2026-09-16. When an editor duplicates a menu or a prep, the
+    request is saved as `menu_create` / `prep_create` with
+    `duplicatedFrom`, and `approveChange` ignores that field: it creates
+    the header (and, for a prep, the ingredient row) but copies none of
+    the original's recipe lines. The editor believes they copied a recipe,
+    and the approver sees nothing wrong. **Size: small, one commit, no
+    migration.** Copy the lines from `duplicatedFrom` on approval, the way
+    the admin paths already do; for a prep, only if the APPROVER may see
+    the original (`canSeePrep`), since copying is reading. **Nothing has hit
+    it yet:** none of the pending changes on record carries `duplicatedFrom`,
+    and editors' requests last came on 2026-08-22.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
