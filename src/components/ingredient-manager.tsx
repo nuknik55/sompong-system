@@ -736,9 +736,16 @@ function UsageItem({
       // and the row silently kept the old figure with no message (item 12).
       // localQty moves only on success, so the screen never contradicts the
       // database.
-      const result = await onSave(itemId, n);
-      if (result.status === "error") { setSaveError(result.message); setVal(String(localQty)); return; }
-      setLocalQty(n);
+      try {
+        const result = await onSave(itemId, n);
+        if (result.status === "error") { setSaveError(result.message); setVal(String(localQty)); return; }
+        setLocalQty(n);
+      } catch {
+        // localQty is untouched here, so the row keeps showing the stored
+        // figure — truthful. Only the message was missing.
+        setSaveError("บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+        setVal(String(localQty));
+      }
     });
   }
 

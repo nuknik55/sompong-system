@@ -81,11 +81,15 @@ export function RevenueImportClient() {
     const previewOf = file; // the file this preview will belong to, even if the selection changes meanwhile
     dispatch({ type: "preview-start" });
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("file", previewOf);
-      const result = await previewPosRevenueImport(fd);
-      if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
-      else dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
+      try {
+        const fd = new FormData();
+        fd.set("file", previewOf);
+        const result = await previewPosRevenueImport(fd);
+        if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
+        else dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
+      } catch {
+        dispatch({ type: "preview-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
+      }
     });
   }
 
@@ -103,17 +107,23 @@ export function RevenueImportClient() {
 
     dispatch({ type: "apply-start" });
     startTransition(async () => {
-      // The held file is sent again, not the numbers: the server re-parses
-      // and refuses unless it gets back the month and gross shown above.
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("expectedYearMonth", preview.yearMonth);
-      fd.set("expectedGrossTotal", String(preview.grossTotal));
-      const result = await applyPosRevenueImport(fd);
-      if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
-      else {
-        dispatch({ type: "apply-ok", result });
-        router.refresh();
+      try {
+        // The held file is sent again, not the numbers: the server re-parses
+        // and refuses unless it gets back the month and gross shown above.
+        const fd = new FormData();
+        fd.set("file", file);
+        fd.set("expectedYearMonth", preview.yearMonth);
+        fd.set("expectedGrossTotal", String(preview.grossTotal));
+        const result = await applyPosRevenueImport(fd);
+        if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
+        else {
+          dispatch({ type: "apply-ok", result });
+          router.refresh();
+        }
+      } catch {
+        // The apply is idempotent per month on the server (it replaces), so a
+        // retry after this message cannot double-write.
+        dispatch({ type: "apply-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
       }
     });
   }

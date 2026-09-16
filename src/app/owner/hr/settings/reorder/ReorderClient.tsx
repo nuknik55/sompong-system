@@ -65,10 +65,14 @@ export function ReorderClient({ initialEmployees }: { initialEmployees: EmpItem[
       // message, and "บันทึกแล้ว" appears only on success — the absolute
       // sort orders make a retry of the same list safe, per the action's
       // own comment.
-      const result = await updateEmployeeSortOrders(updates);
-      if (result.status === "error") { setError(result.message); return; }
-      setSaved(true);
-      router.refresh();
+      try {
+        const result = await updateEmployeeSortOrders(updates);
+        if (result.status === "error") { setError(result.message); return; }
+        setSaved(true);
+        router.refresh();
+      } catch {
+        setError("บันทึกลำดับไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

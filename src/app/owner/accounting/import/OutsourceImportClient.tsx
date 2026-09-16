@@ -48,13 +48,17 @@ export function OutsourceImportClient() {
     const previewOf = file;
     dispatch({ type: "preview-start" });
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("file", previewOf);
-      const result = await previewOutsourceImport(fd);
-      if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
-      else {
-        dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
-        setYearMonth((cur) => (result.preview.months.some((m) => m.yearMonth === cur) ? cur : defaultMonth(result.preview.months)));
+      try {
+        const fd = new FormData();
+        fd.set("file", previewOf);
+        const result = await previewOutsourceImport(fd);
+        if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
+        else {
+          dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
+          setYearMonth((cur) => (result.preview.months.some((m) => m.yearMonth === cur) ? cur : defaultMonth(result.preview.months)));
+        }
+      } catch {
+        dispatch({ type: "preview-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
       }
     });
   }
@@ -74,16 +78,20 @@ export function OutsourceImportClient() {
     if (!ok) return;
     dispatch({ type: "apply-start" });
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("yearMonth", month.yearMonth);
-      fd.set("expectedBlockTotal", String(month.blockTotal));
-      fd.set("expectedOther", String(other));
-      const result = await applyOutsourceImport(fd);
-      if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
-      else {
-        dispatch({ type: "apply-ok", result });
-        router.refresh();
+      try {
+        const fd = new FormData();
+        fd.set("file", file);
+        fd.set("yearMonth", month.yearMonth);
+        fd.set("expectedBlockTotal", String(month.blockTotal));
+        fd.set("expectedOther", String(other));
+        const result = await applyOutsourceImport(fd);
+        if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
+        else {
+          dispatch({ type: "apply-ok", result });
+          router.refresh();
+        }
+      } catch {
+        dispatch({ type: "apply-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
       }
     });
   }

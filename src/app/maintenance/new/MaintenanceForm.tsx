@@ -39,6 +39,7 @@ export function MaintenanceForm({
       return;
     }
     startTransition(async () => {
+      try {
       let res: { error?: string };
       if (mode === "create") {
         res = await createReport({ category, location, description, isUrgent, photoBefore: photo });
@@ -47,6 +48,11 @@ export function MaintenanceForm({
       }
       if (res.error) { setError(res.error); return; }
       router.push("/maintenance");
+      } catch {
+        // The form keeps everything the person typed and the photo they took;
+        // only the message was missing.
+        setError("ส่งแจ้งซ่อมไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

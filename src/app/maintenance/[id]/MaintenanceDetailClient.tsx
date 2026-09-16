@@ -62,22 +62,33 @@ export function MaintenanceDetailClient({
     setError(null);
     if (status === "done") { setShowDonePanel(true); return; }
     startTransition(async () => {
-      const res = await updateReportStatus(report.id, status);
-      if (res.error) { setError(res.error); return; }
-      router.refresh();
+      try {
+        const res = await updateReportStatus(report.id, status);
+        if (res.error) { setError(res.error); return; }
+        router.refresh();
+      } catch {
+        setError("เปลี่ยนสถานะไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 
   function confirmDone() {
     setError(null);
     startTransition(async () => {
-      const res = await updateReportStatus(report.id, "done", {
-        photoAfter: afterPhoto ?? undefined,
-        resolverNote,
-      });
-      if (res.error) { setError(res.error); return; }
-      setShowDonePanel(false);
-      router.refresh();
+      // The done panel stays OPEN on failure: the after-photo and the note
+      // are in it, and closing it would throw away work the person cannot
+      // retake. setShowDonePanel(false) belongs to the success path only.
+      try {
+        const res = await updateReportStatus(report.id, "done", {
+          photoAfter: afterPhoto ?? undefined,
+          resolverNote,
+        });
+        if (res.error) { setError(res.error); return; }
+        setShowDonePanel(false);
+        router.refresh();
+      } catch {
+        setError("บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

@@ -33,12 +33,18 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
     const previewOf = file;
     dispatch({ type: "preview-start" });
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("file", previewOf);
-      fd.set("yearMonth", yearMonth);
-      const result = await previewBudget69Import(fd);
-      if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
-      else dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
+      try {
+        const fd = new FormData();
+        fd.set("file", previewOf);
+        fd.set("yearMonth", yearMonth);
+        const result = await previewBudget69Import(fd);
+        if (!result.ok) dispatch({ type: "preview-failed", error: result.error });
+        else dispatch({ type: "preview-ok", preview: result.preview, file: previewOf });
+      } catch {
+        // Item 20: without this the reducer stayed in preview-start — spinner
+        // up, buttons disabled — which reads as "still working", forever.
+        dispatch({ type: "preview-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
+      }
     });
   }
 
@@ -55,15 +61,19 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
     if (!ok) return;
     dispatch({ type: "apply-start" });
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("yearMonth", preview.yearMonth);
-      fd.set("expectedSheetExpenseTotal", String(preview.sheetExpenseTotal));
-      const result = await applyBudget69Import(fd);
-      if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
-      else {
-        dispatch({ type: "apply-ok", result });
-        router.refresh();
+      try {
+        const fd = new FormData();
+        fd.set("file", file);
+        fd.set("yearMonth", preview.yearMonth);
+        fd.set("expectedSheetExpenseTotal", String(preview.sheetExpenseTotal));
+        const result = await applyBudget69Import(fd);
+        if (!result.ok) dispatch({ type: "apply-failed", error: result.error });
+        else {
+          dispatch({ type: "apply-ok", result });
+          router.refresh();
+        }
+      } catch {
+        dispatch({ type: "apply-failed", error: "นำเข้าไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่" });
       }
     });
   }

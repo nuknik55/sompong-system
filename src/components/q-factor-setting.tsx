@@ -30,12 +30,19 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              // Previously no handling at all: a failed save was an unhandled
-              // rejection and the button just did not change (item 12).
+              // Item 12 handled the RETURNED error; item 20 adds the thrown
+              // one. Worth the care despite being one line: this number is a
+              // restaurant-wide uplift on EVERY dish's cost, so believing a
+              // change landed when it did not means reading every cost figure
+              // against the wrong q-factor until someone notices.
               setError(null);
-              const result = await updateQFactor(Number(value) || 0);
-              if (result.status === "error") { setError(result.message); return; }
-              setSaved(true);
+              try {
+                const result = await updateQFactor(Number(value) || 0);
+                if (result.status === "error") { setError(result.message); return; }
+                setSaved(true);
+              } catch {
+                setError("บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+              }
             })
           }
           className="rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"

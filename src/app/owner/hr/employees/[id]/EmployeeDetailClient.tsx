@@ -123,9 +123,8 @@ export function EmployeeDetailClient({
   function handleSave() {
     setSaveError(null);
     startTransition(async () => {
-      // Previously fire-and-forget: a failed save was an unhandled rejection
-      // and "บันทึกแล้ว" never appeared — but neither did any message
-      // (item 12).
+      // Item 12 handled the RETURNED error; item 20 adds the thrown one.
+      try {
       const result = await upsertEmployee({
         id: employee.id,
         employee_code: form.employee_code ?? "",
@@ -151,6 +150,10 @@ export function EmployeeDetailClient({
       if (result.status === "error") { setSaveError(result.message); return; }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      } catch {
+        // The form keeps every field as typed; only the message was missing.
+        setSaveError("บันทึกไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 
