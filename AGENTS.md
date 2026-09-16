@@ -422,6 +422,11 @@ So, for any read that pages:
    `id` or the table's primary key) was run against HEAD before the fix.
    It had to flag the known defect, and its first version did not, because
    a query with no ORDER BY compared `undefined === undefined` and passed.
+   **It is now `src/lib/paged-reads.test.ts`**, so `npm test`, and CI with
+   it, fails any paged read whose ORDER BY does not end on a unique key,
+   and any `.range(` outside `fetchAllRows`. Its first tests are inputs it
+   must flag, and run against the tree before `ea9a251` it fails on exactly
+   the eight reads fixed there.
 3. **A rule that says how to page must say how to order.** A rule that
    solves half a problem reads as the whole solution, so the next person
    copies the half.

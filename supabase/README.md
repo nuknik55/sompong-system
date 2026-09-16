@@ -572,6 +572,13 @@ In order. Nothing here is started unless it says so.
       September 435, July 390). July and September recompute identically
       both ways.
 
+    **Enforced from 2026-09-16 by `src/lib/paged-reads.test.ts`**, in
+    `npm test` and so in CI. It parses every file in `src` and fails when a
+    `fetchAllRows` query does not end its ORDER BY on `id` (or the table's
+    primary key), or when a `.range(` sits outside `fetchAllRows`. Its first
+    tests are inputs it must flag. Run against the tree before `ea9a251`
+    (`PAGED_READ_SCAN_ROOT`), it fails on exactly the eight reads fixed there.
+
     The rest of this entry as first written:
 
     **The premise below named the wrong two queries.** `ingredients.name`
