@@ -1149,6 +1149,11 @@ In order. Nothing here is started unless it says so.
     Worth settling because `getPrepAccessBoard` and every admin screen rest
     on what `profiles` returns to an admin.
 
+26. **A question for Nik: delete `/owner/catering/status`, or link it?**
+    Nothing links to it since it was deliberately taken off the sub-nav,
+    because the booking list already filters by status, so deletion is the
+    likelier answer.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -1228,6 +1233,20 @@ and after Nik's import.
 `/owner/hr/schedule/print`, is opened through a computed `printUrl` in
 `ScheduleClient.tsx`. `/owner/accounting/revenue-import` was linked from the
 accounting tool row in the same commit that created it (`d56a5ee`).
+
+**Stale two days later — found 2026-09-16.** `665f458` (2026-09-11) took
+ต้นทุนภายใน off the catering sub-nav and wrote a comment saying the page was
+linked from a booking's cost page. No such link existed, so
+`/owner/catering/cost-settings` was reachable only by typing its URL until
+the **ตั้งค่าต้นทุนภายใน** link beside + เพิ่มต้นทุน was added. Nik looked for it
+on that page and could not find it. A one-time check stays true only until
+the next change. Re-run on 2026-09-16 as a scan of the parsed code (every
+string in `src` that could navigate to each of the 44 owner pages,
+`revalidatePath` arguments excluded). It was run against HEAD first, where
+it must find cost-settings. Its first version did not: a `${...}`
+placeholder matched a fixed path segment, so `/owner/catering/${id}`
+counted as a link to cost-settings. Fixed, it finds 2 on HEAD and 1 after
+the link: `/owner/catering/status`, queued as item 26.
 
 ## The three catering documents — built 2026-09-11/12
 

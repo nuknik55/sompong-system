@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useTransition, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addCateringEventLabor, deleteCateringEventLabor } from "../../actions";
 import type { CateringEventLabor, CateringTransferCostRate } from "../../actions";
 import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum, thFullDate } from "../../shared-utils";
 import { lockCateringEventCost, unlockCateringEventCost } from "./actions";
 import type { CateringEventCostSnapshot } from "./actions";
+
+// ต้นทุนภายใน has no sub-nav entry (see catering-sub-nav.tsx), so the link
+// beside + เพิ่มต้นทุน below is the ONLY way to reach it without typing the
+// URL. It shows whether or not rates exist: the picker's empty-state line
+// is the one place that used to mention the page, and anyone who has rates
+// never sees it.
+const COST_SETTINGS_HREF = "/owner/catering/cost-settings";
 
 type Draft = {
   rate: CateringTransferCostRate;
@@ -72,7 +80,10 @@ function CostRatePicker({
             );
           })}
           {activeRates.length === 0 && (
-            <p className="px-3 py-4 text-center text-xs text-neutral-400">ยังไม่มีอัตราต้นทุน — ตั้งค่าที่หน้าต้นทุนภายใน</p>
+            <p className="px-3 py-4 text-center text-xs text-neutral-400">
+              ยังไม่มีอัตราต้นทุน —{" "}
+              <Link href={COST_SETTINGS_HREF} className="underline underline-offset-2 hover:text-neutral-700">ตั้งค่าที่หน้าต้นทุนภายใน</Link>
+            </p>
           )}
         </div>
       )}
@@ -215,7 +226,12 @@ export function CostSummaryClient({
       <section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-kanit text-base font-semibold text-neutral-900">ต้นทุนแรงงาน/รถ</h3>
-          <CostRatePicker rates={costRates} disabled={isPending || locked} onPick={pickRate} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href={COST_SETTINGS_HREF} className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline">
+              ตั้งค่าต้นทุนภายใน
+            </Link>
+            <CostRatePicker rates={costRates} disabled={isPending || locked} onPick={pickRate} />
+          </div>
         </div>
 
         {draft && (

@@ -13,9 +13,17 @@ type NavItem = { href: string; label: string; exact?: boolean };
  * Off the nav, deliberately, and where each went:
  *   สถานะ          the booking list filters by status already
  *   ลูกค้า          behind เพิ่มเติม on the booking, still reachable
- *   ต้นทุนภายใน     admin-only, linked from a booking's cost page — it is
- *                  internal COST, easily confused with ราคา below, which is
- *                  what the customer pays
+ *   ต้นทุนภายใน     admin-only, reached from a booking's ต้นทุน-กำไร page
+ *                  by the ตั้งค่าต้นทุนภายใน link beside + เพิ่มต้นทุน. It is
+ *                  internal COST, easily confused with the prices under
+ *                  ตั้งค่า, which are what the customer pays.
+ *
+ *                  THAT LINK DID NOT EXIST until 2026-09-16. This comment
+ *                  claimed it from 2026-09-11 (665f458) and nobody checked,
+ *                  so the page was reachable only by typing its URL; Nik
+ *                  looked for it on the cost page and could not find it.
+ *                  Before moving anything else off this nav, find the href
+ *                  that replaces it: grep for the route, not for the label.
  *   เช็กลิสต์        deleted; see the booking page's header comment
  */
 export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
