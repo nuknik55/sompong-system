@@ -1360,6 +1360,45 @@ In order. Nothing here is started unless it says so.
     it yet:** none of the pending changes on record carries `duplicatedFrom`,
     and editors' requests last came on 2026-08-22.
 
+28. **Exported server actions with NO auth guard: 24 reads, 22 of them HR,
+    with RLS as their only layer.** Not started, found 2026-09-16.
+
+    **`getAttendancePunches` had no guard at all.** It was a
+    network-callable endpoint that any signed-in session could call, and it
+    was removed (`570f331`) because it was DEAD, not because anyone noticed
+    the guard was missing. So the rest were scanned.
+
+    **The scan** parses every "use server" export and counts as guarded any
+    function that calls `require*()` or `getCurrentProfile()`, directly or
+    through a helper in the same file. Run first on the tree before
+    `570f331`, where it listed `getAttendancePunches`. Of the 199 exports
+    left, 26 have no guard on any path:
+
+    - `login` and `logout`, correctly;
+    - `getCateringEventTypes` and `getPosImportMeta`;
+    - **22 reads in `owner/hr/actions.ts`**, among them `getEmployees`,
+      `getEmployee`, `getPayrollEntries`, `getEmployeePayrollHistory`,
+      `getPayrollPeriods` and `getLeaveQuotas`.
+
+    A page's own guard does not cover these: an export is callable without
+    the page. **What protects them is RLS alone.** `hr_role_patch.sql`
+    limits `payroll_*` to owner and hr by an explicit role list (not
+    `is_owner()`), and `employees` to hr plus admin read, and the
+    2026-07-31 HR audit recorded that as checked. It has not been
+    re-verified live since. That is the one-layer arrangement the prep leak
+    showed to be fragile, on salary data.
+
+    **Size: small, in two parts.**
+    (a) Nik runs one `pg_policies` read for the HR tables and a negative
+    control (the sales account reading `payroll_entries` must get 0):
+    minutes.
+    (b) Give each of the 22 HR reads the guard its pages already use. The
+    schedule, attendance, leave and HR-home pages use `requireHROrAdmin`;
+    employees, payroll, day-swap and settings use `requireHR`. Match each
+    read to its callers rather than blanket-applying one guard. Then make the
+    scan a test like `paged-reads.test.ts`, so CI fails an exported action
+    with no guard. One commit each.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
