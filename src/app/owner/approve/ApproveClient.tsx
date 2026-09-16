@@ -293,22 +293,38 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Item 20. Neither updates optimistically, so a throw left the card sitting
+  // there unchanged with nothing said — and the natural read of an approve
+  // button that does nothing is to press it again. approveChange is the one
+  // action in the app that APPLIES an editor's staged write, so a second press
+  // after a first that actually landed is the case worth avoiding. The message
+  // is what stops the second press.
+  const RETRY_MESSAGE = "ไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
   function handleApprove() {
     setError(null);
     startTransition(async () => {
-      const res = await approveChange(change.id);
-      if (res.error) { setError(res.error); return; }
-      onDone();
+      try {
+        const res = await approveChange(change.id);
+        if (res.error) { setError(res.error); return; }
+        onDone();
+      } catch {
+        setError(RETRY_MESSAGE);
+      }
     });
   }
 
   function handleReject() {
     setError(null);
     startTransition(async () => {
-      const res = await rejectChange(change.id, note);
-      if (res.error) { setError(res.error); return; }
-      setShowReject(false);
-      onDone();
+      try {
+        const res = await rejectChange(change.id, note);
+        if (res.error) { setError(res.error); return; }
+        setShowReject(false);
+        onDone();
+      } catch {
+        setError(RETRY_MESSAGE);
+      }
     });
   }
 

@@ -164,9 +164,16 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
   function handleReorder(r: CateringRate, direction: "up" | "down") {
     setError(null);
     startTransition(async () => {
-      const result = await reorderCateringRate(r.id, r.rate_type, direction);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
+      // Item 20: a throw skipped the refresh, so the row stayed put with no
+      // message — indistinguishable from a reorder that had no effect because
+      // the row was already last.
+      try {
+        const result = await reorderCateringRate(r.id, r.rate_type, direction);
+        if (result.error) { setError(result.error); return; }
+        router.refresh();
+      } catch {
+        setError("สลับลำดับไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 

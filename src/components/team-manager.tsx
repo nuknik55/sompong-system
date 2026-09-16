@@ -98,30 +98,64 @@ export function TeamManager({
     setRowError((prev) => ({ ...prev, [id]: "" }));
   }
 
+  // ── Item 20: a thrown action reaches the row that asked for it ─────────
+  //
+  // Errors on this screen are per-row (rowError[id]) or per-form
+  // (createError), so the runner takes the setter rather than assuming one
+  // place to put the message. Without it a throw said nothing anywhere, on
+  // the screen that creates logins, changes roles and passwords, and deletes
+  // accounts — where "I thought I changed that" is an access question.
+  const RETRY_MESSAGE = "ไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่";
+
+  function runWrite<T extends { error?: string }>(
+    fn: () => Promise<T>,
+    showError: (message: string) => void,
+    opts?: { onOk?: (result: T) => void; revert?: () => void },
+  ) {
+    startTransition(async () => {
+      try {
+        const result = await fn();
+        if (result.error) { showError(result.error); opts?.revert?.(); return; }
+        opts?.onOk?.(result);
+      } catch {
+        showError(RETRY_MESSAGE);
+        opts?.revert?.();
+      }
+    });
+  }
+
   // ── Actions ─────────────────────────────────────────────────────────────────
   function submitCreate() {
     setCreateError(null);
-    startTransition(async () => {
-      const result = await createUser(newFullName, newUsername, newPassword, newRole, newEmployeeId || null);
-      if (result.error) { setCreateError(result.error); return; }
-      setNewFullName(""); setNewUsername(""); setNewPassword(""); setNewRole("staff"); setNewEmployeeId("");
-      setShowForm(false);
-      window.location.reload();
-    });
+    runWrite(
+      () => createUser(newFullName, newUsername, newPassword, newRole, newEmployeeId || null),
+      (m) => setCreateError(m),
+      {
+        onOk: () => {
+          setNewFullName(""); setNewUsername(""); setNewPassword(""); setNewRole("staff"); setNewEmployeeId("");
+          setShowForm(false);
+          window.location.reload();
+        },
+      },
+    );
   }
 
   function applyRole(id: string) {
     const role = selectedRole[id];
     clearRowErr(id);
-    startTransition(async () => {
-      const result = await updateUserRole(id, role);
-      if (result.error) {
-        setRowError((prev) => ({ ...prev, [id]: result.error! }));
-        setSelectedRole((prev) => ({ ...prev, [id]: list.find((u) => u.id === id)?.role ?? prev[id] }));
-        return;
-      }
-      setList((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
-    });
+    // THE ONE SITE ON THIS SCREEN THAT LIES ON A THROW. The dropdown is bound
+    // to selectedRole, which the change handler already moved, so a failed
+    // write leaves it showing a role the account does not have. The returned
+    // error path already put it back; the throw path did not, and now does —
+    // the revert runs on both.
+    runWrite(
+      () => updateUserRole(id, role),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      {
+        revert: () => setSelectedRole((prev) => ({ ...prev, [id]: list.find((u) => u.id === id)?.role ?? prev[id] })),
+        onOk: () => setList((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u))),
+      },
+    );
   }
 
   function startEdit(u: TeamUser) {
@@ -137,32 +171,38 @@ export function TeamManager({
     if (!editingId) return;
     const id = editingId;
     const employeeId = editEmployeeId || null;
-    startTransition(async () => {
-      const result = await updateUserDetails(id, { fullName: editFullName, username: editUsername, employeeId });
-      if (result.error) { setRowError((prev) => ({ ...prev, [id]: result.error! })); return; }
-      setList((prev) => prev.map((u) => (u.id === id ? { ...u, full_name: editFullName, username: editUsername, employee_id: employeeId } : u)));
-      setEditingId(null);
-    });
+    runWrite(
+      () => updateUserDetails(id, { fullName: editFullName, username: editUsername, employeeId }),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      {
+        onOk: () => {
+          setList((prev) => prev.map((u) => (u.id === id ? { ...u, full_name: editFullName, username: editUsername, employee_id: employeeId } : u)));
+          setEditingId(null);
+        },
+      },
+    );
   }
 
   function submitPassword(id: string) {
     clearRowErr(id);
-    startTransition(async () => {
-      const result = await changePassword(id, pwdValue);
-      if (result.error) { setRowError((prev) => ({ ...prev, [id]: result.error! })); return; }
-      setPwdRowId(null);
-      setPwdValue("");
-    });
+    // The password field is NOT cleared on failure: it is the one field the
+    // person cannot retype from memory if it was generated, and a thrown
+    // failure is exactly when they will retry.
+    runWrite(
+      () => changePassword(id, pwdValue),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      { onOk: () => { setPwdRowId(null); setPwdValue(""); } },
+    );
   }
 
   function remove(id: string) {
     if (!confirm("ลบบัญชีนี้แน่ใจหรือไม่? จะไม่สามารถ login ได้อีก")) return;
     clearRowErr(id);
-    startTransition(async () => {
-      const result = await deleteUser(id);
-      if (result.error) { setRowError((prev) => ({ ...prev, [id]: result.error! })); return; }
-      setList((prev) => prev.filter((u) => u.id !== id));
-    });
+    runWrite(
+      () => deleteUser(id),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      { onOk: () => setList((prev) => prev.filter((u) => u.id !== id)) },
+    );
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────

@@ -93,18 +93,32 @@ export function TransferCostSettingsClient({ initialRates }: { initialRates: Cat
   }
 
   function handleToggleActive(r: CateringTransferCostRate) {
+    // Item 20, and the only TIER-1 site left outside the template screens: the
+    // mirrored row was flipped whether or not the write succeeded, and there
+    // was no handling of any kind — not a returned error, not a throw. The
+    // screen simply showed the new state. Now the mirror moves only after the
+    // write lands, which is the same rule the rates screen learned in item 17.
+    setError(null);
     startTransition(async () => {
-      await toggleCateringTransferCostRateActive(r.id, !r.is_active);
-      setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: !x.is_active } : x)));
+      try {
+        await toggleCateringTransferCostRateActive(r.id, !r.is_active);
+        setRates((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: !x.is_active } : x)));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "เปลี่ยนสถานะไม่สำเร็จ");
+      }
     });
   }
 
   function handleReorder(r: CateringTransferCostRate, direction: "up" | "down") {
     setError(null);
     startTransition(async () => {
-      const result = await reorderCateringTransferCostRate(r.id, r.cost_type, direction);
-      if (result.error) { setError(result.error); return; }
-      router.refresh();
+      try {
+        const result = await reorderCateringTransferCostRate(r.id, r.cost_type, direction);
+        if (result.error) { setError(result.error); return; }
+        router.refresh();
+      } catch {
+        setError("สลับลำดับไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
+      }
     });
   }
 
