@@ -113,6 +113,7 @@ and dated here.
 | `grant_prep_access_wetch.sql` | 2026-09-15 | Granted เวช (หัวหน้า prep) all 48. Identified by the TRIPLE login + full_name + role — the login lives in `auth.users.email` as `wetch2527@staff.local`, not in `profiles`, and name alone sat one row from the placeholder account "Editor / editor". |
 | `prep_recipe_access_rls_migration.sql` | 2026-09-15 | Step 2: SELECT on `prep_recipes`/`prep_recipe_items` narrowed to `can_see_prep()`, writes to `role IN (owner,admin) AND can_see_prep()` with a WITH CHECK that omits the predicate so creation still works. Step 0 read `pg_policies` at run time and would have aborted on drift. **Verified by Nik, negative control first: an ungranted editor reads 0 recipes and 0 items; เฮง reads 48 and 248; an ungranted editor's direct UPDATE touches 0 rows.** Then the cost channel confirmed against a PRE-REGISTERED expectation — 48 / 43 priced / 5 null / sum 651.387003 / min 0.024527 / max 99.861334, all six matching figures published before the result was seen. No dish cost moved. |
 | `provenance_triggers_migration.sql` | 2026-09-16 | Items 21+22. `touch_updated_at()` installed on the **16** tables carrying the column (a DO block asserts the column exists on each before creating anything, then asserts it made 16), and `prep_recipe_access_history` written by an AFTER INSERT/DELETE trigger with the recipe, person and actor names copied at write time. **Verified including the one check SQL cannot do:** the owner granted and revoked through the app, and both rows came back naming him — `grant · Test เตรียม · เฮง · Owner` and `revoke · … · Owner`. That was the whole question item 21 existed to answer, since `changed_by_name` NULL from an app write would have meant the trigger never sees the session. **Two behaviour notes: (a) a bulk migration now moves `updated_at` on every row it touches — a mass timestamp shift after some future backfill is this trigger working, not a defect; (b) the 8 call sites that already stamp `updated_at` by hand are redundant and were deliberately left, since the trigger overwrites with the same `now()`.** |
+| `prep_owner_only_predicate_migration.sql` | 2026-09-16 | **The admin leak closed** (see the prep-visibility section). `is_owner_only()` added; `can_see_prep()`'s body replaced in place so the five policies calling it follow; `prep_recipe_access_select`/`_write` and `prep_recipe_access_history_select` recreated on it. `is_owner()` deliberately untouched. Step 0 read the live definitions and policies and would have aborted on drift; step 3 called the predicates AS all 11 profiles against all 48 preps before COMMIT and would have rolled everything back on one disagreement. **Verified at the app, in both directions; footer checks 1–7 were NOT run.** As `admin`, a new prep was created and the prep tab on `/owner/ingredients` (ของ prep) read 0; as owner, the same tab read 49. The section below says what that leaves unwitnessed. |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
@@ -1089,6 +1090,65 @@ In order. Nothing here is started unless it says so.
     a trigger on the tables that matter would be the durable answer, and is
     the same decision as item 21's.
 
+23. **The q-factor write policy admits admins; the app says owner-only.**
+    Not started. Same class as the prep leak, and pre-existing.
+    `0002_q_factor.sql`'s `app_settings_owner_write` is
+    `USING (is_owner()) WITH CHECK (is_owner())`, and `is_owner()` has meant
+    owner OR admin since `006`. `updateQFactor` is guarded by
+    `requireOwner()`, so on screen only the owner can change it, but a
+    direct PostgREST UPDATE from an admin's session succeeds. The q-factor
+    multiplies every dish cost. **Size: one small migration** moving that
+    policy to `is_owner_only()`, with an admin as the negative control and
+    the owner as the positive. **One question for Nik first:** is the
+    q-factor meant to be owner-only, or was `requireOwner()` stricter than
+    he intended? If admins should change it, the fix is the guard, not the
+    policy.
+
+24. **`createPrep` silently overwrites a live prep when the name matches.**
+    Not started. **A data-corruption path with no error attached.**
+    **NEXT, after the ต้นทุนภายใน link** (decided 2026-09-16), rather than
+    queued indefinitely. Nik has been told not to reuse an existing prep name
+    until it lands.
+
+    The "reuse orphan" branch finds a `prep_recipes` row by name and updates
+    its category and batch yield, then rewrites the matching `ingredients`
+    row's category and usage unit. It never checks that either is an orphan.
+    On 2026-09-16 there are **0 orphans**: all 48 preps have their ingredient
+    row and every name matches. So every name match this branch can reach
+    today is a LIVE prep, and 205 menus use at least one prep (296 recipe
+    lines).
+
+    Anyone who can see a prep (the owner; เฮง) who types its name into
+    สร้างของ prep ใหม่ with the default yield of 1 กรัม replaces that prep's
+    yield. That changes the cost of every dish using it, and they then land
+    on the prep's page as though it were new. Only `updated_at` (item 22's
+    trigger) records it; there is no yield history.
+
+    Not exposed: editors, whose request becomes a `prep_create` whose insert
+    refuses a taken name, and, since `bb4000f`, an admin who cannot see the
+    prep (Thai name-taken message).
+
+    **Size: small, one commit, no migration.** Reuse only a true orphan (a
+    prep that no `ingredients` row points at), and relink only an `is_prep`
+    ingredient whose recipe is missing. Every other name match refuses with
+    มีของเตรียมชื่อนี้อยู่แล้ว. The decision is a pure function of the two
+    lookups, so it can be extracted and unit-tested on four cases: no match,
+    orphan prep, orphan ingredient, live match. About 30 lines plus tests.
+
+25. **HYPOTHESIS, not verified: `profiles`' own policies may explain how an
+    admin manages `/owner/team`.** Not started.
+    `profile_employee_link_migration.sql` recorded a puzzle: the only
+    `profiles` policies in the repo are `id = auth.uid() OR is_owner()`
+    (select) and `is_owner()` (write), described there as owner-only, yet a
+    non-owner admin lists, updates and deletes users, so the live database
+    "almost certainly" carries uncommitted policies. Since `is_owner()`
+    admits admins, those two policies alone may explain it. `deleteUser()`
+    documents an `owner_admin_delete_profiles` policy, which is a separate
+    question. **Size: one `pg_policies` read for `profiles`, which Nik
+    runs**, then this entry updated; no code unless the read finds something.
+    Worth settling because `getPrepAccessBoard` and every admin screen rest
+    on what `profiles` returns to an admin.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -1257,7 +1317,7 @@ type the Buddhist year into it — the accountant's 2-digit-BE-read-as-1968 bug
 again, paid per screen — so it needs a year>2300 ⇒ −543 guard and an app-wide
 rollout to be worth having.
 
-## Prep-recipe visibility — CLOSED 2026-09-15, in four steps
+## Prep-recipe visibility — closed 2026-09-15 in four steps; OPEN TO ADMINS until 2026-09-16
 
 The 48 prep recipes are the restaurant's actual asset: a dish recipe is
 useless to a competitor without น้ำจิ้มซีฟู๊ด, น้ำนึ่งซีอิ๊ว and the rest.
@@ -1286,6 +1346,7 @@ the list is restricted. So:
 | 2 | The app: cost path onto the RPC with the TS prep-resolution branch deleted, and every leak surface filtered. | `e34a530` |
 | 3 | Grants — เฮง and เวช, by script, then the owner-only grant screen so no third person needs SQL. | `104188b`, `cada5bb`, `ae8a88f` |
 | 4 | The RLS policies narrowed, closing direct PostgREST reads. | `659791b` |
+| 5 | **The owner bypass made owner-only** — steps 1–4 had shipped it on `is_owner()`, which admits admins. The app layer made independent; the creates stop reading back. See below. | `ef796b6`, `bb4000f` |
 
 **The leak that would have defeated it was not on a prep screen.**
 `/owner/ingredients` shipped a `usageMap` to the browser containing, per raw
@@ -1294,8 +1355,9 @@ ingredient, which preps use it AND in what quantity — transposed, that is all
 ingredients tab without opening a prep page. Two more full copies existed:
 `recipe_item_history` (open to every authenticated role, never narrowed since
 0004) and a direct PostgREST read, which no amount of app-layer filtering can
-close. That last one is why RLS had to be the enforcement and the app layer
-only the presentation.
+close. That last one is why RLS had to be the enforcement. The app layer is
+not merely the presentation, though: since 2026-09-16 it applies the rule
+itself rather than asking RLS's own predicate (below).
 
 **What decision 3 bought.** Prep NAMES stay on dish recipes and in the
 ingredient picker — a cook must know the dish contains the sauce — and that
@@ -1306,7 +1368,9 @@ tables and never compete.
 **Two things deliberately left as they are.** An admin who creates a prep
 recipe cannot open it until the owner grants it — the WITH CHECK omits
 `can_see_prep` so creation works at all, which makes the rule "you may
-create, but you may not modify or delete what you cannot see". And
+create, but you may not modify or delete what you cannot see". Nobody felt
+that until 2026-09-16, because of the leak below; since then the create form
+says so. And
 `getCostingContext()` returns prep items FILTERED FOR DISPLAY beside unit
 costs COMPLETE FOR ARITHMETIC; that inconsistency is the design, is the most
 fixable-looking thing in it, and carries a comment saying so.
@@ -1314,6 +1378,125 @@ fixable-looking thing in it, and carries a comment saying so.
 **Found along the way, both queued rather than folded in:** a thrown Server
 Action is invisible in 46 of 120 client handlers (item 20), and
 `prep_recipe_access` records grants but forgets revocations (item 21).
+
+### The admin leak, 2026-09-16 — the inventory was right; the premise was wrong
+
+Nik, logged in as `admin` (zero grants), opened กะทิราดข้าวเหนียว and saw its
+whole ingredient list with quantities and per-line costs. The route,
+`/staff/prep/[id]`, was in the leak map, and its guard was deployed. The
+guard ran and said yes. Nothing went around RLS: RLS returned the rows,
+because `can_see_prep()` said yes to every admin.
+
+**`is_owner()` does not mean owner.** `0001_init.sql` defines it as
+`role = 'owner'`; `migrations/006_owner_role.sql` replaced it with
+`role IN ('owner','admin')`, because the older policies use it to let admins
+write. Nik confirmed the live definition with `pg_get_functiondef`. Every
+part of this work that asked `is_owner()` — `can_see_prep()`, both
+`prep_recipe_access` policies, the grant-history policy — admitted admins.
+From the day the visibility work shipped, อู๋ and `admin` could read, change
+and delete all 48 preps; every admin could grant and revoke at the database,
+so rule 5 held only on screen; and the prep tab on `/owner/ingredients`
+showed admins all 48 too. เฮง holds all 48 anyway, which is part of why nobody noticed.
+
+**How it was missed — three failures, all of method.**
+
+1. **The first definition was read, not the live one.** Designing
+   `can_see_prep()`, a check of `current_role()`'s security mode printed the
+   top of `0001_init.sql`, where `is_owner()` sits beside it as `= 'owner'`,
+   and that was taken as current. A later `CREATE OR REPLACE` had superseded
+   it, and nobody looked for one. It is the baseline rule — the shipped code
+   path, not a reconstruction — missed for SQL, by the session that had
+   already written into this README that policies are invisible to a
+   structural sweep.
+2. **The negative control tested the wrong role.** Nik's decision was
+   specifically *admins are named, not implicit*, and migration 2's negative
+   control was ธีรวัฒน์, an EDITOR — for whom `is_owner()` is false whether or
+   not the rule holds. It passed for a reason unrelated to the rule and could
+   never have caught this. The control was an ungranted ADMIN; อู๋ and
+   `admin` were both in the pre-check's own account list. **A negative
+   control has to come from the population the rule is about.**
+3. **The defence in depth was one layer.** The app layer and RLS were
+   presented as independent, and approved as defence in depth. They were
+   not. `canSeePrep` called the same SQL `can_see_prep()` that RLS calls, and
+   `getPrepVisibility` trusted `prep_recipe_access`'s SELECT policy —
+   `profile_id = auth.uid() OR is_owner()` — to narrow its read, under a
+   comment claiming *even a mistake in the role check here cannot widen what
+   comes back*. For an admin it returned all 96 grant rows. That comment was
+   approved and signed off as written. **Two layers calling the same
+   predicate are one layer.** One misreading opened both.
+
+**A fourth thing the leak was hiding, and the most valuable find.**
+`createPrep`, `duplicatePrep` and approving a `prep_create` read the new row
+back (`INSERT … RETURNING`), and Postgres checks a returned row against the
+SELECT policy. A new prep has no grant row, so once admins were excluded,
+those inserts failed for every admin, เฮง included. They had only ever
+worked because `can_see_prep()` said yes to everyone with the admin role.
+Migration 2's header reasoned carefully about WITH CHECK for creation and
+missed RETURNING, and no test could have caught it while every admin passed.
+It would have been found by เฮง, in production.
+
+**The name is a live trap for others too.** `costing_tables_rls_migration.sql`
+said `is_owner()` is "owner ONLY" and "has always rejected admin's own
+writes"; `profile_employee_link_migration.sql` called its `is_owner()`
+policies owner-only. Both were wrong, and both now carry a correction where
+they are read. Meanwhile `006` and `008_inventory_order_system.sql` state the
+truth plainly: the knowledge was in the repo, and the name overrode it.
+
+**The fix** (`ef796b6` migration, `bb4000f` code).
+
+- `is_owner()` is left exactly as it is. q-factor, `pos_sales_aliases`,
+  inventory and profiles depend on it meaning owner-or-admin, as `006` warns.
+  A new `is_owner_only()` carries the prep surfaces.
+- The migration checks itself before COMMIT by calling the predicates AS
+  every profile against every prep. Behaviour, not structure: `pg_depend`
+  records the functions a policy calls, but not the functions a
+  `LANGUAGE sql` body calls, so nothing in the catalogue connects
+  `can_see_prep()` to `is_owner()`.
+- The app layer applies the rule itself, in TypeScript: owner by role, else
+  an explicit grant row filtered by `profile_id`. The two layers now share
+  data and not logic.
+- The three creates generate their id in the app and never read back. When
+  the creator cannot see the result, the form says it waits for the owner's
+  grant instead of opening a not-found page. **Nik has been told that a new
+  prep is invisible to its creator, เฮง included, until he grants it.**
+- `prep_recipe_access_migration.sql` and `provenance_triggers_migration.sql`
+  both say "safe to re-run" and would now reopen the leak; both carry DO NOT
+  RE-RUN. Migration 2's wrong negative control is corrected in the file.
+
+**Verified at the app, in both directions, on 2026-09-16. The SQL footer
+checks 1–7 were NOT run, and nothing here should be read as saying they
+passed.**
+
+- **As `admin`:** Nik created `ทดสอบสิทธิ์`. The create succeeded, the form
+  said the prep waits for the owner's grant, and the ของ prep tab read **0**.
+  So the create path works without reading the row back, and the creator
+  cannot see what they made.
+- **As owner:** the same tab read **49** (48 plus the new one). So the owner's
+  access is the role, not a grant row.
+- The test prep was then deleted.
+
+Those two results cover what matters most: an admin is closed out of the
+list, an admin can still create, and the owner is not locked out. The
+migration's own pre-COMMIT sweep also passed, since "success" means it did
+not roll back, so the predicates agree with the rule for all 11 people × 48
+preps.
+
+**What is NOT witnessed, because the footer was not run:**
+- RLS on the tables as an admin's session sees them (recipes, items, the
+  grant table, both history tables);
+- the detail page from the original screenshot, reopened as `admin`;
+- the write half (an admin revoking or granting at the database);
+- เฮง as the same-role positive control;
+- the RETURNING demonstration.
+
+The code and the sweep both say these hold; nobody has looked.
+
+**A cosmetic defect, found by the same test.** The "waits for the owner"
+message first rendered as bare `text-amber-600`, which is `#dd7400` in
+Tailwind 4, sitting exactly where the form's red error sits. Nik read it as
+an error. It is now a boxed amber notice, the shape the app's other notices
+use; the duplicate button's notice changed with it. A success message in
+error colours teaches people to distrust the colour.
 
 ## The accounts — who has had access is not answerable from the profile list
 

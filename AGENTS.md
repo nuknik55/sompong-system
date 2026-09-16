@@ -86,6 +86,31 @@ So:
 3. **Prefer a check that would fail** if the thing you believe were untrue. A
    test that passes under both the old and new behaviour has told you nothing
    about the change.
+4. **For SQL, a function's behaviour is its LAST `CREATE OR REPLACE`, not its
+   first `CREATE`.** Read it from the database —
+   `SELECT pg_get_functiondef('public.is_owner'::regproc);` — or, at the very
+   least, grep every migration for later replacements before reasoning from
+   one. `is_owner()` is `role = 'owner'` in `0001_init.sql` and
+   `role IN ('owner','admin')` since `006_owner_role.sql`. The prep-visibility
+   work was designed on the first definition and shipped an admin leak that
+   lasted until Nik opened a secret recipe from the `admin` account.
+
+   Two consequences. The NAME is not evidence: where a function's name and
+   behaviour disagree and other code depends on the behaviour, add a function
+   whose name is true (`is_owner_only()`) rather than changing the old one.
+   And the catalogue will not show you the chain: `pg_depend` records the
+   functions a POLICY calls, not the functions a `LANGUAGE sql` body calls,
+   so test the behaviour by calling it as the people it is about.
+5. **A negative control must come from the population the rule is about.**
+   The rule was "admins are named, not implicit". The negative control was an
+   ungranted EDITOR, for whom the predicate was false whether or not the rule
+   held, so it passed for a reason unrelated to the rule. The control was an
+   ungranted ADMIN, paired with an admin who HOLDS grants as the positive
+   control; the pair tells "admins are excluded" apart from "grants stopped
+   working". Then make the control able to fail for the right reason: print
+   the identity it actually ran as (`current_role()`), so a failed
+   impersonation cannot pass as a zero, and pass ids as literals, so a lookup
+   hidden by the very policy under test cannot become NULL and answer "no".
 <!-- END:baseline-rules -->
 
 <!-- BEGIN:secret-printing-rules -->
@@ -336,11 +361,28 @@ Reading the answer, with this section's own rule applied to it:
 - **If CI is red, say so before anything else in the report**, the same way a
   failed deploy is reported. Two greens, or the push is not verified.
 
+### A line-ending count that says CRLF about an LF file
+
+Eighth. In this repo's Git Bash, `grep -c $'\r$' file` counts **every** line
+of a pure-LF file: `printf 'a\nb\n'` into a file, then the grep, reports 2.
+It was used to confirm that a new migration matched its siblings' CRLF. The
+siblings were LF, and the report said the opposite of the truth; the
+repository was fine only because `core.autocrlf=true` stores blobs as LF.
+Count bytes instead:
+
+```
+node -e 'const b=require("fs").readFileSync(f);let cr=0;for(const x of b)if(x===13)cr++;console.log(cr)'
+```
+
+and run a counter on a file whose answer you already know before believing
+it on one you do not.
+
 ### The list itself is the point
 
-Seven instances, all the same shape: **output that reads as an answer when it is
-an absence.** Nobody recognises the seventh from first principles in the moment;
-they recognise it because the first six are written down. Add the next one here
+Eight instances, all the same shape: **output that reads as an answer when it is
+an absence** — or, in the eighth, when it is not an answer at all. Nobody
+recognises the next one from first principles in the moment; they recognise it
+because the earlier ones are written down. Add the next one here
 rather than assuming it is too obvious to record.
 
 ## React resets a `<form action={fn}>` after the action runs — a file input read later is empty
@@ -390,9 +432,11 @@ Detect and match, per file, rather than assuming:
 const nl = s.includes("\r\n") ? "\r\n" : "\n";
 ```
 
-and normalise inserted blocks with `.replace(/\r?\n/g, nl)`. When an anchor you
-copied out of the file "obviously matches" but does not, check the line endings
-before rewriting the anchor. Long box-drawing rules (`─────`) are the other
+and normalise inserted blocks with `.replace(/\r?\n/g, nl)`. Check a file's
+endings by counting bytes, never with `grep -c $'\r$'` (see "A line-ending
+count that says CRLF about an LF file" above). When an anchor you copied out of
+the file "obviously matches" but does not, check the line endings before
+rewriting the anchor. Long box-drawing rules (`─────`) are the other
 common cause: the count rarely matches what you typed, so anchor on the code
 instead.
 <!-- END:editing-and-verification-rules -->
