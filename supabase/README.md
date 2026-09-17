@@ -126,6 +126,8 @@ recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
+| `permissions_batch_2026_09_17.sql` | Nik (ready 2026-09-17) | Four independent parts, each its own transaction, each testing itself as real accounts before COMMIT. The matching code ships on its own and needs no order. **Until it runs, these holes are closed only in the app, and a direct database call still gets through:** an admin can make ITSELF owner or move any account to hr (A); an admin can write, delete or unflag 790 (B); an admin can read a hidden prep's requests (C, latent: 0 such rows), and any signed-in account can file any request (C); any signed-in account can overwrite or delete any photo (D). |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -1442,6 +1444,13 @@ In order. Nothing here is started unless it says so.
     Worth settling because `getPrepAccessBoard` and every admin screen rest
     on what `profiles` returns to an admin.
 
+    **2026-09-17: the write half no longer waits on this.** Part A of
+    `permissions_batch_2026_09_17.sql` adds RESTRICTIVE policies, which
+    cap whatever permissive ones exist live, so an unknown policy cannot
+    reopen what it narrows. Its Step 0 prints every live `profiles`
+    policy, so running it also answers this entry. What the repo's two
+    policies allow is worse than this entry supposed: see item 29.
+
 26. **A question for Nik: delete `/owner/catering/status`, or link it?**
     Nothing links to it since it was deliberately taken off the sub-nav,
     because the booking list already filters by status, so deletion is the
@@ -1607,11 +1616,80 @@ In order. Nothing here is started unless it says so.
     Row counts change, so re-derive them first; a check against an empty
     table passes for nothing.
 
+    **For the rebuild, found by the role sweep of 2026-09-17** (each
+    confirmed by a second reader; nothing changed, HR is held):
+    - **Salary columns reach admins' browsers.** `getEmployees` selects
+      `base_salary`, `position_allowance`, `social_security_monthly` and
+      `daily_wage`, and the attendance, leave and schedule pages call it
+      behind `requireHROrAdmin`, which admits admins, then pass the rows
+      to client components. Two comments say otherwise: `auth.ts` calls
+      those pages "no salary data", and `hr/actions.ts` says every route
+      reaching these reads is behind `requireHR`. Commit `5913585` says
+      "Admin blocked from salary pages". The table policy lets admins read
+      whole rows (`hr_role_patch.sql`), which this entry recorded above as
+      "by the current design". Which is intended is Nik's call.
+    - **Admins see no public holidays** on the schedule, print and
+      attendance pages: `holidays` is owner and hr only, and the read
+      returns nothing without an error. Inferred, not witnessed.
+    - **Admins are shown what they cannot use:** the day-swap link (its
+      page is `requireHR`), and edit controls on attendance, leave and
+      schedule, whose every write is `requireHR`. The first edit bounces
+      them to /owner.
+
 
 29. **The UI refuses it, the server does not: six live gaps, found
     2026-09-17.** A sweep for item 3's shape, each finding confirmed by a
-    second reader trying to refute it. Not started except where marked;
-    reported before changing anything.
+    second reader trying to refute it.
+
+    **Status, 2026-09-17, after Nik's answers:**
+    - **1–3, fixed in the app.** `src/lib/team-rules.ts` is now the ONE
+      rule: the team screen shows only what it allows, and every action
+      in `owner/team/actions.ts` refuses the rest. The target is read
+      before any service-role call and a failed read refuses; role and
+      detail writes are counted, so a refusal by the table is reported,
+      not shown as success. Tests, and a control: a copy of the rule that
+      lets admins manage hr fails two of them.
+    - **Found by the review, the same kind of path: prep grants.** A
+      session carries its account's grants, so an admin with none could
+      reset the password of เวช (an editor holding all 48) and read every
+      secret recipe. It was on the screen before, so not a regression, but
+      it defeats the owner's rule that admins see a prep only when named.
+      Now an admin may not act on ANY other account that holds a grant;
+      the owner does that. The grants are read with the service role,
+      because an admin's own session sees only its own.
+    - **Seen, not changed:** deleting an account deletes its login first,
+      which by cascade already removes the profile, so the delete that
+      follows counts 0 and the screen may say "ลบไม่สำเร็จ" for an account
+      that is gone. Existing behaviour, read from the code, not witnessed.
+    - **Worse than 1–3, found designing the database half:** the repo's
+      only write policy on `profiles` is `is_owner()`, which admits
+      admins. So an admin can set its OWN role to owner with one direct
+      call (the 007 triggers guard only a row that is already owner),
+      and then, as an owner, demote or delete the real one. Part A of
+      `permissions_batch_2026_09_17.sql` closes it (not run yet).
+    - **4, fixed in the app.** All six writes that touch an entry or an
+      account refuse a non-owner on an owner-only account, fail closed:
+      insert, update (the entry's current account AND the new one),
+      delete, display order, and renaming or deleting the account.
+      `getAllCoa` no longer lists 790 to admins, and reordering skips it.
+      Two cases are deliberately not refusals: deleting an entry that is
+      already gone reports success, as before; and the display-order
+      update, which the daily page calls AFTER its new rows are saved,
+      skips entries deleted since the page loaded and refuses silently.
+      Throwing there would show a failed save for rows that were written,
+      and a second press would insert them twice (found by the review).
+      **Also found:** `coa_all` lets an admin clear 790's `is_sensitive`
+      flag directly and then write it freely. Part B closes that and the
+      entry writes at the database (not run yet). Reads are deliberately
+      unchanged; see item 32.
+    - **5, Nik decided 2026-09-17: staff WILL place orders, with a head
+      approving them.** So the fix is an approval step, not a permission
+      wall that would lock out the people the flow serves, and it is its
+      own piece of work (item 35), not part of this security batch. The table
+      policies also admit every editor to every column of every order line
+      at any status; that belongs to the same piece of work.
+    - **6, fixed with item 27**, and two more mismatches of the same kind
+      closed with item 31.
 
     **Team management (`owner/team/actions.ts`). These are paths from an
     admin to an hr login, and so to payroll data:**
@@ -1693,7 +1771,29 @@ In order. Nothing here is started unless it says so.
     **Also by policy, not tested:** any signed-in account can upload,
     overwrite or delete any file in the bucket (`004_sop_module.sql`).
 
-    **Size and decisions.**
+    **Nik's decisions, 2026-09-17:**
+    - **Reads stay public.** Kitchen SOPs and repair photos are not
+      secrets, and SOP may move to dedicated devices later.
+    - **Writes are narrowed** (decision 2 below): part D of
+      `permissions_batch_2026_09_17.sql` (not run yet). Uploads are
+      allowed by role AND by the file names the app generates: SOP photos
+      for owner, admin and editor; report photos for every role; "done"
+      photos for owner, admin and editor. Nobody overwrites or deletes
+      through the API.
+    - **The cleanup is DEFERRED** (decision 3). The figures it was weighed
+      on: 86 files referenced by nothing, 44.6 MB of the bucket's
+      113.2 MB, plus 26 referenced only by old approved requests. That is
+      not worth a medium job, and a cleanup that miscounts one reference
+      deletes a live photo. The count grows with every abandoned pick,
+      SOP re-save and rejected request; deleting the `test` menu will add
+      8, still reachable by URL.
+
+    **Also found, 2026-09-17:** 58 of the 392 files sit in
+    `sop-<uuid>/` folders with `.png` names, which no app code writes (a
+    script's upload, by the look of the names). Part D does not let the
+    app write that shape; a script using the service key is unaffected.
+
+    **Size and decisions, as first reported.**
     1. Nik decides whether SOP and maintenance photos should be public at
        all. A private bucket means signed URLs in two readers.
     2. Narrow the bucket's write policies to the roles that edit SOPs and
@@ -1707,8 +1807,75 @@ In order. Nothing here is started unless it says so.
 
 31. **`pending_changes`: any admin can read every request through the API,
     including a hidden prep's recipe.** Found 2026-09-17 by item 27's
-    review. Not started. **Latent today:** none of the 157 rows is about a
-    prep.
+    review. **Latent today:** none of the 157 rows is about a prep.
+
+    **Status, 2026-09-17: part C of `permissions_batch_2026_09_17.sql`**
+    (not run yet). A RESTRICTIVE read policy, so it caps "pending read"
+    and anything else live. **Editors are gated too:** an editor whose
+    grant was revoked no longer reads that prep's requests, their own
+    included. Every editor save path checks `canSeePrep` first, so the
+    save's read-back is refused only in the moment a grant is revoked.
+    None of the live rows exercises it, so the file tests eleven synthetic
+    requests it inserts and removes.
+
+    **Writing the SQL twin found two more mismatches, closed in the app.**
+    The queue's filter and the approval disagreed on which prep a
+    request is about:
+    - a `recipe_edit` whose target was anything but exactly `"prep"`
+      skipped the check, yet approval writes every non-`"menu"` target
+      to the prep tables;
+    - a `prep_yield_edit` was checked on `target_id` and written to
+      `payload.parentId`.
+
+    `prepIdOfChange` (now `src/lib/pending-prep-id.ts`) returns the prep
+    each approval branch WRITES, and `approveChange` writes to the id it
+    checked. A JSON-null payload no longer throws in the queue's filter,
+    and the queue passes any non-object payload to the page as empty.
+
+    The SQL function `pending_change_prep_id` and the TS function are held
+    together by one table of 18 cases, run by `npm test` and by the
+    migration's self-check; the test fails against the previous mapping.
+    The payload is chosen by whoever inserts the row, so a forged request
+    could have used either gap, although an admin could already write
+    lines into a hidden prep directly: the prep tables' WITH CHECK omits
+    `can_see_prep` by design.
+
+    **The review of this batch (two rounds) added:**
+    - an empty-string prep id skipped the guard (a truthiness test); it is
+      now `!== null`, and the case is in both twins' tables;
+    - a `recipe_edit`'s deletes and updates took line ids from the request
+      without limiting them to the recipe that was checked. They are
+      limited now. A line no longer in that recipe (deleted since the
+      request was filed, or never its own) is skipped, as a deleted line
+      always was, and the skip is written into the request's note when it
+      is approved. (Refusing the whole request instead, tried first, would
+      have blocked every other pending edit of a recipe once one line was
+      deleted.)
+    - marking a request approved or rejected is counted, so a status write
+      the table refuses is reported, not shown as success;
+    - **part C would have broken a normal approval:** when an admin with the
+      grant approves a prep's deletion, the cascade removes the grant, and
+      the request would then be hidden from the admin marking it approved.
+      A deletion whose prep no longer exists is therefore readable (it
+      carries only the id and name); the file tests exactly that case. The
+      app does not mirror this, on purpose: a leftover deletion request
+      stays with the owner (`pending-prep-id.ts`);
+    - **only editors file requests now,** and only about preps they can
+      see at that moment (part C's insert policy, which leaves out the
+      deleted-prep exception: with it, an editor could file a deletion for
+      a prep that does not exist yet). Until now any signed-in account
+      could insert any request, and an insert that does not read the row
+      back is not checked against a read policy. A filed request can no
+      longer be rewritten: UPDATE is granted only on the four columns
+      approval writes. `saveRecipeItems` refuses a target other than
+      `menu` or `prep`.
+    - **Not changed, recorded:** the approval card shows the name written
+      in the request, not the name of the prep the approval will write.
+      With filing limited to editors who can see the prep, a misleading
+      name can only come from an editor who could already ask for that
+      prep's change under its right name.
+
+    The entry as first written:
 
     The queue, the badge and both approval actions hide or refuse a request
     about a prep the viewer cannot see. The table's own read policy
@@ -1730,6 +1897,113 @@ In order. Nothing here is started unless it says so.
     request's id and payload are chosen by the caller. The approval code
     must keep treating them as untrusted input, which is why
     `approvalRowId` exists.
+
+32. **A question for Nik: "no indicator", or the notices?**
+    `UNWIRED_FEATURES.md` records his decision as **no indicator** for
+    rows a non-owner may not see (790). Yet five screens show
+    "มีรายการที่ไม่แสดง N รายการ" (`withheldCount`) beside totals that
+    leave those rows out. Which is current? The answer decides two
+    things:
+    - whether the notices are removed;
+    - whether admins keep READING 790's rows. Part B of
+      `permissions_batch_2026_09_17.sql` leaves that read in place on
+      purpose, because the notices count them. With no indicator, the
+      read can be closed too, and the reduced totals then carry no label.
+
+33. **Catering: what sales can do by direct call that the app keeps from
+    them.** Found 2026-09-17 by the role sweep, each point confirmed by a
+    second reader. Not started.
+    - **Set menus.** `catering_set_menus_rw` and
+      `catering_set_menu_items_rw` admit sales to writes. Every set-menu
+      write in the app is `requireAdmin` (`de72798` made them admin-only
+      and judged only what sales may READ). A sales session can reprice,
+      change or delete a set menu, and those prices feed new quotations.
+    - **The cost lock.** `catering_events_rw`, `catering_event_menus_rw`
+      and `catering_event_charges_rw` have no predicate on
+      `cost_locked_at`, which the app says only the admin lock and unlock
+      set. A sales session can clear the lock, or change a locked event's
+      menus and charges. **In the app too:** `deleteCateringEvent`
+      (`requireSales`) does not call `assertCostNotLocked`, so sales can
+      delete a locked event, and its frozen P&L goes with it.
+    - **The activity log.** `catering_event_activity_log_rw` is FOR ALL
+      for owner, admin and sales, so any of them can rewrite or delete an
+      event's history; the check does not pin the actor to the caller.
+      The app only inserts and reads.
+    - **Repo drift, not a hole:** `catering_cost_snapshots_rw` in
+      `catering_migration.sql` admits sales to the cost snapshots, but the
+      SQL that later made it owner and admin only is in the untracked
+      `COST_SNAPSHOT_SCHEMA_SQL.md`, not in `supabase/`. The deployed lock
+      writes columns only that file adds, so it ran. A `pg_policies` read
+      would confirm it.
+
+    **Size: one migration** (restrictive policies: set menus written by
+    owner and admin; events, menus and charges of a locked event written
+    by owner and admin only, and the lock column by them alone; the log
+    insert-only with the actor pinned), **plus one line in the app** (the
+    lock check in `deleteCateringEvent`).
+
+34. **Role checks in the app that name one role and admit the others.**
+    Found 2026-09-17 by the role sweep. Not started. Small.
+    - `saveRecipeItems` refuses only staff and routes only editors to a
+      request, so hr and sales reach the direct-save branch; the table
+      policy refuses the write, and the screen then says it saved.
+      `staff/menu/[id]` and `staff/prep/[id]` treat only `staff` as
+      read-only and cost-free, so hr and sales get an editable editor and
+      an (empty) cost panel. Already recorded as C1 in
+      `CORE_COSTING_AUDIT.md`.
+    - `staff/page.tsx` filters hidden menus for staff and editor only.
+      Sales already reads every menu by design; hr sees their names.
+    - `sop/[menuId]/page.tsx` defines `isAdmin` as the admin role only,
+      so the owner gets no edit pencil there.
+    - Stale comments: `team-manager.tsx` calls password changes
+      "owner-only"; `requireAdmin`'s comment lists only editor and staff
+      as redirected.
+
+35. **Supply orders: an approval flow, not a permission wall** (item 29
+    #5). Nik, 2026-09-17: staff will place orders and a head approves
+    them. Investigated the same day; its own piece of work, waiting on
+    Nik's answers. **Most of the flow exists:** staff submit (the button
+    already reads "ส่งให้หัวหน้าตรวจ"), an editor, admin or owner
+    reviews, an admin or owner marks it sent, anyone receives. What is
+    missing:
+    - **who a head is:** any editor, admin or owner approves any order,
+      including their own; nothing ties a station to a person, and an
+      order's station is optional;
+    - **who may change a quantity, and when:** the reviewer's quantity is
+      saved at any status; the purchaser's adjustment by ANY signed-in
+      account (no screen calls it); at `reviewed` the head and the
+      purchaser write the same column; no line records who changed it;
+    - **the database:** editors may change any column of any order or
+      line at any status, including marking an order sent (the app made
+      that admin-only in `6dd173d`), and delete any order; a creator may
+      insert lines with the approved quantities already filled in;
+    - **smaller:** status moves report success when they change nothing;
+      a failed read in `receiveOrderItems` marks the order received;
+      returning an order overwrites the staff note; an all-zero reviewed
+      order shows no lines and no buttons; the line-count read is capped
+      at 1,000 rows.
+
+    **Recommended shape:** each stage owns one quantity column, and every
+    order write goes through a single-purpose database function that
+    checks role, status and creator (the `receive_order_item` pattern),
+    with direct writes, inserts and deletes closed. Who counts as a head
+    is ONE replaceable function, global to start, so per-station heads can
+    follow without touching the order code. **Size: upper medium,
+    11–13 files, a large self-testing migration, and an adversarial
+    review.** A request queue per quantity change was weighed and is
+    larger, slower for staff, and still needs the same lockdown.
+
+    **Questions for Nik:** who is a head (every editor, or named people;
+    one who is on a staff login?); per station or for all, and who
+    approves an order with no station or when the head is off; may a
+    head change quantities, and before or after approving; may anyone
+    approve their own order; is the purchaser owner and admin, and at
+    which step; staff edits while submitted, or only when returned; may
+    editors return a reviewed order; who receives, and may hr and sales
+    order at all; cancelling or withdrawing an order; a badge for heads.
+    **Before any migration:** `pg_policies` for the order and station
+    tables, and counts of orders by status, self-reviewed orders, orders
+    with no station, order lines, and lines with each override set.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
@@ -2145,6 +2419,12 @@ truth plainly: the knowledge was in the repo, and the name overrode it.
 - `is_owner()` is left exactly as it is. q-factor, `pos_sales_aliases`,
   inventory and profiles depend on it meaning owner-or-admin, as `006` warns.
   A new `is_owner_only()` carries the prep surfaces.
+  **Corrected 2026-09-17:** the admin writes that are INTENDED through it
+  are `menus`, `pos_sales_aliases`, the station tables and the team
+  screen's profile reads. The q-factor is not one: Nik decided it is owner
+  only (item 23), so its policy admitting admins is a defect with a HELD
+  fix. Neither is the profiles WRITE policy (item 29, part A of the
+  permissions batch). The full list is in `AGENTS.md`, "Role checks".
 - The migration checks itself before COMMIT by calling the predicates AS
   every profile against every prep. Behaviour, not structure: `pg_depend`
   records the functions a policy calls, but not the functions a

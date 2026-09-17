@@ -111,6 +111,117 @@ So:
    the identity it actually ran as (`current_role()`), so a failed
    impersonation cannot pass as a zero, and pass ids as literals, so a lookup
    hidden by the very policy under test cannot become NULL and answer "no".
+# Role checks: what each one actually admits — the list
+
+Rule 4 above says to read a function's LAST definition before reasoning from
+its name. It was not enough on its own: after it was written, `is_owner()`
+was still read as owner-only in `costing_tables_rls_migration.sql`, in
+`profile_employee_link_migration.sql`, and in the design that leaked every
+secret prep to admins. A rule has to be remembered to be applied; a list can
+be grepped. **Grep here before trusting a role check's name, and add a row
+whenever a check is added or its definition changes.**
+
+## Database functions — every role function the database exposes (2026-09-17)
+
+| function | admits | name reads as | last definition |
+|---|---|---|---|
+| `public.is_owner()` | **owner, admin** | owner only — **WRONG** | `migrations/006_owner_role.sql` (0001 had owner only); confirmed live 2026-09-16 |
+| `public.is_owner_only()` | owner | owner — right | `prep_owner_only_predicate_migration.sql` |
+| `public.is_editor_or_above()` | owner, admin, editor | right | `migrations/008_inventory_order_system.sql` |
+| `public.current_role()` | returns the caller's `profiles.role`; NULL with no session | — | `migrations/0001_init.sql` |
+| `public.can_see_prep(id)` | owner by role; anyone else, admins included, only with a grant row for that prep | — | `prep_owner_only_predicate_migration.sql` |
+
+**There is no `is_admin()`,** in the repo or in the database (the list of
+functions the database exposes, read 2026-09-17). "Owner, admin and editor"
+is `is_editor_or_above()`, and that name is accurate.
+
+**Policies that call `is_owner()`, and so admit admins, whatever their name
+says** (live by the repo; policy text not read live):
+- `app_settings_owner_write` (the q-factor). Meant owner-only (queue item
+  23); the fix is written and HELD.
+- `profiles_owner_write`. An admin can make itself owner (item 29); the fix
+  is part A of `permissions_batch_2026_09_17.sql`.
+- `profiles_select_own`. Admins read every profile, which the team screen
+  needs; the name says "own".
+- `menus_owner_write`, `pos_sales_aliases_owner_write`: admin writes are
+  intended.
+- `stations_insert`, `stations_update`, `stations_delete`: admin writes are
+  intended (008 says so).
+
+**Policies that call `is_editor_or_above()`:** `order_sessions_update_editor`,
+`order_sessions_delete`, `order_items_insert`, `order_items_update_editor`,
+`order_items_delete` (008); `station_ingredients_insert`, `_update`,
+`_delete` (009). All were written meaning editor and above. One has drifted
+from the app since: marking an order sent became admin-only in the app
+(`6dd173d`), and `order_sessions_update_editor` still lets an editor do it,
+or any other status change, by a direct call. That belongs to the
+supply-order approval work (README item 35).
+
+## App guards (`src/lib/auth.ts`, `src/lib/prep-access.ts`)
+
+| guard | admits |
+|---|---|
+| `requireOwner()` | owner |
+| `requireAdmin()`, `isAdminOrAbove()` | owner, admin |
+| `requireAdminOrEditor()` | owner, admin, editor |
+| `requireHR()` | owner, hr |
+| `requireHROrAdmin()` | owner, hr, admin. **Its pages DO receive salary columns** (attendance, leave, schedule call `getEmployees`); its comment "no salary data" is wrong. README item 28. |
+| `requireSales()` | owner, admin, sales |
+| `requireProfile()` | every signed-in account that has a profile |
+| `canSeePrep()`, `getPrepVisibility()` | owner by role; everyone else by grant row only. Never calls the SQL `can_see_prep()`. |
+
+**Local checks that name one role and admit every other:**
+- `role === "staff"` used to mean "no editing, no costs"
+  (`staff/menu/[id]`, `staff/prep/[id]`, `saveRecipeItems`): hr and sales pass
+  it. A check that excludes a role admits every role it does not name,
+  including roles added later; use an allowlist, as `requireAdminOrEditor`'s
+  comment says.
+- `isAdmin = role === "admin"` in `sop/[menuId]/page.tsx` leaves the owner
+  out; every other local `isAdmin` means owner or admin.
+
+# Anything touching approvals gets an adversarial review before it ships
+
+Item 27 (an editor's duplicate approved as an empty recipe) was designed,
+implemented and self-checked with care, and then two review rounds, each
+reviewer told to break it and each finding given to a refuter, found four
+real problems in it:
+
+- a retry deadlock: a failure between two writes left a half-made copy that
+  no retry could finish;
+- a guard gap: a request the queue hid could still be approved, its writes
+  silently no-ops under RLS, and marked APPROVED;
+- **a forgeable id.** The new row took the request's own id so that a retry
+  could find it, but a request's id is chosen by whoever inserts it (the
+  table's insert policy checks only `editor_id`). A forged request whose id
+  equalled an existing menu's would have copied its lines INTO that menu.
+  Now a SHA-256 of the id (`approvalRowId`);
+- the table's read policy showing every admin what the queue hides
+  (item 31).
+
+Writing item 31's SQL twin of the queue's filter then found two more: the
+filter and the approval disagreed on which prep a request is about.
+
+**Why approvals, specifically.** A pending request is written by one person
+and carried out by another with more rights. Every field of it is input
+from the less-trusted side, and the approver's session does the writing.
+That is the shape where careful code still goes wrong, because the author
+reasons from the requests the app creates, not the ones a direct insert
+can create.
+
+So, for any change to `owner/approve/actions.ts`, `lib/pending-data.ts`,
+`lib/pending-prep-id.ts`, `lib/approval-id.ts`, or the `pending_changes`
+policies:
+
+1. **Treat every column of the request as attacker-chosen:** id,
+   `target_id`, `change_type` and every payload key, including its type
+   (a JSON null, an array, a number where a string is expected).
+2. **The id that was checked is the id that is written.** Derive both from
+   one function, never re-read the payload for the write.
+3. **Run an adversarial review before committing:** independent reviewers,
+   each given one surface and told to break it (a forged request, a retry
+   after a partial failure, a hidden prep, a request the app never writes),
+   and a refuter for each finding. Fix what is confirmed, and write down
+   what is accepted and why.
 <!-- END:baseline-rules -->
 
 <!-- BEGIN:secret-printing-rules -->
