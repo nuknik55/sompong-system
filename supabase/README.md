@@ -117,7 +117,8 @@ and dated here.
 | `close_open_template_policies_migration.sql` | 2026-09-16 | **Anonymous access closed** on `day_swap_requests` (7 HR rows were readable with the public key and no login) and `pos_import_meta`. Both had a template policy named "owner can manage …" that was `USING (true)` for every role. Replaced by role-listed policies TO authenticated. Self-check before COMMIT: 6 policies, all bound to authenticated, RLS on. **Verified: the anonymous scan returns 0 of 63** (was 2); the service key still sees 7 and 1, which proves no data was lost but, since it bypasses RLS, not signed-in access (see "Anonymous access"). |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 | `permissions_batch_2026_09_17.sql` | 2026-09-17 | **Four parts.** A `profiles`: restrictive write policies, so an admin can no longer make itself owner, give the hr role, or touch the owner's, hr's or another admin's row. B `expense_entries` + `coa`: restrictive policies and `coa_is_open()`, so only the owner writes an owner-only account (790) or changes such an account; reads unchanged. C `pending_changes`: restrictive read and filing policies, four functions, and UPDATE narrowed to the four columns approval writes. D `sop-photos`: uploads by role and file name, no overwrite or delete through the API; reads stay public. **Verified by the file's own result table, which Nik pasted in full (168 rows):** every judged row ok (A1–A16, B1–B17, the 18-case prep-id check, C1–C19, "none of the 11 synthetic requests remains", D1–D14); no "PART D NOT APPLIED" and no "NOT DEMONSTRATED"; the survey rows list every new policy and none of the three old `sop photos auth …` write policies; `batch_log` count 0. The 15-row check query below was NOT run; that table is the evidence. **Its "before" rows already showed the closed state**, and the survey, which runs before any change, already listed the new policies, so the batch was already in place when this run began: an earlier run had applied it, and this one re-created the same objects, which the file is built to do safely. The first attempt had been cancelled before anything ran (the editor warned about a temporary table); the version that ran creates no table and changes no data. The five app checks at the end of the file are still Nik's to do. |
-| `catering_sales_limits_migration.sql` | 2026-09-17 | **Queue item 33.** 18 restrictive policies and `catering_event_unlocked(uuid)`. Only owner and admin write set menus and their items. For everyone else a cost-locked booking's own row, menu lines and charges are read-only, and `cost_locked_at` stays empty on every booking row they write. The history is append-only through the API for every role, and a new line must name its caller and carry the time of its own insert. **Verified by the file's own result table, as Nik reported it: 138 rows** (the header's 130 plus the 8 surveyed policies); every judged row ok (S1–S15, L1–L34 with L25, the cascade test, counted by hand, and H1–H14) and no FAIL; the last row: nothing the tests wrote remains, counts unchanged (set menus 3, items 17, events 3, menu lines 11, charges 17, history 54). No booking was locked at run time. The survey rows and the three app checks at the end of the file were not reported. Not covered, by design: a locked booking's staff list, and two foreign-key actions (the file's header). Changed on one point by `catering_history_owner_edit_migration.sql` once that runs: the owner may then correct and remove history lines. |
+| `catering_sales_limits_migration.sql` | 2026-09-17 | **Queue item 33.** 18 restrictive policies and `catering_event_unlocked(uuid)`. Only owner and admin write set menus and their items. For everyone else a cost-locked booking's own row, menu lines and charges are read-only, and `cost_locked_at` stays empty on every booking row they write. The history is append-only through the API for every role, and a new line must name its caller and carry the time of its own insert. **Verified by the file's own result table, as Nik reported it: 138 rows** (the header's 130 plus the 8 surveyed policies); every judged row ok (S1–S15, L1–L34 with L25, the cascade test, counted by hand, and H1–H14) and no FAIL; the last row: nothing the tests wrote remains, counts unchanged (set menus 3, items 17, events 3, menu lines 11, charges 17, history 54). No booking was locked at run time. The survey rows and the three app checks at the end of the file were not reported. Not covered, by design: a locked booking's staff list, and two foreign-key actions (the file's header). Changed on one point by `catering_history_owner_edit_migration.sql` (applied the same day, below): the owner may correct and remove history lines. **Survey rows 5 and 6, pasted by Nik 2026-09-17:** `catering_event_cost_snapshots.catering_cost_snapshots_rw` and `catering_event_labor.catering_event_labor_rw` are both PERMISSIVE ALL TO authenticated, USING and WITH CHECK `role IN ('owner','admin')`. The labor policy matches `catering_event_labor_migration.sql`. The snapshot policy matches the untracked `COST_SNAPSHOT_SCHEMA_SQL.md`, NOT `catering_migration.sql`, which still admits sales: the repo drift item 33 supposed, now confirmed live (see item 33). |
+| `catering_history_owner_edit_migration.sql` | 2026-09-17 | **Item 33, follow-up B.** The two policies that refused every history update and delete replaced by two admitting the owner alone (`is_owner_only()`); UPDATE on `catering_event_activity_log` narrowed to `description` for anon and authenticated, so an edit through the app cannot change who wrote a line, when, its kind or its booking. Insert rule unchanged. **Verified by the file's own result table, as Nik reported it: 49 rows, all ok.** P1 after: authenticated may update `description` only, anon nothing. E1–E4 refused for sales and admin; E5–E10 (the owner touching any other column) error 42501; E11/E12 owner rows=1; I1–I5 as expected. Row 49: 54 history lines, checksum unchanged, no probe line left. **App check done by Nik, both directions:** before the run, the owner's edit showed "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้…"; after it, the owner's edit saved. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -203,7 +204,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
-| `catering_history_owner_edit_migration.sql` | Nik (committed 2026-09-17 with the buttons it serves, `c060670`) | The owner's แก้ไข and ลบ buttons on a booking's history are refused by the database until it runs, and say so; nothing else waits on it. It replaces the two policies that refuse every history update and delete with two that admit the owner alone (`is_owner_only()`), and narrows UPDATE on the table to the `description` column for the two API roles (anon, authenticated), so an edit through the app can never change who wrote a line, when, what kind it is or which booking it belongs to. It tests itself as the real accounts before COMMIT, like the file before it. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -2060,11 +2060,15 @@ In order. Nothing here is started unless it says so.
       use the Supabase dashboard. The buttons shipped in `c060670` (owner
       only; delete asks first; errors returned, and "no row changed"
       reported as a refusal). `catering_history_owner_edit_migration.sql`
-      lets the database allow them and is **NOT applied**: until Nik runs
-      it, the buttons show the refusal and change nothing.
-    - **The repo-drift bullet below stays open:** the file's survey
-      printed the live policies on `catering_event_cost_snapshots` and
-      `catering_event_labor`, but those rows were not pasted.
+      lets the database allow them; **applied 2026-09-17** (the table
+      above), and the buttons work.
+    - **The repo-drift bullet below, confirmed live 2026-09-17** from
+      the survey rows Nik pasted: `catering_cost_snapshots_rw` is owner
+      and admin only in the database, as `COST_SNAPSHOT_SCHEMA_SQL.md`
+      says and `catering_migration.sql` does not. Not a hole. The repo
+      still lacks the file that made it so; copying that SQL into
+      `supabase/` as a record is a small, separate change, not done.
+      `catering_event_labor_rw` matches its migration.
 
     Found 2026-09-17 by the role sweep, each point confirmed by a
     second reader.
@@ -2165,11 +2169,12 @@ In order. Nothing here is started unless it says so.
     tables, and counts of orders by status, self-reviewed orders, orders
     with no station, order lines, and lines with each override set.
 
-36. **Admins can still READ account 790's rows through the API.** Nik,
-    2026-09-17: the next task. The app hides them (item 32); the database
-    does not (part B of the permissions batch left the read in place;
-    its test B15). Not started. What it takes, from the 2026-09-17
-    report:
+36. **Admins can still READ account 790's rows through the API.**
+    **DEFERRED by Nik, 2026-09-17: the admin is trusted and
+    non-technical.** Not started; kept here for when it is wanted. The
+    app hides the rows (item 32); the database does not (part B of the
+    permissions batch left the read in place; its test B15). What it
+    takes, from the 2026-09-17 report:
     - **One restrictive SELECT policy on `expense_entries`:**
       `is_owner_only() OR coa_is_open(coa_code)`, the shape of part B's
       write policies; `coa_is_open()` is already live. No app change:
