@@ -116,32 +116,20 @@ and dated here.
 | `prep_owner_only_predicate_migration.sql` | 2026-09-16 | **The admin leak closed** (see the prep-visibility section). `is_owner_only()` added; `can_see_prep()`'s body replaced in place so the five policies calling it follow; `prep_recipe_access_select`/`_write` and `prep_recipe_access_history_select` recreated on it. `is_owner()` deliberately untouched. Step 0 read the live definitions and policies and would have aborted on drift; step 3 called the predicates AS all 11 profiles against all 48 preps before COMMIT and would have rolled everything back on one disagreement. **Verified at the app, in both directions; footer checks 1–7 were NOT run.** As `admin`, a new prep was created and the prep tab on `/owner/ingredients` (ของ prep) read 0; as owner, the same tab read 49. The section below says what that leaves unwitnessed. |
 | `close_open_template_policies_migration.sql` | 2026-09-16 | **Anonymous access closed** on `day_swap_requests` (7 HR rows were readable with the public key and no login) and `pos_import_meta`. Both had a template policy named "owner can manage …" that was `USING (true)` for every role. Replaced by role-listed policies TO authenticated. Self-check before COMMIT: 6 policies, all bound to authenticated, RLS on. **Verified: the anonymous scan returns 0 of 63** (was 2); the service key still sees 7 and 1, which proves no data was lost but, since it bypasses RLS, not signed-in access (see "Anonymous access"). |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
+| `permissions_batch_2026_09_17.sql` | 2026-09-17 | **Four parts.** A `profiles`: restrictive write policies, so an admin can no longer make itself owner, give the hr role, or touch the owner's, hr's or another admin's row. B `expense_entries` + `coa`: restrictive policies and `coa_is_open()`, so only the owner writes an owner-only account (790) or changes such an account; reads unchanged. C `pending_changes`: restrictive read and filing policies, four functions, and UPDATE narrowed to the four columns approval writes. D `sop-photos`: uploads by role and file name, no overwrite or delete through the API; reads stay public. **Verified by the file's own result table, which Nik pasted in full (168 rows):** every judged row ok (A1–A16, B1–B17, the 18-case prep-id check, C1–C19, "none of the 11 synthetic requests remains", D1–D14); no "PART D NOT APPLIED" and no "NOT DEMONSTRATED"; the survey rows list every new policy and none of the three old `sop photos auth …` write policies; `batch_log` count 0. The 15-row check query below was NOT run; that table is the evidence. **Its "before" rows already showed the closed state**, and the survey, which runs before any change, already listed the new policies, so the batch was already in place when this run began: an earlier run had applied it, and this one re-created the same objects, which the file is built to do safely. The first attempt had been cancelled before anything ran (the editor warned about a temporary table); the version that ran creates no table and changes no data. The five app checks at the end of the file are still Nik's to do. |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
 recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 2026-09-01. 11 rows remain unparseable — repeated header artefacts.
 
-### Run, verification pending
+### A read-only check for the permissions batch (not run on 2026-09-17)
 
-| file | ran | pending |
-|---|---|---|
-| `permissions_batch_2026_09_17.sql` | **Run by Nik on 17 Sep 2026, verification pending (15-row check query, below).** | Not recorded as applied until the query below returns 15 OK rows. What is known: the first attempt was cancelled before anything ran, because the editor warned that the file created a table without RLS (a temporary one holding its test output); the file now creates no table and changes no data. On the run, the results pane showed the file's own result table, which only its last statement returns, but only its first rows (the Step 0 survey) have been read. Unknown: whether part D applied or was refused, and whether any check printed NOT DEMONSTRATED. The five app checks at the end of the file have not been done. **Until the query confirms it, treat these holes as still open at the database** (the app already refuses each one): an admin can make ITSELF owner or move any account to hr (A); an admin can write, delete or unflag 790 (B); an admin can read a hidden prep's requests (C, latent: 0 such rows), and any signed-in account can file any request (C); any signed-in account can overwrite or delete any photo (D). |
-
-**The 15-row check** (read-only; every row should say OK), written 2026-09-17
-from the names the file creates:
-
-- **Groups:** A is row 1; B is rows 2–4; C is rows 5–9; D is row 10 (its
-  function, committed on its own) and rows 11–13 (its policies). Row 14 is
-  the read policy the file leaves in place; row 15 is the scratch table the
-  first version would have created.
-- **Rows 11–13 wrong while row 10 is 1:** part D was refused. Make the
-  change in the dashboard, following the steps in part D's header.
-- **A whole group missing:** that part did not run. Each part applies
-  completely or not at all, and running the whole file again is safe.
-- **A group only partly present, or row 9 or 15 not 0:** stop and report.
-- **Do not run the file's last SELECT on its own:** it clears the log as it
-  prints. **Never use "Run and enable RLS".**
+Written 2026-09-17 from the names `permissions_batch_2026_09_17.sql`
+creates, and kept for any later drift check: every row should say OK.
+A is row 1; B is rows 2–4; C is rows 5–9; D is row 10 (its function) and
+rows 11–13 (its policies); row 14 is the read policy the file leaves in
+place; row 15 is the scratch table the first version would have created.
 
 ```sql
 -- Read-only: is permissions_batch_2026_09_17.sql applied?
@@ -209,7 +197,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
   ) AS c(n, part, check_name, expected, actual)
  ORDER BY c.n;
 ```
-
 ### Not applied
 
 | file | waiting on | while it waits |
@@ -1517,8 +1504,20 @@ In order. Nothing here is started unless it says so.
     lookups, so it can be extracted and unit-tested on four cases: no match,
     orphan prep, orphan ingredient, live match. About 30 lines plus tests.
 
-25. **HYPOTHESIS, not verified: `profiles`' own policies may explain how an
-    admin manages `/owner/team`.** Not started.
+25. ~~**HYPOTHESIS, not verified: `profiles`' own policies may explain how an
+    admin manages `/owner/team`.**~~ **CLOSED 2026-09-17** by the Step 0
+    survey of `permissions_batch_2026_09_17.sql`, rows 19–25 of the result
+    table Nik pasted: **seven live policies on `profiles`.** Five are known
+    from the repo: `profiles_select_own` and `profiles_owner_write` (0001),
+    whose `is_owner()` admits admins, which is how an admin manages the team
+    page, and part A's three restrictive `profiles_scope_*`. **Two are
+    created by no file in the repo**, as this entry supposed. Their names
+    and text are in those two rows and are not yet copied here: paste rows
+    19–25 to record them. Whatever they allow, part A's restrictive
+    policies cap them, and A1–A16 passed live as the real accounts, so the
+    effective write rule is the tested one.
+
+    The entry as first written: **Not started.**
     `profile_employee_link_migration.sql` recorded a puzzle: the only
     `profiles` policies in the repo are `id = auth.uid() OR is_owner()`
     (select) and `is_owner()` (write), described there as owner-only, yet a
@@ -1726,9 +1725,14 @@ In order. Nothing here is started unless it says so.
       them to /owner.
 
 
-29. **The UI refuses it, the server does not: six live gaps, found
-    2026-09-17.** A sweep for item 3's shape, each finding confirmed by a
-    second reader trying to refute it.
+29. ~~**The UI refuses it, the server does not: six live gaps, found
+    2026-09-17.**~~ **CLOSED 2026-09-17.** 1–3 fixed in the app (`af3bc69`)
+    and at the database (part A of the permissions batch, applied, A1–A16
+    ok); 4 fixed in the app (`af3bc69`) and at the database (part B,
+    applied, B1–B17 ok); 5 moved to item 35; 6 fixed with item 27. The
+    `deleteUser` observation below stays recorded, unchanged. A sweep for
+    item 3's shape, each finding confirmed by a second reader trying to
+    refute it.
 
     **Status, 2026-09-17, after Nik's answers:**
     - **1–3, fixed in the app.** `src/lib/team-rules.ts` is now the ONE
@@ -1755,7 +1759,7 @@ In order. Nothing here is started unless it says so.
       admins. So an admin can set its OWN role to owner with one direct
       call (the 007 triggers guard only a row that is already owner),
       and then, as an owner, demote or delete the real one. Part A of
-      `permissions_batch_2026_09_17.sql` closes it (run 2026-09-17, verification pending).
+      `permissions_batch_2026_09_17.sql` closes it (applied 2026-09-17).
     - **4, fixed in the app.** All six writes that touch an entry or an
       account refuse a non-owner on an owner-only account, fail closed:
       insert, update (the entry's current account AND the new one),
@@ -1769,7 +1773,7 @@ In order. Nothing here is started unless it says so.
       and a second press would insert them twice (found by the review).
       **Also found:** `coa_all` lets an admin clear 790's `is_sensitive`
       flag directly and then write it freely. Part B closes that and the
-      entry writes at the database (run 2026-09-17, verification pending). Reads are deliberately
+      entry writes at the database (applied 2026-09-17). Reads are deliberately
       unchanged; see item 32.
     - **5, Nik decided 2026-09-17: staff WILL place orders, with a head
       approving them.** So the fix is an approval step, not a permission
@@ -1826,9 +1830,11 @@ In order. Nothing here is started unless it says so.
     commit (owner-only, per the decision already recorded). 5 needs Nik's
     word first: its docstring says "any authenticated" on purpose.
 
-30. **Uploaded photos are never deleted, and anyone can list them.** Found
-    2026-09-17 (queue list item 6). Not started; reported before changing
-    anything.
+30. ~~**Uploaded photos are never deleted, and anyone can list them.**~~
+    **CLOSED 2026-09-17.** Reads stay public (Nik); writes narrowed by part
+    D of the permissions batch (applied, D1–D14 ok, no "NOT DEMONSTRATED");
+    the cleanup is deferred, with its figures below. Found 2026-09-17
+    (queue list item 6).
 
     **Measured, read-only, 2026-09-17** (bucket `sop-photos`, which SOP steps
     and maintenance reports share):
@@ -1864,7 +1870,7 @@ In order. Nothing here is started unless it says so.
     - **Reads stay public.** Kitchen SOPs and repair photos are not
       secrets, and SOP may move to dedicated devices later.
     - **Writes are narrowed** (decision 2 below): part D of
-      `permissions_batch_2026_09_17.sql` (run 2026-09-17, verification pending). Uploads are
+      `permissions_batch_2026_09_17.sql` (applied 2026-09-17). Uploads are
       allowed by role AND by the file names the app generates: SOP photos
       for owner, admin and editor; report photos for every role; "done"
       photos for owner, admin and editor. Nobody overwrites or deletes
@@ -1894,12 +1900,15 @@ In order. Nothing here is started unless it says so.
     4. Removing an old file when a photo is replaced needs the same
        counting. Not worth doing before 3.
 
-31. **`pending_changes`: any admin can read every request through the API,
-    including a hidden prep's recipe.** Found 2026-09-17 by item 27's
-    review. **Latent today:** none of the 157 rows is about a prep.
+31. ~~**`pending_changes`: any admin can read every request through the API,
+    including a hidden prep's recipe.**~~ **CLOSED 2026-09-17:** part C of
+    the permissions batch applied (C1–C19 ok, the 18-case prep-id check ok,
+    none of the 11 synthetic requests remains). Found 2026-09-17 by item
+    27's review. **Latent at the time:** none of the 157 rows was about a
+    prep.
 
     **Status, 2026-09-17: part C of `permissions_batch_2026_09_17.sql`**
-    (run 2026-09-17, verification pending). A RESTRICTIVE read policy, so it caps "pending read"
+    (applied 2026-09-17). A RESTRICTIVE read policy, so it caps "pending read"
     and anything else live. **Editors are gated too:** an editor whose
     grant was revoked no longer reads that prep's requests, their own
     included. Every editor save path checks `canSeePrep` first, so the
