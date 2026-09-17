@@ -237,6 +237,9 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
           <p><span className="text-neutral-500">ชื่อ:</span> <strong className="text-neutral-800">{String(payload.name)}</strong></p>
           <p><span className="text-neutral-500">หมวด:</span> {String(payload.category || "—")}</p>
           <p><span className="text-neutral-500">ราคาขาย:</span> {String(payload.sellingPrice)} บาท</p>
+          {payload.duplicatedFrom ? (
+            <p className="text-neutral-500">คัดลอกจากเมนูที่มีอยู่ — จะคัดลอกรายการวัตถุดิบทั้งหมดของเมนูต้นฉบับ ณ ตอนที่อนุมัติ</p>
+          ) : null}
         </div>
       );
     }
@@ -246,7 +249,13 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
         <div className="text-xs space-y-1">
           <p><span className="text-neutral-500">ชื่อ:</span> <strong className="text-neutral-800">{String(payload.name)}</strong></p>
           <p><span className="text-neutral-500">หมวด:</span> {String(payload.category || "—")}</p>
-          <p><span className="text-neutral-500">ผลผลิต:</span> {String(payload.batchYieldQty)} {String(payload.batchYieldUnit)}</p>
+          {payload.duplicatedFrom ? (
+            // The approval copies the ORIGINAL's current yield and lines, not
+            // the yield saved in the request, so the card says that instead.
+            <p className="text-neutral-500">คัดลอกจากของเตรียมที่มีอยู่ — จะใช้ปริมาณผลผลิตและรายการวัตถุดิบของสูตรต้นฉบับ ณ ตอนที่อนุมัติ</p>
+          ) : (
+            <p><span className="text-neutral-500">ผลผลิต:</span> {String(payload.batchYieldQty)} {String(payload.batchYieldUnit)}</p>
+          )}
         </div>
       );
     }

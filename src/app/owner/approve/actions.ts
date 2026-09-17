@@ -1,10 +1,10 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { approvalRowId } from "@/lib/approval-id";
 import { requireAdmin } from "@/lib/auth";
-import { resolvePendingChange } from "@/lib/pending-data";
-import { prepInsertErrorMessage } from "@/lib/prep-access";
+import { prepIdOfChange, resolvePendingChange } from "@/lib/pending-data";
+import { canSeePrep, prepInsertErrorMessage, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { planPrepCreate } from "@/lib/prep-create";
 import { lookupPrepName, prepRefusalMessage } from "@/lib/prep-name";
 import { createClient } from "@/lib/supabase/server";
@@ -28,6 +28,19 @@ export type ApproveResult = { error?: string };
 async function run(step: string, query: PromiseLike<{ error: { message: string } | null }>): Promise<void> {
   const { error } = await query;
   if (error) throw new Error(`${step}: ${error.message}`);
+}
+
+/**
+ * Does a prep with this id exist, including one this approver may not see?
+ * prep_unit_costs() is the one read NOT filtered by can_see_prep: it returns
+ * every prep's id and cost (never its lines), which an admin already gets.
+ * Used instead of reading a failed insert's error text, which would depend
+ * on which unique index Postgres reports first.
+ */
+async function prepExists(supabase: Awaited<ReturnType<typeof createClient>>, prepId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("prep_unit_costs");
+  if (error) throw new Error(`ตรวจงานที่ทำค้างไว้: ${error.message}`);
+  return ((data ?? []) as { prep_recipe_id: string }[]).some((r) => r.prep_recipe_id === prepId);
 }
 
 /** Same, for a write that must also return a row (insert ... select single). */
@@ -54,13 +67,21 @@ async function runReturning<T>(
  *
  * WHAT THIS DOES NOT GIVE YOU — ATOMICITY. Each supabase call is a separate
  * PostgREST request in its own transaction; there is no transaction spanning
- * a case. Four change types issue more than one write and can therefore end
+ * a case. Five change types issue more than one write and can therefore end
  * up half-applied:
  *
  *   recipe_edit   delete removed rows, then insert/update each item
  *   sop_upsert    upsert SOP, then delete+insert notes, then delete+insert steps
- *   prep_create   insert prep_recipes, then insert its ingredients row
+ *   menu_create   (a duplicate only) insert menus, then copy the recipe lines
+ *   prep_create   insert prep_recipes, then its ingredients row, then (a
+ *                 duplicate only) copy the recipe lines
  *   prep_delete   delete ingredients, then delete prep_recipes
+ *
+ * menu_create and prep_create RESUME on a retry: the row they create takes
+ * an id derived from the change (approvalRowId), so a second approval finds
+ * its own earlier work and finishes it. One exception, see prep_create: an
+ * approval that took over an orphan prep cannot recognise its work once the
+ * ingredient row is linked.
  *
  * recipe_edit and sop_upsert are the dangerous two, because their deletes run
  * before their inserts: a mid-sequence failure destroys the old rows without
@@ -85,6 +106,17 @@ export async function approveChange(id: string): Promise<ApproveResult> {
   if (row.status !== "pending") return { error: "รายการนี้ถูกดำเนินการแล้ว" };
 
   const p = row.payload as Record<string, unknown>;
+
+  // The queue hides every request about a prep the approver cannot see
+  // (getPendingList), and the action refuses the same ones, by the same
+  // function. (The table's own read policy does not hide them: any admin can
+  // still read such a row through the API. Queue item 31.)
+  // Without this, a request id obtained any other way would be applied as
+  // writes that RLS silently turns into no-ops, and the change would still be
+  // marked APPROVED: a false audit trail. For a duplicate this is the SOURCE
+  // prep, since approving it copies the source's lines.
+  const guardedPrepId = prepIdOfChange(row.change_type as string, row.target_id as string, p);
+  if (guardedPrepId && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
 
   try {
     switch (row.change_type) {
@@ -134,10 +166,52 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       }
 
       case "menu_create": {
-        await run(
-          "สร้างเมนูใหม่",
-          supabase.from("menus").insert({ name: p.name, category: p.category || null, selling_price: p.sellingPrice ?? 0 }),
-        );
+        // Queue item 27: an editor's DUPLICATE arrives here as a menu_create
+        // with payload.duplicatedFrom, and until 2026-09-17 was approved as an
+        // EMPTY menu: the header was created and none of the original's recipe
+        // lines. It now copies them, the way duplicateMenu does for an admin.
+        //
+        // Everything about the original is READ before anything is written, so
+        // a missing original or a failed read refuses with nothing created.
+        //
+        // RESUMABLE. The new menu's id is derived from this change's id
+        // (approvalRowId). If an earlier
+        // attempt created the menu and then failed on the lines, a retry finds
+        // the menu it already made and finishes, instead of colliding with
+        // UNIQUE(name) forever. The lines are one INSERT statement, so they are
+        // either all there or not there at all.
+        const sourceMenuId = typeof p.duplicatedFrom === "string" ? p.duplicatedFrom : null;
+        let sourceLines: { ingredient_id: string; quantity: number; unit: string | null; sort_order: number | null }[] = [];
+        if (sourceMenuId) {
+          const [original, lines] = await Promise.all([
+            supabase.from("menus").select("id").eq("id", sourceMenuId).maybeSingle(),
+            supabase.from("menu_recipe_items").select("ingredient_id, quantity, unit, sort_order").eq("menu_id", sourceMenuId),
+          ]);
+          if (original.error) throw new Error(`อ่านเมนูต้นฉบับ: ${original.error.message}`);
+          if (!original.data) throw new Error("เมนูต้นฉบับถูกลบไปแล้ว — คัดลอกไม่ได้ ให้ปฏิเสธคำขอนี้ หรือสร้างเมนูใหม่เอง");
+          if (lines.error) throw new Error(`อ่านสูตรเมนูต้นฉบับ: ${lines.error.message}`);
+          sourceLines = lines.data ?? [];
+        }
+
+        const newMenuId = approvalRowId(id, "menu");
+        const already = await supabase.from("menus").select("id").eq("id", newMenuId).maybeSingle();
+        if (already.error) throw new Error(`ตรวจงานที่ทำค้างไว้: ${already.error.message}`);
+        if (!already.data) {
+          await run(
+            "สร้างเมนูใหม่",
+            supabase.from("menus").insert({ id: newMenuId, name: p.name, category: p.category || null, selling_price: p.sellingPrice ?? 0 }),
+          );
+        }
+        if (sourceLines.length > 0) {
+          const existing = await supabase.from("menu_recipe_items").select("id", { count: "exact", head: true }).eq("menu_id", newMenuId);
+          if (existing.error || existing.count === null) throw new Error(`ตรวจสูตรที่คัดลอกไว้: ${existing.error?.message ?? "นับไม่ได้"}`);
+          if (existing.count === 0) {
+            await run(
+              "คัดลอกสูตรจากเมนูต้นฉบับ",
+              supabase.from("menu_recipe_items").insert(sourceLines.map((it) => ({ ...it, menu_id: newMenuId }))),
+            );
+          }
+        }
         revalidatePath("/staff");
         break;
       }
@@ -149,63 +223,157 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       }
 
       case "prep_create": {
-        // NOT ATOMIC: two writes. A failure on the second leaves a prep recipe
-        // with no matching ingredient row (so it can never be used in a menu).
+        // NOT ATOMIC: up to three writes (the prep, its ingredient row, and for
+        // a duplicate the copied lines). A retry RESUMES instead of starting
+        // over; see below.
         //
         // The name is checked BEFORE any write, by the same rule as createPrep
-        // (planPrepCreate, create mode: this makes a new, empty recipe). Until
-        // 2026-09-16 it inserted the prep first, so a name already held by an
-        // ingredient failed the second write, left an orphan prep behind, and
-        // kept the change pending with no retry that could ever succeed. A
-        // refusal throws before anything is written, so the change stays
-        // pending with the reason shown.
+        // (planPrepCreate). A refusal throws before anything is written, so the
+        // change stays pending with the reason shown.
         //
         // The id is made here and the row is NOT read back (so not
         // runReturning): INSERT ... RETURNING is checked against the SELECT
         // policy, and a prep nobody has been granted fails it for every admin.
         // Full note above createPrep in staff/prep/actions.ts.
         //
-        // KNOWN GAP, not fixed here: a request an editor made by DUPLICATING a
-        // prep (payload.duplicatedFrom) is approved as an EMPTY recipe; the
-        // original's items are not copied. See queue item 24's closure.
+        // DUPLICATES (queue item 27). A request an editor made by duplicating a
+        // prep carries payload.duplicatedFrom, and until 2026-09-17 was
+        // approved as an EMPTY recipe. It now copies the original the way
+        // duplicatePrep does for an admin: the original's CURRENT yield, unit
+        // and note, its ingredient row's usage unit, and its recipe lines, all
+        // read before any write. The approver must be able to see the original
+        // (checked at the top of approveChange, since prepIdOfChange maps a
+        // duplicate to its source). The name is planned in COPY mode, so an
+        // orphan prep holding the name is refused rather than having the copied
+        // lines land on its own.
+        //
+        // RESUMABLE. The new prep's id is derived from this change's id
+        // (approvalRowId), so rows an earlier, failed attempt wrote are
+        // recognisable:
+        //   - the name lookup finds an ingredient or prep carrying that id:
+        //     skip the name refusal and finish what is missing;
+        //   - an admin cannot SEE a prep with no grant, so a prep an earlier
+        //     attempt inserted without its ingredient is found by prepExists()
+        //     instead: skip the insert and carry on;
+        //   - finishing the copied lines needs to count the lines already
+        //     there, which needs sight of the new prep. An approver who cannot
+        //     see it is told to have the owner approve again.
+        // NOT resumable: an approval that TOOK OVER an orphan prep writes to
+        // the orphan's own id, so once its ingredient row is linked a retry
+        // sees a live prep and is refused. There were 0 orphan preps on
+        // 2026-09-17; the owner can check the prep and reject the request.
         const prepName = p.name as string;
+        const sourcePrepId = typeof p.duplicatedFrom === "string" ? p.duplicatedFrom : null;
+        let source: {
+          yieldQty: number;
+          yieldUnit: string;
+          note: string | null;
+          usageUnit: string | null;
+          lines: { ingredient_id: string; quantity: number; unit: string | null; note: string | null; sort_order: number | null }[];
+        } | null = null;
+        if (sourcePrepId) {
+          const [original, ingredient, lines] = await Promise.all([
+            supabase.from("prep_recipes").select("batch_yield_qty, batch_yield_unit, note").eq("id", sourcePrepId).maybeSingle(),
+            supabase.from("ingredients").select("usage_unit").eq("prep_recipe_id", sourcePrepId).maybeSingle(),
+            supabase.from("prep_recipe_items").select("ingredient_id, quantity, unit, note, sort_order").eq("prep_recipe_id", sourcePrepId),
+          ]);
+          if (original.error) throw new Error(`อ่านสูตร prep ต้นฉบับ: ${original.error.message}`);
+          if (!original.data) throw new Error("สูตร prep ต้นฉบับถูกลบไปแล้ว — คัดลอกไม่ได้ ให้ปฏิเสธคำขอนี้");
+          if (ingredient.error) throw new Error(`อ่านวัตถุดิบของสูตรต้นฉบับ: ${ingredient.error.message}`);
+          if (lines.error) throw new Error(`อ่านรายการในสูตรต้นฉบับ: ${lines.error.message}`);
+          source = {
+            yieldQty: Number(original.data.batch_yield_qty),
+            yieldUnit: original.data.batch_yield_unit as string,
+            note: (original.data.note as string | null) ?? null,
+            usageUnit: (ingredient.data?.usage_unit as string | null | undefined) ?? null,
+            lines: lines.data ?? [],
+          };
+        }
+
         const lookup = await lookupPrepName(supabase, prepName);
         if (!lookup.ok) throw new Error(`ตรวจชื่อสูตร prep: ${lookup.message}`);
-        const plan = planPrepCreate(lookup.found, "create");
-        if (plan.kind === "refuse") throw new Error(`สร้างสูตร prep: ${prepRefusalMessage(plan.reason, prepName)}`);
+        const found = lookup.found;
+        const newPrepId = approvalRowId(id, "prep");
+        const ingredientDone = found.ingredient?.prep_recipe_id === newPrepId;
+        const resuming = ingredientDone || found.prep?.id === newPrepId;
 
-        const prepId = plan.reusePrepId ?? randomUUID();
-        if (plan.reusePrepId) {
+        let reusePrepId: string | null = null;
+        let relinkIngredientId: string | null = null;
+        if (resuming) {
+          // Finish an earlier attempt. An orphan ingredient with this name was
+          // the plan's relink target then, and still is.
+          if (!ingredientDone && found.ingredient?.is_prep && found.ingredient.prep_recipe_id === null) {
+            relinkIngredientId = found.ingredient.id;
+          }
+        } else {
+          const plan = planPrepCreate(found, source ? "copy" : "create");
+          if (plan.kind === "refuse") throw new Error(`สร้างสูตร prep: ${prepRefusalMessage(plan.reason, prepName)}`);
+          reusePrepId = plan.reusePrepId;
+          relinkIngredientId = plan.relinkIngredientId;
+        }
+
+        const yieldQty = source ? source.yieldQty : (p.batchYieldQty ?? 1);
+        const yieldUnit = source ? source.yieldUnit : (p.batchYieldUnit ?? "กรัม");
+        const usageUnit = source ? (source.usageUnit ?? "กรัม") : (p.batchYieldUnit ?? "กรัม");
+        const prepId = reusePrepId ?? newPrepId;
+
+        if (reusePrepId) {
           // A true orphan (nothing points at it), so rewriting it moves no cost.
           await run(
             "ใช้สูตร prep ที่ค้างอยู่",
             supabase
               .from("prep_recipes")
               .update({ category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
-              .eq("id", plan.reusePrepId),
+              .eq("id", reusePrepId),
           );
-        } else {
+        } else if (!resuming && !(await prepExists(supabase, prepId))) {
+          // (If it exists, an earlier attempt of this approval inserted it and
+          // this approver cannot see it: carry on to the ingredient row.)
           await run(
             "สร้างสูตร prep",
             supabase
               .from("prep_recipes")
-              .insert({ id: prepId, name: prepName, category: p.category || null, batch_yield_qty: p.batchYieldQty ?? 1, batch_yield_unit: p.batchYieldUnit ?? "กรัม" })
+              .insert({ id: prepId, name: prepName, category: p.category || null, batch_yield_qty: yieldQty, batch_yield_unit: yieldUnit, note: source?.note ?? null })
               .then(({ error }) => ({ error: error && { message: prepInsertErrorMessage(error, prepName) } })),
           );
         }
-        if (plan.relinkIngredientId) {
-          await run(
-            "ผูกวัตถุดิบ prep ที่ค้างอยู่",
-            supabase
-              .from("ingredients")
-              .update({ category: p.category || "prep", usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: prepId })
-              .eq("id", plan.relinkIngredientId),
-          );
-        } else {
-          await run(
-            "สร้างวัตถุดิบสำหรับ prep",
-            supabase.from("ingredients").insert({ name: prepName, category: p.category || "prep", is_prep: true, usage_unit: p.batchYieldUnit ?? "กรัม", prep_recipe_id: prepId }),
-          );
+
+        if (!ingredientDone) {
+          if (relinkIngredientId) {
+            await run(
+              "ผูกวัตถุดิบ prep ที่ค้างอยู่",
+              supabase
+                .from("ingredients")
+                .update({ category: p.category || "prep", usage_unit: usageUnit, prep_recipe_id: prepId })
+                .eq("id", relinkIngredientId),
+            );
+          } else {
+            await run(
+              "สร้างวัตถุดิบสำหรับ prep",
+              supabase.from("ingredients").insert({ name: prepName, category: p.category || "prep", is_prep: true, usage_unit: usageUnit, prep_recipe_id: prepId }),
+            );
+          }
+        }
+
+        if (source && source.lines.length > 0) {
+          // Copy mode never reuses an orphan prep, so prepId is this change's
+          // own row. On a first attempt it has no lines; on a resumed one,
+          // count them first, which needs sight of the new prep.
+          let copyLines = true;
+          if (resuming) {
+            if (!(await canSeePrep(prepId))) {
+              throw new Error("การอนุมัติครั้งก่อนสร้างสูตรนี้ไว้แล้วแต่ยังไม่ครบ และคุณยังไม่มีสิทธิ์ดูสูตรใหม่นั้น — ให้เจ้าของร้านกดอนุมัติอีกครั้งเพื่อทำให้ครบ");
+            }
+            const existing = await supabase.from("prep_recipe_items").select("id", { count: "exact", head: true }).eq("prep_recipe_id", prepId);
+            if (existing.error || existing.count === null) throw new Error(`ตรวจรายการที่คัดลอกไว้: ${existing.error?.message ?? "นับไม่ได้"}`);
+            copyLines = existing.count === 0;
+          }
+          if (copyLines) {
+            await run(
+              "คัดลอกรายการจากสูตร prep ต้นฉบับ",
+              supabase.from("prep_recipe_items").insert(source.lines.map((it) => ({ ...it, prep_recipe_id: prepId }))),
+            );
+          }
         }
         revalidatePath("/owner/ingredients");
         break;
@@ -321,9 +489,13 @@ export async function rejectChange(id: string, adminNote: string): Promise<Appro
   const admin = await requireAdmin();
   const supabase = await createClient();
 
-  const { data: row } = await supabase.from("pending_changes").select("status").eq("id", id).single();
+  const { data: row } = await supabase.from("pending_changes").select("status, change_type, target_id, payload").eq("id", id).single();
   if (!row) return { error: "ไม่พบรายการนี้" };
   if (row.status !== "pending") return { error: "รายการนี้ถูกดำเนินการแล้ว" };
+  // The same guard as approveChange: a request the queue hides from this
+  // approver is neither approvable nor rejectable by them.
+  const guardedPrepId = prepIdOfChange(row.change_type as string, row.target_id as string, row.payload as Record<string, unknown>);
+  if (guardedPrepId && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
 
   await resolvePendingChange(id, "rejected", admin.id, adminNote || undefined);
   revalidatePath("/owner/approve");

@@ -1447,8 +1447,65 @@ In order. Nothing here is started unless it says so.
     because the booking list already filters by status, so deletion is the
     likelier answer.
 
-27. **An editor's DUPLICATE is approved as an EMPTY recipe.** Not started,
-    found 2026-09-16. When an editor duplicates a menu or a prep, the
+27. ~~**An editor's DUPLICATE is approved as an EMPTY recipe.**~~ **CLOSED
+    2026-09-17.** Found 2026-09-16.
+
+    **What approving a duplicate does now** (`approveChange`):
+    - It copies the original the way the admin paths do. A menu gets its
+      recipe lines. A prep gets the original's CURRENT yield, unit and
+      note, its ingredient row's usage unit, and its lines. Everything is
+      read before any write, and a deleted original is refused.
+    - A prep duplicate's name is planned in COPY mode, so an orphan prep
+      holding the name is refused.
+    - The approval card says the copy uses the original's lines, and for a
+      prep its yield, as they are at approval time. It no longer shows the
+      yield saved in the request.
+
+    **Visibility, closing item 29 #6.**
+    - `approveChange` AND `rejectChange` now refuse any request the queue
+      hides, using the same `prepIdOfChange`. Before, a hidden request
+      could still be approved: RLS turned its writes into no-ops and the
+      change was marked APPROVED.
+    - `prepIdOfChange` now maps a prep duplicate to its SOURCE, since
+      approving it copies the source.
+    - The header badge counts only what the queue shows, and never
+      throws.
+
+    **Retry-safe.** Before, a transient failure between two writes left a
+    half-made copy (food cost 0) that no retry could finish, because the
+    name was then taken. Now:
+    - The created row's id is derived from the change id by SHA-256
+      (`approvalRowId`, `src/lib/approval-id.ts`, with tests). It is NOT
+      the raw change id: `pending_changes`' insert policy checks only
+      `editor_id`, so a caller can choose the id. A forged id equal to an
+      existing menu's or prep's would have made that row look like the
+      approval's own work, and the copied lines would have landed in it.
+    - A retry finds its own row and finishes the job. A prep hidden from
+      an admin is found through `prep_unit_costs()` rather than by reading
+      error text. Lines are counted before they are copied. An approver
+      who cannot see the new prep to count its lines is told to have the
+      owner approve again.
+
+    **Found by two adversarial review rounds** (three lenses each, a
+    refuter per finding):
+    - round 1: the retry deadlock and the guard gap;
+    - round 2: the forgeable id, the orphan-reuse limit below, and the
+      table read policy (item 31).
+
+    **Known limits, accepted:**
+    - (a) An approval that TOOK OVER an orphan prep cannot resume once its
+      ingredient row is linked; there are 0 orphan preps.
+    - (b) Two overlapping approvals of the same duplicate can both copy
+      the lines. The status check is not atomic, which was already true
+      of every change type.
+    - (c) If the original is deleted between a failed attempt and its
+      retry, the retry refuses, and the partial copy stays for the owner to
+      remove.
+
+    **Not witnessed in the app:** none of the requests on record carries
+    `duplicatedFrom`.
+
+    The original entry, found 2026-09-16: When an editor duplicates a menu or a prep, the
     request is saved as `menu_create` / `prep_create` with
     `duplicatedFrom`, and `approveChange` ignores that field: it creates
     the header (and, for a prep, the ingredient row) but copies none of
@@ -1647,6 +1704,32 @@ In order. Nothing here is started unless it says so.
        resolved) payloads. Medium.
     4. Removing an old file when a photo is replaced needs the same
        counting. Not worth doing before 3.
+
+31. **`pending_changes`: any admin can read every request through the API,
+    including a hidden prep's recipe.** Found 2026-09-17 by item 27's
+    review. Not started. **Latent today:** none of the 157 rows is about a
+    prep.
+
+    The queue, the badge and both approval actions hide or refuse a request
+    about a prep the viewer cannot see. The table's own read policy
+    ("pending read", `migrations/006_owner_role.sql`) admits every admin and
+    owner to every row. A `recipe_edit` request for a prep carries the whole
+    item list, so an admin without a grant could read a hidden prep's
+    composition from its requests with a direct API call. Same family as
+    the prep leak: a rule the app applies and the database does not.
+
+    **Size: one migration.** The SELECT policy must exclude a prep-related
+    row for a caller who fails `can_see_prep` on the prep it is about,
+    using the same mapping as `prepIdOfChange`, written in SQL:
+    - `recipe_edit` with target prep → `parentId`;
+    - `prep_yield_edit` → `target_id`;
+    - `prep_delete` → `prepId`;
+    - `prep_create` with `duplicatedFrom` → `duplicatedFrom`.
+
+    **Also recorded:** the insert policy checks only `editor_id`, so a
+    request's id and payload are chosen by the caller. The approval code
+    must keep treating them as untrusted input, which is why
+    `approvalRowId` exists.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was

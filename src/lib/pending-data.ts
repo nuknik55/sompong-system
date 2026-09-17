@@ -50,13 +50,35 @@ export async function savePendingChange(
   return data.id;
 }
 
+/**
+ * The header badge. It counts what the approve queue would show this
+ * person, with the same filter: a request about a prep they cannot see is
+ * neither listed nor counted, since counting it would show a pending
+ * request nobody could find. (This is the SCREEN's filter. The table's read
+ * policy still lets any admin read such a row through the API; queue item
+ * 31.)
+ *
+ * Never throws: the owner layout renders it on every page. If visibility
+ * cannot be worked out, prep requests are simply not counted.
+ */
 export async function getPendingCount(): Promise<number> {
   const supabase = await createClient();
-  const { count } = await supabase
+  const { data } = await supabase
     .from("pending_changes")
-    .select("id", { count: "exact", head: true })
+    .select("change_type, target_id, payload")
     .eq("status", "pending");
-  return count ?? 0;
+  if (!data || data.length === 0) return 0;
+  const prepIds = data.map((r) => prepIdOfChange(r.change_type as string, r.target_id as string, r.payload as PendingPayload));
+  // Most requests are about no prep; skip the grant read then, since the
+  // owner layout calls this on every page.
+  if (prepIds.every((x) => x === null)) return data.length;
+  let canSee: (id: string) => boolean = () => false;
+  try {
+    canSee = (await getPrepVisibility()).canSee;
+  } catch {
+    // leave canSee closed
+  }
+  return prepIds.filter((x) => x === null || canSee(x)).length;
 }
 
 /**
@@ -65,11 +87,16 @@ export async function getPendingCount(): Promise<number> {
  * admin who has not been granted that recipe — a recipe_edit payload carries
  * the entire item list.
  */
-function prepIdOfChange(changeType: string, targetId: string, payload: PendingPayload): string | null {
+export function prepIdOfChange(changeType: string, targetId: string, payload: PendingPayload): string | null {
   const p = payload as Record<string, unknown>;
   if (changeType === "recipe_edit") return p.target === "prep" ? (p.parentId as string) ?? targetId : null;
   if (changeType === "prep_yield_edit") return targetId;
   if (changeType === "prep_delete") return (p.prepId as string) ?? targetId;
+  // A DUPLICATE is about its source: approving it copies the source's lines,
+  // which approveChange refuses unless the approver can see that prep, and
+  // the payload carries the source's yield. A plain new prep is about nothing
+  // hidden.
+  if (changeType === "prep_create") return typeof p.duplicatedFrom === "string" ? p.duplicatedFrom : null;
   return null;
 }
 
