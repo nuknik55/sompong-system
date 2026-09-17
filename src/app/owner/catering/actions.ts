@@ -1654,6 +1654,7 @@ export type SaveBookingResult =
  * THE ONE SAVE. Booking fields, price box, and optionally the quote number,
  * in one call, in this order — each step relies on the one before:
  *
+ *   0. an existing booking's cost lock, before anything is written
  *   1. upsertCateringEvent  → the event id (created or existing)
  *   2. menu lines dropped from the box → removeCateringEventMenu
  *   3. menu lines new to the box      → addCateringEventMenu (creates the
@@ -1688,6 +1689,18 @@ export async function saveBooking(input: {
 }): Promise<SaveBookingResult> {
   await requireSales();
   try {
+    // A cost-locked booking is frozen. Steps 2-4 check the lock too, but
+    // step 1 ran first and had already rewritten the staff list, created a
+    // typed-in customer, added an "แก้ไขข้อมูลงาน" history line and, for
+    // owner and admin, saved the booking's own fields by the time they
+    // refused (queue item 33). So the lock is checked before any write. Like
+    // every other lock check in the app it has no role exception: owner and
+    // admin unlock on the cost page first. A refusal is returned by the catch
+    // below, so the screen shows it in production.
+    if (input.event.id) {
+      await assertCostNotLocked(await createClient(), input.event.id);
+    }
+
     const eventId = await upsertCateringEvent(input.event);
 
     const before = await getCateringCharges(eventId);
