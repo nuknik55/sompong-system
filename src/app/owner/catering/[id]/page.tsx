@@ -77,7 +77,9 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
             ต้นทุน-กำไร ของงานนี้
           </Link>
         )}
-        <ActivityLogSection entries={activityLog} />
+        {/* Edit and delete buttons for the owner alone (Nik, 2026-09-17);
+            the database allows the same account and nothing more. */}
+        <ActivityLogSection eventId={event.id} entries={activityLog} canEdit={profile.role === "owner"} />
       </div>
     </div>
   );

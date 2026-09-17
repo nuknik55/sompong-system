@@ -728,6 +728,64 @@ export async function getCateringActivityLog(eventId: string): Promise<CateringA
   }));
 }
 
+// No row came back from a history update or delete: the line is already gone
+// (another tab deleted it), or the database refused it, which it does for
+// every one until catering_history_owner_edit_migration.sql has run. Once it
+// has, only the first cause is left, so that one leads. Not exported: a
+// "use server" file may export only async functions.
+const HISTORY_WRITE_REFUSED =
+  "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้ (อาจถูกลบไปแล้ว) หรือฐานข้อมูลยังไม่อนุญาตให้แก้ไขประวัติ (ต้องรัน catering_history_owner_edit_migration.sql ก่อน)";
+
+/**
+ * The owner corrects a history line's TEXT, from the booking page (Nik,
+ * 2026-09-17: he cannot use the Supabase dashboard). Who wrote the line,
+ * when, and for which booking stay as written. The database enforces both
+ * the owner-only rule and the text-only rule
+ * (catering_history_owner_edit_migration.sql); until that file has run it
+ * refuses every update by matching no row, so "no row changed" is reported
+ * as a refusal here rather than as success. Returned, not thrown, so the
+ * owner reads the reason in production.
+ */
+export async function updateCateringActivityLine(
+  eventId: string,
+  lineId: string,
+  description: string,
+): Promise<{ error?: string }> {
+  const profile = await requireSales();
+  if (profile.role !== "owner") return { error: "แก้ไขประวัติได้เฉพาะเจ้าของร้าน" };
+  const text = description.trim();
+  if (!text) return { error: "กรุณาใส่ข้อความ" };
+  if (text.length > 500) return { error: "ข้อความยาวเกิน 500 ตัวอักษร" };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_activity_log")
+    .update({ description: text })
+    .eq("id", lineId)
+    .eq("event_id", eventId)
+    .select("id");
+  if (error) return { error: `แก้ไขไม่สำเร็จ: ${error.message}` };
+  if (!data || data.length === 0) return { error: HISTORY_WRITE_REFUSED };
+  revalidatePath(`/owner/catering/${eventId}`);
+  return {};
+}
+
+/** The owner removes a history line. Same rules and reporting as updateCateringActivityLine. */
+export async function deleteCateringActivityLine(eventId: string, lineId: string): Promise<{ error?: string }> {
+  const profile = await requireSales();
+  if (profile.role !== "owner") return { error: "ลบประวัติได้เฉพาะเจ้าของร้าน" };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_activity_log")
+    .delete()
+    .eq("id", lineId)
+    .eq("event_id", eventId)
+    .select("id");
+  if (error) return { error: `ลบไม่สำเร็จ: ${error.message}` };
+  if (!data || data.length === 0) return { error: HISTORY_WRITE_REFUSED };
+  revalidatePath(`/owner/catering/${eventId}`);
+  return {};
+}
+
 /**
  * Best-effort: a logging failure must never fail the write that already
  * succeeded by the time this runs — the user's actual change (event saved,
