@@ -32,6 +32,14 @@ they leave the door open if an approval step is ever wanted.
 | `src/app/owner/accounting/daily/DailyEntryClient.tsx` | deleted |
 | `src/app/owner/hr/employees/EmployeesClient.tsx` | deleted |
 
+> **Checked against the code on 2026-09-17; two statements below do not
+> match it.** (1) There is no `getCoaForEntry`; the filtering reader is
+> `getCoa()` in `src/app/owner/accounting/actions.ts`. (2) "Nik's decision:
+> no indicator" is contradicted by the code, which shows
+> "มีรายการที่ไม่แสดง N รายการ" (`withheldCount`) on the entry, daily,
+> summary, P&L print and break-even screens. Which one is current is
+> Nik's call; see queue items 3 and 29 in `supabase/README.md`.
+
 **The two accounting ones were genuinely redundant.** Sensitive COA accounts
 are filtered server-side — `getCoaForEntry` drops `is_sensitive` rows for
 non-owners, and both entry readers filter them too. A non-owner client never

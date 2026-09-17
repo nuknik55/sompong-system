@@ -346,9 +346,30 @@ In order. Nothing here is started unless it says so.
    "Include administrators") is documented in `ci.yml`'s own header —
    recorded, not adopted; a PR flow on a two-person push-to-main team is
    Nik's call.
-3. **The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.
-   Investigation first: for each, what it was evidently meant to gate and what
-   wiring it would change, so the decision is informed rather than guessed.
+3. ~~**The 5 unwired `isOwner`/`isCreator` signals** in `UNWIRED_FEATURES.md`.~~
+   **CLOSED 2026-09-17. The entry was stale:** `UNWIRED_FEATURES.md` had
+   resolved all six on 2026-08-31 and 2026-09-06 (`f8a007e`), and this entry
+   was never updated.
+
+   **Re-verified against the code of 2026-09-17** by a read-only sweep: all
+   six resolutions HOLD. The `isCreator` fix still runs its
+   creator-or-admin check before any write. Two places where that document
+   and the code disagree, recorded in the document:
+   - It records Nik's decision as **"no indicator"** that hidden accounts
+     exist, but the code shows "มีรายการที่ไม่แสดง N รายการ" on the
+     accounting entry screens, the daily entry, the summary, the P&L print
+     and break-even. **Which is current is Nik's call.**
+   - It names `getCoaForEntry` as the filtering reader. No such function
+     exists; the reader is `getCoa()`.
+
+   **A fresh sweep for the same shape found six live gaps** where the UI
+   refuses something the server does not. Each was confirmed by a separate
+   skeptic reading the code. They are recorded as item 29; one of them was
+   fixed with item 27.
+
+   Original entry: investigation first. For each, what it was evidently
+   meant to gate and what wiring it would change, so the decision is
+   informed rather than guessed.
 4. **`ScheduleClient.tsx:5` static `xlsx` import** — bundle size only, no
    correctness stake. And **retry-from-here on POS chunk failure**.
 5. ~~**Menu Engineering should classify within category, not across all menus.**~~
@@ -1528,6 +1549,104 @@ In order. Nothing here is started unless it says so.
 
     Row counts change, so re-derive them first; a check against an empty
     table passes for nothing.
+
+
+29. **The UI refuses it, the server does not: six live gaps, found
+    2026-09-17.** A sweep for item 3's shape, each finding confirmed by a
+    second reader trying to refute it. Not started except where marked;
+    reported before changing anything.
+
+    **Team management (`owner/team/actions.ts`). These are paths from an
+    admin to an hr login, and so to payroll data:**
+    1. `changePassword` refuses a non-owner only when the target is owner
+       or admin. An admin can reset an **hr** account's password and log in
+       as hr, although the screen hides that button. It also fails open: if
+       reading the target fails, the reset goes ahead.
+    2. `createUser` and `updateUserRole` refuse only the role `owner` for
+       a non-owner. An admin can create an **hr** login, or move any
+       account to hr, although the dropdown hides it.
+    3. `updateUserDetails` has no check on the target at all, and rewrites
+       the target's auth email (the login name) with the service role. An
+       admin can rename the **owner's** or an hr user's login and lock them
+       out. `updateUserRole` lets an admin re-role another admin or hr, and
+       `deleteUser` does not refuse hr targets.
+
+    **Owner-only account 790:**
+    4. `bulkInsertEntries` and `deleteExpenseEntry` never check
+       `is_sensitive`. `updateExpenseEntry` checks only the NEW account,
+       not the row's current one. The `expense_all` policy admits admins,
+       so an admin can write or delete 790 entries by direct call.
+       `getAllCoa` is unfiltered, so the CoA page shows 790's name to
+       admins.
+
+    **Supply orders (`staff/inventory/actions.ts`):**
+    5. `saveEditorItemEdit` runs on the service role behind only
+       `requireProfile()`, with no status or role check. ANY signed-in
+       account (staff, sales, hr) can set `editor_qty_ordered` on any item
+       of any session, and that value overrides the reviewer's quantity on
+       the printed order and on the receive form. The UI can never reach
+       that branch. `saveReviewerItemEdit` has no status check either. A
+       wrong item and session pair updates 0 rows and reports success.
+
+    **Approvals:**
+    6. ~~`approveChange` checked prep visibility only for duplicates, so a
+       request the queue hid could still be approved, with RLS turning its
+       writes into no-ops marked APPROVED~~: **fixed with item 27.**
+
+    **Unclear, not adversarially checked:** `getRecipeHistory` serves a
+    staff-hidden menu's history to any signed-in user; `returnOrderSession`
+    lets an editor return an order the UI only lets admins return.
+
+    **Size:** 1–3 are one small commit: make the server enforce the tier
+    rule the screen already encodes, and fail closed. 4 is one small
+    commit (owner-only, per the decision already recorded). 5 needs Nik's
+    word first: its docstring says "any authenticated" on purpose.
+
+30. **Uploaded photos are never deleted, and anyone can list them.** Found
+    2026-09-17 (queue list item 6). Not started; reported before changing
+    anything.
+
+    **Measured, read-only, 2026-09-17** (bucket `sop-photos`, which SOP steps
+    and maintenance reports share):
+    - **392 files, 113.2 MB.**
+    - 280 are referenced by live rows (`menu_sop_steps.photo_url`,
+      `maintenance_reports.photo_before/after`).
+    - 26 are referenced ONLY by old approved SOP requests, meaning they
+      were replaced after approval.
+    - **86 are referenced by nothing at all (44.6 MB)**: 78 SOP and 8
+      maintenance, created 2026-07-08 to 2026-08-17.
+    - No referenced file is missing.
+
+    **Nothing ever deletes a file.** There is no `storage.remove` anywhere,
+    no SQL on `storage.objects` beyond the policies, and no cleanup job. A
+    file is orphaned when:
+    - it is uploaded as soon as it is picked, and the form is then
+      abandoned or the photo replaced before saving;
+    - a saved SOP is re-saved, since the save deletes and re-inserts every
+      step;
+    - an SOP or its menu is deleted (the `test` menu will add 8);
+    - an editor's SOP request is rejected;
+    - a stale SOP snapshot is approved over newer photos;
+    - a maintenance before-photo is changed, or "done" is sent twice.
+
+    **Exposure, CONFIRMED:** the bucket is public, and the public key alone
+    can LIST it. A read-only listing with that key returned the same 335
+    root entries as the service key. Every photo, including 15 maintenance
+    photos and all the orphans, can be enumerated and downloaded by anyone.
+    **Also by policy, not tested:** any signed-in account can upload,
+    overwrite or delete any file in the bucket (`004_sop_module.sql`).
+
+    **Size and decisions.**
+    1. Nik decides whether SOP and maintenance photos should be public at
+       all. A private bucket means signed URLs in two readers.
+    2. Narrow the bucket's write policies to the roles that edit SOPs and
+       file maintenance reports. One migration.
+    3. Any cleanup must be REFERENCE-COUNTED, because one URL can sit in
+       several step rows and several request payloads. That means a script
+       a person runs, dry-run first, over the live rows plus pending (not
+       resolved) payloads. Medium.
+    4. Removing an old file when a photo is replaced needs the same
+       counting. Not worth doing before 3.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
