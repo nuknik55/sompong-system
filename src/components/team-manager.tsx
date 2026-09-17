@@ -90,7 +90,7 @@ export function TeamManager({
   const [editUsername, setEditUsername] = useState("");
   const [editEmployeeId, setEditEmployeeId] = useState("");
 
-  // ── Change password (owner-only) ─────────────────────────────────────────────
+  // ── Change password (who may: teamRefusal in @/lib/team-rules) ──────────────
   const [pwdRowId, setPwdRowId] = useState<string | null>(null);
   const [pwdValue, setPwdValue] = useState("");
 
@@ -293,7 +293,7 @@ export function TeamManager({
               const account = { id: u.id, role: u.role, holdsPrepGrants: u.holds_prep_grants };
               const canActOnRow = teamRefusal(me, account, { kind: "edit" }) === null;
               const canChangePwd = teamRefusal(me, account, { kind: "password" }) === null;
-              // never oneself; owner: anyone else; admin: staff/editor/sales only
+              // never oneself; owner: anyone else; admin: staff/editor/sales without prep grants
               const canDelete = teamRefusal(me, account, { kind: "delete" }) === null;
 
               return (

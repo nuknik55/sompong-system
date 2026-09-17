@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentProfile } from "@/lib/auth";
+import { editAccess } from "@/lib/edit-access";
 import { getSopByMenuId, getMenuOption } from "@/lib/sop-data";
 import { SopPlayer } from "@/components/sop-player";
 import { Pencil } from "lucide-react";
@@ -17,11 +18,14 @@ export default async function SopViewPage({
     getMenuOption(menuId),
   ]);
 
-  const isAdmin = profile?.role === "admin";
-  const canEdit = profile?.role === "admin" || profile?.role === "editor";
+  // The same rule as the SOP editor's own guard (requireAdminOrEditor):
+  // owner and admin edit directly, an editor by request. The owner was
+  // left out here, so it had no edit pencil and no redirect (item 34).
+  const access = editAccess(profile?.role);
+  const canEdit = access !== "view";
 
   if (!sop) {
-    if (isAdmin) {
+    if (access === "direct") {
       redirect(`/sop/${menuId}/edit`);
     }
     return (

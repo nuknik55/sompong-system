@@ -26,9 +26,9 @@ type Props = {
   sellingPrice?: number;
   canEditPrice?: boolean;
   onSavePrice?: (menuId: string, newPrice: number) => Promise<{ status: "ok" } | { status: "error"; message: string }>;
-  readOnly?: boolean;          // staff: no editing at all
+  readOnly?: boolean;          // no editing at all: every role editAccess() says only views
   submitMode?: "save" | "pending";  // editor: pending approval flow
-  showCosts?: boolean;         // false for staff: hides all cost/profit figures
+  showCosts?: boolean;         // false for those same roles: hides all cost/profit figures
 };
 
 function formatBaht(n: number) {

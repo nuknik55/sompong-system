@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canSeePrep, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { requireProfile } from "@/lib/auth";
+import { editAccess } from "@/lib/edit-access";
 import { savePendingChange } from "@/lib/pending-data";
 
 export type RecipeTarget = "menu" | "prep";
@@ -40,7 +41,13 @@ export async function saveRecipeItems(
 ): Promise<SaveResult> {
   const profile = await requireProfile();
 
-  if (profile.role === "staff") {
+  // Owner and admin save, an editor files a request, and every other role
+  // is refused: the same rule the recipe pages show (editAccess). This used
+  // to refuse only staff, so hr and sales reached the direct save below,
+  // where the table skipped their edits and deletions without an error and
+  // the screen said it had saved; only an added line failed (item 34).
+  const access = editAccess(profile.role);
+  if (access === "view") {
     return { status: "error", message: "ไม่มีสิทธิ์แก้ไขสูตร" };
   }
 
@@ -58,7 +65,7 @@ export async function saveRecipeItems(
     return { status: "error", message: PREP_FORBIDDEN };
   }
 
-  if (profile.role === "editor") {
+  if (access === "request") {
     await savePendingChange(profile.id, "recipe_edit", parentId, {
       target,
       parentId,
@@ -69,7 +76,7 @@ export async function saveRecipeItems(
     return { status: "pending", items };
   }
 
-  // Admin — save directly
+  // Owner or admin: save directly
   const supabase = await createClient();
   const table = TABLE[target];
   const parentColumn = PARENT_COLUMN[target];

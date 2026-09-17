@@ -81,6 +81,11 @@ was true — the direction that causes someone to redo work or undo a decision.
 owner-only behaviour to attach it to. The comment and the unused constant are
 gone.
 
+**2026-09-17:** gating costs by `isStaff` was itself too narrow: hr and sales
+are not staff, so they got the editable editor and the cost panel. Both
+recipe pages and `saveRecipeItems` now use `editAccess()`
+(`src/lib/edit-access.ts`), an allowlist (queue item 34).
+
 ## 6. ~~`isCreator` passed to `SessionActions` and never applied~~ — RESOLVED 2026-09-06, wired up
 
 **This one was not cosmetic. It was a live authorisation gap**, and the rule it

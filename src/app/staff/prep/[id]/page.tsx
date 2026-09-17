@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { getCurrentProfile } from "@/lib/auth";
+import { editAccess } from "@/lib/edit-access";
 import { canSeePrep } from "@/lib/prep-access";
 import { RecipeEditor } from "@/components/recipe-editor";
 import { PrepYieldEditor } from "@/components/prep-yield-editor";
@@ -39,10 +40,12 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
     a.localeCompare(b, "th")
   );
 
-  const isAdmin = profile?.role === "admin" || profile?.role === "owner";
-  const isEditor = profile?.role === "editor";
-  const isStaff = profile?.role === "staff";
-  const canEdit = isAdmin || isEditor;
+  const access = editAccess(profile?.role);
+  const isAdmin = access === "direct";
+  const isEditor = access === "request";
+  // Every role that cannot edit gets the read-only view with no costs
+  // (item 34): an allowlist, as on the menu page.
+  const canEdit = access !== "view";
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -93,12 +96,12 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
         ingredients={ingredients
           .filter((i) => i.prep_recipe_id !== prep.id)
           .map((i) => ({ id: i.id, name: i.name, category: i.category, usage_unit: i.usage_unit, is_prep: i.is_prep }))}
-        unitCosts={isStaff ? {} : unitCostsObj}
-        readOnly={isStaff}
+        unitCosts={canEdit ? unitCostsObj : {}}
+        readOnly={!canEdit}
         submitMode={isEditor ? "pending" : "save"}
-        showCosts={!isStaff}
+        showCosts={canEdit}
       />
-      {!isStaff && (
+      {canEdit && (
         <p className="text-xs text-neutral-400">
           ต้นทุนรวมข้างบน คือต้นทุนของเตรียม 1 รอบ ({prep.batch_yield_qty} {prep.batch_yield_unit}) — ต้นทุนต่อหน่วยที่เมนูอื่นใช้
           จะถูกหารด้วยจำนวนนี้โดยอัตโนมัติ

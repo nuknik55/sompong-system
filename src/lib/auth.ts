@@ -49,7 +49,7 @@ export async function requireOwner(): Promise<Profile> {
   return profile;
 }
 
-/** Admin or owner (owner is a superset of admin). Redirects editor/staff to /staff. */
+/** Admin or owner (owner is a superset of admin). Redirects every other role (editor, staff, hr, sales) to /staff. */
 export async function requireAdmin(): Promise<Profile> {
   const profile = await requireProfile();
   if (profile.role !== "admin" && profile.role !== "owner") redirect("/staff");
