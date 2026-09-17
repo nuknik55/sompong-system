@@ -6,12 +6,16 @@ import { usePathname } from "next/navigation";
 type NavItem = { href: string; label: string; exact?: boolean };
 
 /**
- * Four items, down from seven. Staff book on paper because the module had
+ * Four items, down from seven, and five since สถานะ came back on
+ * 2026-09-17 (three for sales). Staff book on paper because the module had
  * too many places to go; what is left is the daily path plus the two
  * settings screens that feed it.
  *
  * Off the nav, deliberately, and where each went:
- *   สถานะ          the booking list filters by status already
+ *   สถานะ          back on the nav 2026-09-17: Nik chose to keep the
+ *                  status page and link it (queue item 26). Its guard is
+ *                  requireSales, the same roles as every page that shows
+ *                  this nav, so the link needs no role check of its own.
  *   ลูกค้า          behind เพิ่มเติม on the booking, still reachable
  *   ต้นทุนภายใน     admin-only, reached from a booking's ต้นทุน-กำไร page
  *                  by the ตั้งค่าต้นทุนภายใน link beside + เพิ่มต้นทุน. It is
@@ -39,10 +43,11 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
   const navItems: NavItem[] = [
     { href: "/owner/catering", label: "การจอง", exact: true },
     { href: "/owner/catering/calendar", label: "ปฏิทิน" },
+    { href: "/owner/catering/status", label: "สถานะ" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
     // "ราคา" until 2026-09-15, when ประเภทงาน joined the rates on that page.
-    // The sub-nav stays at four items — keeping it short was the point of the
-    // reduction from seven, so a second settings screen would have undone it.
+    // Keeping the sub-nav short was the point of the reduction from seven, so
+    // a second settings screen would have undone it.
     ...(isAdmin ? [{ href: "/owner/catering/settings", label: "ตั้งค่า" }] : []),
   ];
 
