@@ -111,6 +111,30 @@ So:
    the identity it actually ran as (`current_role()`), so a failed
    impersonation cannot pass as a zero, and pass ids as literals, so a lookup
    hidden by the very policy under test cannot become NULL and answer "no".
+# A migration's own test code follows the rules the migration enforces
+
+`permissions_batch_2026_09_17.sql` tested itself as real accounts and, to
+print its results, created a temporary table. The Supabase editor warned
+"This query creates a table without enabling Row Level Security", and the
+owner cancelled before anything ran. A temporary table is private to its
+session, so nothing was exposed; but that is a claim to prove, not to
+assert, and a permissions file tripping the open-table check is the very
+defect it exists to close. The same file also inserted test rows at the top
+level and deleted them again before COMMIT.
+
+So, in any migration:
+- **No table for scaffolding, not even a temporary one.** Results that must
+  be printed go into a session setting (`set_config(name, value, false)`),
+  and the last statement prints them and clears it.
+- **Test writes run only inside a block that always rolls back** (raise a
+  private SQLSTATE and catch it); never as top-level statements followed by
+  a cleanup DELETE.
+- **Each test write touches one row.**
+- **The header lists every statement the editor may call destructive,**
+  and says that anything else is unexpected.
+- **Never "Run and enable RLS".** A policy the editor invents is not one
+  anyone reviewed.
+
 # Role checks: what each one actually admits — the list
 
 Rule 4 above says to read a function's LAST definition before reasoning from

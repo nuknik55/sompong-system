@@ -1,12 +1,37 @@
 -- ============================================================================
 -- Permissions batch, 2026-09-17: four independent parts in one file.
 -- ============================================================================
--- Run once in the Supabase SQL editor, the WHOLE FILE in one go. It touches
--- no data. Each part is its own transaction: it records what it finds, makes
--- its change, then tests the result AS REAL ACCOUNTS before COMMIT, and
--- rolls back on any disagreement. Every test write is rolled back.
+-- Run once in the Supabase SQL editor, the WHOLE FILE in one go. Each part is
+-- its own transaction: it records what it finds, makes its change, then
+-- tests the result AS REAL ACCOUNTS before COMMIT, and rolls back on any
+-- disagreement.
 --
--- THE RESULT is the table the last statement prints: one line per finding
+-- ── WHAT IT CHANGES, AND WHAT IT DOES NOT ─────────────────────────────────
+--
+-- Committed: policies, six new functions, and one privilege change (UPDATE
+-- on pending_changes narrowed to the four columns approval writes).
+-- Nothing else.
+--
+-- NO DATA IS CHANGED AND NO TABLE IS CREATED. Every test write, and the
+-- eleven synthetic requests part C tests with, happens inside a block that
+-- is rolled back before the file goes on, so none of it is ever committed
+-- or seen by another session. The results are kept in a setting of this
+-- session, not in a table, and the last statement clears it.
+--
+-- What the SQL editor may call destructive, all of it expected:
+--   - 18 DROP POLICY IF EXISTS. Each policy this file creates is dropped by
+--     name first, so the file can run again. Three of them are the old open
+--     write policies on sop-photos, removed on purpose (part D).
+--   - REVOKE UPDATE on pending_changes, followed at once by the GRANT of the
+--     four columns approval writes (part C).
+--   - DROP FUNCTION IF EXISTS pg_temp.*, at the end: this session's test
+--     helpers. The one that prints the result stays, empty, until the
+--     session ends.
+--   - The UPDATE, DELETE and INSERT statements inside the test functions,
+--     and the synthetic requests' INSERT: all rolled back, as above.
+-- Anything else it calls destructive is NOT expected: stop and send it.
+--
+-- THE RESULT is the table the last statement prints: one row per finding
 -- and per test, before and after. Copy it back whole. (The same lines are
 -- also raised as NOTICEs, which the SQL editor may not show.) If a part
 -- fails, the editor shows that error instead, and the table is not printed;
@@ -84,10 +109,14 @@
 -- ============================================================================
 
 
--- ── The results table, for this session only ───────────────────────────────
+-- ── The results, for this session only ─────────────────────────────────────
+--
+-- Kept in a setting of this session, not in a table: no other session can
+-- read it, the last statement clears it, and it ends with the session.
+-- (A setting changed inside a transaction that fails is undone with it,
+-- exactly as rows in a table would be.)
 
-DROP TABLE IF EXISTS pg_temp.batch_log;
-CREATE TEMP TABLE batch_log (n bigserial PRIMARY KEY, line text NOT NULL);
+SELECT set_config('permissions_batch.log', '', false);
 
 CREATE OR REPLACE FUNCTION pg_temp.note(p_line text)
 RETURNS void
@@ -95,7 +124,28 @@ LANGUAGE plpgsql
 AS $fn$
 BEGIN
   RAISE NOTICE '%', p_line;
-  INSERT INTO pg_temp.batch_log (line) VALUES (p_line);
+  -- Separated by chr(30), not a newline: a note can itself span lines (a
+  -- function definition, a policy expression) and must stay one row.
+  PERFORM set_config('permissions_batch.log',
+    COALESCE(current_setting('permissions_batch.log', true), '')
+      || COALESCE(p_line, '(empty note)') || chr(30), false);
+END
+$fn$;
+
+-- Prints the recorded lines, in order, and clears the setting.
+CREATE OR REPLACE FUNCTION pg_temp.batch_result()
+RETURNS TABLE (n bigint, line text)
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  v_log text := COALESCE(current_setting('permissions_batch.log', true), '');
+BEGIN
+  PERFORM set_config('permissions_batch.log', '', false);
+  RETURN QUERY
+    SELECT r.i, r.l
+      FROM regexp_split_to_table(v_log, chr(30)) WITH ORDINALITY AS r(l, i)
+     WHERE r.l <> ''
+     ORDER BY r.i;
 END
 $fn$;
 
@@ -453,6 +503,9 @@ AS $fn$
 DECLARE
   owner_  constant uuid := '6c8a428c-386b-40f9-9758-c643b7219815';
   admin_  constant uuid := 'c0d216ea-941b-44fc-b19c-f330fb9a4efd';
+  -- One 790 entry, chosen inside each test as the account it runs as (an
+  -- admin can read 790 rows). Each test write touches one row.
+  one_790 constant text := $q$(SELECT id FROM public.expense_entries WHERE coa_code = '790' ORDER BY id LIMIT 1)$q$;
   v_open  text;
   n_open  bigint;
   n_790   bigint;
@@ -469,17 +522,17 @@ BEGIN
   END IF;
 
   -- Negative controls: an admin.
-  PERFORM pg_temp.t(p_after, 'B1 admin edits 790 entries', admin_, 'admin',
-    $q$UPDATE public.expense_entries SET amount = amount WHERE coa_code = '790'$q$, 'blocked');
-  PERFORM pg_temp.t(p_after, 'B2 admin deletes 790 entries', admin_, 'admin',
-    $q$DELETE FROM public.expense_entries WHERE coa_code = '790'$q$, 'blocked');
+  PERFORM pg_temp.t(p_after, 'B1 admin edits a 790 entry', admin_, 'admin',
+    format($q$UPDATE public.expense_entries SET amount = amount WHERE id = %s$q$, one_790), 'blocked');
+  PERFORM pg_temp.t(p_after, 'B2 admin deletes a 790 entry', admin_, 'admin',
+    format($q$DELETE FROM public.expense_entries WHERE id = %s$q$, one_790), 'blocked');
   PERFORM pg_temp.t(p_after, 'B3 admin adds a 790 entry', admin_, 'admin',
     $q$INSERT INTO public.expense_entries (entry_date, coa_code, amount, payment_method) VALUES ('2026-09-01', '790', 1, 'cash')$q$, 'denied');
   PERFORM pg_temp.t(p_after, 'B4 admin moves an entry into 790', admin_, 'admin',
     format($q$UPDATE public.expense_entries SET coa_code = '790'
                WHERE id = (SELECT id FROM public.expense_entries WHERE coa_code = %L ORDER BY id LIMIT 1)$q$, v_open), 'denied');
-  PERFORM pg_temp.t(p_after, 'B5 admin moves 790 entries out', admin_, 'admin',
-    format($q$UPDATE public.expense_entries SET coa_code = %L WHERE coa_code = '790'$q$, v_open), 'blocked');
+  PERFORM pg_temp.t(p_after, 'B5 admin moves a 790 entry out', admin_, 'admin',
+    format($q$UPDATE public.expense_entries SET coa_code = %L WHERE id = %s$q$, v_open, one_790), 'blocked');
   PERFORM pg_temp.t(p_after, 'B6 admin clears 790''s owner-only flag', admin_, 'admin',
     $q$UPDATE public.coa SET is_sensitive = false WHERE code = '790'$q$, 'blocked');
   PERFORM pg_temp.t(p_after, 'B7 admin marks an open account owner-only', admin_, 'admin',
@@ -492,8 +545,9 @@ BEGIN
     $q$INSERT INTO public.coa (code, name, group_code, group_name, sort_order, is_sensitive)
        VALUES ('probe-b10', 'probe', 'G700', 'บริหาร (G&A)', 99999, true)$q$, 'denied');
   -- Positive controls: the same admin, on open accounts.
-  PERFORM pg_temp.t(p_after, format('B11 admin edits %s entries', v_open), admin_, 'admin',
-    format($q$UPDATE public.expense_entries SET amount = amount WHERE coa_code = %L$q$, v_open), format('rows=%s', n_open));
+  PERFORM pg_temp.t(p_after, format('B11 admin edits a %s entry', v_open), admin_, 'admin',
+    format($q$UPDATE public.expense_entries SET amount = amount
+               WHERE id = (SELECT id FROM public.expense_entries WHERE coa_code = %L ORDER BY id LIMIT 1)$q$, v_open), 'rows=1');
   PERFORM pg_temp.t(p_after, format('B12 admin adds a %s entry', v_open), admin_, 'admin',
     format($q$INSERT INTO public.expense_entries (entry_date, coa_code, amount, payment_method) VALUES ('2026-09-01', %L, 1, 'cash')$q$, v_open), 'rows=1');
   PERFORM pg_temp.t(p_after, format('B13 admin renames account %s', v_open), admin_, 'admin',
@@ -505,8 +559,8 @@ BEGIN
   PERFORM pg_temp.t(p_after, 'B15 admin still reads 790 entries', admin_, 'admin',
     $q$SELECT id FROM public.expense_entries WHERE coa_code = '790'$q$, format('rows=%s', n_790));
   -- The owner keeps its reach.
-  PERFORM pg_temp.t(p_after, 'B16 owner edits 790 entries', owner_, 'owner',
-    $q$UPDATE public.expense_entries SET amount = amount WHERE coa_code = '790'$q$, format('rows=%s', n_790));
+  PERFORM pg_temp.t(p_after, 'B16 owner edits a 790 entry', owner_, 'owner',
+    format($q$UPDATE public.expense_entries SET amount = amount WHERE id = %s$q$, one_790), 'rows=1');
   PERFORM pg_temp.t(p_after, 'B17 owner renames 790', owner_, 'owner',
     $q$UPDATE public.coa SET name = name WHERE code = '790'$q$, 'rows=1');
 END
@@ -596,7 +650,8 @@ COMMIT;
 -- resolved_by); nothing else in the app updates this table.
 --
 -- None of the 157 requests on 2026-09-17 is about a prep, so the check uses
--- eleven synthetic requests, inserted and removed inside this transaction.
+-- eleven synthetic requests. They exist only inside a block that is rolled
+-- back when the checks are done; they are never committed.
 
 BEGIN;
 
@@ -605,6 +660,7 @@ CREATE OR REPLACE FUNCTION public.pending_change_prep_id(
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
+SET search_path = public
 AS $fn$
   SELECT CASE p_change_type
     WHEN 'recipe_edit' THEN
@@ -738,7 +794,8 @@ BEGIN
 END
 $do$;
 
--- Eleven synthetic requests from เวช, all about กะทิราดข้าวเหนียว unless noted:
+-- The eleven synthetic requests, all from เวช and inserted only inside
+-- with_synthetic_requests() below, are about กะทิราดข้าวเหนียว unless noted:
 --   c1 recipe_edit, target prep            c6 prep_create, duplicate
 --   c2 recipe_edit, target "Prep"          c7 prep_create, new (about no prep)
 --   c3 recipe_edit, target menu (no prep)  c8 recipe_edit, parentId "nope"
@@ -750,38 +807,6 @@ $do$;
 --                                              missing prep (stays hidden:
 --                                              the exception is for
 --                                              deletions only)
-INSERT INTO public.pending_changes (id, editor_id, change_type, target_id, payload) VALUES
-  ('c3100000-0000-4000-8000-000000000001', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
-    '{"target":"prep","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
-  ('c3100000-0000-4000-8000-000000000002', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
-    '{"target":"Prep","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
-  ('c3100000-0000-4000-8000-000000000003', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
-    '{"target":"menu","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
-  ('c3100000-0000-4000-8000-000000000004', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_yield_edit', 'probe-not-a-uuid',
-    '{"parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","qty":1,"unit":"g"}'),
-  ('c3100000-0000-4000-8000-000000000005', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_delete', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
-    '{"prepId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c"}'),
-  ('c3100000-0000-4000-8000-000000000006', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_create', 'dup:probe',
-    '{"name":"probe","duplicatedFrom":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c"}'),
-  ('c3100000-0000-4000-8000-000000000007', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_create', 'new:probe',
-    '{"name":"probe"}'),
-  ('c3100000-0000-4000-8000-000000000008', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'probe-not-a-uuid',
-    '{"target":"prep","parentId":"nope","items":[]}'),
-  ('c3100000-0000-4000-8000-000000000009', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
-    'null'),
-  ('c3100000-0000-4000-8000-000000000010', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_delete', 'c31000de-0000-4000-8000-00000000dead',
-    '{"prepId":"c31000de-0000-4000-8000-00000000dead","prepName":"probe"}'),
-  ('c3100000-0000-4000-8000-000000000011', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'c31000de-0000-4000-8000-00000000dead',
-    '{"target":"prep","parentId":"c31000de-0000-4000-8000-00000000dead","items":[]}');
-
-DO $do$
-BEGIN
-  IF public.prep_recipe_exists('c31000de-0000-4000-8000-00000000dead') THEN
-    RAISE EXCEPTION 'the "deleted prep" id used by c10 exists. Nothing applied.';
-  END IF;
-END
-$do$;
-
 CREATE OR REPLACE FUNCTION pg_temp.check_c(p_after boolean)
 RETURNS void
 LANGUAGE plpgsql
@@ -856,7 +881,55 @@ BEGIN
 END
 $fn$;
 
-SELECT pg_temp.check_c(false);
+-- The synthetic requests, the checks, and a rollback: everything the block
+-- writes is undone, and only the lines the checks recorded are carried out
+-- of it (a plpgsql variable survives the rollback; the setting does not).
+-- A failed check is a different error, is not caught, and stops the file.
+CREATE OR REPLACE FUNCTION pg_temp.with_synthetic_requests(p_after boolean)
+RETURNS void
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  v_log text;
+BEGIN
+  BEGIN
+    INSERT INTO public.pending_changes (id, editor_id, change_type, target_id, payload) VALUES
+      ('c3100000-0000-4000-8000-000000000001', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
+        '{"target":"prep","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
+      ('c3100000-0000-4000-8000-000000000002', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
+        '{"target":"Prep","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
+      ('c3100000-0000-4000-8000-000000000003', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
+        '{"target":"menu","parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","items":[]}'),
+      ('c3100000-0000-4000-8000-000000000004', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_yield_edit', 'probe-not-a-uuid',
+        '{"parentId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c","qty":1,"unit":"g"}'),
+      ('c3100000-0000-4000-8000-000000000005', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_delete', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
+        '{"prepId":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c"}'),
+      ('c3100000-0000-4000-8000-000000000006', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_create', 'dup:probe',
+        '{"name":"probe","duplicatedFrom":"fc8c4a24-5c9d-4569-9e40-113f4a2ae07c"}'),
+      ('c3100000-0000-4000-8000-000000000007', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_create', 'new:probe',
+        '{"name":"probe"}'),
+      ('c3100000-0000-4000-8000-000000000008', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'probe-not-a-uuid',
+        '{"target":"prep","parentId":"nope","items":[]}'),
+      ('c3100000-0000-4000-8000-000000000009', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'fc8c4a24-5c9d-4569-9e40-113f4a2ae07c',
+        'null'),
+      ('c3100000-0000-4000-8000-000000000010', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'prep_delete', 'c31000de-0000-4000-8000-00000000dead',
+        '{"prepId":"c31000de-0000-4000-8000-00000000dead","prepName":"probe"}'),
+      ('c3100000-0000-4000-8000-000000000011', 'ef2075c7-9fbc-4c66-8dd1-6528bb810786', 'recipe_edit', 'c31000de-0000-4000-8000-00000000dead',
+        '{"target":"prep","parentId":"c31000de-0000-4000-8000-00000000dead","items":[]}');
+    IF public.prep_recipe_exists('c31000de-0000-4000-8000-00000000dead') THEN
+      RAISE EXCEPTION 'the "missing prep" id used by c10 and c11 exists. Nothing applied.';
+    END IF;
+    PERFORM pg_temp.check_c(p_after);
+    v_log := current_setting('permissions_batch.log', true);
+    RAISE EXCEPTION USING ERRCODE = 'U0002';
+  EXCEPTION
+    WHEN SQLSTATE 'U0002' THEN
+      PERFORM set_config('permissions_batch.log', v_log, false);
+  END;
+END
+$fn$;
+
+SELECT pg_temp.with_synthetic_requests(false);
 
 DROP POLICY IF EXISTS pending_prep_visibility ON public.pending_changes;
 CREATE POLICY pending_prep_visibility ON public.pending_changes
@@ -874,18 +947,14 @@ CREATE POLICY pending_editor_files ON public.pending_changes
 REVOKE UPDATE ON public.pending_changes FROM anon, authenticated;
 GRANT UPDATE (status, admin_note, resolved_at, resolved_by) ON public.pending_changes TO authenticated;
 
-SELECT pg_temp.check_c(true);
+SELECT pg_temp.with_synthetic_requests(true);
 
 DO $do$
-DECLARE
-  v_n bigint;
 BEGIN
-  DELETE FROM public.pending_changes WHERE id::text LIKE 'c3100000-0000-4000-8000-%';
-  GET DIAGNOSTICS v_n = ROW_COUNT;
-  IF v_n <> 11 THEN
-    RAISE EXCEPTION 'removed % synthetic requests, expected 11. Nothing applied.', v_n;
+  IF EXISTS (SELECT 1 FROM public.pending_changes WHERE id::text LIKE 'c3100000-0000-4000-8000-%') THEN
+    RAISE EXCEPTION 'a synthetic request is still in the table. Nothing applied.';
   END IF;
-  PERFORM pg_temp.note('ok      the 11 synthetic requests are removed');
+  PERFORM pg_temp.note('ok      none of the 11 synthetic requests remains; they were never committed');
 END
 $do$;
 
@@ -981,6 +1050,9 @@ DECLARE
   editor_  constant uuid := 'b2b3ff09-54b7-4051-9d79-c6f8c5c2ad8f';
   sales_   constant uuid := 'bcfc52ef-740f-40b1-8b24-d533585dcb4a';
   staff_   constant uuid := 'b0ec6eca-650e-4adc-9503-316c1dd1afec';
+  -- One photo row, chosen inside each test (everyone can read the bucket).
+  -- Each test write touches one row.
+  one_photo constant text := $q$(SELECT id FROM storage.objects WHERE bucket_id = 'sop-photos' ORDER BY name LIMIT 1)$q$;
   n_files  bigint;
 BEGIN
   SELECT count(*) INTO n_files FROM storage.objects WHERE bucket_id = 'sop-photos';
@@ -994,15 +1066,15 @@ BEGIN
     $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('sop-photos', 'probe-d3.png')$q$, 'denied');
   PERFORM pg_temp.t(p_after, 'D4 editor uploads into a folder', editor_, 'editor',
     $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('sop-photos', 'x/1700000000000-probed4.jpg')$q$, 'denied');
-  PERFORM pg_temp.t(p_after, 'D5 staff rewrites every photo', staff_, 'staff',
-    $q$UPDATE storage.objects SET name = name WHERE bucket_id = 'sop-photos'$q$, 'soft blocked');
-  PERFORM pg_temp.t(p_after, 'D6 editor rewrites every photo', editor_, 'editor',
-    $q$UPDATE storage.objects SET name = name WHERE bucket_id = 'sop-photos'$q$, 'soft blocked');
+  PERFORM pg_temp.t(p_after, 'D5 staff rewrites a photo', staff_, 'staff',
+    format($q$UPDATE storage.objects SET name = name WHERE id = %s$q$, one_photo), 'soft blocked');
+  PERFORM pg_temp.t(p_after, 'D6 editor rewrites a photo', editor_, 'editor',
+    format($q$UPDATE storage.objects SET name = name WHERE id = %s$q$, one_photo), 'soft blocked');
   -- Newer storage versions refuse ANY direct delete unless this is set, which
   -- would hide what the policy does. Set for this one test only.
   PERFORM set_config('storage.allow_delete_query', 'true', true);
-  PERFORM pg_temp.t(p_after, 'D7 staff deletes every photo', staff_, 'staff',
-    $q$DELETE FROM storage.objects WHERE bucket_id = 'sop-photos'$q$, 'soft blocked');
+  PERFORM pg_temp.t(p_after, 'D7 staff deletes a photo', staff_, 'staff',
+    format($q$DELETE FROM storage.objects WHERE id = %s$q$, one_photo), 'soft blocked');
   PERFORM set_config('storage.allow_delete_query', '', true);
   PERFORM pg_temp.t(p_after, 'D8 no session uploads a report photo', NULL, 'anon',
     $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('sop-photos', 'maint-1700000000000-probed8.jpg')$q$, 'soft denied');
@@ -1067,8 +1139,21 @@ $do$;
 COMMIT;
 
 -- ── The result: copy this table back whole ─────────────────────────────────
+--
+-- This session's test helpers are dropped first. batch_result() then prints
+-- the recorded lines and clears the setting that held them.
 
-SELECT n, line FROM pg_temp.batch_log ORDER BY n;
+DROP FUNCTION IF EXISTS
+  pg_temp.with_synthetic_requests(boolean),
+  pg_temp.check_a(boolean),
+  pg_temp.check_b(boolean),
+  pg_temp.check_c(boolean),
+  pg_temp.check_d(boolean),
+  pg_temp.t(boolean, text, uuid, text, text, text),
+  pg_temp.probe(uuid, text),
+  pg_temp.note(text);
+
+SELECT n, line FROM pg_temp.batch_result() ORDER BY n;
 
 -- ═══ After it runs — in the app, as the people it is about ═════════════════
 --

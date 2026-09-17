@@ -122,12 +122,99 @@ The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 recovered from document numbers on 2026-09-03), spanning 2025-04-01 to
 2026-09-01. 11 rows remain unparseable — repeated header artefacts.
 
+### Run, verification pending
+
+| file | ran | pending |
+|---|---|---|
+| `permissions_batch_2026_09_17.sql` | **Run by Nik on 17 Sep 2026, verification pending (15-row check query, below).** | Not recorded as applied until the query below returns 15 OK rows. What is known: the first attempt was cancelled before anything ran, because the editor warned that the file created a table without RLS (a temporary one holding its test output); the file now creates no table and changes no data. On the run, the results pane showed the file's own result table, which only its last statement returns, but only its first rows (the Step 0 survey) have been read. Unknown: whether part D applied or was refused, and whether any check printed NOT DEMONSTRATED. The five app checks at the end of the file have not been done. **Until the query confirms it, treat these holes as still open at the database** (the app already refuses each one): an admin can make ITSELF owner or move any account to hr (A); an admin can write, delete or unflag 790 (B); an admin can read a hidden prep's requests (C, latent: 0 such rows), and any signed-in account can file any request (C); any signed-in account can overwrite or delete any photo (D). |
+
+**The 15-row check** (read-only; every row should say OK), written 2026-09-17
+from the names the file creates:
+
+- **Groups:** A is row 1; B is rows 2–4; C is rows 5–9; D is row 10 (its
+  function, committed on its own) and rows 11–13 (its policies). Row 14 is
+  the read policy the file leaves in place; row 15 is the scratch table the
+  first version would have created.
+- **Rows 11–13 wrong while row 10 is 1:** part D was refused. Make the
+  change in the dashboard, following the steps in part D's header.
+- **A whole group missing:** that part did not run. Each part applies
+  completely or not at all, and running the whole file again is safe.
+- **A group only partly present, or row 9 or 15 not 0:** stop and report.
+- **Do not run the file's last SELECT on its own:** it clears the log as it
+  prints. **Never use "Run and enable RLS".**
+
+```sql
+-- Read-only: is permissions_batch_2026_09_17.sql applied?
+-- One row per check: what the file creates (expected) beside what the live
+-- database holds (actual). Every row should say OK.
+WITH pol AS (
+  SELECT schemaname, tablename, policyname, permissive
+    FROM pg_policies
+   WHERE (schemaname = 'public' AND tablename IN ('profiles', 'expense_entries', 'coa', 'pending_changes'))
+      OR (schemaname = 'storage' AND tablename = 'objects')
+)
+SELECT c.n, c.part, c.check_name, c.expected, c.actual,
+       CASE WHEN c.actual = c.expected THEN 'OK' ELSE 'DIFFERENT' END AS verdict
+  FROM (VALUES
+    (1, 'A profiles', 'restrictive: profiles_scope_insert, _update, _delete', 3,
+      (SELECT count(*) FROM pol
+        WHERE tablename = 'profiles' AND permissive = 'RESTRICTIVE'
+          AND policyname IN ('profiles_scope_insert', 'profiles_scope_update', 'profiles_scope_delete'))::int),
+    (2, 'B 790', 'restrictive: expense_open_accounts_insert, _update, _delete', 3,
+      (SELECT count(*) FROM pol
+        WHERE tablename = 'expense_entries' AND permissive = 'RESTRICTIVE'
+          AND policyname IN ('expense_open_accounts_insert', 'expense_open_accounts_update', 'expense_open_accounts_delete'))::int),
+    (3, 'B 790', 'restrictive: coa_sensitive_owner_insert, _update, _delete', 3,
+      (SELECT count(*) FROM pol
+        WHERE tablename = 'coa' AND permissive = 'RESTRICTIVE'
+          AND policyname IN ('coa_sensitive_owner_insert', 'coa_sensitive_owner_update', 'coa_sensitive_owner_delete'))::int),
+    (4, 'B 790', 'function coa_is_open(text)', 1,
+      (SELECT count(*) FROM pg_proc WHERE oid = to_regprocedure('public.coa_is_open(text)'))::int),
+    (5, 'C pending requests', 'restrictive: pending_prep_visibility, pending_editor_files', 2,
+      (SELECT count(*) FROM pol
+        WHERE tablename = 'pending_changes' AND permissive = 'RESTRICTIVE'
+          AND policyname IN ('pending_prep_visibility', 'pending_editor_files'))::int),
+    (6, 'C pending requests', 'functions pending_change_prep_id, prep_recipe_exists, pending_change_visible, pending_change_fileable', 4,
+      (SELECT count(*) FROM pg_proc WHERE oid IN (
+         to_regprocedure('public.pending_change_prep_id(text, text, jsonb)'),
+         to_regprocedure('public.prep_recipe_exists(uuid)'),
+         to_regprocedure('public.pending_change_visible(text, text, jsonb)'),
+         to_regprocedure('public.pending_change_fileable(text, text, jsonb)')))::int),
+    (7, 'C pending requests', 'signed-in users hold UPDATE on the whole table (1 = yes)', 0,
+      has_table_privilege('authenticated'::name, 'public.pending_changes', 'UPDATE')::int),
+    (8, 'C pending requests', 'columns signed-in users may UPDATE (status, admin_note, resolved_at, resolved_by)', 4,
+      (SELECT count(*) FROM pg_attribute a
+        WHERE a.attrelid = 'public.pending_changes'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+          AND has_column_privilege('authenticated'::name, a.attrelid, a.attnum, 'UPDATE'))::int),
+    (9, 'C pending requests', 'synthetic test requests left in the table', 0,
+      (SELECT count(*) FROM public.pending_changes WHERE id::text LIKE 'c3100000-0000-4000-8000-%')::int),
+    (10, 'D photo bucket', 'function sop_photo_upload_allowed(text)', 1,
+      (SELECT count(*) FROM pg_proc WHERE oid = to_regprocedure('public.sop_photo_upload_allowed(text)'))::int),
+    (11, 'D photo bucket', 'permissive: sop photos upload by role', 1,
+      (SELECT count(*) FROM pol
+        WHERE schemaname = 'storage' AND permissive = 'PERMISSIVE'
+          AND policyname = 'sop photos upload by role')::int),
+    (12, 'D photo bucket', 'restrictive: sop photos upload cap, no overwrite, no delete', 3,
+      (SELECT count(*) FROM pol
+        WHERE schemaname = 'storage' AND permissive = 'RESTRICTIVE'
+          AND policyname IN ('sop photos upload cap', 'sop photos no overwrite', 'sop photos no delete'))::int),
+    (13, 'D photo bucket', 'old open write policies: sop photos auth upload, update, delete', 0,
+      (SELECT count(*) FROM pol
+        WHERE schemaname = 'storage'
+          AND policyname IN ('sop photos auth upload', 'sop photos auth update', 'sop photos auth delete'))::int),
+    (14, 'D photo bucket', 'read policy kept: sop photos public read', 1,
+      (SELECT count(*) FROM pol WHERE schemaname = 'storage' AND policyname = 'sop photos public read')::int),
+    (15, '-', 'tables named batch_log', 0,
+      (SELECT count(*) FROM pg_class WHERE relname = 'batch_log')::int)
+  ) AS c(n, part, check_name, expected, actual)
+ ORDER BY c.n;
+```
+
 ### Not applied
 
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
-| `permissions_batch_2026_09_17.sql` | Nik (ready 2026-09-17) | Four independent parts, each its own transaction, each testing itself as real accounts before COMMIT. The matching code ships on its own and needs no order. **Until it runs, these holes are closed only in the app, and a direct database call still gets through:** an admin can make ITSELF owner or move any account to hr (A); an admin can write, delete or unflag 790 (B); an admin can read a hidden prep's requests (C, latent: 0 such rows), and any signed-in account can file any request (C); any signed-in account can overwrite or delete any photo (D). |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -1448,7 +1535,9 @@ In order. Nothing here is started unless it says so.
     `permissions_batch_2026_09_17.sql` adds RESTRICTIVE policies, which
     cap whatever permissive ones exist live, so an unknown policy cannot
     reopen what it narrows. Its Step 0 prints every live `profiles`
-    policy, so running it also answers this entry. What the repo's two
+    policy, so running it also answers this entry. It ran on 2026-09-17;
+    those rows have not been read back yet, so this entry stays open.
+    What the repo's two
     policies allow is worse than this entry supposed: see item 29.
 
 26. **A question for Nik: delete `/owner/catering/status`, or link it?**
@@ -1666,7 +1755,7 @@ In order. Nothing here is started unless it says so.
       admins. So an admin can set its OWN role to owner with one direct
       call (the 007 triggers guard only a row that is already owner),
       and then, as an owner, demote or delete the real one. Part A of
-      `permissions_batch_2026_09_17.sql` closes it (not run yet).
+      `permissions_batch_2026_09_17.sql` closes it (run 2026-09-17, verification pending).
     - **4, fixed in the app.** All six writes that touch an entry or an
       account refuse a non-owner on an owner-only account, fail closed:
       insert, update (the entry's current account AND the new one),
@@ -1680,7 +1769,7 @@ In order. Nothing here is started unless it says so.
       and a second press would insert them twice (found by the review).
       **Also found:** `coa_all` lets an admin clear 790's `is_sensitive`
       flag directly and then write it freely. Part B closes that and the
-      entry writes at the database (not run yet). Reads are deliberately
+      entry writes at the database (run 2026-09-17, verification pending). Reads are deliberately
       unchanged; see item 32.
     - **5, Nik decided 2026-09-17: staff WILL place orders, with a head
       approving them.** So the fix is an approval step, not a permission
@@ -1775,7 +1864,7 @@ In order. Nothing here is started unless it says so.
     - **Reads stay public.** Kitchen SOPs and repair photos are not
       secrets, and SOP may move to dedicated devices later.
     - **Writes are narrowed** (decision 2 below): part D of
-      `permissions_batch_2026_09_17.sql` (not run yet). Uploads are
+      `permissions_batch_2026_09_17.sql` (run 2026-09-17, verification pending). Uploads are
       allowed by role AND by the file names the app generates: SOP photos
       for owner, admin and editor; report photos for every role; "done"
       photos for owner, admin and editor. Nobody overwrites or deletes
@@ -1810,13 +1899,14 @@ In order. Nothing here is started unless it says so.
     review. **Latent today:** none of the 157 rows is about a prep.
 
     **Status, 2026-09-17: part C of `permissions_batch_2026_09_17.sql`**
-    (not run yet). A RESTRICTIVE read policy, so it caps "pending read"
+    (run 2026-09-17, verification pending). A RESTRICTIVE read policy, so it caps "pending read"
     and anything else live. **Editors are gated too:** an editor whose
     grant was revoked no longer reads that prep's requests, their own
     included. Every editor save path checks `canSeePrep` first, so the
     save's read-back is refused only in the moment a grant is revoked.
     None of the live rows exercises it, so the file tests eleven synthetic
-    requests it inserts and removes.
+    requests, inserted only inside a block that is rolled back; none is
+    ever committed.
 
     **Writing the SQL twin found two more mismatches, closed in the app.**
     The queue's filter and the approval disagreed on which prep a
