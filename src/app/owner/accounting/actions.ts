@@ -51,14 +51,14 @@ export type CoaAccount = {
 };
 
 /**
- * Entries a caller may see, plus how many were withheld from them.
+ * Entries a caller may see.
  *
  * is_sensitive accounts (790 เงินเดือนเจ้าของร้าน) are filtered server-side for
- * non-owners, so their totals come out reduced. The count travels with the
- * rows so every total can say "N rows not shown" — a count only, never an
- * amount, which is all a non-owner could infer from the CoA anyway.
+ * non-owners, so their totals come out reduced, and silently: since
+ * 2026-09-17 nothing tells a non-owner that rows were left out, not even a
+ * count, so none is returned (queue item 32, Nik's choice).
  */
-export type EntriesResult = { entries: ExpenseEntry[]; withheldCount: number };
+export type EntriesResult = { entries: ExpenseEntry[] };
 
 export type ExpenseEntry = {
   id: string;
@@ -515,9 +515,6 @@ export async function getEntriesByDate(date: string): Promise<EntriesResult> {
   const rows = data ?? [];
   const visible = rows
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
-  // Rows a non-owner may not see are counted, never summed: the count is
-  // rendered beside every total so a reduced figure is labelled as reduced.
-  const withheldCount = rows.length - visible.length;
   const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       const row = r as unknown as { bill_ref: string | null; display_order: number | null; supplier_id: string | null; detail: string | null; suppliers: { name: string } | null };
@@ -538,7 +535,7 @@ export async function getEntriesByDate(date: string): Promise<EntriesResult> {
         detail: row.detail ?? null,
       };
   });
-  return { entries, withheldCount };
+  return { entries };
 }
 
 export async function getRecentEntries(yearMonth: string): Promise<EntriesResult> {
@@ -588,9 +585,6 @@ export async function getRecentEntries(yearMonth: string): Promise<EntriesResult
   const rows = data;
   const visible = rows
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
-  // Rows a non-owner may not see are counted, never summed: the count is
-  // rendered beside every total so a reduced figure is labelled as reduced.
-  const withheldCount = rows.length - visible.length;
   const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       return {
@@ -610,7 +604,7 @@ export async function getRecentEntries(yearMonth: string): Promise<EntriesResult
         detail: null,
       };
   });
-  return { entries, withheldCount };
+  return { entries };
 }
 
 export async function updateExpenseEntry(
@@ -679,7 +673,7 @@ export async function deleteExpenseEntry(id: string): Promise<AccountingActionRe
 
 export async function getEntriesByIds(ids: string[]): Promise<EntriesResult> {
   const profile = await requireAdmin();
-  if (!ids.length) return { entries: [], withheldCount: 0 };
+  if (!ids.length) return { entries: [] };
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("expense_entries")
@@ -690,9 +684,6 @@ export async function getEntriesByIds(ids: string[]): Promise<EntriesResult> {
   const rows = data ?? [];
   const visible = rows
     .filter((r) => profile.role === "owner" || !(r.coa as unknown as { is_sensitive: boolean }).is_sensitive);
-  // Rows a non-owner may not see are counted, never summed: the count is
-  // rendered beside every total so a reduced figure is labelled as reduced.
-  const withheldCount = rows.length - visible.length;
   const entries = visible.map((r) => {
       const coa = r.coa as unknown as { name: string; group_name: string | null; is_sensitive: boolean } | null;
       return {
@@ -712,7 +703,7 @@ export async function getEntriesByIds(ids: string[]): Promise<EntriesResult> {
         detail: null,
       };
   });
-  return { entries, withheldCount };
+  return { entries };
 }
 
 export async function bulkInsertEntries(
@@ -960,12 +951,6 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
    */
   expenseDataIncomplete: boolean;
   /**
-   * Sensitive accounts with entries this month that this caller may not see.
-   * 0 for the owner. Rendered as a count beside the totals and as a cell in
-   * the xlsx, so an exported figure says it is partial.
-   */
-  withheldAccounts: number;
-  /**
    * The month has not finished yet, so its expenses are partial by nature.
    * A different condition from expenseDataIncomplete with a different cause,
    * and both can be true at once.
@@ -1024,13 +1009,11 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
 
   const totalRevenue = revenueRows.reduce((s, r) => s + (r.amount ?? 0), 0);
 
-  // Filter sensitive for non-owners
+  // Filter sensitive for non-owners. Silently since 2026-09-17 (queue item
+  // 32, Nik's choice): an admin's totals, profit and break-even leave these
+  // accounts out, and nothing on screen or in the xlsx says so.
   const visibleCoa =
     profile.role === "owner" ? allCoa : allCoa.filter((c) => !c.is_sensitive);
-  const withheldAccounts =
-    profile.role === "owner"
-      ? 0
-      : allCoa.filter((c) => c.is_sensitive && entries.some((e) => e.coa_code === c.code)).length;
 
   // Sum entries by coa_code
   const totals = new Map<string, number>();
@@ -1082,7 +1065,6 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
     capex,
     tax,
     expenseDataIncomplete,
-    withheldAccounts,
     monthInProgress,
   };
 }

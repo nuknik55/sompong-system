@@ -207,9 +207,6 @@ export default async function AccountingSummaryPage({
             <tr>
               <td className="px-4 py-2 font-semibold text-neutral-900">
                 รวมค่าใช้จ่ายดำเนินงาน
-                {summary.withheldAccounts > 0 && (
-                  <span className="ml-2 text-xs font-normal text-neutral-500">มีบัญชีที่ไม่แสดง {summary.withheldAccounts} บัญชี — ยอดนี้ไม่รวม</span>
-                )}
               </td>
               <td className="px-4 py-2 text-right tabular-nums font-semibold">{formatBaht(summary.operatingExpense)}</td>
               <td className="px-4 py-2 text-right tabular-nums font-semibold">

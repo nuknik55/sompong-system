@@ -10,7 +10,7 @@ import { ToolRow } from "../tool-row";
  * Break-even for one month: four figures and one sentence of basis. No
  * table, no chart, no trend — if it wants either, that is a different item.
  *
- * Reuses getMonthlySummary (amounts, withheld count, completeness) and
+ * Reuses getMonthlySummary (amounts, completeness) and
  * monthly_covers; the classification comes from coa.cost_behavior through
  * the rule in break-even.ts.
  */
@@ -71,16 +71,10 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
           {notices.map((n) => (
             <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{n}</p>
           ))}
-          {/* An admin does not see 790. Fixed is understated by exactly that,
-              so the break-even shown is LOWER than the true one and the safety
-              margin higher — said in the same sentence as the count, or an
-              admin reads a margin that does not exist. */}
-          {summary.withheldAccounts > 0 && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              มีบัญชีที่ไม่แสดง {summary.withheldAccounts} บัญชี — ต้นทุนคงที่ที่ใช้คำนวณต่ำกว่าจริง
-              จุดคุ้มทุนที่แสดงจึง<strong>ต่ำกว่าจริง</strong> และส่วนเผื่อความปลอดภัย<strong>สูงกว่าจริง</strong> ตัวเลขเต็มดูได้จากบัญชีเจ้าของร้าน
-            </p>
-          )}
+          {/* An admin does not see 790, so fixed cost here is understated by
+              exactly that: the break-even shown is LOWER than the true one
+              and the safety margin higher. Nothing says so, by Nik's choice
+              on 2026-09-17 (queue item 32); only the owner's figures are whole. */}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Figure label="อัตรากำไรส่วนเกิน" value={r.contributionMargin !== null ? pct(r.contributionMargin) : "—"} sub={`ผันแปร ${baht(r.variable)} จากรายได้ ${baht(r.revenue)}`} />
