@@ -117,6 +117,7 @@ and dated here.
 | `close_open_template_policies_migration.sql` | 2026-09-16 | **Anonymous access closed** on `day_swap_requests` (7 HR rows were readable with the public key and no login) and `pos_import_meta`. Both had a template policy named "owner can manage …" that was `USING (true)` for every role. Replaced by role-listed policies TO authenticated. Self-check before COMMIT: 6 policies, all bound to authenticated, RLS on. **Verified: the anonymous scan returns 0 of 63** (was 2); the service key still sees 7 and 1, which proves no data was lost but, since it bypasses RLS, not signed-in access (see "Anonymous access"). |
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 | `permissions_batch_2026_09_17.sql` | 2026-09-17 | **Four parts.** A `profiles`: restrictive write policies, so an admin can no longer make itself owner, give the hr role, or touch the owner's, hr's or another admin's row. B `expense_entries` + `coa`: restrictive policies and `coa_is_open()`, so only the owner writes an owner-only account (790) or changes such an account; reads unchanged. C `pending_changes`: restrictive read and filing policies, four functions, and UPDATE narrowed to the four columns approval writes. D `sop-photos`: uploads by role and file name, no overwrite or delete through the API; reads stay public. **Verified by the file's own result table, which Nik pasted in full (168 rows):** every judged row ok (A1–A16, B1–B17, the 18-case prep-id check, C1–C19, "none of the 11 synthetic requests remains", D1–D14); no "PART D NOT APPLIED" and no "NOT DEMONSTRATED"; the survey rows list every new policy and none of the three old `sop photos auth …` write policies; `batch_log` count 0. The 15-row check query below was NOT run; that table is the evidence. **Its "before" rows already showed the closed state**, and the survey, which runs before any change, already listed the new policies, so the batch was already in place when this run began: an earlier run had applied it, and this one re-created the same objects, which the file is built to do safely. The first attempt had been cancelled before anything ran (the editor warned about a temporary table); the version that ran creates no table and changes no data. The five app checks at the end of the file are still Nik's to do. |
+| `catering_sales_limits_migration.sql` | 2026-09-17 | **Queue item 33.** 18 restrictive policies and `catering_event_unlocked(uuid)`. Only owner and admin write set menus and their items. For everyone else a cost-locked booking's own row, menu lines and charges are read-only, and `cost_locked_at` stays empty on every booking row they write. The history is append-only through the API for every role, and a new line must name its caller and carry the time of its own insert. **Verified by the file's own result table, as Nik reported it: 138 rows** (the header's 130 plus the 8 surveyed policies); every judged row ok (S1–S15, L1–L34 with L25, the cascade test, counted by hand, and H1–H14) and no FAIL; the last row: nothing the tests wrote remains, counts unchanged (set menus 3, items 17, events 3, menu lines 11, charges 17, history 54). No booking was locked at run time. The survey rows and the three app checks at the end of the file were not reported. Not covered, by design: a locked booking's staff list, and two foreign-key actions (the file's header). |
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -1507,15 +1508,27 @@ In order. Nothing here is started unless it says so.
 25. ~~**HYPOTHESIS, not verified: `profiles`' own policies may explain how an
     admin manages `/owner/team`.**~~ **CLOSED 2026-09-17** by the Step 0
     survey of `permissions_batch_2026_09_17.sql`, rows 19–25 of the result
-    table Nik pasted: **seven live policies on `profiles`.** Five are known
-    from the repo: `profiles_select_own` and `profiles_owner_write` (0001),
-    whose `is_owner()` admits admins, which is how an admin manages the team
-    page, and part A's three restrictive `profiles_scope_*`. **Two are
-    created by no file in the repo**, as this entry supposed. Their names
-    and text are in those two rows and are not yet copied here: paste rows
-    19–25 to record them. Whatever they allow, part A's restrictive
-    policies cap them, and A1–A16 passed live as the real accounts, so the
-    effective write rule is the tested one.
+    table Nik pasted. **Seven live policies on `profiles`, recorded
+    2026-09-17:**
+
+    | policy | kind | to | rule | defined in |
+    |---|---|---|---|---|
+    | `auth_read_profiles` | PERMISSIVE SELECT | authenticated | USING `true` | **no file in the repo**; its name appears nowhere in it |
+    | `owner_admin_delete_profiles` | PERMISSIVE DELETE | authenticated | USING `EXISTS (SELECT 1 FROM profiles p1 WHERE p1.id = auth.uid() AND p1.role IN ('owner','admin'))` | **no file in the repo**; only QUOTED, in a comment in `deleteUser()` (`src/app/owner/team/actions.ts`), and named in the comments of `profile_employee_link_migration.sql` |
+    | `profiles_owner_write` | PERMISSIVE ALL | public | USING and WITH CHECK `is_owner()` | `migrations/0001_init.sql` |
+    | `profiles_select_own` | PERMISSIVE SELECT | public | USING `id = auth.uid() OR is_owner()` | `migrations/0001_init.sql` |
+    | `profiles_scope_delete`, `_insert`, `_update` | RESTRICTIVE | | part A | `permissions_batch_2026_09_17.sql` |
+
+    What the two that no repo file creates mean:
+    - **Every signed-in account reads every profile** (name, role and
+      employee link) through `auth_read_profiles`, whatever
+      `profiles_select_own` says; that policy alone would limit a
+      non-admin to its own row. Wider than the repo showed; not changed.
+    - **An admin may delete profiles** through `owner_admin_delete_profiles`
+      (and through `profiles_owner_write`, since `is_owner()` admits
+      admins). Part A's restrictive `profiles_scope_delete` caps both, and
+      A1–A16 passed live as the real accounts, so the effective write rule
+      is the tested one.
 
     The entry as first written: **Not started.**
     `profile_employee_link_migration.sql` recorded a puzzle: the only
@@ -1534,15 +1547,18 @@ In order. Nothing here is started unless it says so.
     `permissions_batch_2026_09_17.sql` adds RESTRICTIVE policies, which
     cap whatever permissive ones exist live, so an unknown policy cannot
     reopen what it narrows. Its Step 0 prints every live `profiles`
-    policy, so running it also answers this entry. It ran on 2026-09-17;
-    those rows have not been read back yet, so this entry stays open.
+    policy, so running it also answers this entry. It ran on 2026-09-17,
+    and the rows were read back the same day (above).
     What the repo's two
     policies allow is worse than this entry supposed: see item 29.
 
-26. **A question for Nik: delete `/owner/catering/status`, or link it?**
-    Nothing links to it since it was deliberately taken off the sub-nav,
-    because the booking list already filters by status, so deletion is the
-    likelier answer.
+26. ~~**A question for Nik: delete `/owner/catering/status`, or link it?**~~
+    **CLOSED 2026-09-17:** Nik kept it. สถานะ is back on the catering sub-nav
+    (`1e3ab8e`), after ปฏิทิน, for every role that sees the nav: every page
+    that renders it is `requireSales` or `requireAdmin`, and the status page
+    is `requireSales`. The question as first written: nothing linked to it
+    since it was deliberately taken off the sub-nav, because the booking
+    list already filters by status, so deletion was the likelier answer.
 
 27. ~~**An editor's DUPLICATE is approved as an EMPTY recipe.**~~ **CLOSED
     2026-09-17.** Found 2026-09-16.
@@ -1997,7 +2013,27 @@ In order. Nothing here is started unless it says so.
     must keep treating them as untrusted input, which is why
     `approvalRowId` exists.
 
-32. **A question for Nik: "no indicator", or the notices?**
+32. ~~**A question for Nik: "no indicator", or the notices?**~~ **CLOSED
+    2026-09-17.** Nik's answers: hide owner-only rows from non-owners
+    silently, then give the money pages one neutral line.
+    - `6416e9b`: the "มีรายการที่ไม่แสดง N รายการ" notices are gone from
+      all six places that had them (the month list, the daily page on
+      screen and in print, the payment voucher, the P&L summary, the P&L
+      print page and its Excel file, break-even), and the counts behind
+      them are no longer computed or sent to the browser. No total
+      changed: every figure was already built only from the rows a
+      non-owner may see.
+    - `3b4a83a`: break-even, the P&L summary, the P&L print page and its
+      Excel file show every non-owner "ตัวเลขฉบับเต็มดูได้ที่บัญชีเจ้าของร้าน",
+      every month, whatever the data; it depends on the role alone
+      (`owner-only-note.ts`, tested). The owner never sees it.
+    - **What that line stands for:** an admin's break-even is LOWER and
+      its safety margin HIGHER than the owner's, its operating profit
+      higher, and its Excel file partial.
+    - **Still open, as item 36:** admins can still READ 790's rows
+      through the API, and the transfer slip still counts them.
+
+    The question as first written:
     `UNWIRED_FEATURES.md` records his decision as **no indicator** for
     rows a non-owner may not see (790). Yet five screens show
     "มีรายการที่ไม่แสดง N รายการ" (`withheldCount`) beside totals that
@@ -2009,9 +2045,25 @@ In order. Nothing here is started unless it says so.
       purpose, because the notices count them. With no indicator, the
       read can be closed too, and the reduced totals then carry no label.
 
-33. **Catering: what sales can do by direct call that the app keeps from
-    them.** Found 2026-09-17 by the role sweep, each point confirmed by a
-    second reader. Not started.
+33. ~~**Catering: what sales can do by direct call that the app keeps from
+    them.**~~ **CLOSED 2026-09-17** by `catering_sales_limits_migration.sql`
+    (applied; see the table above) and `9f11a8b` (deleteCateringEvent checks
+    the lock and returns the refusal), apart from its follow-ups:
+    - **A, done:** `saveBooking` checks the lock before any write
+      (`f4bdabd`). A later step always refused a locked booking, but by
+      then step 1 had rewritten the staff list, created a typed-in
+      customer and added a history line, and for owner and admin saved
+      the booking's own fields.
+    - **B, Nik's choice 2026-09-17: the owner may correct and remove
+      history lines** from buttons on the booking page, since he cannot
+      use the Supabase dashboard. Its migration and buttons are under
+      review; the migration is not applied.
+    - **The repo-drift bullet below stays open:** the file's survey
+      printed the live policies on `catering_event_cost_snapshots` and
+      `catering_event_labor`, but those rows were not pasted.
+
+    Found 2026-09-17 by the role sweep, each point confirmed by a
+    second reader.
     - **Set menus.** `catering_set_menus_rw` and
       `catering_set_menu_items_rw` admit sales to writes. Every set-menu
       write in the app is `requireAdmin` (`de72798` made them admin-only
@@ -2041,8 +2093,13 @@ In order. Nothing here is started unless it says so.
     insert-only with the actor pinned), **plus one line in the app** (the
     lock check in `deleteCateringEvent`).
 
-34. **Role checks in the app that name one role and admit the others.**
-    Found 2026-09-17 by the role sweep. Not started. Small.
+34. ~~**Role checks in the app that name one role and admit the others.**~~
+    **CLOSED 2026-09-17** (`6ae1847`) **apart from the second bullet**:
+    `editAccess()` (`src/lib/edit-access.ts`, tested) now decides the
+    recipe pages, `saveRecipeItems` and the SOP page, and the stale
+    comments are corrected. **Still open:** `staff/page.tsx` filters
+    hidden menus for staff and editor only.
+    Found 2026-09-17 by the role sweep. Small.
     - `saveRecipeItems` refuses only staff and routes only editors to a
       request, so hr and sales reach the direct-save branch; the table
       policy refuses the write, and the screen then says it saved.
@@ -2103,6 +2160,33 @@ In order. Nothing here is started unless it says so.
     **Before any migration:** `pg_policies` for the order and station
     tables, and counts of orders by status, self-reviewed orders, orders
     with no station, order lines, and lines with each override set.
+
+36. **Admins can still READ account 790's rows through the API.** Nik,
+    2026-09-17: the next task. The app hides them (item 32); the database
+    does not (part B of the permissions batch left the read in place;
+    its test B15). Not started. What it takes, from the 2026-09-17
+    report:
+    - **One restrictive SELECT policy on `expense_entries`:**
+      `is_owner_only() OR coa_is_open(coa_code)`, the shape of part B's
+      write policies; `coa_is_open()` is already live. No app change:
+      every screen already drops these rows for non-owners, and
+      `ownerOnlyEntryRefusal` already refuses an id it cannot find.
+    - **The import logs give the amount away by subtraction.**
+      `budget69_imports` and `outsource_imports` are readable by admins,
+      and their `written_total` includes 790 (budget69 maps
+      เงินเดือนเจ้าของร้าน, and the outsource file เงินเดือนออฟฟิศ, to 790),
+      so a month's 790 lump is `written_total` minus the lumps an admin
+      can see. The app never reads those totals. Options: owner-only rows
+      (the admin's start-of-month checklist reads `imported_at` from
+      them), withholding only the total columns from non-owners (check
+      against the import functions), or the totals in an owner-only
+      table.
+    - **The transfer slip** counts 790 rows in its "พบ N รายการ…
+      ที่ยังไม่ได้เลือกซัพ" line for an admin, and its supplier totals would
+      include a 790 line entered with a supplier. Left alone until this
+      item (Nik, 2026-09-17): the policy above corrects both.
+    - Optional: the 790 row of `coa` itself (a name, no amount).
+    - Tested like part B, as the real admin and owner.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was

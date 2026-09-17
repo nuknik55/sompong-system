@@ -32,13 +32,17 @@ they leave the door open if an approval step is ever wanted.
 | `src/app/owner/accounting/daily/DailyEntryClient.tsx` | deleted |
 | `src/app/owner/hr/employees/EmployeesClient.tsx` | deleted |
 
-> **Checked against the code on 2026-09-17; two statements below do not
-> match it.** (1) There is no `getCoaForEntry`; the filtering reader is
-> `getCoa()` in `src/app/owner/accounting/actions.ts`. (2) "Nik's decision:
-> no indicator" is contradicted by the code, which shows
-> "มีรายการที่ไม่แสดง N รายการ" (`withheldCount`) on the entry, daily,
-> summary, P&L print and break-even screens. Which one is current is
-> Nik's call; see queue items 3 and 29 in `supabase/README.md`.
+> **Checked against the code on 2026-09-17.** (1) There is no
+> `getCoaForEntry`; the filtering reader is `getCoa()` in
+> `src/app/owner/accounting/actions.ts`. (2) "Nik's decision: no
+> indicator" was contradicted by the code, which showed
+> "มีรายการที่ไม่แสดง N รายการ" (`withheldCount`) on six screens. **Settled
+> the same day (queue item 32):** the notices and their counts are gone
+> (`6416e9b`), and break-even, the P&L summary, the P&L print page and
+> its Excel file show every non-owner one neutral line,
+> "ตัวเลขฉบับเต็มดูได้ที่บัญชีเจ้าของร้าน", whatever the month holds
+> (`3b4a83a`). It depends on the role alone, so it discloses nothing
+> about hidden rows.
 
 **The two accounting ones were genuinely redundant.** Sensitive COA accounts
 are filtered server-side — `getCoaForEntry` drops `is_sensitive` rows for

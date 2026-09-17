@@ -163,10 +163,13 @@ is `is_editor_or_above()`, and that name is accurate.
 says** (live by the repo; policy text not read live):
 - `app_settings_owner_write` (the q-factor). Meant owner-only (queue item
   23); the fix is written and HELD.
-- `profiles_owner_write`. An admin can make itself owner (item 29); the fix
-  is part A of `permissions_batch_2026_09_17.sql`.
+- `profiles_owner_write`. An admin could make itself owner (item 29);
+  part A of `permissions_batch_2026_09_17.sql` caps it (applied
+  2026-09-17).
 - `profiles_select_own`. Admins read every profile, which the team screen
-  needs; the name says "own".
+  needs; the name says "own". **And it decides nothing in practice:** the
+  live `auth_read_profiles` (`USING true`, created by no file in the repo;
+  README item 25) lets every signed-in account read every profile.
 - `menus_owner_write`, `pos_sales_aliases_owner_write`: admin writes are
   intended.
 - `stations_insert`, `stations_update`, `stations_delete`: admin writes are
