@@ -2109,11 +2109,20 @@ async function issueCateringQuote(eventId: string): Promise<void> {
   revalidatePath(`/owner/catering/${eventId}/quote`);
 }
 
-export async function deleteCateringEvent(id: string): Promise<void> {
+export async function deleteCateringEvent(id: string): Promise<{ error?: string }> {
   await requireSales();
   const supabase = await createClient();
+  // A cost-locked event is frozen, deletion included: its locked P&L would
+  // go with it (queue item 33). Returned rather than thrown, so the refusal
+  // reaches the person in production, where a thrown message is hidden.
+  try {
+    await assertCostNotLocked(supabase, id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "ลบไม่สำเร็จ" };
+  }
   // catering_event_staff rows go with it via ON DELETE CASCADE.
   const { error } = await supabase.from("catering_events").delete().eq("id", id);
   if (error) throw error;
   revalidatePath("/owner/catering");
+  return {};
 }

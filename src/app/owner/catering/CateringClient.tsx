@@ -74,8 +74,9 @@ export function CateringClient({
     const id = confirmDelete.id;
     startTransition(async () => {
       try {
-        await deleteCateringEvent(id);
+        const result = await deleteCateringEvent(id);
         setConfirmDelete(null);
+        if (result.error) { setError(result.error); return; }
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
