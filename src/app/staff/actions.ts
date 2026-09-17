@@ -44,6 +44,13 @@ export async function saveRecipeItems(
     return { status: "error", message: "ไม่มีสิทธิ์แก้ไขสูตร" };
   }
 
+  // The target is sent by the browser. Approval treats anything but "menu"
+  // as a prep, so anything but the two known values is refused here, before
+  // the prep check below could be skipped (item 31).
+  if (target !== "menu" && target !== "prep") {
+    return { status: "error", message: "ประเภทสูตรไม่ถูกต้อง" };
+  }
+
   // Admins are named per recipe like everyone else, so the role check above is
   // not the whole answer for a prep. Refused rather than silently ignored: an
   // edit that appears to save and does not is worse than a message.

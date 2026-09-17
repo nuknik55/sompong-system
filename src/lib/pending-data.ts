@@ -1,6 +1,9 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPrepVisibility } from "@/lib/prep-access";
+import { prepIdOfChange } from "@/lib/pending-prep-id";
+
+export { prepIdOfChange };
 
 export type ChangeType =
   | "recipe_edit"
@@ -54,9 +57,10 @@ export async function savePendingChange(
  * The header badge. It counts what the approve queue would show this
  * person, with the same filter: a request about a prep they cannot see is
  * neither listed nor counted, since counting it would show a pending
- * request nobody could find. (This is the SCREEN's filter. The table's read
- * policy still lets any admin read such a row through the API; queue item
- * 31.)
+ * request nobody could find. (This is the SCREEN's filter. The table's own
+ * read policy hides the same rows once
+ * supabase/permissions_batch_2026_09_17.sql has run; queue item 31.
+ * The one difference is described in pending-prep-id.ts.)
  *
  * Never throws: the owner layout renders it on every page. If visibility
  * cannot be worked out, prep requests are simply not counted.
@@ -79,25 +83,6 @@ export async function getPendingCount(): Promise<number> {
     // leave canSee closed
   }
   return prepIds.filter((x) => x === null || canSee(x)).length;
-}
-
-/**
- * Which prep recipe a pending change is about, or null when it is not about
- * one. Used to keep a prep's composition out of the approve queue for an
- * admin who has not been granted that recipe — a recipe_edit payload carries
- * the entire item list.
- */
-export function prepIdOfChange(changeType: string, targetId: string, payload: PendingPayload): string | null {
-  const p = payload as Record<string, unknown>;
-  if (changeType === "recipe_edit") return p.target === "prep" ? (p.parentId as string) ?? targetId : null;
-  if (changeType === "prep_yield_edit") return targetId;
-  if (changeType === "prep_delete") return (p.prepId as string) ?? targetId;
-  // A DUPLICATE is about its source: approving it copies the source's lines,
-  // which approveChange refuses unless the approver can see that prep, and
-  // the payload carries the source's yield. A plain new prep is about nothing
-  // hidden.
-  if (changeType === "prep_create") return typeof p.duplicatedFrom === "string" ? p.duplicatedFrom : null;
-  return null;
 }
 
 export async function getPendingList(): Promise<PendingChange[]> {
@@ -129,7 +114,9 @@ export async function getPendingList(): Promise<PendingChange[]> {
       editorName: nameById.get(d.editor_id) ?? "ไม่ทราบชื่อ",
       changeType: d.change_type as ChangeType,
       targetId: d.target_id,
-      payload: d.payload as PendingPayload,
+      // Only an object is a payload the screen can read; anything else is
+      // shown as empty rather than breaking the page for every approver.
+      payload: (d.payload && typeof d.payload === "object" && !Array.isArray(d.payload) ? d.payload : {}) as PendingPayload,
       status: d.status as PendingStatus,
       adminNote: d.admin_note,
       createdAt: d.created_at,
@@ -144,9 +131,12 @@ export async function resolvePendingChange(
   adminNote?: string
 ): Promise<void> {
   const supabase = await createClient();
-  const { error } = await supabase
+  // Counted: a status write the table's policies refuse updates 0 rows with
+  // no error, and a change must not look resolved when it is not.
+  const { error, count } = await supabase
     .from("pending_changes")
-    .update({ status, admin_note: adminNote ?? null, resolved_at: new Date().toISOString(), resolved_by: adminId })
+    .update({ status, admin_note: adminNote ?? null, resolved_at: new Date().toISOString(), resolved_by: adminId }, { count: "exact" })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  if (count !== 1) throw new Error("ฐานข้อมูลไม่อนุญาตให้เปลี่ยนสถานะคำขอนี้");
 }

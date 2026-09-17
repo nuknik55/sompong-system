@@ -109,14 +109,20 @@ export async function approveChange(id: string): Promise<ApproveResult> {
 
   // The queue hides every request about a prep the approver cannot see
   // (getPendingList), and the action refuses the same ones, by the same
-  // function. (The table's own read policy does not hide them: any admin can
-  // still read such a row through the API. Queue item 31.)
+  // function. (The table's own read policy hides the same rows once
+  // supabase/permissions_batch_2026_09_17.sql has run; queue item 31.
+  // The one difference is described in pending-prep-id.ts.)
   // Without this, a request id obtained any other way would be applied as
   // writes that RLS silently turns into no-ops, and the change would still be
   // marked APPROVED: a false audit trail. For a duplicate this is the SOURCE
   // prep, since approving it copies the source's lines.
   const guardedPrepId = prepIdOfChange(row.change_type as string, row.target_id as string, p);
-  if (guardedPrepId && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
+  // `!== null`, not truthiness: an empty-string id is a prep id too, and
+  // canSeePrep refuses it, as the queue does.
+  if (guardedPrepId !== null && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
+
+  // Written into the request's note when it is marked approved.
+  let approvalNote: string | undefined;
 
   try {
     switch (row.change_type) {
@@ -125,7 +131,8 @@ export async function approveChange(id: string): Promise<ApproveResult> {
         const items = p.items as { id: string; ingredient_id: string | null; quantity: number; unit: string | null }[];
         const deletedIds = p.deletedIds as string[];
         const target = p.target as "menu" | "prep";
-        const parentId = p.parentId as string;
+        // A prep's id is the one the guard above checked (prepIdOfChange).
+        const parentId = target === "menu" ? (p.parentId as string) : guardedPrepId!;
         const table = target === "menu" ? "menu_recipe_items" : "prep_recipe_items";
         const parentCol = target === "menu" ? "menu_id" : "prep_recipe_id";
 
@@ -134,8 +141,29 @@ export async function approveChange(id: string): Promise<ApproveResult> {
         // note on approveChange). The checks here guarantee the change is not
         // marked approved, and name the failing step — they cannot roll the
         // earlier writes back.
+        // Every write is limited to the parent that was checked: the line
+        // ids come from the request, and a line of ANOTHER recipe must not be
+        // deleted or rewritten under this recipe's name (item 29 review).
+        // Read BEFORE any write: which of the request's existing lines are
+        // still in this recipe. A request carries the recipe's whole line
+        // list as it was when filed, so a line deleted since (by an earlier
+        // approval, or by an admin) is skipped, as it always was, and the
+        // rest is applied. The skip is written into the request's note. A
+        // line of ANOTHER recipe is skipped the same way.
+        const existingIds = [...new Set((items ?? []).filter((it) => it.ingredient_id && !it.id.startsWith("new-")).map((it) => it.id))];
+        const present = new Set<string>();
+        if (existingIds.length > 0) {
+          const { data: found, error: foundError } = await supabase
+            .from(table).select("id").eq(parentCol, parentId).in("id", existingIds);
+          if (foundError) throw new Error(`ตรวจรายการวัตถุดิบ: ${foundError.message}`);
+          for (const r of found ?? []) present.add(r.id as string);
+          const skipped = existingIds.length - present.size;
+          if (skipped > 0) {
+            approvalNote = `ข้ามวัตถุดิบ ${skipped} แถวที่ไม่อยู่ในสูตรนี้แล้วตอนอนุมัติ (ถูกลบหรือเปลี่ยนหลังส่งคำขอ)`;
+          }
+        }
         if (deletedIds && deletedIds.length > 0) {
-          await run("ลบวัตถุดิบที่ถูกเอาออก", supabase.from(table).delete().in("id", deletedIds));
+          await run("ลบวัตถุดิบที่ถูกเอาออก", supabase.from(table).delete().in("id", deletedIds).eq(parentCol, parentId));
         }
         for (const [index, item] of (items ?? []).entries()) {
           if (!item.ingredient_id) continue;
@@ -144,11 +172,19 @@ export async function approveChange(id: string): Promise<ApproveResult> {
               `เพิ่มวัตถุดิบแถวที่ ${index + 1}`,
               supabase.from(table).insert({ [parentCol]: parentId, ingredient_id: item.ingredient_id, quantity: item.quantity, unit: item.unit, sort_order: index }),
             );
-          } else {
-            await run(
-              `แก้ไขวัตถุดิบแถวที่ ${index + 1}`,
-              supabase.from(table).update({ ingredient_id: item.ingredient_id, quantity: item.quantity, unit: item.unit, sort_order: index }).eq("id", item.id),
-            );
+          } else if (present.has(item.id)) {
+            // Counted: the line was in this recipe a moment ago, so 0 rows
+            // means it changed during the approval, and the request must not
+            // then be marked approved.
+            const { error, count } = await supabase
+              .from(table)
+              .update({ ingredient_id: item.ingredient_id, quantity: item.quantity, unit: item.unit, sort_order: index }, { count: "exact" })
+              .eq("id", item.id)
+              .eq(parentCol, parentId);
+            if (error) throw new Error(`แก้ไขวัตถุดิบแถวที่ ${index + 1}: ${error.message}`);
+            if (count !== 1) {
+              throw new Error(`แก้ไขวัตถุดิบแถวที่ ${index + 1}: แถวนี้เพิ่งถูกเปลี่ยนระหว่างอนุมัติ — ตรวจสูตรแล้วปฏิเสธคำขอนี้`);
+            }
           }
         }
         revalidatePath(`/staff/${target}/${parentId}`);
@@ -156,7 +192,7 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       }
 
       case "prep_yield_edit": {
-        const prepId = p.parentId as string;
+        const prepId = guardedPrepId!; // the id the guard above checked
         await run(
           "แก้ไขปริมาณผลผลิตของ prep",
           supabase.from("prep_recipes").update({ batch_yield_qty: p.qty, batch_yield_unit: p.unit }).eq("id", prepId),
@@ -382,7 +418,7 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       case "prep_delete": {
         // NOT ATOMIC: two deletes. A failure on the second leaves the prep
         // recipe behind with its ingredient row already gone.
-        const prepId = p.prepId as string;
+        const prepId = guardedPrepId!; // the id the guard above checked
         await run("ลบวัตถุดิบของ prep", supabase.from("ingredients").delete().eq("prep_recipe_id", prepId));
         await run("ลบสูตร prep", supabase.from("prep_recipes").delete().eq("id", prepId));
         revalidatePath("/owner/ingredients");
@@ -480,7 +516,12 @@ export async function approveChange(id: string): Promise<ApproveResult> {
     return { error: e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ" };
   }
 
-  await resolvePendingChange(id, "approved", admin.id);
+  try {
+    await resolvePendingChange(id, "approved", admin.id, approvalNote);
+  } catch (e) {
+    revalidatePath("/owner/approve");
+    return { error: `บันทึกการเปลี่ยนแปลงแล้ว แต่เปลี่ยนสถานะคำขอไม่สำเร็จ: ${e instanceof Error ? e.message : ""}` };
+  }
   revalidatePath("/owner/approve");
   return {};
 }
@@ -495,9 +536,13 @@ export async function rejectChange(id: string, adminNote: string): Promise<Appro
   // The same guard as approveChange: a request the queue hides from this
   // approver is neither approvable nor rejectable by them.
   const guardedPrepId = prepIdOfChange(row.change_type as string, row.target_id as string, row.payload as Record<string, unknown>);
-  if (guardedPrepId && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
+  if (guardedPrepId !== null && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
 
-  await resolvePendingChange(id, "rejected", admin.id, adminNote || undefined);
+  try {
+    await resolvePendingChange(id, "rejected", admin.id, adminNote || undefined);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "ปฏิเสธคำขอไม่สำเร็จ" };
+  }
   revalidatePath("/owner/approve");
   return {};
 }

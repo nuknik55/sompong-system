@@ -11,7 +11,11 @@ export default async function OwnerTeamPage() {
 
   // Name-only column list, same direct-table query the HR pages use. employees
   // carries salary columns, so they are simply never selected here.
-  const [{ data: profiles }, { data: usersList }, { data: employees }] = await Promise.all([
+  // Grant holders, for the team rule (an admin may not act on them). Read
+  // with the service role: an admin's session sees only its own grants. A
+  // failed read marks EVERY account as a holder, so the screen offers less,
+  // never more; the server checks again either way.
+  const [{ data: profiles }, { data: usersList }, { data: employees }, grants] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, employee_id"),
     admin.auth.admin.listUsers(),
     supabase
@@ -19,7 +23,11 @@ export default async function OwnerTeamPage() {
       .select("id, full_name, nickname")
       .eq("is_active", true)
       .order("sort_order"),
+    admin.from("prep_recipe_access").select("profile_id", { count: "exact" }),
   ]);
+  // A read cut short by the 1,000-row cap is treated as a failed one.
+  const grantsComplete = !grants.error && grants.count != null && (grants.data ?? []).length === grants.count;
+  const grantHolders = grantsComplete ? new Set((grants.data ?? []).map((g) => g.profile_id as string)) : null;
 
   const emailById = new Map(usersList?.users.map((u) => [u.id, u.email ?? "-"]) ?? []);
   const users = (profiles ?? []).map((p) => ({
@@ -28,6 +36,7 @@ export default async function OwnerTeamPage() {
     role: p.role as Role,
     username: displayIdentity(emailById.get(p.id) ?? "-"),
     employee_id: p.employee_id as string | null,
+    holds_prep_grants: grantHolders ? grantHolders.has(p.id) : true,
   }));
 
   const employeeOptions = (employees ?? []).map((e) => ({

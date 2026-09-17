@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { createUser, deleteUser, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
 import type { Role } from "@/lib/auth";
+import { assignableRoles, teamRefusal } from "@/lib/team-rules";
 
 export type TeamUser = {
   id: string;
@@ -10,6 +11,7 @@ export type TeamUser = {
   role: Role;
   username: string;
   employee_id: string | null;
+  holds_prep_grants: boolean;
 };
 
 export type EmployeeOption = { id: string; label: string };
@@ -43,12 +45,11 @@ export function TeamManager({
   currentUserRole: Role;
   employeeOptions: EmployeeOption[];
 }) {
-  const isOwner = currentUserRole === "owner";
-
-  // Role options visible to the current actor
-  const roleOptions = isOwner
-    ? ALL_ROLE_OPTIONS
-    : ALL_ROLE_OPTIONS.filter((o) => o.value !== "owner" && o.value !== "hr");
+  // What this screen offers comes from the same rule the server actions
+  // enforce (@/lib/team-rules), so the two cannot disagree (item 29).
+  const me = { id: currentUserId, role: currentUserRole };
+  const assignable = assignableRoles(currentUserRole);
+  const roleOptions = ALL_ROLE_OPTIONS.filter((o) => assignable.includes(o.value));
 
   // ── List state ──────────────────────────────────────────────────────────────
   const [list, setList] = useState(users);
@@ -285,18 +286,15 @@ export function TeamManager({
               const isDirty = pendingRole !== u.role;
               const isEditing = editingId === u.id;
               const isChangingPwd = pwdRowId === u.id;
-              const isSelf = u.id === currentUserId;
-              const isAdmin = currentUserRole === "admin";
-              // sales sits at editor level, not the protected tier: it only reaches
-              // customer records and bookings, never salary. hr stays protected
-              // because it can see every employee's pay.
-              const targetIsLower = u.role === "staff" || u.role === "editor" || u.role === "sales";
-              // owner sees action buttons on ALL rows; admin only on staff/editor/sales + own row
-              const canActOnRow = isOwner || targetIsLower || isSelf;
-              // owner: everyone incl. self; admin: self + staff/editor/sales only
-              const canChangePwd = isOwner || (isAdmin && (isSelf || targetIsLower));
-              // no self-delete; owner: anyone else (incl. other owners); admin: staff/editor/sales only
-              const canDelete = !isSelf && (isOwner || (isAdmin && targetIsLower));
+              // owner: every row; admin: staff/editor/sales and its own row.
+              // sales sits at editor level: it reaches customers and bookings,
+              // never salary. hr is protected: it sees every employee's pay.
+              // An admin is also kept off any account holding prep grants.
+              const account = { id: u.id, role: u.role, holdsPrepGrants: u.holds_prep_grants };
+              const canActOnRow = teamRefusal(me, account, { kind: "edit" }) === null;
+              const canChangePwd = teamRefusal(me, account, { kind: "password" }) === null;
+              // never oneself; owner: anyone else; admin: staff/editor/sales only
+              const canDelete = teamRefusal(me, account, { kind: "delete" }) === null;
 
               return (
                 <tr key={u.id} className="border-b border-neutral-100 last:border-0 align-top">

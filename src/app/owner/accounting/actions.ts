@@ -169,6 +169,61 @@ function bangkokYearMonth(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
 }
 
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Owner-only accounts (is_sensitive: 790 เงินเดือนเจ้าของร้าน) are written by
+ * the owner alone. Returns the refusal for a non-owner's write that touches
+ * any of these account codes, or null.
+ *
+ * Fails CLOSED. A discarded error would leave the lookup empty, and an
+ * account whose sensitivity was never read would pass as not sensitive:
+ * `coa?.is_sensitive` is undefined, which is falsy, and a non-owner is let
+ * through. So a failed read refuses, and so does an unknown code:
+ * sensitivity you cannot read is not sensitivity you can assume away.
+ *
+ * Queue item 29 #4: before this, only updateExpenseEntry checked, and only
+ * the NEW account. bulkInsertEntries and deleteExpenseEntry never checked,
+ * and expense_entries' own policy admits every admin.
+ */
+async function ownerOnlyAccountRefusal(
+  supabase: Supabase,
+  role: string,
+  coaCodes: string[],
+): Promise<string | null> {
+  if (role === "owner") return null;
+  const codes = [...new Set(coaCodes)];
+  if (codes.length === 0) return null;
+  const { data, error } = await supabase.from("coa").select("code,is_sensitive").in("code", codes);
+  if (error) return `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${error.message}`;
+  const sensitive = new Map((data ?? []).map((r) => [r.code as string, r.is_sensitive as boolean]));
+  for (const code of codes) {
+    if (!sensitive.has(code)) return `ไม่พบผังบัญชี ${code}`;
+    if (sensitive.get(code) !== false) return "ไม่มีสิทธิ์บันทึกหรือแก้ไขรายการในบัญชีนี้";
+  }
+  return null;
+}
+
+/**
+ * The same refusal for writes to EXISTING entries, by id: the account an
+ * entry is in now. Every id must be found; one that is not is refused rather
+ * than skipped, since an entry this caller cannot read is not one it may
+ * change.
+ */
+async function ownerOnlyEntryRefusal(
+  supabase: Supabase,
+  role: string,
+  ids: string[],
+): Promise<string | null> {
+  if (role === "owner") return null;
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return null;
+  const { data, error } = await supabase.from("expense_entries").select("id,coa_code").in("id", unique);
+  if (error) return `ตรวจสอบสิทธิ์รายการไม่สำเร็จ: ${error.message}`;
+  if ((data ?? []).length !== unique.length) return "ไม่พบบางรายการ จึงยังไม่ดำเนินการ";
+  return ownerOnlyAccountRefusal(supabase, role, (data ?? []).map((r) => r.coa_code as string));
+}
+
 // ── Suppliers ────────────────────────────────────────
 
 export async function getSuppliers(): Promise<Supplier[]> {
@@ -297,14 +352,17 @@ export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
 // ── COA ─────────────────────────────────────────────
 
 export async function getAllCoa(): Promise<CoaAccount[]> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("coa")
     .select("code,name,group_code,group_name,target_pct,sort_order,is_sensitive")
     .order("sort_order");
   if (error) throw new Error(error.message);
-  return data ?? [];
+  // Owner-only accounts are not listed for an admin here either, as in getCoa
+  // (item 29 #4: the CoA page showed 790's name to admins).
+  const rows = data ?? [];
+  return profile.role === "owner" ? rows : rows.filter((r) => !r.is_sensitive);
 }
 
 export async function addCoaGroup(data: {
@@ -361,8 +419,10 @@ export async function updateCoaAccount(
   code: string,
   data: { name: string; target_pct: number | null }
 ): Promise<AccountingActionResult> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
+  const refusal = await ownerOnlyAccountRefusal(supabase, profile.role, [code]);
+  if (refusal) return { status: "error", message: refusal };
   const { error } = await supabase
     .from("coa").update({ name: data.name, target_pct: data.target_pct }).eq("code", code);
   if (error) return { status: "error", message: error.message };
@@ -373,12 +433,16 @@ export async function updateCoaAccount(
 }
 
 export async function reorderCoaAccount(code: string, groupCode: string, direction: "up" | "down"): Promise<{ error?: string }> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
 
-  // Get all sibling accounts in this group ordered by sort_order
-  const { data: siblings } = await supabase
-    .from("coa").select("code,sort_order").eq("group_code", groupCode).order("sort_order");
+  // Get all sibling accounts in this group ordered by sort_order. For an
+  // admin, only the accounts its CoA page lists: an owner-only account is
+  // neither moved nor swapped with (item 29 #4).
+  let siblingQuery = supabase
+    .from("coa").select("code,sort_order").eq("group_code", groupCode);
+  if (profile.role !== "owner") siblingQuery = siblingQuery.eq("is_sensitive", false);
+  const { data: siblings } = await siblingQuery.order("sort_order");
   if (!siblings) return { error: "ไม่พบข้อมูล" };
 
   const idx = siblings.findIndex((s) => s.code === code);
@@ -398,8 +462,10 @@ export async function reorderCoaAccount(code: string, groupCode: string, directi
 }
 
 export async function deleteCoaAccount(code: string): Promise<AccountingActionResult> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
+  const refusal = await ownerOnlyAccountRefusal(supabase, profile.role, [code]);
+  if (refusal) return { status: "error", message: refusal };
   // This count is a referential guard, so it must fail CLOSED. Previously the
   // error was discarded and `count ?? 0` turned any failure into 0, letting
   // the delete through even when entries existed. Note the head:true mode can
@@ -562,18 +628,13 @@ export async function updateExpenseEntry(
   const profile = await requireAdmin();
   const supabase = await createClient();
 
-  if (profile.role !== "owner") {
-    // Permission check — must fail CLOSED. A discarded error would leave
-    // `coa` null, so `coa?.is_sensitive` would be undefined, which is falsy,
-    // and a non-owner would be allowed through. An unknown coa_code has the
-    // same effect, so that is refused too: sensitivity you cannot read is not
-    // sensitivity you can assume away.
-    const { data: coa, error: coaError } = await supabase
-      .from("coa").select("is_sensitive").eq("code", data.coa_code).single();
-    if (coaError) return { status: "error", message: `ตรวจสอบสิทธิ์ผังบัญชีไม่สำเร็จ: ${coaError.message}` };
-    if (!coa) return { status: "error", message: "ไม่พบผังบัญชีนี้" };
-    if (coa.is_sensitive) return { status: "error", message: "ไม่มีสิทธิ์แก้ไขรายการนี้" };
-  }
+  // Both the account the entry is in NOW and the one it would move to. The
+  // current one was not checked before item 29, so an admin could move an
+  // owner-only entry out of 790, or change its amount, by a direct call.
+  const refusal =
+    (await ownerOnlyEntryRefusal(supabase, profile.role, [id])) ??
+    (await ownerOnlyAccountRefusal(supabase, profile.role, [data.coa_code]));
+  if (refusal) return { status: "error", message: refusal };
 
   const { error } = await supabase
     .from("expense_entries")
@@ -594,8 +655,22 @@ export async function updateExpenseEntry(
 }
 
 export async function deleteExpenseEntry(id: string): Promise<AccountingActionResult> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
+  if (profile.role !== "owner") {
+    // An entry that is already gone is reported as deleted, as it was before
+    // item 29: there is nothing left to protect, and refusing kept the row on
+    // screen with an error. A failed read still refuses.
+    const { data: entry, error: readError } = await supabase
+      .from("expense_entries").select("coa_code").eq("id", id).maybeSingle();
+    if (readError) return { status: "error", message: `ตรวจสอบสิทธิ์รายการไม่สำเร็จ: ${readError.message}` };
+    if (!entry) {
+      revalidatePath("/owner/accounting");
+      return { status: "ok" };
+    }
+    const refusal = await ownerOnlyAccountRefusal(supabase, profile.role, [entry.coa_code as string]);
+    if (refusal) return { status: "error", message: refusal };
+  }
   const { error } = await supabase.from("expense_entries").delete().eq("id", id);
   if (error) return { status: "error", message: error.message };
   revalidatePath("/owner/accounting");
@@ -655,6 +730,8 @@ export async function bulkInsertEntries(
 ): Promise<BulkInsertResult> {
   const profile = await requireAdmin();
   const supabase = await createClient();
+  const refusal = await ownerOnlyAccountRefusal(supabase, profile.role, entries.map((e) => e.coa_code));
+  if (refusal) return { status: "error", message: refusal };
   const rows = entries.map((e) => ({
     entry_date: e.entry_date,
     coa_code: e.coa_code,
@@ -676,10 +753,26 @@ export async function bulkInsertEntries(
 export async function updateEntriesDisplayOrder(
   updates: { id: string; display_order: number }[]
 ): Promise<void> {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const supabase = await createClient();
+  let allowed = updates;
+  if (profile.role !== "owner" && updates.length > 0) {
+    // A refusal here writes nothing and says nothing, like every other
+    // failure of this action: the daily page saves its new rows FIRST and
+    // then calls this, so an error would show a failed save for rows that
+    // were written, and a second press would insert them again. The screen
+    // never sends an owner-only entry to an admin; entries deleted since the
+    // page loaded are simply skipped.
+    const ids = [...new Set(updates.map((u) => u.id))];
+    const { data: found, error: readError } = await supabase
+      .from("expense_entries").select("id,coa_code").in("id", ids);
+    if (readError || !found) return;
+    if (await ownerOnlyAccountRefusal(supabase, profile.role, found.map((r) => r.coa_code as string))) return;
+    const foundIds = new Set(found.map((r) => r.id as string));
+    allowed = updates.filter((u) => foundIds.has(u.id));
+  }
   await Promise.all(
-    updates.map(({ id, display_order }) =>
+    allowed.map(({ id, display_order }) =>
       supabase.from("expense_entries").update({ display_order }).eq("id", id)
     )
   );
