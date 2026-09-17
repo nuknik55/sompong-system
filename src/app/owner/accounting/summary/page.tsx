@@ -6,6 +6,7 @@ import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt, getMonthlyCover
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 import { ToolRow } from "../tool-row";
+import { OWNER_ONLY_NOTE, showsOwnerOnlyNote } from "../owner-only-note";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -139,6 +140,7 @@ export default async function AccountingSummaryPage({
           highlight={profitHighlight}
         />
       </div>
+      {showsOwnerOnlyNote(profile.role) && <p className="text-xs text-neutral-500">{OWNER_ONLY_NOTE}</p>}
 
       {/* Bills and customers, one line. Averages divide THIS page's revenue,
           not the POS's own averages, which are on a net-of-discount basis

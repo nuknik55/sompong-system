@@ -5,6 +5,7 @@ import { getMonthlySummary, getMonthlyCovers, getCoaBehaviors } from "../actions
 import { completenessNotices } from "../summary/completeness";
 import { breakEven } from "../break-even";
 import { ToolRow } from "../tool-row";
+import { OWNER_ONLY_NOTE, showsOwnerOnlyNote } from "../owner-only-note";
 
 /**
  * Break-even for one month: four figures and one sentence of basis. No
@@ -62,6 +63,13 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
         )}
       </div>
 
+      {/* An admin does not see 790, so fixed cost here is understated by
+          exactly that: the break-even shown is LOWER than the true one and
+          the safety margin higher. By Nik's choice (2026-09-17, queue item
+          32) a non-owner is told only where the full figures are, every
+          month, whatever the data; the owner's figures are whole. */}
+      {showsOwnerOnlyNote(profile.role) && <p className="text-xs text-neutral-500">{OWNER_ONLY_NOTE}</p>}
+
       {summary.totalRevenue === 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           เดือนนี้ยังไม่มีรายได้ในระบบ — นำเข้ารายได้ POS ก่อน จึงจะคำนวณจุดคุ้มทุนได้
@@ -71,10 +79,6 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
           {notices.map((n) => (
             <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{n}</p>
           ))}
-          {/* An admin does not see 790, so fixed cost here is understated by
-              exactly that: the break-even shown is LOWER than the true one
-              and the safety margin higher. Nothing says so, by Nik's choice
-              on 2026-09-17 (queue item 32); only the owner's figures are whole. */}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Figure label="อัตรากำไรส่วนเกิน" value={r.contributionMargin !== null ? pct(r.contributionMargin) : "—"} sub={`ผันแปร ${baht(r.variable)} จากรายได้ ${baht(r.revenue)}`} />

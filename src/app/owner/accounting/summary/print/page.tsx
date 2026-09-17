@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getMonthlyCovers } from "../../actions";
+import { showsOwnerOnlyNote } from "../../owner-only-note";
 import { PLPrintClient } from "./PLPrintClient";
 
 export default async function PLPrintPage({
@@ -9,7 +10,7 @@ export default async function PLPrintPage({
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
-  await requireAdmin();
+  const profile = await requireAdmin();
 
   const { month: rawMonth } = await searchParams;
   const today = new Date().toISOString().slice(0, 7);
@@ -29,6 +30,7 @@ export default async function PLPrintPage({
       summary={summary}
       revenueMap={revenueMap}
       covers={covers}
+      showOwnerOnlyNote={showsOwnerOnlyNote(profile.role)}
     />
   );
 }

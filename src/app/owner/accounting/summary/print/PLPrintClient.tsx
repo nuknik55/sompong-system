@@ -2,6 +2,7 @@
 
 import type { MonthlySummaryGroup, MonthlyCovers } from "../../actions";
 import { completenessNotices, profitJudgementAllowed, type MonthCompleteness } from "../completeness";
+import { OWNER_ONLY_NOTE } from "../../owner-only-note";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
@@ -50,6 +51,7 @@ function exportExcel(
     tax: number;
   } & MonthCompleteness,
   covers: MonthlyCovers | null,
+  showOwnerOnlyNote: boolean,
 ) {
   // Lazy-load xlsx (already in package.json)
   import("xlsx").then((XLSX) => {
@@ -60,6 +62,9 @@ function exportExcel(
 
     // Title
     rows.push([`งบกำไรขาดทุน (P&L) — ${thaiMonth}`]);
+    // A cell under the title, for the same reason as the warnings below: the
+    // file travels. Role only, never the data (owner-only-note.ts).
+    if (showOwnerOnlyNote) rows.push([OWNER_ONLY_NOTE]);
 
     // The warning must be a CELL, not a styled banner: this file is the thing
     // that leaves the building. A reader who opens it in Excel has none of the
@@ -145,6 +150,7 @@ export function PLPrintClient({
   summary,
   revenueMap,
   covers,
+  showOwnerOnlyNote,
 }: {
   yearMonth: string;
   summary: {
@@ -158,6 +164,8 @@ export function PLPrintClient({
   revenueMap: Record<string, number>;
   /** null = the month has no covers row; the two rows are then omitted, never zero. */
   covers: MonthlyCovers | null;
+  /** True for every non-owner (showsOwnerOnlyNote): the page and the Excel file carry OWNER_ONLY_NOTE. */
+  showOwnerOnlyNote: boolean;
 }) {
   const thaiMonth = getThaiMonth(yearMonth);
   const operatingProfit = summary.totalRevenue - summary.operatingExpense;
@@ -210,7 +218,7 @@ export function PLPrintClient({
           พิมพ์ / บันทึก PDF
         </button>
         <button
-          onClick={() => exportExcel(yearMonth, revenueMap, summary, covers)}
+          onClick={() => exportExcel(yearMonth, revenueMap, summary, covers, showOwnerOnlyNote)}
           style={{
             background: "#16a34a", color: "#fff", border: "none", borderRadius: 6,
             padding: "6px 16px", fontSize: 14, cursor: "pointer",
@@ -227,6 +235,9 @@ export function PLPrintClient({
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ fontSize: 20, fontWeight: 700, fontFamily: font }}>งบกำไรขาดทุน (P&L)</div>
           <div style={{ fontSize: 15, color: "#555", marginTop: 4 }}>{thaiMonth}</div>
+          {showOwnerOnlyNote && (
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{OWNER_ONLY_NOTE}</div>
+          )}
         </div>
 
         {notices.map((n) => (
