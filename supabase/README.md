@@ -2233,9 +2233,17 @@ In order. Nothing here is started unless it says so.
       the display leaves one out — an account with nothing in it at all.
       The rule moved out of `getMonthlySummary` into `monthly-summary.ts`
       so it could be tested rather than asserted; the first test in
-      `monthly-summary.test.ts` is the defect itself. **By how much a real
-      month moves is not known here:** production is not readable from the
-      machine this was written on, and no local copy of the month exists.
+      `monthly-summary.test.ts` is the defect itself.
+
+      **MEASURED 2026-09-18, and the answer is zero.** Nik ran the
+      read-only query over April–September 2026: **no account netted
+      negative in any of the six months**, so `opex_overstated_by` was
+      0.00 every month and **no P&L figure anyone has read was wrong**.
+      Nothing to restate and no month to re-issue. The fix is PREVENTIVE:
+      it decides what happens the first time a delivery is credited back
+      in full, which has not happened yet. That also means the rule has
+      never been exercised against real data — `monthly-summary.test.ts`
+      is the only thing standing behind it.
     - **Owner, admin and editor:** per-dish margin, on the recipe pages
       (already, item 34) and in the Star-to-Dog sort on `/staff`, which
       staff, hr and sales no longer get: that order IS the margin,
@@ -2280,6 +2288,14 @@ In order. Nothing here is started unless it says so.
       taken out, in a cell, in shared strings, or in the one defined name
       the filter creates (`_xlnm._FilterDatabase`, a plain range per
       sheet).
+      **Column B carries the group name (หมวด) on every account row**, added
+      2026-09-18 so the filter range can be SORTED without the hierarchy
+      falling apart: each line still says which group it belongs to wherever
+      it lands. The group lines leave หมวด empty — their own name is in
+      column A — which is what identifies them as totals once the list has
+      been reordered, and Excel carries the bold with the row when it sorts.
+      The indent in column A is unchanged. Nik confirmed in Excel that the
+      frozen header, the filter and the red fill all behave.
     - **Catering per-event profit and cost** (`/owner/catering/[id]/cost`,
       owner and admin; sales sees quoted totals and deposits only) is
       reported and NOT changed: Nik decides.
@@ -2316,7 +2332,7 @@ In order. Nothing here is started unless it says so.
     reads it back in UTC. In UTC the two agree, which is why it survived
     on Vercel; on a machine in Bangkok, August's previous month came out
     as June and its next month as August itself. Seven lines across four
-    files: the ‹ › links on the P&L summary and on break-even, and four
+    files: four ‹ › links, on the P&L summary and on break-even, and three
     defaults that took the month from the UTC clock (the summary, the
     print page and the month list), which is the previous month for the
     first seven hours of every Bangkok month. All now use the pure string
@@ -2327,6 +2343,25 @@ In order. Nothing here is started unless it says so.
     `src/app` and fails on either shape; run against the pre-fix files it
     flags exactly those seven lines, and its own first test is the two
     shapes it must catch.
+
+38. **April and May 2026 hold almost no revenue, against a normal month of
+    expenses.** Found 2026-09-18 in the output of the negative-account
+    query, and **NOT investigated** — recorded here for Nik, who will
+    check the revenue import page himself.
+    - `monthly_revenue` holds about **50,000** for `2026-04` and for
+      `2026-05`, where June, July and August hold **3.1–3.9 million**.
+      Expenses in those two months are a normal **~2.9 million**.
+    - Most likely the POS revenue import was simply never run for them.
+      That is the hypothesis, not a finding: the amounts that ARE there
+      have not been traced to a source.
+    - Everything downstream inherits it. Both months read as enormous
+      losses on the P&L, on break-even and on the food-cost page, and
+      every percentage-of-revenue in them is meaningless. The arithmetic
+      is right; the revenue side is not there.
+    - **Do not backfill from a guess.** The POS export is the source, and
+      `import_pos_month` writes revenue and covers in one call.
+    - Until it is settled, treat April and May 2026 as months with no
+      revenue booked — not as months that lost money.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
