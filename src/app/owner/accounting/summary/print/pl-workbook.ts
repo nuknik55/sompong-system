@@ -170,13 +170,15 @@ function sheet(
 
   at(headerRows);
   const filterHeader = rows.length;
-  push(["ค่าใช้จ่าย", "", "จำนวน (฿)", "% จริง", "% เป้า"]);
+  push(["ค่าใช้จ่าย", "หมวด", "จำนวน (฿)", "% จริง", "% เป้า"]);
   for (const g of s.groups) {
     if (g.total === 0) continue;
     at(groupRows);
+    // The group line leaves หมวด empty: its own name is already in column A,
+    // and an empty หมวด is what tells a sorted list which rows are totals.
     push([g.group_name, "", g.total, g.pct_of_revenue ?? 0, g.target_pct ?? ""], groupHasSensitive(g));
     for (const a of g.accounts) {
-      push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""], a.is_sensitive);
+      push([`  ${a.name}`, g.group_name, a.total, a.pct_of_revenue ?? 0, ""], a.is_sensitive);
     }
   }
   // The filter stops at the last expense line: รวม and กำไร below it are not
@@ -194,12 +196,12 @@ function sheet(
   push([]);
 
   at(headerRows);
-  push(["รายการที่ไม่หักจากกำไรดำเนินงาน", "", "จำนวน (฿)", "% ของรายได้", ""]);
+  push(["รายการที่ไม่หักจากกำไรดำเนินงาน", "หมวด", "จำนวน (฿)", "% ของรายได้", ""]);
   for (const g of s.nonOperating) {
     at(groupRows);
     push([g.group_name, "", g.total, g.pct_of_revenue ?? 0, ""], groupHasSensitive(g));
     for (const a of g.accounts) {
-      push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""], a.is_sensitive);
+      push([`  ${a.name}`, g.group_name, a.total, a.pct_of_revenue ?? 0, ""], a.is_sensitive);
     }
   }
 
@@ -266,8 +268,10 @@ const TOTAL_STYLE: CellStyle = {
 const LAST_COL = 4;
 /** Thai vowels and tone marks sit above or below the line and take no width of their own. */
 const THAI_MARKS = /[ัิ-ฺ็-๎]/g;
-const MIN_WIDTH = [24, 4, 14, 10, 8];
-const MAX_WIDTH = [48, 6, 22, 14, 12];
+/** Characters wide, by the same measure columnWidths uses — exported so a test can ask whether a column fits. */
+export const textWidth = (s: string) => s.replace(THAI_MARKS, "").length;
+const MIN_WIDTH = [24, 10, 14, 10, 8];
+const MAX_WIDTH = [48, 30, 22, 14, 12];
 
 /** Characters a formatted number occupies: digits, thousands separators, decimals, minus. */
 function numberWidth(n: number, decimals: number, grouped: boolean): number {
@@ -299,7 +303,7 @@ export function columnWidths(spec: SheetSpec): number[] {
           ? c === 2
             ? numberWidth(v, counts.has(r) ? 0 : 2, true)
             : numberWidth(v, 1, false)
-          : v.replace(THAI_MARKS, "").length;
+          : textWidth(v);
       widths[c] = Math.min(Math.max(widths[c]!, len + 2), MAX_WIDTH[c]!);
     }
   }

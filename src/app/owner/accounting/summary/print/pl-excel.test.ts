@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import zlib from "node:zlib";
 import XLSX from "xlsx-js-style";
 import {
-  buildPlFile, buildPlWorkbook, columnWidths, freezeSheetXml, FULL_SHEET, MEETING_SHEET,
+  buildPlFile, buildPlWorkbook, columnWidths, freezeSheetXml, textWidth, FULL_SHEET, MEETING_SHEET,
   type PlSummary, type SheetSpec,
 } from "./pl-workbook.ts";
 
@@ -173,6 +173,47 @@ test("each sheet filters its expense list, and no total is inside the filter", (
   }
   assert.equal(full.name, FULL_SHEET);
   assert.equal(meeting.name, MEETING_SHEET);
+});
+
+test("every account row inside the filter names its own group, so a sort cannot orphan it", () => {
+  const { full, meeting, back } = build();
+  for (const spec of [full, meeting]) {
+    assert.equal(spec.rows[spec.filter!.headerRow]?.[1], "หมวด", `${spec.name}: the filter header does not label column B`);
+    const groups = new Set(spec.groupRows);
+    let heading: string | null = null;
+    let accounts = 0;
+    for (let r = spec.filter!.headerRow + 1; r <= spec.filter!.lastRow; r++) {
+      const [label, group] = [String(spec.rows[r]![0]), spec.rows[r]![1]];
+      if (groups.has(r)) {
+        // A group line: its name is column A, and หมวด is empty — which is
+        // what marks it out once the list has been sorted.
+        heading = label;
+        assert.equal(group, "", `${spec.name} row ${r}: a group line should leave หมวด empty`);
+        continue;
+      }
+      assert.ok(label.startsWith("  "), `${spec.name} row ${r}: an account line keeps its indent`);
+      assert.equal(group, heading, `${spec.name} row ${r} (${label.trim()}) names the wrong group`);
+      accounts++;
+    }
+    assert.ok(accounts >= 2, `${spec.name}: the fixture must have expense accounts to check`);
+    // Below the line as well: ภาษี and CapEx rows carry their group too.
+    const belowTheLine = spec.rows.slice(spec.filter!.lastRow + 1);
+    const taxRow = belowTheLine.find((row) => String(row[0]).trim() === "ภาษีมูลค่าเพิ่ม");
+    assert.equal(taxRow?.[1], "ภาษี");
+    // Nothing else grew a column B: the revenue block and the totals are as they were.
+    assert.equal(spec.rows[spec.numbersFrom]?.[1], "");
+    for (const r of spec.totalRows) assert.equal(spec.rows[r]?.[1], "", `total row ${r} should not name a group`);
+  }
+  // And the column is wide enough to show it: B sits between two filled
+  // columns, so a name too long for it is clipped, not overflowed.
+  for (const spec of [full, meeting]) {
+    const widths = ((back.Sheets[spec.name]!["!cols"]) as { wch: number }[]).map((c) => c.wch);
+    for (const row of spec.rows) {
+      const group = row[1];
+      if (typeof group !== "string" || group === "") continue;
+      assert.ok(textWidth(group) <= widths[1]!, `"${group}" needs ${textWidth(group)}, column B is ${widths[1]}`);
+    }
+  }
 });
 
 test("the header band is white on dark; the warning is coloured type, not a band", () => {
