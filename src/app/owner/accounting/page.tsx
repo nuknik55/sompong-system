@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { getRecentEntries, getStartOfMonthChecklist } from "./actions";
+import { bangkokYearMonth } from "./checklist";
 import { AccountingEntryClient } from "./AccountingEntryClient";
 import { ToolRow } from "./tool-row";
 import { ChecklistPanel } from "./ChecklistPanel";
@@ -14,9 +15,7 @@ export default async function AccountingPage({
   const profile = await requireAdmin();
 
   const { month: rawMonth } = await searchParams;
-  const today = new Date();
-  const yearMonth =
-    rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today.toISOString().slice(0, 7);
+  const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : bangkokYearMonth();
 
   const [{ entries }, checklist] = await Promise.all([getRecentEntries(yearMonth), getStartOfMonthChecklist()]);
 

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { getFoodCostMonth } from "../actions";
-import { previousMonth, nextMonth } from "../checklist";
+import { bangkokYearMonth, previousMonth, nextMonth } from "../checklist";
 import { completenessNotices } from "../summary/completeness";
 import { ToolRow } from "../tool-row";
 
@@ -35,7 +35,7 @@ function thaiMonth(yearMonth: string) {
 export default async function FoodCostPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const profile = await requireAdmin();
   const { month: rawMonth } = await searchParams;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
+  const today = bangkokYearMonth();
   // 01-12, not \d\d: "2026-99" would otherwise reach monthEnd and 500 the page.
   const yearMonth = rawMonth?.match(/^\d{4}-(0[1-9]|1[0-2])$/) ? rawMonth : today;
 

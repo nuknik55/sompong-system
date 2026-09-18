@@ -46,6 +46,23 @@ export type Checklist = {
   collapsed: boolean;
 };
 
+/**
+ * The current year-month in Bangkok, not UTC.
+ *
+ * `new Date().toISOString().slice(0, 7)` is UTC, and Thailand is UTC+7:
+ * between 00:00 and 07:00 Bangkok on the 1st, UTC still reads the previous
+ * month. That would mark a month that had just closed as "still in progress"
+ * and fail to mark the one that had just opened — for seven hours, every
+ * month. A marker that is wrong even occasionally is one people learn to
+ * ignore. Lives here, with previousMonth and nextMonth, because every page
+ * that needs one needs the others (moved out of actions.ts 2026-09-18: a
+ * "use server" file can export only async functions, so a page cannot import
+ * it from there).
+ */
+export function bangkokYearMonth(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
+}
+
 export function previousMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
   return m === 1 ? `${y! - 1}-12` : `${y}-${String(m! - 1).padStart(2, "0")}`;

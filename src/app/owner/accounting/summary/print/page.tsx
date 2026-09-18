@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getMonthlyCovers } from "../../actions";
+import { bangkokYearMonth } from "../../checklist";
 import { PLPrintClient } from "./PLPrintClient";
 
 export default async function PLPrintPage({
@@ -14,7 +15,7 @@ export default async function PLPrintPage({
   await requireOwner();
 
   const { month: rawMonth } = await searchParams;
-  const today = new Date().toISOString().slice(0, 7);
+  const today = bangkokYearMonth();
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
   const [summary, revenueRows, covers] = await Promise.all([

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt, getMonthlyCovers } from "../actions";
+import { bangkokYearMonth, nextMonth, previousMonth } from "../checklist";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 import { ToolRow } from "../tool-row";
@@ -36,7 +37,7 @@ export default async function AccountingSummaryPage({
   const profile = await requireOwner();
 
   const { month: rawMonth } = await searchParams;
-  const today = new Date().toISOString().slice(0, 7);
+  const today = bangkokYearMonth();
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
   const [summary, revenueRows, importedAt, covers] = await Promise.all([
@@ -49,15 +50,17 @@ export default async function AccountingSummaryPage({
   const revenueMap = Object.fromEntries(revenueRows.map((r) => [r.revenue_type, r.amount]));
   const totalRevenue = summary.totalRevenue;
 
-  const [y, m] = yearMonth.split("-").map(Number);
-  const prevMonth = new Date(y!, m! - 2, 1).toISOString().slice(0, 7);
-  const nextMonth = new Date(y!, m!, 1).toISOString().slice(0, 7);
+  // String math, not Date: new Date(y, m-2, 1).toISOString() reads the
+  // LOCAL clock, so on a machine in Bangkok August's previous month came out
+  // as June and its next month as August itself (found 2026-09-18).
+  const prevMonth = previousMonth(yearMonth);
+  const nextMonthStr = nextMonth(yearMonth);
   const isCurrentMonth = yearMonth === today;
 
   // Operating profit: CapEx and Tax are deliberately NOT subtracted, so that a
   // month containing a large capital purchase stays comparable with the month
   // before it. Both are displayed below the line instead. See
-  // NON_OPERATING_GROUPS in ../actions.ts for the full reasoning.
+  // NON_OPERATING_GROUPS in ../monthly-summary.ts for the full reasoning.
   const operatingProfit = totalRevenue - summary.operatingExpense;
   const profitPct = totalRevenue > 0 ? (operatingProfit / totalRevenue) * 100 : null;
 
@@ -105,7 +108,7 @@ export default async function AccountingSummaryPage({
           className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
         <span className="font-medium text-neutral-800">{getThaiMonth(yearMonth)}</span>
         {!isCurrentMonth && (
-          <a href={`/owner/accounting/summary?month=${nextMonth}`}
+          <a href={`/owner/accounting/summary?month=${nextMonthStr}`}
             className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
         )}
       </div>

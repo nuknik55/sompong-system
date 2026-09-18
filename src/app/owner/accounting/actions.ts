@@ -9,7 +9,8 @@ import { fetchAllRows } from "@/lib/data";
 import type { PaymentMethod } from "./daily/payment-split";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
 import { posPeriodToYearMonth } from "@/lib/pos-parse";
-import { deriveChecklist, previousMonth, type Checklist } from "./checklist";
+import { bangkokYearMonth, deriveChecklist, previousMonth, type Checklist } from "./checklist";
+import { buildMonthlySummaryGroups } from "./monthly-summary";
 import type { CoaBehaviorRow } from "./break-even";
 
 /**
@@ -126,52 +127,10 @@ export type MonthlySummaryGroup = {
   }[];
 };
 
-/**
- * Groups excluded from operating expenses.
- *
- * WHY. With CapEx inside operating expenses, any month containing a large
- * purchase reads as a bad trading month even though nothing about the business
- * changed — a fridge makes the month look worse than the month before it. That
- * destroys month-over-month comparability, which is the whole reason this
- * system exists: spotting margin drift and cost creep. A capital purchase is
- * not a trading result.
- *
- * Both figures stay on the page. This is not hiding them; it is stopping them
- * distorting the trend line.
- *
- * G990 was ALREADY meant to be non-operating: it is the only group in the COA
- * with target_pct = null, while all eleven others carry a percent-of-revenue
- * target. This restores an intent the data already encoded.
- *
- * G950 is different — it shipped with target_pct = 1, so moving it out is a
- * genuine change of intent rather than a restoration. Its target is cleared by
- * supabase/clear_tax_group_target.sql, because a target on a line that is no
- * longer measured against revenue is just a stale number waiting to mislead.
- *
- * NOTE ON NAMING: G950 holds VAT and withholding tax (ภพ.30, ภงด.1,3,53) —
- * transactional taxes, not income tax on profit. There is no income-tax line
- * anywhere in this system. So the headline figure is "operating profit"
- * (กำไรจากการดำเนินงาน) and must NOT be labelled ก่อนภาษี, which would be a new
- * wrong label replacing an old one.
- */
-// NOT exported: this file carries "use server", and such a file may only
-// export async functions — Next fails the BUILD on a non-function export,
-// though tsc and eslint both pass it. Nothing outside this module needs it.
-const NON_OPERATING_GROUPS = ["G950", "G990"] as const;
-
-/**
- * The current year-month in Bangkok, not UTC.
- *
- * `new Date().toISOString().slice(0, 7)` is UTC, and Thailand is UTC+7: between
- * 00:00 and 07:00 Bangkok on the 1st, UTC still reads the previous month. That
- * would mark a month that had just closed as "still in progress" and fail to
- * mark the one that had just opened — for seven hours, every month. A marker
- * that is wrong even occasionally is one people learn to ignore.
- */
-function bangkokYearMonth(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
-}
-
+// This file carries "use server", so it may export only async functions —
+// Next fails the BUILD on any other export, though tsc and eslint both pass
+// it. That is why NON_OPERATING_GROUPS moved to monthly-summary.ts and
+// bangkokYearMonth to checklist.ts: the pages import them from there.
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
 /**
@@ -1106,39 +1065,13 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
     totals.set(e.coa_code, (totals.get(e.coa_code) ?? 0) + (e.amount ?? 0));
   }
 
-  // Build groups (only rows with group_code = null and code starts with G)
-  const groupHeaders = visibleCoa.filter((c) => c.group_code === null && c.code.startsWith("G"));
-  const buildGroup = (g: CoaAccount): MonthlySummaryGroup => {
-    const accounts = visibleCoa
-      .filter((c) => c.group_code === g.code)
-      .map((c) => ({
-        code: c.code,
-        name: c.name,
-        total: totals.get(c.code) ?? 0,
-        pct_of_revenue: totalRevenue > 0 ? ((totals.get(c.code) ?? 0) / totalRevenue) * 100 : null,
-        is_sensitive: c.is_sensitive,
-      }))
-      .filter((a) => a.total > 0);
-    const groupTotal = accounts.reduce((s, a) => s + a.total, 0);
-    return {
-      group_code: g.code,
-      group_name: g.name,
-      target_pct: g.target_pct,
-      total: groupTotal,
-      pct_of_revenue: totalRevenue > 0 ? (groupTotal / totalRevenue) * 100 : null,
-      accounts,
-    };
-  };
-
-  const isNonOperating = (code: string) =>
-    (NON_OPERATING_GROUPS as readonly string[]).includes(code);
-
-  const groups = groupHeaders.filter((g) => !isNonOperating(g.code)).map(buildGroup);
-  const nonOperating = groupHeaders.filter((g) => isNonOperating(g.code)).map(buildGroup);
-
-  const operatingExpense = groups.reduce((s, g) => s + g.total, 0);
-  const capex = nonOperating.find((g) => g.group_code === "G990")?.total ?? 0;
-  const tax = nonOperating.find((g) => g.group_code === "G950")?.total ?? 0;
+  // Grouped by monthly-summary.ts, which is where the rule that a group's
+  // total counts every account — a credited one included — is tested.
+  const { groups, nonOperating, operatingExpense, capex, tax } = buildMonthlySummaryGroups({
+    visibleCoa,
+    totals,
+    totalRevenue,
+  });
 
   return {
     groups,

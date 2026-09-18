@@ -4,6 +4,7 @@ import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyCovers, getCoaBehaviors } from "../actions";
 import { completenessNotices } from "../summary/completeness";
 import { breakEven } from "../break-even";
+import { bangkokYearMonth, nextMonth, previousMonth } from "../checklist";
 import { ToolRow } from "../tool-row";
 
 /**
@@ -32,14 +33,16 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
   // derived from the shop's profit. An admin is sent to /owner.
   const profile = await requireOwner();
   const { month: rawMonth } = await searchParams;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
+  const today = bangkokYearMonth();
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
 
   const [summary, covers, coa] = await Promise.all([getMonthlySummary(yearMonth), getMonthlyCovers(yearMonth), getCoaBehaviors()]);
 
   const [y, m] = yearMonth.split("-").map(Number);
-  const prevMonth = new Date(y!, m! - 2, 1).toISOString().slice(0, 7);
-  const nextMonth = new Date(y!, m!, 1).toISOString().slice(0, 7);
+  // Pure string math (see the summary page): a local-time Date skipped a
+  // month on a Bangkok machine.
+  const prevMonth = previousMonth(yearMonth);
+  const nextMonthStr = nextMonth(yearMonth);
 
   // Every account with a total this month, operating and below the line —
   // the rule decides what is in, not the grouping.
@@ -60,7 +63,7 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
         <a href={`/owner/accounting/break-even?month=${prevMonth}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
         <span className="font-medium text-neutral-800">{thaiMonth(yearMonth)}</span>
         {yearMonth !== today && (
-          <a href={`/owner/accounting/break-even?month=${nextMonth}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
+          <a href={`/owner/accounting/break-even?month=${nextMonthStr}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
         )}
       </div>
 
