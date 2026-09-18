@@ -616,8 +616,8 @@ so an uncontrolled form is **reset after its action completes**. A file input
 is uncontrolled. Submit the form once to build a preview, and the input that
 apply then reads is already empty.
 
-**`coffee-items` has the identical pattern and only survives because it needs
-the file once.** The next page that needs a file twice — preview, then commit
+**`pos-item-categories` (the route named `coffee-items` until 2026-09-18) has
+the identical pattern and only survives because it needs the file once.** The next page that needs a file twice — preview, then commit
 the same file — will hit this again unless it does what `revenue-import` now
 does:
 

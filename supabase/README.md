@@ -449,7 +449,31 @@ In order. Nothing here is started unless it says so.
    meant to gate and what wiring it would change, so the decision is
    informed rather than guessed.
 4. **`ScheduleClient.tsx:5` static `xlsx` import** — bundle size only, no
-   correctness stake. And **retry-from-here on POS chunk failure**.
+   correctness stake. **Still open, and deliberately untouched**: that page is
+   HR, which Nik has paused for a rebuild (2026-09-18), so it waits for the
+   rebuild rather than being changed under it.
+
+   ~~**Retry-from-here on POS chunk failure.**~~ **DONE 2026-09-18** on the
+   POS side (`pos-price-import.tsx`). A delivery file goes up in chunks of
+   2,000 rows, ~12 sequential calls for a full history; a failure on the
+   eleventh meant sending all eleven again. The page now keeps the batch id
+   and the row the failed chunk began at, and offers **ส่งต่อจากแถวที่ N**
+   beside **เริ่มส่งใหม่ทั้งไฟล์**.
+   - It resumes AT the chunk that failed, not after it. The ingest upserts on
+     `(document_number, material_code)` with `ignoreDuplicates`, so a chunk
+     that landed just before the connection broke is re-sent as a no-op —
+     which is exactly the case a resume must not get wrong.
+   - A thrown failure (connection, a deploy mid-run) resumes from the last
+     chunk that ANSWERED; a returned refusal resumes from the chunk it
+     refused, because the refusal may be about the batch rather than the row.
+   - When every chunk is in and only the preview failed, the resume point is
+     the end of the file, so the button reads **ลองดูราคาอีกครั้ง** and sends
+     no chunk at all.
+   - The resume point is dropped whenever the file or the parse changes: both
+     numbers describe that file's rows.
+   - **Unchanged:** one upload is still one `import_batch_id`, which a resume
+     keeps (a full restart starts a new one). Nothing about the write, the
+     validation or the preview moved.
 5. ~~**Menu Engineering should classify within category, not across all menus.**~~
    **CLOSED 2026-09-16.** Raised by Nik, decided by Nik the same day.
 
@@ -688,6 +712,39 @@ In order. Nothing here is started unless it says so.
 
    Recording the rule somewhere visible matters more than the hint.
 
+   **BUILT 2026-09-18 to Nik's answers, and it warns only.**
+   - **The groups: `G400` ซ่อมบำรุง (Maintenance) and `G800` อุปกรณ์ (Supply)**,
+     which is what "equipment and supplies" means in this chart of accounts —
+     G800 is the literal one (Supply - ครัว/บริการ/บาร์น้ำ…, where the sealer
+     was booked) and G400 is where equipment arrives as a repair or a
+     replacement (`410 ค่าอุปกรณ์ซ่อม`, `430 ซื้อของเพื่อทดแทน`). Food (G100)
+     is out by Nik's instruction; payroll, rent, utilities, marketing, G&A,
+     delivery, misc and tax are out because a large amount there is ordinary.
+     Of the 17 entries ≥ ฿20,000, these two groups hold exactly one: the
+     sealer. The rule is `capex-hint.ts`, tested, and its first test is that
+     entry.
+   - **Warn only.** An amber note names the row and its amount and asks
+     whether it is a new asset. Nothing is blocked, no button is disabled,
+     nothing is reclassified, and the person answers by choosing an account.
+   - **New and edited entries only** — the note is computed from what is
+     being typed on บันทึกรายวัน and from the row open for editing. Saved
+     entries are never revisited, and the monthly import is untouched (it is
+     a machine path with no one to answer the question).
+   - **The threshold is owner-set**, `app_settings.capex_threshold`, default
+     20,000, on `/owner` beside the Q-factor — the only settings surface the
+     app has, so nothing new was invented for it. An admin sees the figure
+     greyed out; `updateCapexThreshold` is `requireOwner()`. **0 turns the
+     question off**, said on screen.
+   - A row's cash and transfer halves are added up first: they are one
+     purchase split across two payment methods.
+   - A negative amount never asks — returns and credits are entered that way.
+   - **SQL: `capex_threshold_setting_migration.sql`** (one column, a CHECK,
+     a comment; no table). **Not applied.**
+   - **The gap it leaves:** `app_settings_owner_write` calls `is_owner()`,
+     which admits admins, so an admin's direct API call reaches the column —
+     as it reaches `q_factor_pct`. Item 23's held migration closes it for the
+     whole table at once. The migration's test 5 reports which state is live.
+
 10. ~~**`fetchAllRows` callers that order by a non-unique column.**~~
     **CLOSED 2026-09-16 (`ea9a251`). "Not currently biting" was wrong
     about the risk, but the figures recorded from it held — see the
@@ -910,25 +967,26 @@ In order. Nothing here is started unless it says so.
 
     Dead exports found along the way went to item 18 (the sweep).
 
-13. **Rename the `coffee-items` route to match its title.** Deferred —
-    **conditional, not standalone.** The page is titled จัดหมวดสินค้า POS and
-    covers six categories; the route still says `coffee-items` from when it
-    covered one. Decided 2026-09-09: do it only the next time that folder is
-    touched for another reason. The return is cosmetic, and two applied SQL
-    files will carry the old path permanently either way.
+13. ~~**Rename the `coffee-items` route to match its title.**~~ **CLOSED
+    2026-09-18.** The route is `/owner/accounting/pos-item-categories`,
+    named after the table it edits (`pos_item_categories`) and matching its
+    title จัดหมวดสินค้า POS. The 2026-09-09 condition — only when that folder
+    is open for another reason — was met: it was batched with three other
+    small items.
 
-    Inventory, so the rename is one commit when it happens:
-
-    | where | what |
+    | where | what happened |
     |---|---|
-    | `src/app/owner/accounting/coffee-items/` | `git mv` the folder; `page.tsx`, `actions.ts`, `CoffeeItemsClient.tsx`, `categories.ts` move with it |
-    | `coffee-items/actions.ts` — `revalidatePath("/owner/accounting/coffee-items")` | the one that breaks silently if missed: stale page, no error |
-    | `src/app/owner/accounting/page.tsx` | the nav link |
-    | `next.config` | add a redirect from the old path — Nik has the URL bookmarked |
-    | `supabase/seed_pos_item_categories.sql` (2 mentions) | **applied — leave as is.** An applied migration keeps describing what executed |
-    | `scripts/seed-item-categories.mjs` (2) | generates that SQL text; one-time tooling, update or leave |
-    | this README (3) and the memory note (1) | text |
-    | `CoffeeItemsClient` identifier | cosmetic; rename in the same commit or not at all |
+    | `src/app/owner/accounting/coffee-items/` | `git mv`d whole, so the history follows: `page.tsx`, `actions.ts`, `categories.ts`, and `CoffeeItemsClient.tsx` → `PosItemCategoriesClient.tsx` |
+    | `revalidatePath` in its own `actions.ts` | updated — the one that fails silently (a stale page, no error) |
+    | the checklist step (`checklist.ts`), the accounting tool row, the link on the revenue import page | updated; those are every live pointer, and the nav link the old inventory expected on `accounting/page.tsx` is the tool row |
+    | `next.config.ts` | redirects the old path, **307 not 308**: Nik has it bookmarked, and a permanent redirect is cached by the browser for good |
+    | `scripts/seed-item-categories.mjs` (2) | updated — it generates that instruction text for any future run |
+    | `supabase/seed_pos_item_categories.sql` (2) | **left alone, applied.** Both are a comment and a `RAISE EXCEPTION` message; neither is stored in the database |
+    | the historical entries in this file and in AGENTS.md | left alone — they describe work done when the route had that name. The live-state mentions (the POS revenue table below, and AGENTS.md's file-input warning) are updated |
+
+    **Checked for a stored path and found none**: no table comment, column
+    default or row anywhere holds the route. The only database mentions are
+    the two transient ones in the applied seed.
 
 14. ~~**`/owner/ingredients` throws an RSC error on saving a NEW ingredient,
     but the save succeeds.**~~ **CLOSED 2026-09-16 without a root cause, on
@@ -1434,6 +1492,20 @@ In order. Nothing here is started unless it says so.
     is an admin's no-op update, which must touch 0 rows. It is
     **HELD to ride with the HR rebuild**: not urgent, since the screen already
     refuses admins. Same class as the prep leak, and pre-existing.
+
+    **DECIDED BY NIK, 2026-09-18 — the gap stays as it is for now, and the
+    file is NOT to be run early.** It rides with the HR rebuild as planned.
+    **It is now a second setting behind the same gap:** `capex_threshold`
+    (queue item 9) was added to `app_settings` on 2026-09-18, so an admin's
+    direct PostgREST update reaches the CapEx warning's threshold as well as
+    the q-factor. Both are refused on screen — `updateQFactor` and
+    `updateCapexThreshold` are `requireOwner()`, and both inputs render
+    read-only for an admin — and the exposure is an admin changing a number
+    they are already trusted with, through an API call they would have to
+    construct by hand. **When the held migration does run, one policy closes
+    both**, because it is the table's write policy and not a column's.
+    `capex_threshold_setting_migration.sql`'s test 5 prints which of the two
+    states is live, so this does not have to be remembered.
     `0002_q_factor.sql`'s `app_settings_owner_write` is
     `USING (is_owner()) WITH CHECK (is_owner())`, and `is_owner()` has meant
     owner OR admin since `006`. `updateQFactor` is guarded by
@@ -2102,11 +2174,17 @@ In order. Nothing here is started unless it says so.
     lock check in `deleteCateringEvent`).
 
 34. ~~**Role checks in the app that name one role and admit the others.**~~
-    **CLOSED 2026-09-17** (`6ae1847`) **apart from the second bullet**:
-    `editAccess()` (`src/lib/edit-access.ts`, tested) now decides the
-    recipe pages, `saveRecipeItems` and the SOP page, and the stale
-    comments are corrected. **Still open:** `staff/page.tsx` filters
-    hidden menus for staff and editor only.
+    **CLOSED 2026-09-17** (`6ae1847`) **and fully closed 2026-09-18**:
+    `editAccess()` (`src/lib/edit-access.ts`, tested) decides the recipe
+    pages, `saveRecipeItems` and the SOP page, and the stale comments are
+    corrected. The last bullet — `staff/page.tsx` filtering hidden menus
+    for staff and editor BY NAME, so hr, sales and any role added later
+    were shown every hidden menu's name — is now an allowlist: owner and
+    admin see them, everyone else gets the filtered list. The menu PAGE
+    already refused all of them (`staff/menu/[id]` notFounds a hidden menu
+    outside `editAccess` "direct"), so what leaked was the names on the
+    list while the page behind them was shut; its comment, which still
+    said "block staff/editor", is corrected to match.
     Found 2026-09-17 by the role sweep. Small.
     - `saveRecipeItems` refuses only staff and routes only editors to a
       request, so hr and sales reach the direct-save branch; the table
@@ -2339,10 +2417,42 @@ In order. Nothing here is started unless it says so.
     helpers the food-cost page already used — `previousMonth`,
     `nextMonth` and `bangkokYearMonth`, which moved into `checklist.ts`
     because a `"use server"` file may export only async functions.
-    `month-strings.test.ts` reads the SOURCE of every page under
-    `src/app` and fails on either shape; run against the pre-fix files it
-    flags exactly those seven lines, and its own first test is the two
-    shapes it must catch.
+    `date-strings.test.ts` (named `month-strings.test.ts` until the day half
+    below) reads the SOURCE of every page under `src/app` and fails on either
+    shape; run against the pre-fix files it flags exactly those seven lines,
+    and its own first test is the shapes it must catch.
+
+    **THE SAME DEFECT A DAY AT A TIME — fixed 2026-09-19, Nik approved.**
+    `new Date().toISOString().slice(0, 10)` is the UTC day, so for the first
+    seven hours of every Bangkok day it is yesterday. Found on
+    `daily/page.tsx` while reporting the month fix; the sweep for it found
+    **24 lines in 14 files**, and the pre-fix control flags every one.
+    - **What it did:** บันทึกรายวัน and its receipt opened on yesterday's
+      entries; the month list's "+ บันทึกวันนี้" pointed at yesterday and its
+      navigator compared against the UTC month; the transfer slip opened on
+      the week before (it read the clock as UTC *and* the weekday in the
+      server's zone); the HR schedule and its print page opened on last week;
+      probation alerts, both comp-day balances and the day-swap status labels
+      compared against the wrong day; the POS price window started and ended
+      a day early; the SOP form pre-filled yesterday; the menu-cost CSV was
+      named for yesterday.
+    - **The other half is arithmetic**, and it was fixed with it, because a
+      correct day fed into local `setDate` arithmetic comes back wrong:
+      `new Date(ds + "T00:00:00")` parses in the runtime's zone and
+      `toISOString` reads UTC, so the HR week start was a Monday early west
+      of Greenwich, and every `d.setDate(d.getDate() + n)` that was read back
+      with `toISOString` had the same property.
+    - **One home now:** `src/lib/bangkok-date.ts` — `bangkokToday`,
+      `bangkokYearMonth` (moved out of `checklist.ts`), `shiftDay`,
+      `dayOfWeek`, `startOfWeek`. The clock is read through a named zone;
+      everything else is string math, so no answer depends on where the code
+      runs. Tested in `bangkok-date.test.ts`, whose second test is the
+      18:00Z instant that is 01:00 tomorrow in Bangkok.
+    - **Deliberately left:** `pos-delivery-validation.ts`'s `tomorrow` bound,
+      which is a documented allowance for exactly this offset (an export made
+      late in the Bangkok evening carries a date UTC has not reached) and
+      whose `today` is a parameter; and `thaiDateShort`/`thaiDateFull`, which
+      build locally and read locally, so both halves agree.
 
 38. **April and May 2026 hold almost no revenue, against a normal month of
     expenses.** Found 2026-09-18 in the output of the negative-account
@@ -3228,7 +3338,7 @@ when things change?* The honest shape:
 | | |
 |---|---|
 | the table (523 seeded rows, 564 after the catering seed, 633 by 2026-09-10 evening, 690 by 2026-09-11, growing as items are reviewed) | live |
-| the screen at `/owner/accounting/coffee-items` | live |
+| the screen at `/owner/accounting/pos-item-categories` | live |
 | the "no row = not yet reviewed" check | live |
 
 ### What was one-time seed machinery, and the one piece that now runs monthly
@@ -3321,7 +3431,7 @@ needs a product-level POS export — find the `มัดจำงานเลี
 รวมราคา. Until then the direction is known and the magnitude is not.
 
 If the answer turns out to be "it should not be revenue", the change is one
-row's category on `/owner/accounting/coffee-items`, not code — there is no
+row's category on `/owner/accounting/pos-item-categories`, not code — there is no
 revenue type for a liability, and inventing one is a much larger decision.
 
 **2. Fourteen products exist under two spellings differing only in whitespace.**
