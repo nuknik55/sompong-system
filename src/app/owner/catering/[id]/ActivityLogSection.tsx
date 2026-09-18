@@ -5,22 +5,18 @@ import { useRouter } from "next/navigation";
 import type { CateringActivityLogEntry } from "../actions";
 import { updateCateringActivityLine, deleteCateringActivityLine } from "../actions";
 import { thFullDate } from "../shared-utils";
+import { bangkokDateTime } from "../log-time";
 
 /**
- * Combines thFullDate's Thai date with a local HH:MM — the log's "when" is
- * a full timestamp, unlike anywhere else thFullDate is used in this module.
- * Derives the calendar date from the local Date getters (not by slicing the
- * raw ISO string, which is UTC) so a late-night booking doesn't land on the
- * wrong day once converted to Thailand's local time.
+ * Combines thFullDate's Thai date with HH:MM — the log's "when" is a full
+ * timestamp, unlike anywhere else thFullDate is used in this module. Both
+ * parts are taken in Bangkok time by name (log-time.ts): this component is
+ * rendered on the server, whose clock is UTC, and again in the browser, and
+ * formatting in the runtime's own zone gave the two a different string.
  */
 function formatLogTimestamp(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const dateStr = thFullDate(`${y}-${m}-${day}`);
-  const timeStr = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-  return `${dateStr} ${timeStr}`;
+  const { date, time } = bangkokDateTime(iso);
+  return `${thFullDate(date)} ${time}`;
 }
 
 /**
