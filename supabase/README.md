@@ -2025,14 +2025,14 @@ In order. Nothing here is started unless it says so.
       changed: every figure was already built only from the rows a
       non-owner may see.
     - `3b4a83a`: break-even, the P&L summary, the P&L print page and its
-      Excel file show every non-owner "ตัวเลขฉบับเต็มดูได้ที่บัญชีเจ้าของร้าน",
-      every month, whatever the data; it depends on the role alone
-      (`owner-only-note.ts`, tested). The owner never sees it.
-    - **What that line stands for:** an admin's break-even is LOWER and
-      its safety margin HIGHER than the owner's, its operating profit
-      higher, and its Excel file partial.
-    - **Still open, as item 36:** admins can still READ 790's rows
-      through the API, and the transfer slip still counts them.
+      Excel file showed every non-owner "ตัวเลขฉบับเต็มดูได้ที่บัญชีเจ้าของร้าน".
+      **Superseded the same day by item 37:** no non-owner reaches those
+      four outputs any more, so the line and `owner-only-note.ts` are gone.
+    - **Still partial and silent for an admin, by this item's decision:**
+      the month list's ยอดรวมเดือน and the daily page's totals on a day
+      that carries a 790 lump leave that lump out and say nothing.
+    - **Item 36** (admins can still READ 790's rows through the API, and
+      the transfer slip counts them) is deferred.
 
     The question as first written:
     `UNWIRED_FEATURES.md` records his decision as **no indicator** for
@@ -2170,8 +2170,8 @@ In order. Nothing here is started unless it says so.
     with no station, order lines, and lines with each override set.
 
 36. **Admins can still READ account 790's rows through the API.**
-    **DEFERRED by Nik, 2026-09-17: the admin is trusted and
-    non-technical.** Not started; kept here for when it is wanted. The
+    **DEFERRED by Nik, 2026-09-17, and again on 2026-09-18: the admin is
+    trusted and non-technical.** Not started; kept here for when it is wanted. The
     app hides the rows (item 32); the database does not (part B of the
     permissions batch left the read in place; its test B15). What it
     takes, from the 2026-09-17 report:
@@ -2196,6 +2196,60 @@ In order. Nothing here is started unless it says so.
       item (Nik, 2026-09-17): the policy above corrects both.
     - Optional: the 790 row of `coa` itself (a name, no amount).
     - Tested like part B, as the real admin and owner.
+
+37. **Shop-level profit is the owner's; the head chef controls food
+    cost.** Nik's plan, 2026-09-17; the code is written and under review,
+    not committed. The system is for cost control, and its main user is
+    the head chef (an admin) checking his own food cost each month.
+    - **Owner only:** the P&L summary, the P&L print page and its Excel
+      file, and break-even (`requireOwner` on the three pages and on
+      `getMonthlySummary`, the endpoint behind them; the accounting tool
+      row shows the two links to the owner alone).
+    - **Owner and admin:** the shop-level cards on `/owner` (POS sales,
+      recipe cost and food-cost % added up over the dishes shown) and the
+      POS sales import. **No accounting-based cost-control view exists**
+      (revenue against the G100 COGS group); its design is proposed in the
+      2026-09-17 report and not built.
+    - **Owner, admin and editor:** per-dish margin, on the recipe pages
+      (already, item 34) and in the Star-to-Dog sort on `/staff`, which
+      staff, hr and sales no longer get: that order IS the margin,
+      ranked. Both use `editAccess()`.
+      **Menu Engineering on `/owner` stays owner and admin** — corrected
+      2026-09-18. It was briefly opened to editors here, which Nik had
+      never asked for: he said only that per-dish margin need not be
+      hidden from the roles that already see it. Reverted before the
+      commit, so no editor ever had it.
+    - **Unchanged for an admin:** daily entry, the payment voucher, the
+      transfer slip, the month list, the revenue import.
+    - **The owner's Excel file has two sheets:** ฉบับเต็ม, with the 790 row
+      and every figure containing it (its group, operating expense,
+      operating profit) painted red; and สำหรับประชุม, with 790 removed and
+      every total and percentage recomputed, unpainted, saying nothing
+      about a removal (`pl-workbook.ts`, tested). Painting needs
+      `xlsx-js-style`, added as a dependency: the community `xlsx` writes
+      no cell styles.
+    - **Catering per-event profit and cost** (`/owner/catering/[id]/cost`,
+      owner and admin; sales sees quoted totals and deposits only) is
+      reported and NOT changed: Nik decides.
+    - Also in the same change: a booking history's timestamps are
+      formatted in Bangkok time by name on server and browser alike
+      (`log-time.ts`, tested); they used the runtime's zone, UTC on
+      Vercel, so every booking page with history mismatched on load.
+
+    **Decided by Nik on 2026-09-18 after the visibility sweep reported
+    them — settled, not to be reopened:**
+    - **The month list keeps its ยอดรวมเดือน for an admin.** That total,
+      with the stored revenue an admin can also read on the revenue
+      import page, approximates operating profit. Nik accepts it: the
+      head chef is trusted, and the figure is the one he books himself.
+    - **Catering per-event profit and loss stays with admin**
+      (`/owner/catering/[id]/cost`): the head chef costs the events.
+      Sales still sees quoted totals and deposits only.
+    - **The neutral note stays removed everywhere**, the month list and
+      the daily page included, where an admin's totals silently leave a
+      790 lump out. Silent is what he wants.
+    - **Item 36 stays deferred** (the admin is trusted and
+      non-technical).
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was

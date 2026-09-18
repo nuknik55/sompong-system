@@ -196,6 +196,7 @@ supply-order approval work (README item 35).
 | `requireSales()` | owner, admin, sales |
 | `requireProfile()` | every signed-in account that has a profile |
 | `canSeePrep()`, `getPrepVisibility()` | owner by role; everyone else by grant row only. Never calls the SQL `can_see_prep()`. |
+| `editAccess(role)` (`src/lib/edit-access.ts`) | `direct`: owner, admin; `request`: editor; `view`: everyone else. `!== "view"` is the one rule for who sees a dish's cost and margin: the recipe pages, the SOP editor, and the Star-to-Dog sort on `/staff` (item 37). Menu Engineering on `/owner` is NOT one of them — it is `isAdminOrAbove`, owner and admin. |
 
 **Local checks that name one role and admit every other:**
 - `role === "staff"` used to mean "no editing, no costs"
