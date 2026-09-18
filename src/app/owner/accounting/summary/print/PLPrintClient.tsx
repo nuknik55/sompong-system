@@ -2,7 +2,7 @@
 
 import type { MonthlyCovers } from "../../actions";
 import { completenessNotices, profitJudgementAllowed } from "../completeness";
-import { buildPlWorkbook, REVENUE_KEYS, REVENUE_LABELS, type PlSummary, type SheetSpec } from "./pl-workbook";
+import { buildPlFile, buildPlWorkbook, REVENUE_KEYS, REVENUE_LABELS, type PlSummary } from "./pl-workbook";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
@@ -24,11 +24,13 @@ function fmtPct(n: number | null) {
 
 // ── Excel export ─────────────────────────────────────────────────────────────
 //
-// xlsx-js-style, not xlsx: the file needs cells painted, and the community
-// edition of SheetJS writes no cell styles at all (its writer says
-// "TODO: cell style"). xlsx-js-style is that edition with styles written.
+// The file is built in pl-workbook.ts, which imports the library nowhere and
+// so runs under the test runner: what Nik opens in Excel is what
+// pl-excel.test.ts reads back — the filter, the frozen rows, the widths, the
+// number formats and the red marking. This function only loads the library,
+// hands over the two sheets, and saves the bytes.
 
-const RED_FILL = { fill: { patternType: "solid", fgColor: { rgb: "FF9999" } } };
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function exportExcel(
   yearMonth: string,
@@ -38,34 +40,23 @@ function exportExcel(
 ) {
   // Lazy-load the library: it is large and only this button needs it.
   import("xlsx-js-style").then((XLSX) => {
-    const wb = XLSX.utils.book_new();
     const { full, meeting } = buildPlWorkbook(getThaiMonth(yearMonth), summary, revenueMap, covers, completenessNotices(summary));
+    const { bytes } = buildPlFile(XLSX, [full, meeting]);
 
-    // Two sheets, the same shape (pl-workbook.ts): ฉบับเต็ม with the
-    // owner-only account and every figure that contains it painted red, and
-    // สำหรับประชุม with that account taken out and every total recomputed,
-    // unpainted, and saying nothing about what is missing.
-    const toSheet = (spec: SheetSpec) => {
-      const ws = XLSX.utils.aoa_to_sheet(spec.rows);
-      ws["!cols"] = [{ wch: 36 }, { wch: 4 }, { wch: 18 }, { wch: 12 }, { wch: 10 }];
-      const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
-      for (let r = spec.numbersFrom; r <= range.e.r; r++) {
-        const cCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
-        if (cCell && typeof cCell.v === "number") cCell.z = spec.countRows.includes(r) ? "#,##0" : "#,##0.00";
-        const dCell = ws[XLSX.utils.encode_cell({ r, c: 3 })];
-        if (dCell && typeof dCell.v === "number") dCell.z = "0.0";
-      }
-      for (const r of spec.markedRows) {
-        for (let c = 0; c <= range.e.c; c++) {
-          const cell = ws[XLSX.utils.encode_cell({ r, c })];
-          if (cell) cell.s = RED_FILL;
-        }
-      }
-      return ws;
-    };
-    XLSX.utils.book_append_sheet(wb, toSheet(full), full.name);
-    XLSX.utils.book_append_sheet(wb, toSheet(meeting), meeting.name);
-    XLSX.writeFile(wb, `PL-${yearMonth}.xlsx`);
+    // Saved here rather than by XLSX.writeFile, because the frozen panes go
+    // into the file AFTER the library has written it: these bytes are the
+    // patched ones. The link is put in the document because Firefox will not
+    // follow a click on an element that is not in it, and the URL is released
+    // on a timer because Chrome can abandon a download whose blob URL is
+    // revoked in the same tick.
+    const url = URL.createObjectURL(new Blob([bytes], { type: XLSX_MIME }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `PL-${yearMonth}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
   });
 }
 
