@@ -2197,19 +2197,34 @@ In order. Nothing here is started unless it says so.
     - Optional: the 790 row of `coa` itself (a name, no amount).
     - Tested like part B, as the real admin and owner.
 
-37. **Shop-level profit is the owner's; the head chef controls food
-    cost.** Nik's plan, 2026-09-17; the code is written and under review,
-    not committed. The system is for cost control, and its main user is
-    the head chef (an admin) checking his own food cost each month.
+37. ~~**Shop-level profit is the owner's; the head chef controls food
+    cost.**~~ **CLOSED 2026-09-18**, and checked in the app by Nik: the
+    owner's two-sheet Excel is right, catering history times are right, an
+    admin no longer sees break-even or the P&L, daily entry and the month
+    list still work, and an editor no longer sees Menu Engineering. The
+    system is for cost control, and its main user is the head chef (an
+    admin) checking his own food cost each month.
     - **Owner only:** the P&L summary, the P&L print page and its Excel
       file, and break-even (`requireOwner` on the three pages and on
       `getMonthlySummary`, the endpoint behind them; the accounting tool
       row shows the two links to the owner alone).
     - **Owner and admin:** the shop-level cards on `/owner` (POS sales,
-      recipe cost and food-cost % added up over the dishes shown) and the
-      POS sales import. **No accounting-based cost-control view exists**
-      (revenue against the G100 COGS group); its design is proposed in the
-      2026-09-17 report and not built.
+      recipe cost and food-cost % added up over the dishes shown), the POS
+      sales import, and **`/owner/accounting/food-cost`, the page that
+      replaces the P&L for the head chef** (`4ee3ab1`, 2026-09-18 — until it
+      shipped an admin had no way to see COGS at all). Sales for the month, the G100 (COGS)
+      total booked against them, that as a percentage, and how far it sits
+      from `coa.target_pct` on the G100 header (38%) in points and in baht,
+      plus the G100 accounts biggest first. `getFoodCostMonth` reads G100
+      and nothing else; `food-cost.ts` throws away anything that is not an
+      open G100 account, which `food-cost.test.ts` covers; and the page is a
+      server component with no client child, so nothing but that result
+      reaches the browser — which the tests CANNOT see, and which was checked
+      instead by reading the route’s built client-reference manifest during
+      the 2026-09-18 review. It says in Thai that this is what was BOUGHT, so
+      it will not agree with the recipe-based % on `/owner`. Its total counts
+      a G100 account that nets negative; the P&L’s group totals still do
+      not (reported 2026-09-18, not changed).
     - **Owner, admin and editor:** per-dish margin, on the recipe pages
       (already, item 34) and in the Star-to-Dog sort on `/staff`, which
       staff, hr and sales no longer get: that order IS the margin,
