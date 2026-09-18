@@ -1,28 +1,13 @@
 "use client";
 
-import type { MonthlySummaryGroup, MonthlyCovers } from "../../actions";
-import { completenessNotices, profitJudgementAllowed, type MonthCompleteness } from "../completeness";
-import { OWNER_ONLY_NOTE } from "../../owner-only-note";
+import type { MonthlyCovers } from "../../actions";
+import { completenessNotices, profitJudgementAllowed } from "../completeness";
+import { buildPlWorkbook, REVENUE_KEYS, REVENUE_LABELS, type PlSummary, type SheetSpec } from "./pl-workbook";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
   "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม",
 ];
-
-// Two "other" lines, deliberately distinguished: pos_other is the POS's own
-// อื่นๆ group (ค่าทำ/ค่าห้อง, เพิ่มราคา), while other is the figure the
-// accountants compile — scrap and used-oil sales among other things. Labelling
-// both "อื่นๆ" would merge two unrelated things on the P&L.
-const REVENUE_LABELS: Record<string, string> = {
-  food: "อาหาร",
-  drink: "เครื่องดื่ม",
-  dessert: "ของหวาน",
-  delivery: "เดลิเวอรี่",
-  souvenir: "ของฝาก",
-  pos_other: "อื่นๆ (POS)",
-  other: "อื่นๆ (บัญชี)",
-};
-const REVENUE_KEYS = ["food", "drink", "dessert", "delivery", "souvenir", "pos_other", "other"];
 
 function getThaiMonth(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -38,107 +23,48 @@ function fmtPct(n: number | null) {
 }
 
 // ── Excel export ─────────────────────────────────────────────────────────────
+//
+// xlsx-js-style, not xlsx: the file needs cells painted, and the community
+// edition of SheetJS writes no cell styles at all (its writer says
+// "TODO: cell style"). xlsx-js-style is that edition with styles written.
+
+const RED_FILL = { fill: { patternType: "solid", fgColor: { rgb: "FF9999" } } };
 
 function exportExcel(
   yearMonth: string,
   revenueMap: Record<string, number>,
-  summary: {
-    groups: MonthlySummaryGroup[];
-    nonOperating: MonthlySummaryGroup[];
-    totalRevenue: number;
-    operatingExpense: number;
-    capex: number;
-    tax: number;
-  } & MonthCompleteness,
+  summary: PlSummary,
   covers: MonthlyCovers | null,
-  showOwnerOnlyNote: boolean,
 ) {
-  // Lazy-load xlsx (already in package.json)
-  import("xlsx").then((XLSX) => {
+  // Lazy-load the library: it is large and only this button needs it.
+  import("xlsx-js-style").then((XLSX) => {
     const wb = XLSX.utils.book_new();
-    const rows: (string | number)[][] = [];
+    const { full, meeting } = buildPlWorkbook(getThaiMonth(yearMonth), summary, revenueMap, covers, completenessNotices(summary));
 
-    const thaiMonth = getThaiMonth(yearMonth);
-
-    // Title
-    rows.push([`งบกำไรขาดทุน (P&L) — ${thaiMonth}`]);
-    // A cell under the title, for the same reason as the warnings below: the
-    // file travels. Role only, never the data (owner-only-note.ts).
-    if (showOwnerOnlyNote) rows.push([OWNER_ONLY_NOTE]);
-
-    // The warning must be a CELL, not a styled banner: this file is the thing
-    // that leaves the building. A reader who opens it in Excel has none of the
-    // context the screen carries, and July 2569's 78.2% profit is entirely
-    // believable to someone who does not know half its costs are missing.
-    for (const notice of completenessNotices(summary)) rows.push([`*** ${notice}`]);
-
-    rows.push([]);
-
-    // Revenue section
-    rows.push(["รายได้", "", "จำนวน (฿)", "% ของรายได้"]);
-    const revenueRowStart = rows.length;
-    for (const key of REVENUE_KEYS) {
-      const amt = revenueMap[key] ?? 0;
-      if (amt > 0) {
-        rows.push([REVENUE_LABELS[key], "", amt, summary.totalRevenue > 0 ? (amt / summary.totalRevenue) * 100 : 0]);
+    // Two sheets, the same shape (pl-workbook.ts): ฉบับเต็ม with the
+    // owner-only account and every figure that contains it painted red, and
+    // สำหรับประชุม with that account taken out and every total recomputed,
+    // unpainted, and saying nothing about what is missing.
+    const toSheet = (spec: SheetSpec) => {
+      const ws = XLSX.utils.aoa_to_sheet(spec.rows);
+      ws["!cols"] = [{ wch: 36 }, { wch: 4 }, { wch: 18 }, { wch: 12 }, { wch: 10 }];
+      const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+      for (let r = spec.numbersFrom; r <= range.e.r; r++) {
+        const cCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
+        if (cCell && typeof cCell.v === "number") cCell.z = spec.countRows.includes(r) ? "#,##0" : "#,##0.00";
+        const dCell = ws[XLSX.utils.encode_cell({ r, c: 3 })];
+        if (dCell && typeof dCell.v === "number") dCell.z = "0.0";
       }
-    }
-    rows.push(["รวมรายได้", "", summary.totalRevenue, 100]);
-    // The two counts, when the month has them. Rows remembered so the
-    // integer format below can exempt them from the baht format.
-    const coverRows: number[] = [];
-    if (covers) {
-      coverRows.push(rows.length); rows.push(["จำนวนบิล", "", covers.bills, ""]);
-      coverRows.push(rows.length); rows.push(["จำนวนลูกค้า", "", covers.customers, ""]);
-    }
-    rows.push([]);
-
-    // Expense section
-    rows.push(["ค่าใช้จ่าย", "", "จำนวน (฿)", "% จริง", "% เป้า"]);
-    for (const g of summary.groups) {
-      if (g.total === 0) continue;
-      rows.push([g.group_name, "", g.total, g.pct_of_revenue ?? 0, g.target_pct ?? ""]);
-      for (const a of g.accounts) {
-        rows.push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""]);
+      for (const r of spec.markedRows) {
+        for (let c = 0; c <= range.e.c; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell) cell.s = RED_FILL;
+        }
       }
-    }
-    rows.push(["รวมค่าใช้จ่ายดำเนินงาน", "", summary.operatingExpense,
-      summary.totalRevenue > 0 ? (summary.operatingExpense / summary.totalRevenue) * 100 : 0, ""]);
-    rows.push([]);
-
-    // Operating profit. CapEx and tax are listed below it and never subtracted,
-    // so an exported month stays comparable with the month beside it in a
-    // spreadsheet. This file and the on-screen summary must agree — they are
-    // two renderings of one figure, and the export is the one that leaves the
-    // building.
-    const operatingProfit = summary.totalRevenue - summary.operatingExpense;
-    const profitPct = summary.totalRevenue > 0 ? (operatingProfit / summary.totalRevenue) * 100 : 0;
-    rows.push(["กำไรจากการดำเนินงาน", "", operatingProfit, profitPct]);
-    rows.push([]);
-
-    rows.push(["รายการที่ไม่หักจากกำไรดำเนินงาน", "", "จำนวน (฿)", "% ของรายได้", ""]);
-    for (const g of summary.nonOperating) {
-      rows.push([g.group_name, "", g.total, g.pct_of_revenue ?? 0, ""]);
-      for (const a of g.accounts) {
-        rows.push([`  ${a.name}`, "", a.total, a.pct_of_revenue ?? 0, ""]);
-      }
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-
-    // Column widths
-    ws["!cols"] = [{ wch: 36 }, { wch: 4 }, { wch: 18 }, { wch: 12 }, { wch: 10 }];
-
-    // Number format on column C (index 2) and D/E
-    const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
-    for (let r = revenueRowStart; r <= range.e.r; r++) {
-      const cCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
-      if (cCell && typeof cCell.v === "number") cCell.z = coverRows.includes(r) ? "#,##0" : "#,##0.00";
-      const dCell = ws[XLSX.utils.encode_cell({ r, c: 3 })];
-      if (dCell && typeof dCell.v === "number") dCell.z = "0.0%";
-    }
-
-    XLSX.utils.book_append_sheet(wb, ws, "P&L");
+      return ws;
+    };
+    XLSX.utils.book_append_sheet(wb, toSheet(full), full.name);
+    XLSX.utils.book_append_sheet(wb, toSheet(meeting), meeting.name);
     XLSX.writeFile(wb, `PL-${yearMonth}.xlsx`);
   });
 }
@@ -150,22 +76,12 @@ export function PLPrintClient({
   summary,
   revenueMap,
   covers,
-  showOwnerOnlyNote,
 }: {
   yearMonth: string;
-  summary: {
-    groups: MonthlySummaryGroup[];
-    nonOperating: MonthlySummaryGroup[];
-    totalRevenue: number;
-    operatingExpense: number;
-    capex: number;
-    tax: number;
-  } & MonthCompleteness;
+  summary: PlSummary;
   revenueMap: Record<string, number>;
   /** null = the month has no covers row; the two rows are then omitted, never zero. */
   covers: MonthlyCovers | null;
-  /** True for every non-owner (showsOwnerOnlyNote): the page and the Excel file carry OWNER_ONLY_NOTE. */
-  showOwnerOnlyNote: boolean;
 }) {
   const thaiMonth = getThaiMonth(yearMonth);
   const operatingProfit = summary.totalRevenue - summary.operatingExpense;
@@ -218,7 +134,7 @@ export function PLPrintClient({
           พิมพ์ / บันทึก PDF
         </button>
         <button
-          onClick={() => exportExcel(yearMonth, revenueMap, summary, covers, showOwnerOnlyNote)}
+          onClick={() => exportExcel(yearMonth, revenueMap, summary, covers)}
           style={{
             background: "#16a34a", color: "#fff", border: "none", borderRadius: 6,
             padding: "6px 16px", fontSize: 14, cursor: "pointer",
@@ -235,9 +151,6 @@ export function PLPrintClient({
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ fontSize: 20, fontWeight: 700, fontFamily: font }}>งบกำไรขาดทุน (P&L)</div>
           <div style={{ fontSize: 15, color: "#555", marginTop: 4 }}>{thaiMonth}</div>
-          {showOwnerOnlyNote && (
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{OWNER_ONLY_NOTE}</div>
-          )}
         </div>
 
         {notices.map((n) => (

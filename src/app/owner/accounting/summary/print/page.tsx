@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getMonthlyCovers } from "../../actions";
-import { showsOwnerOnlyNote } from "../../owner-only-note";
 import { PLPrintClient } from "./PLPrintClient";
 
 export default async function PLPrintPage({
@@ -10,7 +9,9 @@ export default async function PLPrintPage({
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
-  const profile = await requireAdmin();
+  // OWNER ONLY since 2026-09-17 (Nik): the printed P&L and its Excel file
+  // carry the shop's profit. An admin is sent to /owner.
+  await requireOwner();
 
   const { month: rawMonth } = await searchParams;
   const today = new Date().toISOString().slice(0, 7);
@@ -30,7 +31,6 @@ export default async function PLPrintPage({
       summary={summary}
       revenueMap={revenueMap}
       covers={covers}
-      showOwnerOnlyNote={showsOwnerOnlyNote(profile.role)}
     />
   );
 }

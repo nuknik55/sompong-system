@@ -1,6 +1,7 @@
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost, classifyWithinCategory } from "@/lib/costing";
 import { getCurrentProfile } from "@/lib/auth";
+import { editAccess } from "@/lib/edit-access";
 import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
 import { createMenu } from "@/app/staff/menu/actions";
@@ -18,10 +19,16 @@ export default async function StaffHomePage() {
   // Ranked over ALL menus, within category (the same helper as /owner), and
   // only then narrowed to what this person may see. Ranking the visible
   // subset would give a staff member different verdicts from the owner's.
-  // The class is used only by the list's "sort by class" option here.
-  const ranked = classifyWithinCategory(
-    menus.map((menu) => computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct)),
-  );
+  // The class is used only by the list's "sort by class" option here, and
+  // only for the roles that see a dish's margin (owner, admin, editor:
+  // editAccess, as on the recipe page): a Star-to-Dog order is that margin,
+  // ranked, so staff, hr and sales get no such option (Nik, 2026-09-17).
+  const seesMargin = editAccess(profile?.role) !== "view";
+  const ranked = seesMargin
+    ? classifyWithinCategory(
+        menus.map((menu) => computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct)),
+      )
+    : [];
   const meClassById = new Map(ranked.map((r) => [r.menu.id, r.menuClass]));
 
   const categories = [...new Set(visibleMenus.map((m) => m.category).filter((c): c is string => !!c))].sort((a, b) =>

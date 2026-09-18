@@ -1,12 +1,10 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt, getMonthlyCovers } from "../actions";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 import { ToolRow } from "../tool-row";
-import { OWNER_ONLY_NOTE, showsOwnerOnlyNote } from "../owner-only-note";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -33,8 +31,9 @@ export default async function AccountingSummaryPage({
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
-  const profile = await requireAdmin();
-  if (!profile) redirect("/staff");
+  // OWNER ONLY since 2026-09-17 (Nik): the shop's profit and everything
+  // derived from it. An admin is sent to /owner, the cost overview.
+  const profile = await requireOwner();
 
   const { month: rawMonth } = await searchParams;
   const today = new Date().toISOString().slice(0, 7);
@@ -140,7 +139,6 @@ export default async function AccountingSummaryPage({
           highlight={profitHighlight}
         />
       </div>
-      {showsOwnerOnlyNote(profile.role) && <p className="text-xs text-neutral-500">{OWNER_ONLY_NOTE}</p>}
 
       {/* Bills and customers, one line. Averages divide THIS page's revenue,
           not the POS's own averages, which are on a net-of-discount basis

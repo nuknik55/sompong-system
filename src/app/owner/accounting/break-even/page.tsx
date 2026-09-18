@@ -1,11 +1,10 @@
 export const dynamic = "force-dynamic";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyCovers, getCoaBehaviors } from "../actions";
 import { completenessNotices } from "../summary/completeness";
 import { breakEven } from "../break-even";
 import { ToolRow } from "../tool-row";
-import { OWNER_ONLY_NOTE, showsOwnerOnlyNote } from "../owner-only-note";
 
 /**
  * Break-even for one month: four figures and one sentence of basis. No
@@ -29,7 +28,9 @@ function thaiMonth(yearMonth: string) {
 }
 
 export default async function BreakEvenPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const profile = await requireAdmin();
+  // OWNER ONLY since 2026-09-17 (Nik): break-even and the safety margin are
+  // derived from the shop's profit. An admin is sent to /owner.
+  const profile = await requireOwner();
   const { month: rawMonth } = await searchParams;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
   const yearMonth = rawMonth?.match(/^\d{4}-\d{2}$/) ? rawMonth : today;
@@ -62,13 +63,6 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
           <a href={`/owner/accounting/break-even?month=${nextMonth}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
         )}
       </div>
-
-      {/* An admin does not see 790, so fixed cost here is understated by
-          exactly that: the break-even shown is LOWER than the true one and
-          the safety margin higher. By Nik's choice (2026-09-17, queue item
-          32) a non-owner is told only where the full figures are, every
-          month, whatever the data; the owner's figures are whole. */}
-      {showsOwnerOnlyNote(profile.role) && <p className="text-xs text-neutral-500">{OWNER_ONLY_NOTE}</p>}
 
       {summary.totalRevenue === 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">

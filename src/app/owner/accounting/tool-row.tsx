@@ -6,10 +6,11 @@ import type { Role } from "@/lib/auth";
  * used to carry its own list of links. Grouped by cadence; the monthly
  * items are in dependency order, left to right.
  *
- * The owner-only import is offered only to the owner. The page and its
- * actions keep requireOwner regardless — this stops an admin being shown a
- * link that silently bounces them to /owner, which is what happened on
- * 2026-09-10.
+ * The owner-only items are offered only to the owner: the import, and since
+ * 2026-09-17 the P&L summary and break-even (Nik: the shop's profit is the
+ * owner's; an admin controls food cost). Each page and its actions keep
+ * requireOwner regardless — this stops an admin being shown a link that
+ * silently bounces them to /owner, which is what happened on 2026-09-10.
  */
 export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: string; current?: string }) {
   const item = (href: string, label: string, key: string) => (
@@ -32,9 +33,13 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
   const monthly = [
     item("/owner/accounting/coffee-items", "จัดหมวดสินค้า POS", "coffee-items"),
     item(`/owner/accounting/revenue-import`, "นำเข้ารายได้ POS", "revenue-import"),
-    ...(role === "owner" ? [item("/owner/accounting/import", "นำเข้ารายจ่ายรายเดือน", "import")] : []),
-    item(`/owner/accounting/summary?month=${yearMonth}`, "สรุปรายเดือน", "summary"),
-    item(`/owner/accounting/break-even?month=${yearMonth}`, "จุดคุ้มทุน", "break-even"),
+    ...(role === "owner"
+      ? [
+          item("/owner/accounting/import", "นำเข้ารายจ่ายรายเดือน", "import"),
+          item(`/owner/accounting/summary?month=${yearMonth}`, "สรุปรายเดือน", "summary"),
+          item(`/owner/accounting/break-even?month=${yearMonth}`, "จุดคุ้มทุน", "break-even"),
+        ]
+      : []),
   ];
   const monthlyArrows = monthly.flatMap((l, i) => (i === 0 ? [l] : [<span key={`a${i}`} className="text-neutral-300">→</span>, l]));
   return (

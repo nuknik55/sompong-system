@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireOwner } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
 import { fetchAllRows } from "@/lib/data";
@@ -120,6 +120,8 @@ export type MonthlySummaryGroup = {
     name: string;
     total: number;
     pct_of_revenue: number | null;
+    /** An owner-only account (790). Only the owner receives these rows; the P&L export marks them and every total they sit in. */
+    is_sensitive: boolean;
   }[];
 };
 
@@ -914,6 +916,16 @@ export async function getPosImportedAt(yearMonth: string): Promise<string | null
 
 // ── Monthly Summary ──────────────────────────────────
 
+/**
+ * OWNER ONLY since 2026-09-17 (Nik: shop-level profit is the owner's; the
+ * head chef, an admin, controls food cost and does not see the P&L). Every
+ * figure here is shop-level or derived from it: group totals, operating
+ * expense, profit, CapEx, tax. The three pages that call it (P&L summary,
+ * P&L print, break-even) are requireOwner too; this guard is what holds
+ * when the endpoint is called directly. Only the owner is left, so the
+ * sensitive-account filter below now only ever passes everything through;
+ * it stays as a second lock in case the guard is ever widened again.
+ */
 export async function getMonthlySummary(yearMonth: string): Promise<{
   /** Operating groups only — excludes NON_OPERATING_GROUPS. */
   groups: MonthlySummaryGroup[];
@@ -957,7 +969,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
    */
   monthInProgress: boolean;
 }> {
-  const profile = await requireAdmin();
+  const profile = await requireOwner();
   const supabase = await createClient();
 
   // Paged, not a plain select: this had no .limit() and so inherited
@@ -1009,9 +1021,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
 
   const totalRevenue = revenueRows.reduce((s, r) => s + (r.amount ?? 0), 0);
 
-  // Filter sensitive for non-owners. Silently since 2026-09-17 (queue item
-  // 32, Nik's choice): an admin's totals, profit and break-even leave these
-  // accounts out, and nothing on screen or in the xlsx says so.
+  // Filter sensitive for non-owners: the second lock (see the doc comment).
   const visibleCoa =
     profile.role === "owner" ? allCoa : allCoa.filter((c) => !c.is_sensitive);
 
@@ -1034,6 +1044,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<{
         name: c.name,
         total: totals.get(c.code) ?? 0,
         pct_of_revenue: totalRevenue > 0 ? ((totals.get(c.code) ?? 0) / totalRevenue) * 100 : null,
+        is_sensitive: c.is_sensitive,
       }))
       .filter((a) => a.total > 0);
     const groupTotal = accounts.reduce((s, a) => s + a.total, 0);
