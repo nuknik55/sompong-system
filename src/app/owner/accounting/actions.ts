@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireOwner } from "@/lib/auth";
+import { buildFoodCostMonth, COGS_GROUP, type FoodCostCoaRow, type FoodCostMonth } from "./food-cost";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
 import { fetchAllRows } from "@/lib/data";
@@ -912,6 +913,77 @@ export async function getPosImportedAt(yearMonth: string): Promise<string | null
     .maybeSingle();
   if (error) throw new Error(error.message);
   return (data?.imported_at as string) ?? null;
+}
+
+// ── Food cost (the head chef's month) ─────────────────
+
+/**
+ * Sales, the food bought against them, and the percentage — nothing else.
+ * Owner and admin (Nik, 2026-09-18, queue item 37): this is what an admin
+ * has instead of the P&L, so no other group's amount, no profit and no
+ * owner-only account may leave this function.
+ *
+ * Three locks, in order: the chart-of-accounts read asks for G100 and the
+ * group header alone; the entry read names those codes; and
+ * buildFoodCostMonth throws away anything that is not an open G100 account
+ * (its own tests). The page renders server-side from the result, so what it
+ * returns is the whole of what reaches the browser.
+ */
+export async function getFoodCostMonth(yearMonth: string): Promise<FoodCostMonth> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const [coaRes, revenueRes, firstEntryRes] = await Promise.all([
+    // The G100 accounts and the header row that carries the target. An
+    // owner-only account could not be in this group, and is excluded anyway.
+    supabase
+      .from("coa")
+      .select("code,name,group_code,target_pct,is_sensitive")
+      .or(`group_code.eq.${COGS_GROUP},code.eq.${COGS_GROUP}`)
+      .eq("is_sensitive", false)
+      .order("sort_order"),
+    supabase.from("monthly_revenue").select("amount").eq("year_month", yearMonth),
+    // The earliest expense entry in the whole table — where the record
+    // begins. A date, no amount. See expenseDataIncomplete in getMonthlySummary.
+    supabase.from("expense_entries").select("entry_date").order("entry_date").limit(1),
+  ]);
+  if (coaRes.error) throw new Error(coaRes.error.message);
+  if (revenueRes.error) throw new Error(revenueRes.error.message);
+  if (firstEntryRes.error) throw new Error(firstEntryRes.error.message);
+
+  const coa = (coaRes.data ?? []) as FoodCostCoaRow[];
+  const codes = coa.filter((c) => c.group_code === COGS_GROUP).map((c) => c.code);
+  // No G100 account at all: ask for nothing rather than send in.() , which is
+  // not a filter PostgREST accepts.
+  const entries = codes.length
+    ? await fetchAllRows<{ coa_code: string; amount: number }>(({ from, to }) =>
+        supabase
+          .from("expense_entries")
+          .select("coa_code,amount")
+          .in("coa_code", codes)
+          .filter("entry_date", "gte", `${yearMonth}-01`)
+          .filter("entry_date", "lte", monthEnd(yearMonth))
+          // Ordered on the primary key: without it a paged read can return a
+          // row twice and another never (README item 10).
+          .order("id")
+          .range(from, to),
+      )
+    : [];
+
+  const firstEntryDate = firstEntryRes.data?.[0]?.entry_date as string | undefined;
+  return buildFoodCostMonth({
+    yearMonth,
+    coa,
+    entries,
+    revenueRows: revenueRes.data ?? [],
+    completeness: {
+      expenseDataIncomplete:
+        firstEntryDate !== undefined &&
+        firstEntryDate.slice(0, 7) === yearMonth &&
+        firstEntryDate.slice(8) !== "01",
+      monthInProgress: yearMonth === bangkokYearMonth(),
+    },
+  });
 }
 
 // ── Monthly Summary ──────────────────────────────────

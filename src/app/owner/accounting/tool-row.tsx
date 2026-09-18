@@ -33,6 +33,9 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
   const monthly = [
     item("/owner/accounting/coffee-items", "จัดหมวดสินค้า POS", "coffee-items"),
     item(`/owner/accounting/revenue-import`, "นำเข้ารายได้ POS", "revenue-import"),
+    // Owner and admin: the head chef's month (item 37). It is the last step
+    // an admin has, so it sits before the owner-only pair below.
+    item(`/owner/accounting/food-cost?month=${yearMonth}`, "ต้นทุนอาหาร", "food-cost"),
     ...(role === "owner"
       ? [
           item("/owner/accounting/import", "นำเข้ารายจ่ายรายเดือน", "import"),

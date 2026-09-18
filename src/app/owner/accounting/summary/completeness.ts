@@ -24,12 +24,23 @@ export type MonthCompleteness = {
 };
 
 /** The notices that apply, in the order they should be shown. Empty when the month is sound. */
-export function completenessNotices(c: MonthCompleteness): string[] {
+export function completenessNotices(
+  c: MonthCompleteness,
+  /**
+   * What the page carries. The food-cost page (item 37) shows no profit, and
+   * naming กำไร on the head chef's screen is what that item took off it. The
+   * condition and the direction are the same either way; only the wording
+   * changes.
+   */
+  opts: { hasProfitFigures?: boolean } = {},
+): string[] {
+  const { hasProfitFigures = true } = opts;
   const notices: string[] = [];
   if (c.expenseDataIncomplete) {
     notices.push(
       "ข้อมูลไม่ครบ — เดือนนี้บันทึกรายจ่ายไม่ครบทั้งเดือน แต่รายได้เป็นของทั้งเดือน " +
-        "ตัวเลข % ต้นทุนและ % กำไรทั้งหมดในหน้านี้จึงต่ำกว่าความจริง ห้ามใช้เทียบกับเดือนอื่น",
+        (hasProfitFigures ? "ตัวเลข % ต้นทุนและ % กำไรทั้งหมดในหน้านี้" : "ตัวเลข % ต้นทุนในหน้านี้") +
+        "จึงต่ำกว่าความจริง ห้ามใช้เทียบกับเดือนอื่น",
     );
   }
   if (c.monthInProgress) {
