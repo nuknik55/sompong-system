@@ -13,6 +13,8 @@ import {
   type Supplier,
 } from "../actions";
 import { isDailyEditable, resolveEditPaymentMethod, splitByPaymentMethod } from "./payment-split";
+import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
+import { capexWarning, capexWarningText } from "../capex-hint";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -31,11 +33,10 @@ function toThaiDate(date: string): string {
   return `${dd} ${MONTHS_TH[(dm ?? 1) - 1]} ${(dy ?? 2568) + 543}`;
 }
 
-function shiftDate(date: string, days: number): string {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+// setDate/getDate read the browser's zone and toISOString writes UTC, which
+// agree only east of Greenwich. shiftDay is the same arithmetic in UTC
+// throughout (src/lib/bangkok-date.ts).
+const shiftDate = shiftDay;
 
 // ── SearchableSelect (COA) ────────────────────────────────────────────
 
@@ -212,11 +213,14 @@ export function DailyEntryClient({
   entries,
   date,
   suppliers,
+  capexThreshold,
 }: {
   coa: CoaAccount[];
   entries: ExpenseEntry[];
   date: string;
   suppliers: Supplier[];
+  /** Amount above which a supply or maintenance row is asked about (item 9). 0 = off. */
+  capexThreshold: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -270,6 +274,45 @@ export function DailyEntryClient({
 
   const leafCoa = coa.filter((c) => c.group_code !== null);
   const groups = coa.filter((c) => c.group_code === null);
+
+  // ── The CapEx question (queue item 9) ───────────────────────────────────
+  //
+  // A WARNING, never a refusal: it asks whether a large purchase in the
+  // equipment and supplies groups is a new asset, and the person answers by
+  // choosing an account. Saving is untouched — no disabled button, no
+  // confirm step, and nothing is reclassified. Rows already saved are never
+  // revisited; this looks only at what is being typed or edited.
+  //
+  // The cash and transfer halves of one row are ONE purchase split across two
+  // payment methods (that is what the two boxes mean here), so they are added
+  // up before the comparison — otherwise a ฿29,853 sealer paid half each way
+  // would slip under a ฿20,000 threshold twice.
+  const coaOf = (code: string) => leafCoa.find((c) => c.code === code);
+  const rowTotal = (cash: string, transfer: string) => (parseFloat(cash) || 0) + (parseFloat(transfer) || 0);
+  const capexRows = pending
+    .map((r) => ({ row: r, account: coaOf(r.coaCode), total: rowTotal(r.amountCash, r.amountTransfer) }))
+    .filter((x) => capexWarning({ amount: x.total, groupCode: x.account?.group_code, threshold: capexThreshold }));
+  const editingIsCapex =
+    editing != null &&
+    capexWarning({
+      amount: rowTotal(editing.amountCash, editing.amountTransfer),
+      groupCode: coaOf(editing.coaCode)?.group_code,
+      threshold: capexThreshold,
+    });
+  const capexNotice =
+    capexRows.length === 0 ? null : (
+      <div className="no-print rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p>{capexWarningText(capexThreshold)}</p>
+        <ul className="mt-1 space-y-0.5">
+          {capexRows.map((x) => (
+            <li key={x.row.id} className="tabular-nums">
+              • {x.account?.name ?? x.row.coaCode} — {x.total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-amber-700">บันทึกได้ตามปกติ — ระบบไม่เปลี่ยนหมวดให้เอง</p>
+      </div>
+    );
 
   // Label for display/print: supplier name + detail
   function entryLabel(e: ExpenseEntry): string {
@@ -519,7 +562,7 @@ export function DailyEntryClient({
   const pendCash = pending.reduce((s, r) => s + (parseFloat(r.amountCash) || 0), 0);
   const pendTransfer = pending.reduce((s, r) => s + (parseFloat(r.amountTransfer) || 0), 0);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokToday();
   const isToday = date === today;
   const isEmpty = entries.length === 0 && pending.length === 0;
 
@@ -585,6 +628,7 @@ export function DailyEntryClient({
                 {isPending ? "กำลังบันทึก..." : `บันทึก (${pending.length} รายการ)`}
               </button>
             )}
+            {capexNotice && <div className="basis-full">{capexNotice}</div>}
           </div>
         </div>
 
@@ -696,6 +740,10 @@ export function DailyEntryClient({
                             onChange={(ev) => setEditing({ ...editing, detail: ev.target.value })}
                             placeholder="รายละเอียด..."
                             className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" autoFocus />
+                          {/* An edited entry is asked the same question as a new one. */}
+                          {editingIsCapex && (
+                            <p className="mt-1 text-[11px] leading-snug text-amber-800">{capexWarningText(capexThreshold)}</p>
+                          )}
                         </td>
                         <td className="px-1.5 py-1.5">
                           <SearchableSelect value={editing.coaCode}
@@ -893,6 +941,8 @@ export function DailyEntryClient({
 
         {error && <p className="text-sm text-red-600 no-print">{error}</p>}
         {saveMsg && <p className="text-sm font-medium text-green-700 no-print">{saveMsg}</p>}
+
+        {capexNotice}
 
         {pending.length > 0 && (
           <div className="flex items-center justify-between no-print">

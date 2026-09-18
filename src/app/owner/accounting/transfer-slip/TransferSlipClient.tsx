@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useRef } from "react";
 import type { WeeklySupplierRow } from "../actions";
+import { shiftDay } from "@/lib/bangkok-date";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
@@ -19,18 +20,10 @@ function fmt(n: number | null | undefined): string {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Tuesday 7 days before the given date
-function prevWeekTuesday(tuesday: string): string {
-  const d = new Date(tuesday);
-  d.setDate(d.getDate() - 7);
-  return d.toISOString().slice(0, 10);
-}
-
-function nextWeekTuesday(tuesday: string): string {
-  const d = new Date(tuesday);
-  d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
-}
+// Tuesday 7 days either side of the given one. String math (shiftDay), so the
+// answer does not depend on the browser's zone.
+const prevWeekTuesday = (tuesday: string) => shiftDay(tuesday, -7);
+const nextWeekTuesday = (tuesday: string) => shiftDay(tuesday, 7);
 
 const DAY_LABELS = ["อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา.", "จ."];
 
@@ -209,11 +202,7 @@ export function TransferSlipClient({
   const grandTotal = totalA + totalB + totalC;
 
   const weekLabel = `${thDate(days[0]!)} – ${thDate(days[6]!)}`;
-  const nextTuesday = (() => {
-    const d = new Date(days[6]!);
-    d.setDate(d.getDate() + 1);
-    return thDate(d.toISOString().slice(0, 10));
-  })();
+  const nextTuesday = thDate(shiftDay(days[6]!, 1));
 
   // ── Export Excel ────────────────────────────────────────────────
 

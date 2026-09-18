@@ -46,22 +46,12 @@ export type Checklist = {
   collapsed: boolean;
 };
 
-/**
- * The current year-month in Bangkok, not UTC.
- *
- * `new Date().toISOString().slice(0, 7)` is UTC, and Thailand is UTC+7:
- * between 00:00 and 07:00 Bangkok on the 1st, UTC still reads the previous
- * month. That would mark a month that had just closed as "still in progress"
- * and fail to mark the one that had just opened — for seven hours, every
- * month. A marker that is wrong even occasionally is one people learn to
- * ignore. Lives here, with previousMonth and nextMonth, because every page
- * that needs one needs the others (moved out of actions.ts 2026-09-18: a
- * "use server" file can export only async functions, so a page cannot import
- * it from there).
- */
-export function bangkokYearMonth(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
-}
+// bangkokYearMonth moved to src/lib/bangkok-date.ts on 2026-09-19, where it
+// sits beside bangkokToday: the day version of the same defect turned up on
+// thirteen more surfaces, several of them outside accounting, and one home
+// for "what day is it in Bangkok" is what stops the next one being written by
+// hand. previousMonth and nextMonth stay here, beside the checklist that uses
+// them.
 
 export function previousMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -125,7 +115,7 @@ export function deriveChecklist(ev: ChecklistEvidence, yearMonth: string): Check
   // 3. Classification: implied by 4 — the revenue import refuses unstored
   //    items, so a successful import means every item in the file was classified.
   const classify: ChecklistStep = {
-    key: "classify", title: "จัดหมวดสินค้า POS", href: "/owner/accounting/coffee-items", ownerOnly: false,
+    key: "classify", title: "จัดหมวดสินค้า POS", href: "/owner/accounting/pos-item-categories", ownerOnly: false,
     ...(revenue.state === "done"
       ? { state: "done" as const, detail: "ครบ — การนำเข้ารายได้ผ่านแล้ว จึงไม่มีสินค้าที่ยังไม่จัดหมวด" }
       : { state: "open" as const, detail: "ตรวจตอนนำเข้ารายได้ — ถ้ามีสินค้าใหม่ การนำเข้าจะหยุดให้จัดหมวดก่อน" }),

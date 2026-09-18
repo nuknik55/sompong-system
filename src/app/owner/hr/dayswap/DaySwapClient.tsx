@@ -5,6 +5,7 @@ import { okOrThrow } from "../hr-result";
 import { useState, useTransition } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertDaySwapRequest, deleteDaySwapRequest } from "../actions";
+import { bangkokToday } from "@/lib/bangkok-date";
 import type { Employee, DaySwapRequest, CompDayBalance, Holiday } from "../actions";
 
 const MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
@@ -129,7 +130,7 @@ export function DaySwapClient({
   }
 
   function swapStatus(s: DaySwapRequest): { label: string; cls: string } {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = bangkokToday();
     if (s.swap_type === "work_first") {
       if (s.compensation === "extra_pay") return { label: "จ่ายเพิ่ม", cls: "bg-amber-50 text-amber-700 border-amber-200" };
       if (!s.off_date) return { label: "วันหยุดค้าง", cls: "bg-teal-50 text-teal-700 border-teal-200" };

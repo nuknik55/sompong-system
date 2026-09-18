@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/data";
+import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 import { proposeYieldQty, summarizeLatestDelivery, isoToDateKey, isoToThaiDateLabel, type PosMaterialDeliveries } from "@/lib/pos-parse";
 import { validateChunk, MAX_ROWS_PER_BATCH } from "@/lib/pos-delivery-validation";
 import {
@@ -187,8 +188,11 @@ export async function buildPosImportPreview(): Promise<{ status: "ok"; preview: 
     .maybeSingle();
   if (settingsError) return { status: "error", message: settingsError.message };
   const windowDays = settings?.window_days ?? 90;
-  const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
+  // Bangkok days, and calendar arithmetic rather than a count of
+  // milliseconds: the window used to start and end a day early for the first
+  // seven hours of every Bangkok day.
+  const today = bangkokToday();
+  const windowStart = shiftDay(today, -windowDays);
 
   const [deliveries, ingredientsRes, aliasesRes] = await Promise.all([
     // PAGED. A plain select() here returned 1,000 of 4,489 window deliveries —

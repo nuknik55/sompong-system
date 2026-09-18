@@ -297,7 +297,7 @@ if (SQL_OUT) {
   lines.push("-- review the screen exists to provide. ON CONFLICT DO NOTHING protects rows");
   lines.push("-- that already exist; it does nothing to protect rows that do not yet.");
   lines.push("--");
-  lines.push("-- New products are classified ON THE SCREEN at /owner/accounting/coffee-items,");
+  lines.push("-- New products are classified ON THE SCREEN at /owner/accounting/pos-item-categories,");
   lines.push("-- where they surface as ใหม่ until someone picks a category. Never by");
   lines.push("-- re-seeding.");
   lines.push("--");
@@ -317,7 +317,7 @@ if (SQL_OUT) {
   lines.push("    RAISE EXCEPTION");
   lines.push("      'ABORTED: pos_item_categories already holds % rows. This seed is one-time. '");
   lines.push("      'Nothing has been written. New products are classified on the screen at '");
-  lines.push("      '/owner/accounting/coffee-items (they appear as ใหม่ until categorised) — '");
+  lines.push("      '/owner/accounting/pos-item-categories (they appear as ใหม่ until categorised) — '");
   lines.push("      'do not re-seed to add them.', existing;");
   lines.push("  END IF;");
   lines.push("END $$;");

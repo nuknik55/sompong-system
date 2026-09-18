@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { getRecentEntries, getStartOfMonthChecklist } from "./actions";
-import { bangkokYearMonth } from "./checklist";
+import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { AccountingEntryClient } from "./AccountingEntryClient";
 import { ToolRow } from "./tool-row";
 import { ChecklistPanel } from "./ChecklistPanel";

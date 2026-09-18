@@ -3,13 +3,13 @@ export const dynamic = "force-dynamic";
 import { requireHROrAdmin } from "@/lib/auth";
 import { getEmployees, getDepartments, getHolidays, getScheduleWeek, getApprovedLeavesForWeek, getSwapDatesForWeek } from "../actions";
 import { ScheduleClient } from "./ScheduleClient";
+import { bangkokToday, startOfWeek } from "@/lib/bangkok-date";
 
 function getMondayOf(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const dow = d.getDay();
-  const diff = dow === 0 ? -6 : 1 - dow;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  // "T00:00:00" with no zone is parsed in the RUNTIME's zone and read back in
+  // UTC, so this returned the Monday before the right one west of Greenwich.
+  // startOfWeek is UTC throughout (src/lib/bangkok-date.ts).
+  return startOfWeek(dateStr, 1);
 }
 
 export default async function SchedulePage({
@@ -20,7 +20,7 @@ export default async function SchedulePage({
   await requireHROrAdmin();
   const sp = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokToday();
   const weekStart = sp.week ? getMondayOf(sp.week) : getMondayOf(today);
   const deptId = sp.dept ?? "";
 

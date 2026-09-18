@@ -4,7 +4,8 @@ import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyCovers, getCoaBehaviors } from "../actions";
 import { completenessNotices } from "../summary/completeness";
 import { breakEven } from "../break-even";
-import { bangkokYearMonth, nextMonth, previousMonth } from "../checklist";
+import { nextMonth, previousMonth } from "../checklist";
+import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { ToolRow } from "../tool-row";
 
 /**

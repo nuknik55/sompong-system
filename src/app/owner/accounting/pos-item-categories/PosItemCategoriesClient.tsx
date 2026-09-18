@@ -61,7 +61,7 @@ function coffeeGross(c: ItemCandidate, d: Draft): number {
   return share == null ? 0 : share * c.qty;
 }
 
-export function CoffeeItemsClient({ initialStoredCount }: { initialStoredCount: number }) {
+export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredCount: number }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   // The File lives in state from selection and is read on อ่านไฟล์, not on

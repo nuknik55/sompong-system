@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
 import { getFoodCostMonth } from "../actions";
-import { bangkokYearMonth, previousMonth, nextMonth } from "../checklist";
+import { previousMonth, nextMonth } from "../checklist";
+import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { completenessNotices } from "../summary/completeness";
 import { ToolRow } from "../tool-row";
 

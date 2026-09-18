@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireHR } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -347,11 +348,8 @@ export type ProbationAlert = {
 
 export async function getProbationAlerts(): Promise<ProbationAlert[]> {
   const supabase = await createClient();
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0]!;
-  const alertDate = new Date(today);
-  alertDate.setDate(alertDate.getDate() + 30);
-  const alertDateStr = alertDate.toISOString().split("T")[0]!;
+  const todayStr = bangkokToday();
+  const alertDateStr = shiftDay(todayStr, 30);
 
   const { data } = await supabase
     .from("employees")
@@ -1408,7 +1406,7 @@ export async function getSwapDatesForMonth(year: number, month: number): Promise
 
 export async function getCompDayBalances(): Promise<CompDayBalance[]> {
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokToday();
   const [{ data: employees }, { data: swaps }] = await Promise.all([
     supabase.from("employees").select("id,full_name,nickname").eq("is_active", true).order("full_name"),
     supabase.from("day_swap_requests").select("employee_id,work_date,off_date,swap_type,compensation"),
@@ -1457,7 +1455,7 @@ export type HolidayCompDayBalance = {
 // เหมือน getCompDayBalances แต่กรองเฉพาะแถวที่ผูกกับวันนักขัตฤกษ์ (holiday_id ไม่ว่าง)
 export async function getHolidayCompDayBalances(): Promise<HolidayCompDayBalance[]> {
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokToday();
   const { data: swaps } = await supabase
     .from("day_swap_requests")
     .select("employee_id,work_date,off_date,swap_type,compensation,holiday_id")

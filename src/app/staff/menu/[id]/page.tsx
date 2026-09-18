@@ -32,7 +32,9 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
   // a role added later is not handed the editor.
   const canEdit = access !== "view";
 
-  // Block staff/editor from accessing hidden menus directly via URL
+  // A hidden menu opens for owner and admin alone — the same allowlist the
+  // list page uses. Everyone else gets notFound, editor, staff, hr and sales
+  // alike, whether they followed a link or typed the URL.
   if (!isAdmin && !(menu as unknown as { staff_visible: boolean }).staff_visible) {
     notFound();
   }

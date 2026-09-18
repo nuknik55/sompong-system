@@ -190,7 +190,7 @@ export function RevenueImportClient() {
                     <>
                       <p>
                         มีสินค้า {b.products.length} รายการที่ยังไม่มีหมวด รวม {fmt(b.totalGross)} บาท —{" "}
-                        <a href="/owner/accounting/coffee-items" className="underline">
+                        <a href="/owner/accounting/pos-item-categories" className="underline">
                           ไปหน้าจัดหมวดสินค้า POS
                         </a>
                       </p>

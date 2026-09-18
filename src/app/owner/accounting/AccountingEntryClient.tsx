@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { deleteExpenseEntry, type ExpenseEntry } from "./actions";
+import { bangkokToday } from "@/lib/bangkok-date";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -90,7 +91,12 @@ export function AccountingEntryClient({
   const monthTotal = entries.reduce((s, e) => s + e.amount, 0);
   const isFiltering = !!(search || filterGroup);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The restaurant's day. It dates the "+ บันทึกวันนี้" link, and its first
+  // seven characters are the month the ‹ › navigator compares against. Both
+  // came from the UTC clock, so for the first seven hours of a Bangkok day
+  // the button opened yesterday and the navigator offered a "next" month that
+  // was really this one.
+  const today = bangkokToday();
   const isCurrentMonth = yearMonth === today.slice(0, 7);
   const prevMonth = shiftMonth(yearMonth, -1);
   const nextMonth = shiftMonth(yearMonth, 1);

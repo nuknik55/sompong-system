@@ -12,9 +12,15 @@ export default async function StaffHomePage() {
     getCurrentProfile(),
   ]);
 
+  // Who may see a menu hidden from staff: owner and admin, the two roles that
+  // manage the list. Named as an ALLOWLIST (item 34, the last bullet): the old
+  // rule filtered for staff and editor by name, so hr and sales — and any role
+  // added later — were shown every hidden menu name here. The menu PAGE has
+  // refused them all along (staff/menu/[id] notFounds a hidden menu for
+  // anyone outside editAccess "direct"), so this closes the list that leaked
+  // the names while the page behind it was shut.
   const isAdmin = profile?.role === "owner" || profile?.role === "admin";
-  const isStaffOnly = profile?.role === "staff" || profile?.role === "editor";
-  const visibleMenus = isStaffOnly ? menus.filter((m) => m.staff_visible) : menus;
+  const visibleMenus = isAdmin ? menus : menus.filter((m) => m.staff_visible);
 
   // Ranked over ALL menus, within category (the same helper as /owner), and
   // only then narrowed to what this person may see. Ranking the visible

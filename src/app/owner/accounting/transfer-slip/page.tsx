@@ -1,15 +1,15 @@
 export const dynamic = "force-dynamic";
 
 import { requireAdmin } from "@/lib/auth";
+import { bangkokToday, startOfWeek } from "@/lib/bangkok-date";
 import { getWeeklyTransferData } from "../actions";
 import { TransferSlipClient } from "./TransferSlipClient";
 
 function prevTuesday(from?: string): string {
-  const d = from ? new Date(from) : new Date();
-  const day = d.getDay(); // 0=Sun,1=Mon,...2=Tue
-  const diff = day === 2 ? 0 : day < 2 ? day + 5 : day - 2;
-  d.setDate(d.getDate() - diff);
-  return d.toISOString().slice(0, 10);
+  // The Tuesday on or before the day, in Bangkok. It used to read the clock
+  // as UTC and the weekday in the server's zone: before 07:00 on a Tuesday
+  // the page opened on the week before.
+  return startOfWeek(from ?? bangkokToday(), 2);
 }
 
 export default async function TransferSlipPage({

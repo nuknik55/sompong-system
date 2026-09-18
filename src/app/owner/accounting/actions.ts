@@ -9,7 +9,8 @@ import { fetchAllRows } from "@/lib/data";
 import type { PaymentMethod } from "./daily/payment-split";
 import { daysInMonth } from "@/app/owner/catering/calendar-grid";
 import { posPeriodToYearMonth } from "@/lib/pos-parse";
-import { bangkokYearMonth, deriveChecklist, previousMonth, type Checklist } from "./checklist";
+import { bangkokYearMonth, shiftDay } from "@/lib/bangkok-date";
+import { deriveChecklist, previousMonth, type Checklist } from "./checklist";
 import { buildMonthlySummaryGroups } from "./monthly-summary";
 import type { CoaBehaviorRow } from "./break-even";
 
@@ -130,7 +131,8 @@ export type MonthlySummaryGroup = {
 // This file carries "use server", so it may export only async functions —
 // Next fails the BUILD on any other export, though tsc and eslint both pass
 // it. That is why NON_OPERATING_GROUPS moved to monthly-summary.ts and
-// bangkokYearMonth to checklist.ts: the pages import them from there.
+// bangkokYearMonth to src/lib/bangkok-date.ts: the pages import them from
+// there.
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
 /**
@@ -260,13 +262,8 @@ export async function getWeeklyTransferData(tuesdayDate: string): Promise<{
   await requireAdmin();
   const supabase = await createClient();
 
-  const days: string[] = [];
-  const start = new Date(tuesdayDate);
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    days.push(d.toISOString().slice(0, 10));
-  }
+  // String math: the same seven days whatever zone the server runs in.
+  const days = Array.from({ length: 7 }, (_, i) => shiftDay(tuesdayDate, i));
 
   const [suppliersRes, linkedRes, unlinkedRes] = await Promise.all([
     supabase.from("suppliers").select("*").eq("is_active", true).order("sort_order"),

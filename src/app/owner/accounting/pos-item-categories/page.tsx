@@ -3,10 +3,10 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { listStoredItems } from "./actions";
-import { CoffeeItemsClient } from "./CoffeeItemsClient";
+import { PosItemCategoriesClient } from "./PosItemCategoriesClient";
 import { CATEGORIES, CATEGORY_LABEL } from "./categories";
 
-export default async function CoffeeItemsPage() {
+export default async function PosItemCategoriesPage() {
   await requireAdmin();
   const stored = await listStoredItems();
 
@@ -44,7 +44,7 @@ export default async function CoffeeItemsPage() {
         {CATEGORIES.map((k) => `${CATEGORY_LABEL[k]} ${counts[k]}`).join(" · ")}
       </p>
 
-      <CoffeeItemsClient initialStoredCount={stored.length} />
+      <PosItemCategoriesClient initialStoredCount={stored.length} />
 
       {coffeeSide.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">

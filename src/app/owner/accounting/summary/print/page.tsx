@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getMonthlyCovers } from "../../actions";
-import { bangkokYearMonth } from "../../checklist";
+import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { PLPrintClient } from "./PLPrintClient";
 
 export default async function PLPrintPage({

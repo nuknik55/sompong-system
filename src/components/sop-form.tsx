@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, StickyNote } from "lucide-react";
 import { upsertSop } from "@/app/sop/actions";
+import { bangkokToday } from "@/lib/bangkok-date";
 import { SopStepList, SopChecklistEditor } from "@/components/sop-step-list";
 import type { StepItem, ChecklistItem } from "@/components/sop-step-list";
 import type { MenuIngredientForSop, SopFullData } from "@/lib/sop-data";
@@ -57,7 +58,7 @@ export function SopForm({
   // ── Form state ──────────────────────────────────────────────────
   const [authorName, setAuthorName] = useState(existing?.authorName ?? "");
   const [updatedAt, setUpdatedAt] = useState(
-    existing?.updatedAt ?? new Date().toISOString().slice(0, 10)
+    existing?.updatedAt ?? bangkokToday()
   );
   const [demoVideoUrl, setDemoVideoUrl] = useState(existing?.demoVideoUrl ?? "");
   const [ingredientNotes, setIngredientNotes] = useState<Record<string, string>>(

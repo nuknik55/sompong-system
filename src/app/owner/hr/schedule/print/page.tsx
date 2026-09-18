@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { requireHROrAdmin } from "@/lib/auth";
 import { getEmployees, getDepartments, getHolidays, getScheduleWeek, getApprovedLeavesForWeek } from "../../actions";
 import { PrintButtons } from "./PrintButtons";
+import { bangkokToday, shiftDay, startOfWeek } from "@/lib/bangkok-date";
 
 const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const DAYS_LONG = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
@@ -11,11 +12,8 @@ const DAY_OF_WEEK: Record<string, number> = {
 };
 
 function getMondayOf(ds: string): string {
-  const d = new Date(ds + "T00:00:00");
-  const dow = d.getDay();
-  const diff = dow === 0 ? -6 : 1 - dow;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  // See the schedule page: local parse, UTC read.
+  return startOfWeek(ds, 1);
 }
 
 function thaiDateShort(ds: string): string {
@@ -35,7 +33,7 @@ export default async function SchedulePrintPage({
 }) {
   await requireHROrAdmin();
   const sp = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokToday();
   const weekStart = sp.week ? getMondayOf(sp.week) : getMondayOf(today);
   const deptId = sp.dept ?? "";
   const year = parseInt(weekStart.slice(0, 4));
@@ -63,11 +61,7 @@ export default async function SchedulePrintPage({
 
   const deptName = deptId ? (departments.find((d) => d.id === deptId)?.name ?? "") : "ทุกแผนก";
 
-  const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart + "T00:00:00");
-    d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
-  });
+  const weekDates = Array.from({ length: 7 }, (_, i) => shiftDay(weekStart, i));
 
   const ABSENT_TYPES = new Set(["leave", "sick", "vacation", "holiday_use", "compensatory"]);
 

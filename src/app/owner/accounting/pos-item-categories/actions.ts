@@ -252,7 +252,7 @@ export async function saveItemClassification(
     if (error) return { status: "error", message: error.message };
   }
 
-  revalidatePath("/owner/accounting/coffee-items");
+  revalidatePath("/owner/accounting/pos-item-categories");
   return { status: "ok", written: rows.length, skipped };
 }
 

@@ -78,6 +78,19 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
   const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
   /** Deliveries newly stored by the last upload — rows actually inserted, not sent. */
   const [storedCount, setStoredCount] = useState<number | null>(null);
+  /**
+   * Where an interrupted upload stopped, so it can carry on instead of
+   * starting over (queue item 4). A full history is ~12 sequential calls and
+   * a failure on the eleventh used to mean sending all eleven again.
+   *
+   * It holds the SAME batch id, so one upload stays one batch for forensics,
+   * and the row the failed chunk began at — not the one after it. The ingest
+   * upserts on (document_number, material_code) with ignoreDuplicates, so a
+   * chunk that did land before the connection broke is re-sent as a no-op.
+   * Cleared whenever the file or the parse changes, because both numbers
+   * describe THAT file's rows.
+   */
+  const [resume, setResume] = useState<{ batchId: string; fromRow: number; storedSoFar: number } | null>(null);
 
   // Alias state
   /** Per-row yield_qty entry, for rows whose unit changed or was never set. */
@@ -105,6 +118,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setError(null);
     setDoneCount(null);
     setStoredCount(null);
+    setResume(null);
   }
 
   function handleRead() {
@@ -115,6 +129,9 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     setStoredCount(null);
     setParsed(null);
     setPreview(null);
+    // A new parse renumbers the rows, so any resume point from the last one
+    // is meaningless.
+    setResume(null);
     startTransition(async () => {
       try {
         // Parse in the browser. Posting the .xls hit Vercel's 4.5 MB request
@@ -165,36 +182,68 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
     });
   }
 
-  /** THE WRITE. Stores the parsed deliveries (chunked, idempotent), then builds the price preview. */
-  function handleStore() {
+  /**
+   * THE WRITE. Stores the parsed deliveries (chunked, idempotent), then builds
+   * the price preview.
+   *
+   * Called with no argument it starts a new batch at row 0. Called with a
+   * resume point it keeps that batch id and starts at that row: every chunk
+   * before it answered ok, so those rows are in the table.
+   */
+  function handleStore(resumeFrom?: { batchId: string; fromRow: number; storedSoFar: number }) {
     if (!file || !parsed) return;
     const { rows } = parsed;
     const fileName = file.name;
     setError(null);
     setDoneCount(null);
+    // Sequential: the server bounds rows per batch, and concurrent chunks
+    // would race that check.
+    const batchId = resumeFrom?.batchId ?? crypto.randomUUID();
+    const startRow = resumeFrom?.fromRow ?? 0;
+    // Rows whose chunk has answered ok. The failure paths below resume from
+    // here, which is the START of the chunk that did not answer.
+    let sentUpTo = startRow;
+    let stored = resumeFrom?.storedSoFar ?? 0;
     startTransition(async () => {
       try {
-        // Sequential: the server bounds rows per batch, and concurrent chunks
-        // would race that check.
-        const batchId = crypto.randomUUID();
-        setProgress({ sent: 0, total: rows.length });
-        let stored = 0;
-        for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        setProgress({ sent: startRow, total: rows.length });
+        for (let i = startRow; i < rows.length; i += CHUNK_SIZE) {
           const res = await ingestPosDeliveries(batchId, rows.slice(i, i + CHUNK_SIZE), fileName);
           // A refused chunk stops the run with its own message — the batch
           // guard and validation texts are the product here, and a thrown
           // version reached production users as RSC boilerplate (item 12).
-          if (res.status === "error") { setError(res.message); setPreview(null); return; }
+          //
+          // A REFUSAL is not a place to resume from: the chunk was read and
+          // rejected (too many rows, a bad row), so sending it again gets the
+          // same answer. The resume point is offered anyway, because the
+          // refusal may be about the batch rather than the file, and pressing
+          // it costs one request that changes nothing.
+          if (res.status === "error") {
+            setResume({ batchId, fromRow: i, storedSoFar: stored });
+            setError(res.message);
+            setPreview(null);
+            return;
+          }
           stored += res.inserted;
-          setProgress({ sent: Math.min(i + CHUNK_SIZE, rows.length), total: rows.length });
+          sentUpTo = Math.min(i + CHUNK_SIZE, rows.length);
+          setProgress({ sent: sentUpTo, total: rows.length });
         }
+        setResume(null);
         setStoredCount(stored);
 
         // The preview reads the delivery WINDOW, not this upload. Re-importing
         // a file whose rows are already stored is a legitimate no-op that
         // still produces a full preview.
         const previewResult = await buildPosImportPreview();
-        if (previewResult.status === "error") { setError(previewResult.message); setPreview(null); return; }
+        if (previewResult.status === "error") {
+          // Every row is stored; only the preview failed. The resume point is
+          // the end of the file, so pressing it sends no chunk and asks for
+          // the preview again.
+          setResume({ batchId, fromRow: rows.length, storedSoFar: stored });
+          setError(previewResult.message);
+          setPreview(null);
+          return;
+        }
         const result = previewResult.preview;
         setPreview(result);
         // A "changed"-unit row starts unchecked and cannot be checked until
@@ -231,6 +280,11 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
         );
         setResolved({});
       } catch (err) {
+        // A THROWN failure — the connection dropped, or a deploy replaced the
+        // action mid-run. sentUpTo is the last chunk that answered, so the
+        // retry starts at the one that did not; if the connection dropped
+        // after the server committed, that chunk is re-sent as a no-op.
+        setResume({ batchId, fromRow: sentUpTo, storedSoFar: stored });
         setError(err instanceof Error ? err.message : "บันทึกประวัติรับของไม่สำเร็จ");
         setPreview(null);
       } finally {
@@ -374,15 +428,49 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
               )}
             </p>
             <p className="text-xs text-neutral-500">ยังไม่มีอะไรถูกเขียน — กดปุ่มด้านล่างเพื่อเก็บประวัติแล้วดูราคา</p>
-            {!preview && (
+            {!preview && !resume && (
               <button
                 type="button"
-                onClick={handleStore}
+                onClick={() => handleStore()}
                 disabled={isPending}
                 className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
               >
                 {progress ? "กำลังบันทึก..." : `บันทึกประวัติรับของ ${parsed.rows.length.toLocaleString("th-TH")} แถว แล้วดูราคา`}
               </button>
+            )}
+            {/* An interrupted upload: carry on from where it stopped, or
+                start the whole file again. Nothing is lost either way — the
+                ingest writes each delivery once however often it is sent. */}
+            {!preview && resume && (
+              <div className="space-y-2">
+                <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {resume.fromRow >= parsed.rows.length
+                    ? `เก็บประวัติครบ ${parsed.rows.length.toLocaleString("th-TH")} แถวแล้ว — ค้างตอนดึงราคามาเทียบ`
+                    : `ส่งไปแล้ว ${resume.fromRow.toLocaleString("th-TH")} จาก ${parsed.rows.length.toLocaleString("th-TH")} แถว — เหลืออีก ${(parsed.rows.length - resume.fromRow).toLocaleString("th-TH")} แถว ไม่ต้องเริ่มใหม่`}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleStore(resume)}
+                    disabled={isPending}
+                    className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {progress
+                      ? "กำลังบันทึก..."
+                      : resume.fromRow >= parsed.rows.length
+                        ? "ลองดูราคาอีกครั้ง"
+                        : `ส่งต่อจากแถวที่ ${(resume.fromRow + 1).toLocaleString("th-TH")}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setResume(null); handleStore(); }}
+                    disabled={isPending}
+                    className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    เริ่มส่งใหม่ทั้งไฟล์
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}

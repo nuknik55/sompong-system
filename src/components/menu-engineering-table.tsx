@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { IconStar, IconHorse, IconPuzzle, IconDog } from "@tabler/icons-react";
 import type { MenuEngineeringClass } from "@/lib/costing";
+import { bangkokToday } from "@/lib/bangkok-date";
 
 export type MenuTableRow = {
   id: string;
@@ -98,7 +99,7 @@ function exportCsv(rows: MenuTableRow[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `menu-cost-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `menu-cost-${bangkokToday()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

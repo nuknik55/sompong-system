@@ -1,4 +1,5 @@
 import "server-only";
+import { resolveCapexThreshold } from "@/app/owner/accounting/capex-hint";
 import { createClient } from "@/lib/supabase/server";
 import {
   resolveUnitCosts,
@@ -115,6 +116,21 @@ export async function getQFactorPct(): Promise<number> {
   const supabase = await createClient();
   const { data } = await supabase.from("app_settings").select("q_factor_pct").eq("id", 1).single();
   return data?.q_factor_pct ?? 3;
+}
+
+/**
+ * The amount above which the daily entry form asks whether a purchase is
+ * CapEx (queue item 9). Owner-set; every signed-in account may READ it, as
+ * with the q-factor beside it.
+ *
+ * Numeric columns come back as strings through PostgREST often enough to
+ * matter, so the value is coerced and an unusable one falls back to the
+ * default rather than turning the question off by accident.
+ */
+export async function getCapexThreshold(): Promise<number> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("app_settings").select("capex_threshold").eq("id", 1).single();
+  return resolveCapexThreshold(data?.capex_threshold);
 }
 
 /**

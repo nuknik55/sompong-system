@@ -1,10 +1,11 @@
-import { getCostingContext } from "@/lib/data";
+import { getCostingContext, getCapexThreshold } from "@/lib/data";
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { computeMenuCost, classifyWithinCategory, unrankedReasonText, MIN_RANKABLE_GROUP, type MenuEngineeringClass } from "@/lib/costing";
 import { MenuEngineeringChart } from "@/components/menu-engineering-chart";
 import { MenuEngineeringSection } from "@/components/menu-engineering-section";
 import { QFactorSetting } from "@/components/q-factor-setting";
+import { CapexThresholdSetting } from "@/components/capex-threshold-setting";
 import { PosSalesImport } from "@/components/pos-sales-import";
 import { CategoryTabs } from "@/components/category-tabs";
 import { getPosImportMeta } from "./sales-import-actions";
@@ -33,9 +34,10 @@ export default async function OwnerDashboardPage({
   const { category: rawCategory } = await searchParams;
   const selectedCategory = rawCategory?.trim() || "all";
 
-  const [{ menus, menuItems, unitCosts, qFactorPct }, posImportMeta] = await Promise.all([
+  const [{ menus, menuItems, unitCosts, qFactorPct }, posImportMeta, capexThreshold] = await Promise.all([
     getCostingContext(),
     getPosImportMeta(),
+    getCapexThreshold(),
   ]);
 
   // Sorted category list for the tab bar.
@@ -87,6 +89,9 @@ export default async function OwnerDashboardPage({
         <h1 className="font-kanit text-xl font-semibold text-neutral-900">ภาพรวมต้นทุนและ Menu Engineering</h1>
         <div className="no-print flex flex-wrap items-center gap-2">
           <QFactorSetting initial={qFactorPct} isOwner={profile.role === "owner"} />
+          {/* The other owner-set number, on the only settings surface the app
+              has (queue item 9). It governs บันทึกรายวัน, not this page. */}
+          <CapexThresholdSetting initial={capexThreshold} isOwner={profile.role === "owner"} />
         </div>
       </div>
 
