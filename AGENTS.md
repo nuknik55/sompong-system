@@ -570,9 +570,29 @@ So, for any read that pages:
    solves half a problem reads as the whole solution, so the next person
    copies the half.
 
+### A reader that indexes by name cannot see a duplicated part
+
+Tenth. The owner's P&L Excel file gets its frozen panes patched in after the
+library has written it, because xlsx-js-style writes no pane. The first patch
+ADDED the worksheet part under its own name (`CFB.utils.cfb_add`) instead of
+replacing the entry, so the package carried **two** `xl/worksheets/sheet1.xml`
+parts: the original without the pane, and the patched one. Reading the file
+back through SheetJS reported `pane: true` for both sheets — its reader keys
+parts by name, and the last one wins — and the check had been written to
+believe exactly that. A zip parsed by hand showed 13 entries where there
+should have been 11. What would have shipped is a package Excel is free to
+read the other way, or to call damaged.
+
+**A reader that indexes by name cannot tell you whether a name occurs once.**
+Whenever a container is produced by editing one rather than rebuilding it — a
+zip, a JSON object merged from parts, a set of migrations, a Map — count the
+entries with something that can see duplicates, and count them against a
+number you knew before you looked. `pl-excel.test.ts` now parses the central
+directory itself for that one reason.
+
 ### The list itself is the point
 
-Nine instances, all the same shape: **output that reads as an answer when it is
+Ten instances, all the same shape: **output that reads as an answer when it is
 an absence** — or, from the eighth on, when it is a wrong answer. Nobody
 recognises the next one from first principles in the moment; they recognise it
 because the earlier ones are written down. Add the next one here

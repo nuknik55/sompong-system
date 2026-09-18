@@ -2222,9 +2222,20 @@ In order. Nothing here is started unless it says so.
       reaches the browser — which the tests CANNOT see, and which was checked
       instead by reading the route’s built client-reference manifest during
       the 2026-09-18 review. It says in Thai that this is what was BOUGHT, so
-      it will not agree with the recipe-based % on `/owner`. Its total counts
-      a G100 account that nets negative; the P&L’s group totals still do
-      not (reported 2026-09-18, not changed).
+      it will not agree with the recipe-based % on `/owner`.
+    - **A group total now counts an account that nets negative** — the P&L
+      summary, the print page and both Excel sheets, matching the food-cost
+      page (Nik approved, 2026-09-18). Until then the group total and the
+      operating total were added up from the DISPLAY list, which dropped
+      anything not strictly positive, so a delivery credited back in full
+      reduced nothing and the month read as more expensive than it was.
+      Now every account in the group is counted, credits included, and only
+      the display leaves one out — an account with nothing in it at all.
+      The rule moved out of `getMonthlySummary` into `monthly-summary.ts`
+      so it could be tested rather than asserted; the first test in
+      `monthly-summary.test.ts` is the defect itself. **By how much a real
+      month moves is not known here:** production is not readable from the
+      machine this was written on, and no local copy of the month exists.
     - **Owner, admin and editor:** per-dish margin, on the recipe pages
       (already, item 34) and in the Star-to-Dog sort on `/staff`, which
       staff, hr and sales no longer get: that order IS the margin,
@@ -2243,6 +2254,32 @@ In order. Nothing here is started unless it says so.
       about a removal (`pl-workbook.ts`, tested). Painting needs
       `xlsx-js-style`, added as a dependency: the community `xlsx` writes
       no cell styles.
+      **Both sheets read as tables rather than raw cells since 2026-09-18:**
+      a filter over the expense list (Excel allows ONE filter range per
+      sheet, and that is the long list a person sorts), with รวม and กำไร
+      left outside it where a filter cannot hide them; a dark header band
+      on all three section headers; the title, any warning and the column
+      header frozen at the top; column widths computed from the contents,
+      so no number shows as ####; amounts with thousands separators and two
+      decimals, counts without decimals, and the percentages exactly as
+      they were. **The red fill is applied LAST**, over the row's own style
+      and replacing only its fill, so a marked total keeps its bold AND its
+      mark. Two things the library cannot do, checked against the installed
+      copy rather than assumed: a real Excel TABLE (a ListObject — it has
+      no `tableParts` at all) and freeze panes (it writes `<sheetView>`
+      with no `<pane>`), so the panes are patched into the file after it is
+      written. `pl-excel.test.ts` builds the file through the same function
+      the button calls and reads the bytes back: the filter ranges, the
+      panes, the widths, the number formats, the band, and the red fill on
+      exactly the marked rows — resolved through `styles.xml`, not through
+      the style object it passed in. It parses the zip by hand as well,
+      because the first version of the pane patch ADDED a second copy of
+      each sheet part instead of replacing it, which every reader that
+      indexes by name — SheetJS's own included — hides completely. And it
+      re-checks สำหรับประชุม at the file level: nothing about what was
+      taken out, in a cell, in shared strings, or in the one defined name
+      the filter creates (`_xlnm._FilterDatabase`, a plain range per
+      sheet).
     - **Catering per-event profit and cost** (`/owner/catering/[id]/cost`,
       owner and admin; sales sees quoted totals and deposits only) is
       reported and NOT changed: Nik decides.
@@ -2265,6 +2302,31 @@ In order. Nothing here is started unless it says so.
       790 lump out. Silent is what he wants.
     - **Item 36 stays deferred** (the admin is trusted and
       non-technical).
+    - **The food-cost target stays editable by an admin** at จัดการหมวด
+      (`coa.target_pct` on the G100 header). Nik accepts that the head
+      chef can move the target he is measured against.
+    - **A negative expense amount stays allowed, with no warning.**
+      Returns and credits are entered that way, and a warning on a normal
+      entry is a warning people learn to click past. This is the same rule
+      the group totals now follow (above).
+
+    **The month navigator was building months from a local-time `Date`**
+    — fixed 2026-09-18, Nik approved. `new Date(y, m - 2, 1)
+    .toISOString().slice(0, 7)` builds the date in the runtime's zone and
+    reads it back in UTC. In UTC the two agree, which is why it survived
+    on Vercel; on a machine in Bangkok, August's previous month came out
+    as June and its next month as August itself. Seven lines across four
+    files: the ‹ › links on the P&L summary and on break-even, and four
+    defaults that took the month from the UTC clock (the summary, the
+    print page and the month list), which is the previous month for the
+    first seven hours of every Bangkok month. All now use the pure string
+    helpers the food-cost page already used — `previousMonth`,
+    `nextMonth` and `bangkokYearMonth`, which moved into `checklist.ts`
+    because a `"use server"` file may export only async functions.
+    `month-strings.test.ts` reads the SOURCE of every page under
+    `src/app` and fails on either shape; run against the pre-fix files it
+    flags exactly those seven lines, and its own first test is the two
+    shapes it must catch.
 
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
