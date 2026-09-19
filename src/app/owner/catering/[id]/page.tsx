@@ -45,7 +45,20 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
           <StatusBadge status={event.status} />
           <span className="text-sm text-neutral-500">{thFullDate(event.event_date)}</span>
         </div>
-        <Link href="/owner/catering" className="text-sm text-neutral-500 hover:text-neutral-800">← รายการจอง</Link>
+        {/* AT THE TOP AS WELL AS THE BOTTOM. The bottom row sits under the
+            entire booking form — a screen or two of scrolling — and on the
+            day this shipped the head chef could not find it there
+            (2026-09-19). The button below stays: that row is where someone
+            who has just finished editing a booking looks next. */}
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/owner/catering/${event.id}/menu`}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+          >
+            รายการอาหารของงาน
+          </Link>
+          <Link href="/owner/catering" className="text-sm text-neutral-500 hover:text-neutral-800">← รายการจอง</Link>
+        </div>
       </div>
 
       <BookingScreen
