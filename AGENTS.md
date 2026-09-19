@@ -128,12 +128,59 @@ So, in any migration:
   and the last statement prints them and clears it.
 - **Test writes run only inside a block that always rolls back** (raise a
   private SQLSTATE and catch it); never as top-level statements followed by
-  a cleanup DELETE.
+  a cleanup DELETE. **CARRY THE RESULTS OUT OF THAT BLOCK BY HAND.**
+  `set_config` writes a GUC, and a GUC is transactional: its third argument
+  decides whether a value survives COMMIT, not whether it survives ABORT. A
+  collector written inside the rolling-back block is rolled back with the
+  writes, so the file prints the handful of rows emitted outside it and
+  raises nothing. `catering_event_menu_items_migration.sql` printed 8 rows of
+  31 that way and was applied on that showing (2026-09-19). A PL/pgSQL
+  VARIABLE is not transactional — "the local variables remain as they were
+  when the error occurred, but all changes to persistent database state
+  within the block are rolled back" — so read the log into one on the last
+  line before the abort and put it back in the handler.
+- **The file counts its own result rows before COMMIT.** Every failure this
+  week shared one shape: the file trusted that its checks had run. A survey
+  that could not parse, a mapping that could not match, a collector that was
+  rolled back — none of them raised. A count catches all three, because
+  whatever went wrong, the rows are missing:
+
+  ```sql
+  v_rows := pg_temp.logged();
+  IF v_rows <> c_expected THEN
+    RAISE EXCEPTION 'FAIL the result table holds % rows, expected % ...', v_rows, c_expected;
+  END IF;
+  ```
+
+  And the static check that counts emitting SITES must be compared against
+  that constant, since a site is not a row: nothing else connects what the
+  file says it will report to what it reports.
 - **Each test write touches one row.**
 - **The header lists every statement the editor may call destructive,**
   and says that anything else is unexpected.
 - **Never "Run and enable RLS".** A policy the editor invents is not one
   anyone reviewed.
+- **A probe that names an object the file CREATES must be dynamic.**
+  PL/pgSQL plans a whole statement before it evaluates anything inside it, so
+  a guard written INTO the statement is not a guard:
+
+  ```sql
+  -- fails with 42P01 on a first run, whatever v_has says
+  SELECT count(*) FROM catering_event_menus m
+   WHERE NOT v_has OR NOT EXISTS (SELECT 1 FROM catering_event_menu_items i ...)
+  ```
+
+  `catering_event_menu_items_migration.sql` aborted on its first run exactly
+  there (2026-09-19; one transaction, so nothing was applied). The survey
+  runs BEFORE the DDL by design — that is what makes it a "before" — so any
+  probe naming the new table, column or function goes in an `EXECUTE`
+  guarded by `to_regclass`, with a static ELSE branch that states the
+  pre-state from tables that already exist. `to_regclass('x')`,
+  `'f(uuid)'::regprocedure` and `information_schema` take the name as TEXT
+  and are safe anywhere.
+
+  The same trap catches a `LANGUAGE sql` function body, which IS resolved at
+  CREATE time; a `LANGUAGE plpgsql` body is not.
 
 # Role checks: what each one actually admits — the list
 
@@ -154,6 +201,8 @@ whenever a check is added or its definition changes.**
 | `public.is_editor_or_above()` | owner, admin, editor | right | `migrations/008_inventory_order_system.sql` |
 | `public.current_role()` | returns the caller's `profiles.role`; NULL with no session | — | `migrations/0001_init.sql` |
 | `public.can_see_prep(id)` | owner by role; anyone else, admins included, only with a grant row for that prep | — | `prep_owner_only_predicate_migration.sql` |
+| `public.catering_event_unlocked(id)` | TRUE when the booking exists and `cost_locked_at` is null; used by the lock policies | — | `catering_sales_limits_migration.sql` |
+| `public.catering_copy_set_menu(line_id)` | **owner, admin, sales** — copies a shared set's dishes into a booking's set line, verbatim, once; refuses a locked booking. SECURITY DEFINER, so its own checks stand in for the write policies it bypasses | — | `catering_event_menu_items_migration.sql` (written 2026-09-19, NOT applied) |
 
 **There is no `is_admin()`,** in the repo or in the database (the list of
 functions the database exposes, read 2026-09-17). "Owner, admin and editor"
@@ -196,6 +245,7 @@ supply-order approval work (README item 35).
 | `requireSales()` | owner, admin, sales |
 | `requireProfile()` | every signed-in account that has a profile |
 | `canSeePrep()`, `getPrepVisibility()` | owner by role; everyone else by grant row only. Never calls the SQL `can_see_prep()`. |
+| `eventMenuAccess(role)` (`src/lib/event-menu-access.ts`) | `edit`: owner, admin; `view`: sales; `none`: everyone else. The one rule for a booking's OWN menu (catering per-event menus, item 39): the page renders by it, every write action refuses by it. The cost lock is a separate rule applied on top, with no role exception in the app. |
 | `editAccess(role)` (`src/lib/edit-access.ts`) | `direct`: owner, admin; `request`: editor; `view`: everyone else. `!== "view"` is the one rule for who sees a dish's cost and margin: the recipe pages, the SOP editor, and the Star-to-Dog sort on `/staff` (item 37). Menu Engineering on `/owner` is NOT one of them — it is `isAdminOrAbove`, owner and admin. |
 
 **Local checks that name one role and admit every other:**
@@ -633,7 +683,51 @@ Server-side, still re-parse the submitted file and echo-check it against what
 the preview returned. Holding the file in state is the client half of that
 guard, not a replacement for it.
 
-## 3. Line endings are mixed in this repo — do not assume `\n`
+## 3. A generator eats backslashes: the regex that arrived as `inserts+into`
+
+A patch applied through a JavaScript string layer loses every backslash it
+does not double. `\s` in a JS string or template literal **is** `s` — an
+unknown escape silently drops the backslash — so this:
+
+```sql
+'(?:insert\s+into|update|delete\s+from)\s+(?:\w+\.)?(\w+)'
+```
+
+landed in the migration as this:
+
+```sql
+'(?:inserts+into|update|deletes+from)s+(?:w+.)?(w+)'
+```
+
+which matches nothing, so `regexp_match` returned NULL, `v_table` was NULL,
+and every RLS refusal in the harness was attributed to "a policy on another
+table". The run aborted on the first negative control
+(`catering_event_menu_items_migration.sql`, 2026-09-19, second failed run).
+
+Three things follow, in order of how much they help:
+
+1. **Do not push code through a string layer at all when you can avoid it.**
+   Write the replacement text to a FILE and splice it in by line range
+   (`replace-lines.cjs` prints the first and last line it is about to
+   replace, so the range is checked against what is there). Nothing is
+   escaped, so nothing can be de-escaped.
+2. **Write the pattern so it needs no backslashes.** POSIX classes say what
+   the shorthands say: `[[:space:]]` for `\s`, `[[:alnum:]_]` for `\w`,
+   `[.]` for `\.`. A pattern with no backslash in it cannot lose one.
+3. **Read back the bytes that landed**, not the bytes you sent. The check
+   for this is mechanical — a regex literal (one containing `(?:`, or
+   starting with `^`) must not contain a bare `s+`, `w+` or `d+`, which is
+   what an eaten `\s+` leaves behind.
+
+**And the reason it survived review:** the harness comparison DID print that
+line as a difference from the applied migration it was copied from. The whole
+diff was expected to differ — a different test vocabulary, extra exception
+handlers — so it was read as "deliberate" wholesale and the corrupted line sat
+inside it. **When a diff against a proven file is expected to differ, justify
+every differing line individually, or the expected differences will hide the
+unexpected one.**
+
+## 4. Line endings are mixed in this repo — do not assume `\n`
 
 `src/app/owner/hr/actions.ts` is CRLF while the files around it are LF. Three
 anchor-based edits failed with an unhelpful "anchor not found" before the cause

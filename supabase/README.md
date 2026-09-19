@@ -118,7 +118,50 @@ and dated here.
 | `catering_event_type_migration.sql` | 2026-09-15 | `catering_event_types` (label UNIQUE, sort_order, is_active) + `catering_events.event_type_id` FK **ON DELETE RESTRICT**, seeded with Nik's five: งานบุญ, เลี้ยงพนักงาน, วันเกิด, เลี้ยงสัมมนาบริษัท, เลี้ยงรับรองลูกค้า. RESTRICT rather than SET NULL because there is no copied label to fall back on — see the file header. Nik reported success. |
 | `permissions_batch_2026_09_17.sql` | 2026-09-17 | **Four parts.** A `profiles`: restrictive write policies, so an admin can no longer make itself owner, give the hr role, or touch the owner's, hr's or another admin's row. B `expense_entries` + `coa`: restrictive policies and `coa_is_open()`, so only the owner writes an owner-only account (790) or changes such an account; reads unchanged. C `pending_changes`: restrictive read and filing policies, four functions, and UPDATE narrowed to the four columns approval writes. D `sop-photos`: uploads by role and file name, no overwrite or delete through the API; reads stay public. **Verified by the file's own result table, which Nik pasted in full (168 rows):** every judged row ok (A1–A16, B1–B17, the 18-case prep-id check, C1–C19, "none of the 11 synthetic requests remains", D1–D14); no "PART D NOT APPLIED" and no "NOT DEMONSTRATED"; the survey rows list every new policy and none of the three old `sop photos auth …` write policies; `batch_log` count 0. The 15-row check query below was NOT run; that table is the evidence. **Its "before" rows already showed the closed state**, and the survey, which runs before any change, already listed the new policies, so the batch was already in place when this run began: an earlier run had applied it, and this one re-created the same objects, which the file is built to do safely. The first attempt had been cancelled before anything ran (the editor warned about a temporary table); the version that ran creates no table and changes no data. The five app checks at the end of the file are still Nik's to do. |
 | `catering_sales_limits_migration.sql` | 2026-09-17 | **Queue item 33.** 18 restrictive policies and `catering_event_unlocked(uuid)`. Only owner and admin write set menus and their items. For everyone else a cost-locked booking's own row, menu lines and charges are read-only, and `cost_locked_at` stays empty on every booking row they write. The history is append-only through the API for every role, and a new line must name its caller and carry the time of its own insert. **Verified by the file's own result table, as Nik reported it: 138 rows** (the header's 130 plus the 8 surveyed policies); every judged row ok (S1–S15, L1–L34 with L25, the cascade test, counted by hand, and H1–H14) and no FAIL; the last row: nothing the tests wrote remains, counts unchanged (set menus 3, items 17, events 3, menu lines 11, charges 17, history 54). No booking was locked at run time. The survey rows and the three app checks at the end of the file were not reported. Not covered, by design: a locked booking's staff list, and two foreign-key actions (the file's header). Changed on one point by `catering_history_owner_edit_migration.sql` (applied the same day, below): the owner may correct and remove history lines. **Survey rows 5 and 6, pasted by Nik 2026-09-17:** `catering_event_cost_snapshots.catering_cost_snapshots_rw` and `catering_event_labor.catering_event_labor_rw` are both PERMISSIVE ALL TO authenticated, USING and WITH CHECK `role IN ('owner','admin')`. The labor policy matches `catering_event_labor_migration.sql`. The snapshot policy matches the untracked `COST_SNAPSHOT_SCHEMA_SQL.md`, NOT `catering_migration.sql`, which still admits sales: the repo drift item 33 supposed, now confirmed live (see item 33). |
+| `catering_event_menu_items_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 1.** `catering_event_menu_items` (RLS on; owner/admin/sales read, owner/admin write, the sales-limits lock shape restrictively on top), `catering_event_menus.set_name`, the one-target CHECK widened to allow a custom set, and `catering_copy_set_menu(uuid)` SECURITY DEFINER. **Verified by the file's own result table, as Nik ran it: 32 rows, every judged row ok** — X1–X2 (the harness proving its own refusal attribution, both directions), the four survey rows, C1–C4, R1–R2, W1–W7, S1, K1–K3, L1–L4, D1, every test write rolled back, counts unchanged (events 4, lines 12, charges 22, copies 0), RLS on, and the row-count assertion confirming 31 evidence rows. It took four runs to get there: three defects, each of which let the file report something other than what happened — see "Three ways a migration lied" below. **Production holds 4 pre-feature set lines with no copy**: they fall back to the shared set menu, exactly as every screen read them before this feature, until someone copies them on the menu page or the booking is locked (locking copies them first). |
 | `catering_history_owner_edit_migration.sql` | 2026-09-17 | **Item 33, follow-up B.** The two policies that refused every history update and delete replaced by two admitting the owner alone (`is_owner_only()`); UPDATE on `catering_event_activity_log` narrowed to `description` for anon and authenticated, so an edit through the app cannot change who wrote a line, when, its kind or its booking. Insert rule unchanged. **Verified by the file's own result table, as Nik reported it: 49 rows, all ok.** P1 after: authenticated may update `description` only, anon nothing. E1–E4 refused for sales and admin; E5–E10 (the owner touching any other column) error 42501; E11/E12 owner rows=1; I1–I5 as expected. Row 49: 54 history lines, checksum unchanged, no probe line left. **App check done by Nik, both directions:** before the run, the owner's edit showed "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้…"; after it, the owner's edit saved. |
+
+### Three ways a migration lied, in one file, in one week
+
+`catering_event_menu_items_migration.sql` took four runs to apply. It was
+reviewed, checked and reported as ready before each of the first three, and
+not one of the three defects was a permission bug or a logic error. Each was
+a different way for the file to **report something other than what happened**.
+
+| # | what it did | how it read |
+|---|---|---|
+| 1 | A survey probe named the table the file was about to create, with an `IF v_has` guard **inside the same statement**. PL/pgSQL plans a whole statement before evaluating anything in it, so the guard never ran. | `ERROR 42P01` on the first run. Loud, and the only one of the three that was. |
+| 2 | The pattern that reads which table refused a write was patched in through a JavaScript template literal, where `\s` means `s`. It arrived as `(?:inserts+into|...)`, matched nothing, and left the table NULL. | Every refusal attributed to "a policy on another table". The negative control failed **for the wrong reason**, on a correct refusal. |
+| 3 | The result rows were accumulated in a session setting written inside the block that always aborts. `set_config`'s third argument decides whether a value survives COMMIT, not ABORT, so the rows were rolled back with the test writes. | **8 rows of 31, no error, and the file applied on that showing** — twenty permission tests that had run and passed, with nothing to show for them. |
+
+**The rule, which is one rule:** a migration must assert that its own checks
+ran. Reviewing the checks is not enough — all three defects survived review,
+and the third survived a run. The file now counts its result rows against a
+declared constant before COMMIT (`pg_temp.logged()` against `c_expected`),
+so a block that runs and reports nothing FAILS the file instead of passing
+quietly. **And a static checker must tie its count to that runtime one:** the
+check that was supposed to catch #3 counted emitting SITES in the source and
+called that the row count. A site is not a row, and nothing connected the two,
+so the checker agreed with itself while the run produced eight.
+
+**What is automated now** (the checker lives beside this work, run over every
+unapplied file):
+
+| check | covers |
+|---|---|
+| **A** structure | dollar-quote tags balanced, one BEGIN/COMMIT, unique test labels |
+| **B** `format()` arity | placeholders against arguments — a mismatch aborts mid-transaction |
+| **C** parse-time references | **defect 1**: any object the file CREATEs, named in executable SQL before its own CREATE. `to_regclass`, `::regprocedure` and `information_schema` take the name as text and are exempt |
+| **D** de-escaped regex | **defect 2**: a regex literal containing a bare `s+`, `w+` or `d+`, which is what an eaten `\s+` leaves behind |
+| **E** doomed collector | **defect 3**: result lines written inside a block that always aborts, whose handler restores nothing |
+| **F** declared row count | **the general rule**: the static count of emitting sites against the constant the file asserts at run time; and a file that asserts no count at all is itself the finding |
+
+Each check was run against the file **as it failed** before being trusted: C
+flags the two survey probes, D flags line 167, E flags all 24 lost rows, F
+flags the absent assertion. All four are clean on the applied migrations, so
+they are not crying wolf. The two older applied catering files do lack the
+row-count assertion — they predate the rule, and they did print their
+evidence.
 
 The POS backfill has also run: `pos_receipt_deliveries` holds **24,451** rows
 (22,805 `day`-precision from the original load, 1,646 `month`-precision
@@ -2473,6 +2516,235 @@ In order. Nothing here is started unless it says so.
     - Until it is settled, treat April and May 2026 as months with no
       revenue booked — not as months that lost money.
 
+39. ~~**Catering per-event menus, round 1 of 2**~~ (Nik, 2026-09-19).
+    **ROUND 1 DONE AND APPLIED.** The migration ran clean on 2026-09-19 (32
+    rows, every judged row ok — the applied table above). Round 2 — copying
+    from a past booking, and printing a menu card — is not started.
+
+    **Why.** Sompong Catering sells four standard Chinese-banquet sets
+    (3,000 / 3,500 / 4,000 / 4,500 a table, 9–10 courses). In practice
+    sales swaps courses for a customer, or a customer wants a 4,500 table
+    chosen from scratch. A booking picked a set BY REFERENCE, so there was
+    nowhere to record what would actually be served — and since item 33,
+    sales cannot edit the shared sets at all.
+
+    **The design, as Nik decided it, and how it is built:**
+    1. Shared set menus stay reference data, owner/admin-edited (item 33's
+       policies, unchanged).
+    2. **Picking a set for a booking COPIES its dishes into the booking**:
+       new table `catering_event_menu_items`, one row per course, keyed by
+       the booking's set line (`catering_event_menus.id`), carrying
+       `menu_id, quantity (per table), section, sort_order, note` and two
+       provenance columns — `source_set_menu_id` (the shared set it came
+       from, ON DELETE SET NULL) and `source_event_menu_id` (round 2, see
+       below). The copy is made by ONE database function,
+       `catering_copy_set_menu(uuid)`, SECURITY DEFINER, callable by owner,
+       admin and sales: it copies verbatim, stamps the set's name onto the
+       line (`catering_event_menus.set_name`, new), refuses a locked
+       booking and a line that is not a shared set, and returns 0 for a
+       line that already has a copy — it never overwrites. The app calls
+       it from `addCateringEventMenu` the moment a set line is created.
+       **A custom set** is a set line with `set_name` and neither
+       `set_menu_id` nor `menu_id` — the one-target CHECK widened to allow
+       exactly that third shape — created from the menu page with a name,
+       a price per table and a table count, together with the food charge
+       every set line has, so the price box and the quotation treat it as
+       any set.
+    3. **The copy is the record.** Every screen that expands a set — the
+       kitchen sheet, the function sheet, the quotation, the cost page,
+       the lock's snapshot and the new menu page — reads ONE resolver,
+       `getEventMenuDishes`, which returns the booking's copy, or, for a
+       set line from before this feature, the shared set as before
+       (`source: "shared"`). Nothing is materialised behind anyone's back:
+       the menu page marks such a line ยังใช้ชุดเมนูกลาง and offers
+       คัดลอกมาเป็นของงานนี้ to owner and admin. **Round 1 does switch the
+       existing three documents to the copy** — otherwise the kitchen
+       would print the shared set while the booking's own menu said
+       something else, which is the contradiction decision 3 forbids.
+    4. **Round 2 fits without a rewrite.** Copy from a past booking =
+       INSERT…SELECT from that booking's line into a new line, recording
+       `source_event_menu_id` (already a column). Printing a menu card =
+       a new print page over the same rows, which already carry section,
+       order, note and the dish name; nothing to add to the schema.
+
+    **Who may do what — ONE PLACE:** `eventMenuAccess(role)` in
+    `src/lib/event-menu-access.ts` (tested): owner/admin `edit`, sales
+    `view`, everyone else `none`. The page reads it to decide what to
+    render and every write action reads it to decide whether to refuse;
+    the database's own rule is the table's policies (owner/admin write,
+    three roles read). Nik may open editing to sales later: one line
+    there, one policy here. **The cost lock applies on top**, for everyone
+    including owner and admin, through `assertCostNotLocked` in every
+    action; at the database the RESTRICTIVE lock policies exempt
+    owner/admin, exactly as item 33's do for menus and charges, so unlock
+    still works.
+
+    **The figures.** Discount against the dishes' own selling prices
+    (4,800 of dishes sold as a 4,500 set = 6.25%) — sales may see it, both
+    inputs being customer prices. Food cost and food-cost % (2,000 against
+    4,500 = 44.44%) — owner and admin only, **not computed for anyone
+    else**: the page enters the costing branch only for `edit`, and
+    `buildEventMenuView` drops a cost for any other access as a second
+    lock, which `event-menu.test.ts` holds up to `JSON.stringify` (the
+    payload). The same two figures now sit on the set-menu management
+    screen, which is `requireAdmin` and whose ต้นทุนรวม column sales
+    could never open — checked, nothing to hide.
+
+    **The 10% swap warning:** swapping a course for a dish more than 10%
+    dearer or cheaper shows a warning (`swapPriceWarning`, exactly 10% is
+    not "more than"); the confirm button stays. **Course options** are
+    NOT built: a set stores its usual dish per course and the swap is how
+    an alternative is chosen, as Nik decided.
+
+    **Decisions made here because Nik had not, chosen for reversibility:**
+    the copy hangs on the set LINE (a booking with 8 tables of one set and
+    2 of another keeps two lists); the copy is per booking and not shared
+    between bookings; a line from before the feature falls back rather
+    than being auto-copied; the copy function is SECURITY DEFINER rather
+    than a sales write policy (a policy cannot express "verbatim only");
+    `set_name` is written by the database and read by no screen (the
+    charge label names a custom set), so the code needs no new column to
+    exist and can deploy before the SQL — every reader treats a missing
+    table or function as "no copies".
+
+    **The adversarial review (three independent readers, 2026-09-19, each
+    told to break one thing):**
+    - *Can sales reach a cost figure anywhere?* **No.** Every sales-reachable
+      read selects names, counts, sections and customer prices by explicit
+      column list; no sales-reachable path calls `getCostingContext()` or
+      `computeMenuCost()`; the page's cost branch is entered for `edit`
+      only and `buildEventMenuView` drops a cost for anything else. Noted,
+      not a leak: the copy function admits sales by design (the picker
+      needs it), which the table comment now states.
+    - *Does the copy ever write back to the shared set?* **No** — the only
+      writers of `catering_set_menus`/`_items` are the pre-existing admin
+      editor, and the function only SELECTs from them. **But two real
+      holes in the copy's own behaviour, both fixed before this record:**
+      (1) a copy emptied to zero rows was indistinguishable from "never
+      copied" and silently fell back to the CURRENT shared set on every
+      screen, with a false legacy banner and no way to add a dish — the
+      marker is now the line's `set_name` (stamped by the function), read
+      by the resolver, the function and the add action; a copied line with
+      no rows is a copy with no rows (`resolveDishes`, tested; migration
+      test C4). (2) The price box's save removed every stored set line the
+      screen did not send, so a custom set created on the menu page in a
+      second tab was deleted, copy and charge with it, by an unrelated save
+      — `saveBooking` now takes the ids the screen loaded with and drops
+      only those; a line it never saw is kept, charge included. Also fixed:
+      a line's displayed name followed the shared set's CURRENT name; the
+      snapshot `set_name` now wins.
+    - *Does a locked booking stay frozen?* **Yes, on every path** — the app
+      refuses everyone (`assertCostNotLocked` first in every action, the
+      event checked against the row's own event), the database refuses
+      sales, and the function checks the lock itself. **One real gap,
+      fixed:** a pre-feature booking's shared-set fallback stayed live after
+      locking, and the lock then refused the cure. `lockCateringEventCost`
+      now copies every never-copied set line first, while the booking is
+      still unlocked, and snapshots from the copy.
+    - **Accepted as theoretical, recorded so they are not rediscovered:**
+      dish NAMES and PRICES in a copy are live joins to `menus` (the dish
+      set is frozen, its label and price are not — round 2 could snapshot
+      them); removing a set line and re-adding the same set in one save
+      discards the edited copy and re-copies today's shared set (what was
+      asked, literally, with no warning); a sales session can call the copy
+      function directly on a never-copied line (it freezes what the screen
+      already showed, unlogged); `source_set_menu_id`'s SET NULL is
+      unreachable while the line exists (`set_menu_id` is RESTRICT); the
+      check-then-write race under two simultaneous admins is the one menus
+      and charges already have.
+
+    **THE FIRST RUN FAILED, 2026-09-19 — nothing applied, rolled back
+    clean.** `ERROR 42P01: relation "public.catering_event_menu_items" does
+    not exist`, from the Step 0 survey. Two probes named the table this file
+    creates, each with an `IF v_has` guard inside the same statement, and a
+    guard inside a statement is not a guard: PL/pgSQL plans the whole thing
+    before evaluating anything in it. Both are now `EXECUTE`, run only when
+    `to_regclass` has already found the table, with a static ELSE that
+    reports the pre-feature state (no copies, so every set line falls back).
+    The rule is in AGENTS.md; a structural check now scans a migration for
+    any object it creates being named in executable SQL before its own
+    CREATE, and flags exactly those two lines on the file as Nik ran it.
+
+    **THE SECOND RUN FAILED TOO, on the harness change the first fix
+    brought in — nothing applied, rolled back.** `FAIL W3 sales adds a
+    course — got "error (a policy on another table)
+    denied:catering_event_menu_items", expected one of denied`. The refusal
+    came from exactly the right table. The cause was not logic but
+    ESCAPING: the pattern that reads the table out of a statement was
+    patched in through a JavaScript template literal, where `\s` means `s`,
+    so it arrived as `(?:inserts+into|update|deletes+from)s+...`, matched
+    nothing, and left `v_table` NULL — after which every refusal fell to the
+    "another table" branch. The failure direction was over-strict, never
+    lax: a `denied:` result could only FAIL the run, never pass it.
+
+    Fixed three ways at once, none of them a loosening: the pattern now uses
+    POSIX classes (`[[:space:]]`, `[[:alnum:]_]`, `[.]`) and contains no
+    backslash to lose; the attribution moved into `pg_temp.classify`, which
+    RAISES when a refusal cannot be attributed to any table rather than
+    guessing; and the file now **tests its own harness before it tests
+    anything else** — X1 proves a refusal from the table under test reads as
+    `denied` (insert, update and delete shapes, with and without the schema
+    qualifier), X2 proves a refusal from another table does not, that an
+    unattributable one raises, and that a non-refusal passes through
+    untouched. Both run before the first test write, on the same function
+    the probes use.
+
+    Only one probe expects a bare `denied` (W3, the one that failed); six
+    INSERT probes could receive a `denied:` result at all, and the broken
+    mapping was wrong for every one of them. AGENTS.md carries the rule.
+
+    **THE THIRD RUN COMPLETED, APPLIED THE OBJECTS, AND PROVED NOTHING.** It
+    printed **8 rows of 31** and raised no error, so the table, `set_name`,
+    the five policies and `catering_copy_set_menu` are LIVE in production
+    with no evidence that any policy behaves correctly. The missing 23 rows
+    are every permission test (C1–C4, R1–R2, W1–W7, K1–K3, L1–L4) plus S1
+    and D1 — everything written inside the block that always aborts.
+
+    **Why:** `pg_temp.note` accumulates into a session setting, and a session
+    setting is TRANSACTIONAL. `set_config`'s third argument decides whether a
+    value survives COMMIT, not whether it survives ABORT. The test block ends
+    in a deliberate `RAISE ... 'U0002'` — that is how its writes are undone —
+    and it took the record of the tests down with them. The eight survivors
+    are exactly the rows written outside that block: the two self-tests, the
+    four survey rows, the handler's line and Step 3's.
+
+    **What it does NOT mean:** the tests were not skipped. The handler traps
+    `U0002` alone, so any failed assertion would have propagated and aborted
+    the file; reaching the abort proves all twenty passed. But that rests on
+    reading the code, which is the standard this repo exists to refuse — so
+    it counts for nothing until the re-run prints them.
+
+    **Fixed:** the log is read into a PL/pgSQL variable on the last line
+    before the abort and put back in the handler (a variable is not
+    transactional), and **Step 3 now asserts the row count** against a
+    declared constant, so a block that runs and reports nothing FAILS the
+    file instead of passing quietly. The static checker no longer counts
+    emitting sites in isolation: it compares its count with that constant,
+    and it flags result lines written inside an always-aborting block whose
+    handler restores nothing. Run against the file as production received
+    it, the checker reports all three of this week's defects.
+
+    **The next production run re-tests against the live objects and needs
+    nothing undone first.** Every DDL statement is idempotent (IF NOT
+    EXISTS, OR REPLACE, DROP-then-CREATE by name); the CHECK is dropped and
+    re-added, which re-validates the existing rows; Step 2 clones a booking,
+    runs all twenty probes against the live table and policies, and rolls
+    back. If a policy is in fact wrong, the run FAILS and rolls back —
+    leaving the already-applied objects exactly as they are, which is the
+    information that is currently missing. `copies already stored: 0` and
+    the app is not deployed, so nothing real depends on the table yet.
+
+    **Verified locally:** typecheck, lint, 328 tests (19 new), build — no
+    application file changed for any of the three migration fixes. The migration is
+    re-checked for structure, `format()` arity, parse-time references, and
+    now de-escaped regex literals (a check that flags the broken file and
+    leaves the two applied harnesses alone), plus a line-by-line comparison
+    against the applied `catering_history` harness with every difference
+    justified. Its pattern was also simulated against all 20 probe
+    statements: 13 writes, every table read correctly; 7 reads, which never
+    produce a `denied:` result. **The file prints 31 result rows.** It is
+    still unexecuted — no production access from here.
+
 **Closed 2026-09-10 — break-even page** (`e64be14` migration, `8235094`,
 `7d516e0`; item 3 of the original handoff, the reason `cost_behavior` was
 migrated). `/owner/accounting/break-even`: four figures — contribution
@@ -2594,8 +2866,11 @@ states after running the widening migration below.
 | **C** ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ | `[id]/quote?doc=` | the customer | `0b35334` |
 
 All three group a package's food the same way, from ONE expansion
-(`groupBySection` over `catering_set_menu_items.section`): the customer, the
-floor and the kitchen cannot be told three different things. **The print
+(`groupBySection` over the rows `getEventMenuDishes` returns — since
+2026-09-19 the booking's OWN copy of its set, `catering_event_menu_items`,
+or the shared `catering_set_menu_items` for a booking from before the copy
+existed; queue item 39): the customer, the floor and the kitchen cannot be
+told three different things. **The print
 contract:** a section with no rows prints nothing at all — no heading, no
 blank row. Verified end-to-end by Nik: setting one dessert made ขนมหวาน
 separate on the printed sheet.
