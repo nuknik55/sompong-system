@@ -281,7 +281,13 @@ export function BookingScreen({
       music_note: musicLine ? musicLine.label : form.music_note,
     };
     startTransition(async () => {
-      const result = await saveBooking({ event: formToUpsertPayload(derived, event?.id), lines: buildLines(), issueQuote });
+      const result = await saveBooking({
+        event: formToUpsertPayload(derived, event?.id), lines: buildLines(), issueQuote,
+        // What this screen loaded with: a menu line missing from the box is
+        // dropped only if it is in here. One created since — by the menu page
+        // in another tab — is kept (saveBooking).
+        knownMenuIds: initialCharges.flatMap((c) => (c.event_menu_id ? [c.event_menu_id] : [])),
+      });
       if (!result.ok) { setError(result.error); return; }
       try { if (derived.staff_ids[0]) localStorage.setItem(LAST_TAKER_KEY, derived.staff_ids[0]); } catch { /* storage unavailable */ }
       router.push(issueQuote ? `/owner/catering/${result.id}/quote` : `/owner/catering/${result.id}`);

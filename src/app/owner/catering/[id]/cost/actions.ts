@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
 import {
-  getCateringEvent, getCateringEventMenus, getCateringCharges, getCateringSetMenuItems,
+  getCateringEvent, getCateringEventMenus, getCateringCharges, getEventMenuDishes,
   getCateringEventLabor,
 } from "../../actions";
 
@@ -81,9 +81,32 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
   // Same computation as [id]/cost/page.tsx's live path — see that file for
   // the set-menu-expansion reasoning (a set's price_per_set is a sale
   // price, not a cost; the real food cost sums what's actually inside it).
-  const setMenuIds = [...new Set(eventMenus.filter((m) => m.set_menu_id).map((m) => m.set_menu_id as string))];
-  const setItemsEntries = await Promise.all(setMenuIds.map(async (sid) => [sid, await getCateringSetMenuItems(sid)] as const));
-  const setItemsBySet = new Map(setItemsEntries);
+  // The booking's OWN copy of each set (catering per-event menus): the
+  // snapshot freezes the cost of what was actually served.
+  //
+  // LOCKING FREEZES THE RECORD TOO. A set line from before the copy existed
+  // still reads the SHARED set, which owner and admin keep editing — so a
+  // locked booking's printed menu would drift while its P&L stood still, and
+  // the lock itself would then refuse the cure (the review of 2026-09-19). So
+  // each such line gets its copy HERE, while the booking is still unlocked
+  // and the function's own lock check passes; the snapshot is then taken
+  // from the copy. A function not yet installed (its migration unrun) is a
+  // missing schema, tolerated: the snapshot falls back to the shared set as
+  // before, and nothing is frozen that was not frozen already.
+  const before = await getEventMenuDishes(eventId);
+  let copied = 0;
+  for (const [lineId, served] of before) {
+    if (served.source !== "shared") continue;
+    const { data, error } = await supabase.rpc("catering_copy_set_menu", { p_event_menu_id: lineId });
+    if (error) {
+      const code = (error as { code?: string }).code ?? "";
+      const missing = ["42883", "PGRST202"].includes(code) || /schema cache|does not exist/i.test(error.message);
+      if (!missing) throw new Error(error.message);
+      break; // no function anywhere yet: nothing more to try
+    }
+    if (typeof data === "number") copied += data;
+  }
+  const dishesByLine = copied > 0 ? await getEventMenuDishes(eventId) : before;
   const menuById = new Map(menus.map((m) => [m.id, m]));
 
   let ingredientCost = 0;
@@ -104,8 +127,8 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
         unit_cost: cost.ingredientCost, q_factor_amount: cost.qFactorAmount * em.quantity,
         total_cost: cost.totalCost * em.quantity, has_unknown_cost: cost.hasUnknownCost,
       });
-    } else if (em.set_menu_id) {
-      const items = setItemsBySet.get(em.set_menu_id) ?? [];
+    } else {
+      const items = dishesByLine.get(em.id)?.dishes ?? [];
       for (const it of items) {
         const menu = menuById.get(it.menu_id);
         if (!menu) continue;

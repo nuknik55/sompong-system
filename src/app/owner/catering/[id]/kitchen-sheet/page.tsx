@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
-import { getCateringEvent, getCateringEventMenus, getCateringSetMenuItemsForSets } from "../../actions";
+import { getCateringEvent, getCateringEventMenus, getEventMenuDishes } from "../../actions";
+import { isSetLine } from "../../event-menu";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
 import { priceCell, plateCount } from "@/lib/kitchen-sheet";
@@ -41,8 +42,11 @@ export default async function CateringKitchenSheetPage({
 
   if (!event) notFound();
 
-  const setMenuIds = [...new Set(eventMenus.filter((m) => m.set_menu_id).map((m) => m.set_menu_id as string))];
-  const itemsBySet = await getCateringSetMenuItemsForSets(setMenuIds);
+  // What is served at each set line: the booking's OWN copy, or the shared
+  // set for a booking from before the copy existed (catering per-event
+  // menus). The kitchen prints what this booking will serve, not what the
+  // shared set says today.
+  const dishesByLine = await getEventMenuDishes(id);
 
   // Header only. The ราคา column does NOT use this — see below.
   const tableCount = event.table_count;
@@ -61,9 +65,9 @@ export default async function CateringKitchenSheetPage({
   // the way the paper sheet numbers its rows. groupBySection drops any
   // section with no rows, so an absent ขนมหวาน prints nothing at all.
   const packages: KitchenBlock[] = eventMenus
-    .filter((m) => m.set_menu_id)
+    .filter(isSetLine)
     .map((m) => {
-      const source = itemsBySet.get(m.set_menu_id as string) ?? [];
+      const source = dishesByLine.get(m.id)?.dishes ?? [];
       const groups = groupBySection(source, SET_MENU_SECTIONS);
       const priceById = new Map(source.map((r) => [r.id, r.selling_price]));
       const qtyById = new Map(source.map((r) => [r.id, r.quantity]));
@@ -91,7 +95,7 @@ export default async function CateringKitchenSheetPage({
   // Its own numbering, because it is the sheet's second list, not a
   // continuation of the first.
   const extras: KitchenRow[] = eventMenus
-    .filter((m) => !m.set_menu_id)
+    .filter((m) => !isSetLine(m))
     .map((m, i) => ({
       id: m.id,
       index: i + 1,

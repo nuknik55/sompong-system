@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
 import {
-  getCateringEvent, getCateringEventMenus, getCateringCharges, getCateringSetMenuItems,
+  getCateringEvent, getCateringEventMenus, getCateringCharges, getEventMenuDishes,
   getCateringEventLabor, getCateringTransferCostRates,
 } from "../../actions";
 import { getCateringEventCostSnapshot } from "./actions";
@@ -58,12 +58,11 @@ export default async function CateringEventCostPage({
       getCostingContext(),
     ]);
 
-    // Expand set_menu_id rows into their underlying dishes — a set's own
-    // price_per_set is a sale price, not a cost; the real food cost is the
-    // sum of what's actually inside it.
-    const setMenuIds = [...new Set(eventMenus.filter((m) => m.set_menu_id).map((m) => m.set_menu_id as string))];
-    const setItemsEntries = await Promise.all(setMenuIds.map(async (sid) => [sid, await getCateringSetMenuItems(sid)] as const));
-    const setItemsBySet = new Map(setItemsEntries);
+    // Expand each set line into its dishes — a set's own price_per_set is a
+    // sale price, not a cost; the real food cost is the sum of what's actually
+    // inside it. What is inside it is the booking's OWN copy (catering
+    // per-event menus), or the shared set for a booking from before the copy.
+    const dishesByLine = await getEventMenuDishes(id);
     const menuById = new Map(menus.map((m) => [m.id, m]));
 
     let computedFoodCost = 0;
@@ -75,8 +74,8 @@ export default async function CateringEventCostPage({
         const cost = computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct);
         computedFoodCost += cost.totalCost * em.quantity;
         if (cost.hasUnknownCost) computedHasUnknown = true;
-      } else if (em.set_menu_id) {
-        const items = setItemsBySet.get(em.set_menu_id) ?? [];
+      } else {
+        const items = dishesByLine.get(em.id)?.dishes ?? [];
         for (const it of items) {
           const menu = menuById.get(it.menu_id);
           if (!menu) continue;

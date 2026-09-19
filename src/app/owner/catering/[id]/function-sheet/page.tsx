@@ -4,8 +4,9 @@ import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
 import {
   getCateringEvent, getCateringEventMenus, getCateringCharges,
-  getCateringSetMenuItemsForSets, getStaffOptions,
+  getEventMenuDishes, getStaffOptions,
 } from "../../actions";
+import { isSetLine } from "../../event-menu";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection, moneyFields, type SheetLine, type SheetPackage } from "@/lib/function-sheet";
 import { plateCount } from "@/lib/kitchen-sheet";
@@ -48,11 +49,13 @@ export default async function CateringFunctionSheetPage({
   // added straight to the booking is not part of any package, so it prints
   // under รายการเพิ่มเติม — the same split document B makes with its
   // "รายการอาหารเพิ่มเติม" break.
-  const setMenuIds = [...new Set(eventMenus.filter((m) => m.set_menu_id).map((m) => m.set_menu_id as string))];
-  const itemsBySet = await getCateringSetMenuItemsForSets(setMenuIds);
+  // The booking's OWN copy of each set, or the shared set for a booking from
+  // before the copy existed — the same resolver the kitchen sheet and the
+  // quotation read, so the three documents cannot disagree.
+  const dishesByLine = await getEventMenuDishes(id);
 
   const packages: SheetPackage[] = eventMenus
-    .filter((m) => m.set_menu_id)
+    .filter(isSetLine)
     .map((m) => ({
       id: m.id,
       name: m.name,
@@ -63,14 +66,14 @@ export default async function CateringFunctionSheetPage({
       // line quantity is plates for the WHOLE JOB — per-set count × sets
       // ordered, the same plateCount() the kitchen sheet uses, so the two
       // sheets can never disagree about how many go out.
-      groups: groupBySection(itemsBySet.get(m.set_menu_id as string) ?? [], SET_MENU_SECTIONS).map((g) => ({
+      groups: groupBySection(dishesByLine.get(m.id)?.dishes ?? [], SET_MENU_SECTIONS).map((g) => ({
         ...g,
         lines: g.lines.map((l) => ({ ...l, quantity: plateCount(l.quantity, m.quantity) })),
       })),
     }));
 
   const extras: SheetLine[] = eventMenus
-    .filter((m) => !m.set_menu_id)
+    .filter((m) => !isSetLine(m))
     .map((m) => ({ id: m.id, name: m.name, quantity: m.quantity, note: m.note }));
 
   // The four money fields: the figure where the booking holds one, a ruled

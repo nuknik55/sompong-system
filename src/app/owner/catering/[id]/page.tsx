@@ -69,6 +69,13 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
             ข้อมูลลูกค้า · ประวัติการจอง
           </Link>
         )}
+        {/* The booking's own menu (catering per-event menus): sales views, owner and admin edit — decided on that page. */}
+        <Link
+          href={`/owner/catering/${event.id}/menu`}
+          className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          รายการอาหารของงาน
+        </Link>
         {isAdmin && (
           <Link
             href={`/owner/catering/${event.id}/cost`}

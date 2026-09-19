@@ -7,8 +7,10 @@ import { getCateringSetMenus } from "../actions";
 import { SetMenusClient, type DishCostOption } from "./SetMenusClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
 
-// ── One of two places in the catering module allowed to compute/render cost ─
-// (the other is [id]/cost/page.tsx, per-event food cost for the P&L page).
+// ── One of three places in the catering module allowed to compute/render cost ─
+// (the others: [id]/cost/page.tsx, per-event food cost for the P&L page, and
+// [id]/menu/page.tsx, per-set-line food cost on a booking's own menu — for
+// owner and admin only, never computed for a sales session).
 // Every other catering page/action deliberately avoids getCostingContext() /
 // computeMenuCost() so there is no code path a sales session could reach that
 // touches ingredients/menu_recipe_items. This page is guarded by

@@ -7,6 +7,7 @@ import {
 } from "../actions";
 import type { CateringSetMenu } from "../actions";
 import { fmtBaht, toNum, SET_MENU_SECTIONS } from "../shared-utils";
+import { discountFigure, discountText } from "../event-menu";
 
 /** Per-dish cost, computed once server-side in page.tsx — see the comment there. */
 export type DishCostOption = {
@@ -325,6 +326,15 @@ export function SetMenusClient({
   const pricePerSet = toNum(modal?.form.price_per_set ?? "") ?? 0;
   const foodCostPct = pricePerSet > 0 ? (totalCost / pricePerSet) * 100 : null;
   const profit = pricePerSet - totalCost;
+  // The same two figures a booking's own menu shows (event-menu.ts): what
+  // the dishes would cost the customer bought singly, and the set's discount
+  // against that. Selling prices, not cost — but this screen is admin-only
+  // anyway, so the block below may sit beside the cost summary.
+  const dishesTotal = items.reduce((s, it) => {
+    const dish = dishById.get(it.menu_id);
+    return s + (dish ? dish.selling_price * (toNum(it.quantity) ?? 0) : 0);
+  }, 0);
+  const discount = discountFigure(dishesTotal, pricePerSet > 0 ? pricePerSet : null);
   const hasUnknownCost = items.some((it) => dishById.get(it.menu_id)?.has_unknown_cost);
 
   return (
@@ -492,7 +502,24 @@ export function SetMenusClient({
                 )}
               </div>
 
-              {/* The one place in the catering module that shows cost/margin — see the comment in page.tsx. */}
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                <p className="mb-1 text-xs font-medium text-neutral-600">ส่วนลดเทียบราคาเมนูแยก</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-neutral-500">ราคาเมนูแยกรวม / ชุด</p>
+                    <p className="tabular-nums font-medium text-neutral-800">฿{fmtBaht(dishesTotal)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">ส่วนลด</p>
+                    <p className={`tabular-nums font-medium ${discount && discount.amount < 0 ? "text-red-700" : "text-neutral-800"}`}>
+                      {discount ? `${discount.amount >= 0 ? "" : "−"}${Math.abs(discount.pct).toFixed(2)}%` : "–"}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">{discountText(discount)}</p>
+              </div>
+
+              {/* Cost and margin — this screen and the per-event menu page (owner/admin) are the places in the catering module that show them; see the comment in page.tsx. */}
               <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
                 <p className="mb-2 text-xs font-medium text-amber-800">สรุปต้นทุน (Admin/Owner เท่านั้น)</p>
                 <div className="grid grid-cols-3 gap-3 text-sm">

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { requireSales } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCharges, getCateringSettings,
-  getCateringEventMenus, getCateringSetMenuItemsForSets,
+  getEventMenuDishes,
 } from "../../actions";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
@@ -40,11 +40,15 @@ export default async function CateringQuotePage({
   const { id } = await params;
   const rawDoc = parseDocState((await searchParams).doc);
 
-  const [event, charges, settings, eventMenus] = await Promise.all([
+  // getEventMenuDishes reads the set lines itself, so the quotation no longer
+  // loads them separately; what it shows under each package is the booking's
+  // OWN copy (catering per-event menus), or the shared set for a booking from
+  // before the copy existed.
+  const [event, charges, settings, dishesByLine] = await Promise.all([
     getCateringEvent(id),
     getCateringCharges(id),
     getCateringSettings(),
-    getCateringEventMenus(id),
+    getEventMenuDishes(id),
   ]);
 
   if (!event) notFound();
@@ -71,17 +75,13 @@ export default async function CateringQuotePage({
   // sheet and the kitchen sheet use — one definition of what is inside a
   // package, so the customer, the floor and the kitchen cannot be told three
   // different things.
-  const setIdByEventMenu = new Map(
-    eventMenus.filter((m) => m.set_menu_id).map((m) => [m.id, m.set_menu_id as string]),
-  );
-  const itemsBySet = await getCateringSetMenuItemsForSets([...new Set(setIdByEventMenu.values())]);
 
   // FOOD FIRST, discount last — Nik's paper order, the same order the
   // booking screen's price box renders in. Insertion order within a type.
   // The total below is order-independent, so it sums the raw list.
   const lines: QuoteLine[] = sortForCustomerDoc(charges).map((c) => {
-    const setId = c.event_menu_id ? setIdByEventMenu.get(c.event_menu_id) : undefined;
-    const groups = setId ? groupBySection(itemsBySet.get(setId) ?? [], SET_MENU_SECTIONS) : [];
+    const served = c.event_menu_id ? dishesByLine.get(c.event_menu_id) : undefined;
+    const groups = served ? groupBySection(served.dishes, SET_MENU_SECTIONS) : [];
     return {
       id: c.id,
       // The customer-facing name where the rate has one; the stored label
