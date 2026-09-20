@@ -19,7 +19,7 @@ import {
   applySourceDishes, buildEventMenuLines, buildEventMenuView, comparisonHeadline, comparisonText, COMPARISON_LABEL,
   dishLineTotal, dishLineTotalText, dishNamesForPriceBox, dishesTotalPerTable, draftDishes, draftFromLine, draftsEqual, duplicateSetName, EVENT_MENU_SECTION_LIST,
   foodCostFigure, isSetLine, lineDraftsEqual, lineFoodCost, newCustomLineDraft, resolveDishes, setVsAlaCarte,
-  swapPriceWarning, swapWarningText, SWAP_WARN_RATIO, toSavePayload, validateDrafts, validateSavePayload, viewVersion,
+  swapPriceWarning, swapWarningText, SWAP_WARN_RATIO, toSavePayload, validateDrafts, validateSavePayload, viewVersion, removedLineIds, validateRemoveIds,
   type EventMenuDish, type EventMenuLine,
 } from "./event-menu.ts";
 
@@ -281,6 +281,68 @@ test("SERVER: the payload check refuses what the screen could never send", () =>
   assert.match(validateSavePayload([{ event_menu_id: "L1", price_per_table: 1, known_item_ids: "x", known_price: null, items: [] }])!, /รูปแบบ/, "the token must be an id list");
   assert.match(validateSavePayload([{ event_menu_id: "L1", price_per_table: 1, known_item_ids: [], known_price: "4500", items: [] }])!, /รูปแบบ/);
   assert.equal(validateSavePayload([{ event_menu_id: "L1", price_per_table: 0, known_item_ids: ["a"], known_price: 4500, items: [] }]), null, "an emptied copy at a free price is a valid save");
+});
+
+test("DELETING A SET: marking it is a draft edit, it leaves the save payload, and its id goes to the delete list", () => {
+  // Nik, 2026-09-20: a set made with สร้างชุดเมนูเอง could not be removed
+  // from the screen that made it. Deleting is now an edit like any other.
+  const base = [draftFromLine(line({ id: "L1" })), draftFromLine(line({ id: "L2", name: "ชุดเล็ก", pricePerTable: 3000, dishes: [dish("C", 180)] }))];
+  assert.deepEqual(removedLineIds(base), [], "nothing is marked when the page opens");
+
+  const marked = structuredClone(base);
+  marked[1]!.removed = true;
+  assert.equal(draftsEqual(base, marked), false, "marking a set for deletion is a change to save");
+  assert.deepEqual(removedLineIds(marked), [{ event_menu_id: "L2", known_item_ids: ["C"], known_price: 3000 }],
+    "the deletion carries the same conflict token an edit carries");
+  assert.deepEqual(toSavePayload(marked, base), [], "a line being deleted is not also saved");
+
+  // ยกเลิก is a return to the baseline, so the mark goes with it.
+  assert.deepEqual(removedLineIds(base), []);
+
+  // An edit to one set and a deletion of another travel together.
+  const both = structuredClone(marked);
+  both[0]!.price = "4321";
+  const payload = toSavePayload(both, base);
+  assert.deepEqual(payload.map((p) => p.key), ["L1"]);
+  assert.deepEqual(removedLineIds(both).map((r) => r.event_menu_id), ["L2"]);
+});
+
+test("DELETING A SET: a line that was never saved has no id to delete, and a broken line can still be removed", () => {
+  const unsaved = newCustomLineDraft("new-1", "ชุดทดสอบ", 2000);
+  assert.deepEqual(removedLineIds([{ ...unsaved, removed: true }]), [], "nothing on the server to delete");
+
+  // A set whose price cannot be parsed blocks a save — unless it is the one
+  // being deleted, in which case its contents no longer matter.
+  const broken = draftFromLine(line({ id: "L9" }));
+  broken.price = "abc";
+  assert.match(validateDrafts([broken])!, /ราคาต่อโต๊ะ/);
+  assert.equal(validateDrafts([{ ...broken, removed: true }]), null, "a set being deleted is not validated");
+  assert.deepEqual(removedLineIds([{ ...broken, removed: true }]).map((r) => r.event_menu_id), ["L9"]);
+});
+
+test("DELETING A SET: the name stays taken until the deletion is saved, because the save creates before it deletes", () => {
+  const existing = draftFromLine(line({ id: "L1", name: "t2000" }));
+  const marked = { ...existing, removed: true };
+  // The function's A5 check runs against the database, where the row still
+  // is when the create is attempted. Reusing the name has to be two saves.
+  assert.equal(duplicateSetName([marked, newCustomLineDraft("n", "t2000", 2000)]), "t2000");
+  assert.match(validateDrafts([marked, newCustomLineDraft("n", "t2000", 2000)])!, /มีชุดชื่อ “t2000”/);
+  assert.equal(validateDrafts([marked, newCustomLineDraft("n", "t2000 ใหม่", 2000)]), null);
+});
+
+test("SERVER: the delete list is distinct UUIDs, each carrying its conflict token", () => {
+  const A = "11111111-2222-4333-8444-555555555555";
+  const B = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+  const one = (event_menu_id: string) => ({ event_menu_id, known_item_ids: ["x"], known_price: 4500 });
+  assert.equal(validateRemoveIds([]), null);
+  assert.equal(validateRemoveIds([one(A), one(B)]), null);
+  assert.equal(validateRemoveIds([{ event_menu_id: A, known_item_ids: [], known_price: null }]), null, "a line with no copy and no charge");
+  assert.match(validateRemoveIds("a")!, /รูปแบบ/);
+  assert.match(validateRemoveIds([one("L1")])!, /รูปแบบ/, "not a uuid: refused here, not by Postgres");
+  assert.match(validateRemoveIds([one(A), one(A)])!, /รูปแบบ/, "the same line twice is a malformed call");
+  assert.match(validateRemoveIds([{ event_menu_id: A, known_item_ids: "x", known_price: null }])!, /รูปแบบ/);
+  assert.match(validateRemoveIds([{ event_menu_id: A, known_item_ids: [], known_price: "4500" }])!, /รูปแบบ/);
+  assert.match(validateRemoveIds([null])!, /รูปแบบ/);
 });
 
 test("the fallback line's token is empty: it has no rows yet, and a copy made elsewhere since will show as rows", () => {

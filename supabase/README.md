@@ -2551,6 +2551,115 @@ In order. Nothing here is started unless it says so.
        someone saves them on the menu page or the booking is locked
        (locking copies them first).
 
+    **THE GAP NIK FOUND AFTER `ebba2cc`: a set could be created on the menu
+    page and not removed there** (2026-09-20). He made three test sets named
+    t2000 with สร้างชุดเมนูเอง and had no way to delete them from that screen.
+
+    - **How deletion already worked, and still does.** The ✕ at the end of a
+      set's row in the price box on the booking screen. Round 2 neither
+      disabled nor hid it: its only `disabled` is `isPending`, and the price
+      INPUT beside it was already disabled for set lines before round 2 —
+      that pass changed the input's tooltip and nothing else on that row.
+      Removing the row and saving takes `saveBooking` down the
+      `removeCateringEventMenu` path, which deletes the
+      `catering_event_menus` row. It works for a custom set and a shared-set
+      line alike. **The gap was one of place, not of capability:** the only
+      delete lived on the other screen, so someone working where the set is
+      created had nothing to press.
+    - **The fix: ลบชุดนี้ on the card itself**, through the draft model like
+      every other edit — pressing it marks the line, ยกเลิก clears the mark,
+      บันทึก commits it, and a set that has courses is confirmed by name
+      first. Sales never sees the control (`canEdit`) and the action refuses
+      it; a cost-locked booking refuses it for everyone, through the same
+      `assertCostNotLocked` as every other edit on this screen.
+    - **NO MIGRATION.** `catering_save_event_menus` cannot express a
+      deletion — its payload is a list of lines to create-or-update, there
+      is no delete verb, and the obvious encoding is taken: a line with an
+      empty `items` array means "keep the line, remove its courses", which
+      is a tested state. So the deletion is a plain scoped DELETE on
+      `catering_event_menus`, the same statement the price box has always
+      used, and the two ON DELETE CASCADE constraints take the food charge
+      and the copied courses with it. **What that costs:** the deletions are
+      not in the same transaction as the edits. The save therefore runs the
+      function FIRST and deletes afterwards, so a refused save deletes
+      nothing; the reverse order could remove a set while the edits it came
+      with were refused. **What a migration would buy, if Nik ever wants
+      it:** a `p_remove uuid[]` argument on the function, making the whole
+      save one transaction, at the cost of a second migration on a function
+      that has just been applied. Not written, not proposed for now.
+    - **One consequence, worth knowing:** reusing the name of a set that is
+      marked for deletion has to be two saves, because the function creates
+      before the deletions run. The screen says so rather than letting the
+      function refuse it.
+    - **The review of the deletion path (one reader, three questions,
+      2026-09-20) confirmed the three it was asked** — no orphan charge, the
+      delete cannot reach another booking or a single-dish line, and a
+      locked booking refuses it — **and found seven defects in the new code,
+      all fixed before this record:** the quotation warning lived on the
+      card, so a booking whose only set was marked showed no warning at all
+      (it is now one warning for the booking); a failed save did not refresh,
+      so a half-landed save left the screen arguing with the server; the
+      conflict token did not travel with a deletion, so deleting a set
+      someone else had just rewritten discarded their work silently (it
+      travels now, and the save refuses a stale one); a partial deletion
+      reported success; the confirmation told a pre-feature line's owner that
+      N courses would be deleted when those courses belong to the shared set
+      and are untouched; the id list was not checked for UUID shape, so a
+      malformed one surfaced a raw Postgres message; and the payload was
+      validated before the caller was authenticated.
+    - **TWO PRE-EXISTING DEFECTS THE REVIEW FOUND, NOT FIXED HERE, both
+      reachable today through the price box's own delete** — they are Nik's
+      to decide, and the second touches a customer document:
+      1. **Locking a booking after a set is removed freezes an overstated
+         profit.** `quoted_total` is the last issued revision's total, the
+         cost page uses it as revenue, and the lock snapshots it — so
+         between removing a set and re-issuing the quotation, the cost page
+         shows the old revenue against the new, smaller food cost, and
+         locking makes that the permanent record. The menu page now warns to
+         re-issue before locking; nothing enforces it.
+      2. **A deposit already received can print a negative balance.**
+         `quote-doc.ts` recomputes the deposit due from the new, smaller
+         total and prints `balance = total − deposit_received`; if the total
+         falls below what the customer has paid, the ใบแจ้งหนี้ prints a
+         negative ยอดคงเหลือ rather than an overpayment. Not touched, because
+         the printed documents are Nik's.
+    - **THE CHARGE CASCADE, VERIFIED LIVE 2026-09-20** — recorded here
+      because the migration that should have created it has NO APPLIED ROW,
+      so the repo could not answer it. The deletion leans on
+      `catering_event_charges.event_menu_id` being `ON DELETE CASCADE`. The
+      repo declares it (`catering_event_menu_link_migration.sql`), but that
+      file was written with `ADD COLUMN IF NOT EXISTS … REFERENCES`, which
+      creates no constraint when the column already exists — so the
+      declaration was not evidence (AGENTS.md rule 4). Nik read the
+      catalogue:
+
+      ```sql
+      SELECT conname, confdeltype FROM pg_constraint
+       WHERE conrelid = 'public.catering_event_charges'::regclass AND contype = 'f';
+      ```
+
+      | constraint | `confdeltype` | means |
+      |---|---|---|
+      | `catering_event_charges_event_id_fkey` | `c` | CASCADE — deleting the booking takes its charges |
+      | `catering_event_charges_event_menu_id_fkey` | `c` | **CASCADE — deleting a set line takes its food charge** |
+      | `catering_event_charges_rate_id_fkey` | `n` | SET NULL — deleting a rate leaves the charge, unlinked |
+
+      So the cascade is real and the deletion is sound: no charge is left
+      pointing at a line that is gone, and none is left behind as a
+      `charge_type = 'food'` row with no link, which is the shape that would
+      jam the price box. The sibling cascade on `catering_event_menu_items`
+      was already proven live by round 1's D1. **Nik also confirmed the
+      price box's ✕ still deletes a set line correctly** (2026-09-20).
+    - **The same class, checked across the screen.** Everything else this
+      page creates, it can already remove: a course added to a set has its
+      own ลบ, a set added to the draft but not yet saved has its ✕, a fill
+      from the chooser is replaced or cleared, and an edited price is typed
+      back. The one thing that is still one-way is MAKING A COPY: once a
+      pre-feature line has been saved as the booking's own list, there is no
+      "go back to reading the shared set". That is the design — the copy is
+      the record — and it is now recoverable anyway, by deleting the set
+      line and picking the set again in the price box.
+
     **Decided, not a gap: the browser's Back button leaves a dirty page
     without warning** (Nik, 2026-09-20). Every other way out asks first —
     closing or reloading the tab, a typed URL, and every in-app link

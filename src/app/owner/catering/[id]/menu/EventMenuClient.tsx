@@ -9,7 +9,7 @@ import { fmtBaht, toNum, StatusBadge, thDate, thFullDate } from "../../shared-ut
 import {
   applySourceDishes, comparisonHeadline, comparisonText, COMPARISON_LABEL, dishLineTotalText, dishesTotalPerTable, draftDishes,
   draftFromLine, draftPrice, draftsEqual, foodCostFigure, lineFoodCost, newCustomLineDraft, setVsAlaCarte, swapPriceWarning,
-  swapWarningText, toSavePayload, validateDrafts, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
+  swapWarningText, toSavePayload, validateDrafts, removedLineIds, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
   type DraftDish, type EventMenuSection, type EventMenuView, type LineDraft,
 } from "../../event-menu";
 
@@ -91,6 +91,7 @@ function EventMenuEditor({
   const serverMoved = version !== seenVersion;
   const problem = validateDrafts(drafts);
   const canEdit = view.canEdit;
+  const pendingRemovals = drafts.filter((d) => d.removed).length;
 
   // Leaving asks first while dirty. Two ways out, two guards: the browser
   // (close, reload, typed URL) fires beforeunload; an in-app link — this
@@ -143,8 +144,16 @@ function EventMenuEditor({
     setError(null);
     startTransition(async () => {
       try {
-        const res: EventMenuActionResult = await saveEventMenus(eventId, toSavePayload(drafts, baseline));
-        if (res.status === "error") { setError(res.message); return; }
+        const res: EventMenuActionResult = await saveEventMenus(eventId, toSavePayload(drafts, baseline), removedLineIds(drafts));
+        if (res.status === "error") {
+          // The save may have half-landed: the edits go in one transaction,
+          // the deletions after it. Fetch what the server actually holds so
+          // the screen is not arguing with it, and so a retry is judged
+          // against the truth (review, 2026-09-20).
+          setError(res.message);
+          router.refresh();
+          return;
+        }
         setAwaitingRefresh(true);
         onNotice("บันทึกรายการอาหารของงานแล้ว");
         router.refresh();
@@ -214,11 +223,9 @@ function EventMenuEditor({
           key={d.key}
           eventId={eventId}
           draft={d}
-          baseline={baseline.find((b) => b.key === d.key) ?? null}
           canEdit={canEdit}
           costById={view.dishCostById}
           dishOptions={dishOptions}
-          quote={quote}
           isPending={isPending}
           onChange={(fn) => updateLine(d.key, fn)}
           onRemoveNew={() => removeNewLine(d.key)}
@@ -238,10 +245,24 @@ function EventMenuEditor({
         <NewCustomSetForm existingNames={existingNames} isPending={isPending} onAdd={addLine} onCancel={() => setCreating(false)} />
       )}
 
+      {/* ONE WARNING FOR THE BOOKING, not one per card: a booking whose only
+          set is marked for deletion renders no card at all, and that is the
+          save that moves the total most (review, 2026-09-20). */}
+      {canEdit && quote && dirty && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          ใบเสนอราคา {quote.number}{quote.revision > 0 ? ` (แก้ไขครั้งที่ ${quote.revision})` : ""} ออกไว้แล้ว — เอกสารที่พิมพ์จะแสดงยอดใหม่ทันทีที่บันทึก
+          แต่ยอดที่บันทึกไว้กับใบเสนอราคา ซึ่งหน้าต้นทุน-กำไรและการล็อกต้นทุนใช้ ยังเป็นยอดเดิมจนกว่าจะกด “บันทึกและออกใบเสนอราคาใหม่” ในหน้าจอง
+          {pendingRemovals > 0 && " — ถ้าลบชุดออก ให้ออกใบเสนอราคาใหม่ก่อนล็อกต้นทุน มิฉะนั้นกำไรที่ล็อกไว้จะสูงกว่าความจริง"}
+        </div>
+      )}
+
       {canEdit && (
         <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-          <p className={`text-sm ${problem ? "text-red-700" : dirty ? "text-amber-800" : "text-neutral-500"}`}>
-            {problem ?? (dirty ? "มีการแก้ไขที่ยังไม่บันทึก — กดบันทึกเพื่อเก็บทั้งหมดพร้อมกัน" : "ไม่มีการแก้ไข")}
+          <p className={`text-sm ${problem ? "text-red-700" : pendingRemovals > 0 ? "text-red-700" : dirty ? "text-amber-800" : "text-neutral-500"}`}>
+            {problem
+              ?? (pendingRemovals > 0
+                ? `จะลบ ${pendingRemovals} ชุดเมื่อกดบันทึก (พร้อมรายการอาหารและบรรทัดราคาของชุดนั้น)`
+                : dirty ? "มีการแก้ไขที่ยังไม่บันทึก — กดบันทึกเพื่อเก็บทั้งหมดพร้อมกัน" : "ไม่มีการแก้ไข")}
           </p>
           <div className="flex gap-2">
             <button type="button" onClick={cancel} disabled={!dirty || isPending}
@@ -262,15 +283,13 @@ function EventMenuEditor({
 // ── One set line ─────────────────────────────────────────────────────────────
 
 function LineCard({
-  eventId, draft, baseline, canEdit, costById, dishOptions, quote, isPending, onChange, onRemoveNew,
+  eventId, draft, canEdit, costById, dishOptions, isPending, onChange, onRemoveNew,
 }: {
   eventId: string;
   draft: LineDraft;
-  baseline: LineDraft | null;
   canEdit: boolean;
   costById: EventMenuView["dishCostById"];
   dishOptions: CateringDishOption[];
-  quote: Quote;
   isPending: boolean;
   onChange: (fn: (d: LineDraft) => LineDraft) => void;
   onRemoveNew: () => void;
@@ -286,7 +305,6 @@ function LineCard({
   const comparison = setVsAlaCarte(alaCarte, price);
   const cost = costById ? lineFoodCost(dishes, costById) : null;
   const legacy = draft.source === "shared" && !draft.materialize;
-  const priceChanged = baseline != null && draftPrice(baseline) !== price;
 
   function openChooser() {
     setLocalError(null);
@@ -349,6 +367,43 @@ function LineCard({
     setLocalError(null);
     onChange((d) => ({ ...d, materialize: true, dishes: d.dishes.filter((x) => x.key !== key) }));
   }
+  // ลบชุดนี้ — a draft edit like every other: it marks the line, บันทึก
+  // commits it, ยกเลิก clears it. A set with courses is confirmed by name
+  // first (Nik, 2026-09-20: a set made with สร้างชุดเมนูเอง could not be
+  // removed from the screen that made it).
+  function toggleRemove() {
+    if (!draft.removed && draft.dishes.length > 0) {
+      // A line that still reads the shared set menu has no courses of its
+      // own: nothing is removed from the shared set, and saying "these N
+      // courses will be deleted too" would read as if it were (review,
+      // 2026-09-20).
+      const what = legacy
+        ? `รายการอาหารที่แสดงอยู่มาจากชุดเมนูกลาง — ชุดเมนูกลางไม่ถูกแตะต้อง`
+        : `รายการอาหาร ${draft.dishes.length} รายการในชุดนี้ และบรรทัดราคาของชุดนี้ในกล่องราคา จะถูกลบไปด้วย`;
+      if (!window.confirm(`ลบชุด “${draft.name}” ออกจากงานนี้?\n\n${what}\n\nจะมีผลเมื่อกดบันทึก`)) return;
+    }
+    setLocalError(null);
+    onChange((d) => ({ ...d, removed: !d.removed }));
+  }
+
+  if (draft.removed) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3">
+        <div className="min-w-0">
+          <p className="font-medium text-neutral-500 line-through">{draft.name}</p>
+          <p className="text-xs text-red-700">
+            {legacy
+              ? "จะถูกลบเมื่อกดบันทึก — พร้อมบรรทัดราคาของชุดนี้ (ชุดเมนูกลางไม่ถูกแตะต้อง)"
+              : `จะถูกลบเมื่อกดบันทึก — พร้อมรายการอาหาร ${draft.dishes.length} รายการ และบรรทัดราคาของชุดนี้`}
+          </p>
+        </div>
+        <button type="button" onClick={toggleRemove} disabled={isPending}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+          เลิกลบ
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
@@ -363,9 +418,17 @@ function LineCard({
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
             <SourceBadge draft={draft} />
-            {draft.eventMenuId == null && (
+            {/* A set that was never saved is simply dropped; a saved one is
+                marked and removed by บันทึก, with everything it carries. */}
+            {canEdit && (draft.eventMenuId == null ? (
               <button type="button" onClick={onRemoveNew} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50" title="เอาชุดที่ยังไม่บันทึกนี้ออก">✕</button>
-            )}
+            ) : (
+              <button type="button" onClick={toggleRemove} disabled={isPending}
+                className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                title="ลบชุดนี้ออกจากงาน พร้อมรายการอาหารและบรรทัดราคาของชุดนี้">
+                ลบชุดนี้
+              </button>
+            ))}
           </div>
           {canEdit ? (
             <label className="flex items-center gap-2 text-xs text-neutral-600">
@@ -382,16 +445,6 @@ function LineCard({
           )}
         </div>
       </div>
-
-      {canEdit && quote && (priceChanged || draft.eventMenuId == null) && (
-        // Two totals exist once a quotation is issued: the printed document
-        // reads the live rows and follows this save at once; quoted_total —
-        // the figure the cost page and the lock use — is the last ISSUED
-        // revision's until it is re-issued on the booking screen.
-        <p className="mx-4 mt-2 text-xs text-amber-800">
-          ใบเสนอราคา {quote.number}{quote.revision > 0 ? ` (แก้ไขครั้งที่ ${quote.revision})` : ""} ออกไว้แล้ว — เอกสารที่พิมพ์จะแสดงราคาใหม่ทันทีที่บันทึก แต่ยอดที่บันทึกไว้กับใบเสนอราคา (ที่หน้าต้นทุน-กำไรใช้) ยังเป็นยอดเดิมจนกว่าจะกด “บันทึกและออกใบเสนอราคาใหม่” ในหน้าจอง
-        </p>
-      )}
 
       {legacy && (
         <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

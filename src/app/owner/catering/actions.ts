@@ -9,7 +9,7 @@ import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { eventMenuAccess } from "@/lib/event-menu-access";
 import { fetchAllRows } from "@/lib/data";
-import { isSetLine, resolveDishes, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuSaveLine } from "./event-menu";
+import { isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2426,23 +2426,117 @@ function revalidateEventMenu(eventId: string) {
  * บันทึกและออกใบเสนอราคาใหม่ — the same rule the price box follows when a
  * price is saved without re-issuing.
  */
-export async function saveEventMenus(eventId: string, lines: EventMenuSaveLine[]): Promise<EventMenuActionResult> {
-  const problem = validateSavePayload(lines);
-  if (problem) return { status: "error", message: problem };
+export async function saveEventMenus(
+  eventId: string,
+  lines: EventMenuSaveLine[],
+  removeIds: EventMenuRemoveLine[] = [],
+): Promise<EventMenuActionResult> {
+  // The role and the lock BEFORE the payload is looked at, so an unsigned
+  // caller gets one answer and learns nothing about the shape of this
+  // endpoint (review, 2026-09-20).
   const ctx = await beginEventMenuEdit(eventId);
   if (!ctx.ok) return { status: "error", message: ctx.message };
+  if (lines.length === 0 && removeIds.length === 0) return { status: "error", message: "ไม่มีรายการที่เปลี่ยนแปลง" };
+  if (lines.length > 0) {
+    const problem = validateSavePayload(lines);
+    if (problem) return { status: "error", message: problem };
+  }
+  const badIds = validateRemoveIds(removeIds);
+  if (badIds) return { status: "error", message: badIds };
   const { supabase } = ctx;
   try {
-    const { error } = await supabase.rpc("catering_save_event_menus", { p_event_id: eventId, p_lines: lines });
-    if (error) {
-      if (isMissingSchemaError(error)) return { status: "error", message: SAVE_NOT_READY };
-      return eventMenuError(new Error(error.message), "บันทึกรายการอาหารไม่สำเร็จ");
+    // THE EDITS FIRST, THE DELETIONS AFTER, and in that order on purpose.
+    // The function is one transaction; the deletions are a separate
+    // statement, because the function has no delete verb and adding one is a
+    // migration Nik has not been asked for. Refusing the edits therefore
+    // deletes nothing — a failed save leaves the booking exactly as it was,
+    // which is the direction that cannot destroy anything. The reverse order
+    // would risk a set removed while the edits it came with were refused.
+    if (lines.length > 0) {
+      const { error } = await supabase.rpc("catering_save_event_menus", { p_event_id: eventId, p_lines: lines });
+      if (error) {
+        if (isMissingSchemaError(error)) return { status: "error", message: SAVE_NOT_READY };
+        return eventMenuError(new Error(error.message), "บันทึกรายการอาหารไม่สำเร็จ");
+      }
     }
+
+    let removedNames: string[] = [];
+    if (removeIds.length > 0) {
+      const ids = removeIds.map((r) => r.event_menu_id);
+      // Read the names AND the state before the delete: the rows will not be
+      // there after, and the state is what the conflict token is checked
+      // against.
+      const { data: doomed, error: readError } = await supabase
+        .from("catering_event_menus")
+        .select("id, set_name, catering_set_menus(name), catering_event_charges(label, unit_price), catering_event_menu_items(id)")
+        .eq("event_id", eventId)
+        .is("menu_id", null)
+        .in("id", ids);
+      if (readError) throw new Error(readError.message);
+      const live = new Map((doomed ?? []).map((r: Record<string, unknown>) => [r.id as string, r]));
+      if (live.size !== ids.length) {
+        return { status: "error", message: "ไม่พบชุดที่จะลบ หรือถูกลบไปแล้วจากหน้าอื่น — กดยกเลิกเพื่อโหลดข้อมูลล่าสุด แล้วทำใหม่" };
+      }
+
+      // THE CONFLICT TOKEN, on the deletion too. Deleting a set someone else
+      // has just rewritten would throw their work away and say nothing, and
+      // a deletion is the one edit nothing can undo (review, 2026-09-20).
+      for (const r of removeIds) {
+        const row = live.get(r.event_menu_id) as Record<string, unknown>;
+        const liveItems = ((row.catering_event_menu_items as { id: string }[] | null) ?? []).map((i) => i.id).sort();
+        const knownItems = [...r.known_item_ids].sort();
+        const livePrice = (row.catering_event_charges as { unit_price: number }[] | null)?.[0]?.unit_price ?? null;
+        const changed =
+          liveItems.length !== knownItems.length
+          || liveItems.some((id, i) => id !== knownItems[i])
+          || (r.known_price !== null && livePrice !== null && Number(livePrice) !== r.known_price);
+        if (changed) {
+          return {
+            status: "error",
+            message: "ชุดที่ทำเครื่องหมายลบไว้ถูกแก้ไขจากที่อื่นหลังจากเปิดหน้านี้ — กดยกเลิกเพื่อโหลดข้อมูลล่าสุด แล้วตรวจสอบก่อนลบ",
+          };
+        }
+      }
+
+      removedNames = ids.map((id) => {
+        const r = live.get(id) as Record<string, unknown>;
+        const setMenu = r.catering_set_menus as { name: string } | null;
+        const charges = r.catering_event_charges as { label: string }[] | null;
+        return (r.set_name as string | null) ?? setMenu?.name ?? charges?.[0]?.label ?? "ชุดเมนูของงาน";
+      });
+
+      // SCOPED THREE WAYS, because this is a network-callable endpoint and
+      // the ids come from the browser: to this booking, to a SET line (a
+      // single-dish line belongs to the price box, not this screen), and to
+      // the ids named. catering_event_charges.event_menu_id and
+      // catering_event_menu_items.event_menu_id are both ON DELETE CASCADE,
+      // so the food charge and the copied courses go with the line and no
+      // charge is left pointing at nothing.
+      const { data: gone, error } = await supabase
+        .from("catering_event_menus")
+        .delete()
+        .eq("event_id", eventId)
+        .is("menu_id", null)
+        .in("id", ids)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if ((gone ?? []).length !== ids.length) {
+        // Fewer rows went than were named: something removed one between the
+        // read above and this statement. Say so rather than reporting a
+        // clean save (review, 2026-09-20).
+        return {
+          status: "error",
+          message: `ลบได้ ${(gone ?? []).length} จาก ${ids.length} ชุด — ที่เหลือถูกลบไปแล้วจากหน้าอื่น กดยกเลิกเพื่อโหลดข้อมูลล่าสุด`,
+        };
+      }
+    }
+
     const names = lines.map((l) => l.set_name ?? "").filter(Boolean);
     const created = lines.filter((l) => l.event_menu_id == null).length;
     const what = [
-      `${lines.length} ชุด`,
+      lines.length > 0 ? `${lines.length} ชุด` : "",
       created > 0 ? `สร้างชุดใหม่ ${created} (${names.join(", ")})` : "",
+      removedNames.length > 0 ? `ลบชุด ${removedNames.length} (${removedNames.join(", ")})` : "",
     ].filter(Boolean).join(" · ");
     await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `บันทึกรายการอาหารของงาน: ${what}`);
     revalidateEventMenu(eventId);

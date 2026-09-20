@@ -361,6 +361,16 @@ export type LineDraft = {
    */
   knownItemIds: string[];
   knownPrice: number | null;
+  /**
+   * Marked for deletion, committed by บันทึก like every other edit (Nik,
+   * 2026-09-20: a set created with สร้างชุดเมนูเอง could not be removed from
+   * the screen that created it). A removed line is not sent to the save
+   * function — it is deleted afterwards, which takes its courses and its
+   * food charge with it by ON DELETE CASCADE. ยกเลิก clears the mark. A
+   * line that was never saved is dropped from the draft outright instead:
+   * there is nothing on the server to delete.
+   */
+  removed: boolean;
 };
 
 /**
@@ -392,6 +402,7 @@ export function draftFromLine(line: EventMenuLine): LineDraft {
     materialize: false,
     knownItemIds: line.source === "copy" ? line.dishes.map((d) => d.id) : [],
     knownPrice: line.pricePerTable,
+    removed: false,
     dishes: line.dishes.map((d) => ({
       key: d.id,
       menu_id: d.menu_id,
@@ -414,7 +425,7 @@ export function draftFromLine(line: EventMenuLine): LineDraft {
  * booking screen, where Nik already sets it (A4, 2026-09-19).
  */
 export function newCustomLineDraft(key: string, name: string, pricePerTable: number): LineDraft {
-  return { key, eventMenuId: null, name: name.trim(), tables: 1, price: String(pricePerTable), sourceSetMenuId: null, source: "none", materialize: true, dishes: [], knownItemIds: [], knownPrice: null };
+  return { key, eventMenuId: null, name: name.trim(), tables: 1, price: String(pricePerTable), sourceSetMenuId: null, source: "none", materialize: true, dishes: [], knownItemIds: [], knownPrice: null, removed: false };
 }
 
 /** The name a set line is known by when two are compared: trimmed, case-folded. */
@@ -426,6 +437,10 @@ const nameKey = (s: string) => s.trim().toLocaleLowerCase("th");
  * nothing to tell them apart (Nik, 2026-09-19), so a NEW set may not take a
  * name another line already has. Existing lines are compared, never refused:
  * Nik removes his own duplicates himself.
+ *
+ * A line MARKED FOR DELETION still counts as present, because the save
+ * creates before it deletes: reusing the name of a set being removed has to
+ * be two saves, not one.
  */
 export function duplicateSetName(drafts: LineDraft[]): string | null {
   for (const d of drafts) {
@@ -499,7 +514,7 @@ export type EventMenuSaveLine = {
 
 function normalizeLine(d: LineDraft) {
   return JSON.stringify({
-    id: d.eventMenuId, name: d.name, tables: d.tables, price: draftPrice(d), m: d.materialize,
+    id: d.eventMenuId, name: d.name, tables: d.tables, price: draftPrice(d), m: d.materialize, rm: d.removed,
     dishes: d.dishes.map((x) => [x.menu_id, Number(x.quantity), x.section, x.note ?? null]),
   });
 }
@@ -518,6 +533,11 @@ export function validateDrafts(drafts: LineDraft[]): string | null {
   const dup = duplicateSetName(drafts);
   if (dup !== null) return `มีชุดชื่อ “${dup}” อยู่ในงานนี้แล้ว — ตั้งชื่อชุดใหม่ให้ต่างกัน`;
   for (const d of drafts) {
+    // A line being deleted is not checked: its price and its courses are
+    // about to stop existing, so a set that cannot be saved can still be
+    // removed. It is still compared for a duplicate name above, because the
+    // save function creates before the deletions run.
+    if (d.removed) continue;
     if (d.eventMenuId == null && d.name.trim() === "") return "ชุดเมนูต้องมีชื่อ";
     if (d.eventMenuId == null && !(d.tables > 0)) return `${d.name}: จำนวนโต๊ะต้องมากกว่า 0`;
     const price = draftPrice(d);
@@ -544,6 +564,8 @@ export function toSavePayload(drafts: LineDraft[], baseline: LineDraft[]): Event
   const base = new Map(baseline.map((b) => [b.key, b]));
   const out: EventMenuSaveLine[] = [];
   for (const d of drafts) {
+    // A line marked for deletion is not saved; removedLineIds carries it.
+    if (d.removed) continue;
     const b = base.get(d.key);
     if (b && lineDraftsEqual(b, d)) continue;
     out.push({
@@ -566,6 +588,50 @@ export function toSavePayload(drafts: LineDraft[], baseline: LineDraft[]): Event
     });
   }
   return out;
+}
+
+/** One set line to DELETE, carrying the same conflict token an edit carries. */
+export type EventMenuRemoveLine = {
+  event_menu_id: string;
+  known_item_ids: string[];
+  known_price: number | null;
+};
+
+/**
+ * The set lines the save must DELETE: those marked removed that exist on the
+ * server. A line that was never saved is dropped from the draft outright, so
+ * it never reaches here. Deleting the line takes its copied courses and its
+ * food charge with it (ON DELETE CASCADE on both).
+ *
+ * EACH CARRIES ITS CONFLICT TOKEN, for the reason an edit does: deleting a
+ * set someone else has just rewritten would throw their work away without
+ * saying so, and a deletion is the one edit nothing can undo (review,
+ * 2026-09-20).
+ */
+export function removedLineIds(drafts: LineDraft[]): EventMenuRemoveLine[] {
+  return drafts.flatMap((d) =>
+    d.removed && d.eventMenuId != null
+      ? [{ event_menu_id: d.eventMenuId, known_item_ids: d.knownItemIds, known_price: d.knownPrice }]
+      : [],
+  );
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The server's own check of the lines to delete. Ids are UUIDs, so a malformed one is refused here and not by Postgres. */
+export function validateRemoveIds(ids: unknown): string | null {
+  if (!Array.isArray(ids)) return "รูปแบบข้อมูลไม่ถูกต้อง";
+  const seen = new Set<string>();
+  for (const r of ids as Record<string, unknown>[]) {
+    if (!r || typeof r !== "object") return "รูปแบบข้อมูลไม่ถูกต้อง";
+    const id = r.event_menu_id;
+    if (typeof id !== "string" || !UUID.test(id)) return "รูปแบบข้อมูลไม่ถูกต้อง";
+    if (seen.has(id)) return "รูปแบบข้อมูลไม่ถูกต้อง";
+    seen.add(id);
+    if (!Array.isArray(r.known_item_ids) || (r.known_item_ids as unknown[]).some((x) => typeof x !== "string")) return "รูปแบบข้อมูลไม่ถูกต้อง";
+    if (!(r.known_price === null || (typeof r.known_price === "number" && Number.isFinite(r.known_price)))) return "รูปแบบข้อมูลไม่ถูกต้อง";
+  }
+  return null;
 }
 
 /**
