@@ -2856,6 +2856,58 @@ In order. Nothing here is started unless it says so.
       unsaved จำนวนโต๊ะ is lost on the way to the menu page and the copy uses
       the SAVED count — the chooser's wording now says "ที่บันทึกไว้".
 
+    **THE BOOKING SCREEN WARNS BEFORE LOSING UNSAVED WORK** (Nik,
+    2026-09-20; built locally, NOT COMMITTED, no migration). The same model
+    as the menu page: the browser's own navigation through `beforeunload`,
+    and every in-app link caught in the capture phase. It closes the loss
+    recorded above — จำนวนโต๊ะ typed and then lost on the way to the menu
+    page. Browser Back stays uncaught, as decided.
+
+    **What makes it safe to put on the screen sales uses most:** the
+    baseline is a snapshot taken from THE SAME VALUES the screen initialises
+    its state with, not a re-derivation of them, so at mount the two strings
+    are equal by construction and only an edit can separate them. It is
+    re-baselined in exactly two places — when the device's remembered taker
+    is seeded (a default this screen chose, not something anyone typed) and
+    after a save succeeds. `bookingSnapshot` enumerates the form's own keys,
+    so a field added later is watched without anyone remembering to add it.
+    **The chooser's wording about the saved table count is trimmed but not
+    removed:** it no longer has to warn about a number that could be lost,
+    but it still has to say which screen the number comes from.
+
+    **The review of the guard (one reader, three questions, 2026-09-20)
+    confirmed it cannot fire on an untouched form, cannot block a save, and
+    misses no field the save writes — and found six things, four fixed:**
+    - **A ctrl-click or middle-click was treated as leaving.** Those open a
+      new tab and leave the page where it is, so the prompt was a lie, and
+      cancelling it swallowed the new tab instead. Fixed on this guard and
+      on the menu page's, which it was modelled on.
+    - **Float dust was saved and then read as an edit for ever.** The price
+      box wrote `333.33 × 3` as `999.9899999999999`; it now rounds to the
+      satang, which fixes the stored figure as well as the flag.
+    - **The taker seed gated its two writes differently**, so they could in
+      principle disagree about whether the seed had happened. One condition
+      now.
+    - **Two comments claimed more than the code did** — about why the
+      re-baseline after a save is needed, and about trailing spaces in
+      notes, which the server trims anyway.
+    - **NOT FIXED, and both are the same hole:** a remount discards unsaved
+      work without asking. The booking page keys this screen on its charge
+      rows so that a save cannot leave stale state behind; if a refresh
+      lands while another writer has changed those rows — the menu page in
+      another tab, or a second sales login — the key changes, the screen
+      re-initialises from the server, and the typing is gone with the guard
+      reporting clean. Typing into the form while a save is in flight loses
+      the same way (the price box disables itself during a save; the form
+      does not). The menu page already solves this properly: it refuses to
+      adopt new server data while dirty and says the data moved instead.
+      Doing the same here means moving that decision inside the booking
+      screen rather than keying it from the parent — a real change to the
+      most-used screen, not attempted in this pass.
+    - **Also not caught, recorded beside the Back button:** ออกจากระบบ in the
+      header is a form submit ending in a redirect, so neither the click
+      guard nor `beforeunload` sees it.
+
     **Item 40 came out of this work's review and is NOT part of it** — a
     booking a room conflict has frozen cannot be re-issued, and so cannot be
     locked. Pre-existing; Nik left it for later.
@@ -3342,6 +3394,35 @@ and after Nik's import.
     to live and a record of who used it; a separate "record the revenue
     total" action avoids the whole save path but adds a second writer of
     `quoted_total`. Nik picks the shape when he picks it up.
+
+41. **A remount discards unsaved work on the booking screen without asking**
+    (found by the review of the unsaved-changes guard, 2026-09-20). **NOT
+    STARTED. Nik's decision: leave it until the booking screen is more
+    settled, and DO IT BEFORE SALES STARTS USING THE MODULE FOR REAL.**
+
+    `[id]/page.tsx` keys `BookingScreen` on its charge rows, so that a save
+    cannot leave the screen holding the state it was saved FROM — the defect
+    that used to delete a set line and its copy on the next save. The cost
+    is that ANY change to those rows re-initialises the screen. If a
+    `router.refresh()` lands while another writer has changed them — the
+    menu page in a second tab, which is a second writer of set lines by
+    design, or a second sales login — the key changes, `form`, `lines` and
+    the guard's own baseline are all rebuilt from the server, the person's
+    typing is gone, and the guard reports clean because its baseline moved
+    with it. The in-page trigger already exists: the activity log refreshes.
+
+    **Typing into the form while a save is in flight loses the same way.**
+    The price box disables itself during a save; the booking form does not,
+    so anything typed in that window is baselined as saved and then thrown
+    away by the remount that follows.
+
+    **The menu page already solves this shape** (`EventMenuClient`): it
+    keeps a fingerprint of the server view, adopts new data only when the
+    draft is clean or the change is the person's own save landing, and
+    otherwise holds the draft and says the data moved. **The fix here is to
+    move that decision INSIDE the booking screen** rather than keying it
+    from the parent — which is a real change to the most-used screen in the
+    module, which is why it is queued rather than done.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,

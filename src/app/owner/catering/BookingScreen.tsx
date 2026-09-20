@@ -21,6 +21,7 @@ import type {
 } from "./actions";
 import { docMoney } from "@/lib/quote-doc";
 import { foldSetName } from "./event-menu";
+import { bookingSnapshot } from "./booking-dirty";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -128,6 +129,8 @@ function money(n: number) { return `฿${fmtBaht(n)}`; }
 /** Device memory of the last taker chosen, for logins with no linked employee. */
 const LAST_TAKER_KEY = "catering.lastTaker";
 
+const LEAVE_MSG = "มีการแก้ไขที่ยังไม่ได้บันทึก — ออกจากหน้านี้โดยไม่บันทึกหรือไม่?";
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export function BookingScreen({
@@ -169,6 +172,51 @@ export function BookingScreen({
   const [form, setForm] = useState<FormState>(() => (event ? formFromEvent(event) : blankForm(defaultStaffId)));
   const [lines, setLines] = useState<Line[]>(() => linesFromCharges(initialCharges));
   const [error, setError] = useState<string | null>(null);
+
+  // ── Leaving with unsaved changes asks first (Nik, 2026-09-20) ──────────
+  //
+  // The same model as the menu page. THE BASELINE IS TAKEN FROM THE SAME
+  // VALUES THIS SCREEN INITIALISED WITH, not from a re-derivation of them,
+  // so at mount the two strings are equal by construction and nothing but an
+  // edit can separate them — this is the screen sales uses most, and a
+  // warning on a form nobody touched would be dismissed by reflex and then
+  // absent on the day it mattered. Re-baselined in exactly two places: when
+  // the device's remembered taker is seeded (not the person's edit) and
+  // after a save succeeds.
+  const [initialClean] = useState<string>(() =>
+    bookingSnapshot(event ? formFromEvent(event) : blankForm(defaultStaffId), linesFromCharges(initialCharges)));
+  const [cleanAt, setCleanAt] = useState<string>(initialClean);
+  const dirty = bookingSnapshot(form, lines) !== cleanAt;
+
+  // Registered only WHILE DIRTY, so a clean form has no listeners at all and
+  // the handlers cannot read a stale value: the effect re-runs when dirty
+  // flips, which is twice in a session, not once per keystroke.
+  useEffect(() => {
+    if (!dirty) return;
+    const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    // An in-app link never fires beforeunload, so every internal anchor is
+    // caught in the capture phase before Next.js sees it. The browser's own
+    // Back button stays uncaught, as decided for the menu page: popstate
+    // cannot be refused and the workaround breaks Back for everyone.
+    const click = (e: globalThis.MouseEvent) => {
+      // A modified or middle click opens a new tab and LEAVES THIS PAGE
+      // WHERE IT IS, so there is nothing to warn about — and cancelling one
+      // used to swallow the new tab instead (review, 2026-09-20). Next's own
+      // Link makes the same exemption.
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const href = a.getAttribute("href") ?? "";
+      if (href.startsWith("#") || (/^[a-z]+:/i.test(href) && !href.startsWith(location.origin))) return;
+      if (!window.confirm(LEAVE_MSG)) { e.preventDefault(); e.stopPropagation(); }
+    };
+    window.addEventListener("beforeunload", unload);
+    document.addEventListener("click", click, true);
+    return () => {
+      window.removeEventListener("beforeunload", unload);
+      document.removeEventListener("click", click, true);
+    };
+  }, [dirty]);
 
   function set<K extends keyof FormState>(k: K, v: FormState[K]) { setForm((f) => ({ ...f, [k]: v })); }
 
@@ -252,7 +300,12 @@ export function BookingScreen({
       const next = { ...l, ...patch };
       if ("unitPrice" in patch || "quantity" in patch) {
         const up = toNum(next.unitPrice) ?? 0, q = toNum(next.quantity) ?? 0;
-        next.amount = String(next.kind === "discount" ? -Math.abs(up * q) : up * q);
+        // TO THE SATANG. 333.33 x 3 is 999.9899999999999 in binary floating
+        // point: it was written to the charge row that way and, once the
+        // unsaved-changes guard existed, retyping the same quantity read as
+        // an edit for ever after (review, 2026-09-20).
+        const exact = Math.round(up * q * 100) / 100;
+        next.amount = String(next.kind === "discount" ? -Math.abs(exact) : exact);
       }
       if ("amount" in patch && next.kind === "discount") next.amount = String(-Math.abs(toNum(next.amount) ?? 0));
       return next;
@@ -317,6 +370,15 @@ export function BookingScreen({
         knownMenuIds: initialCharges.flatMap((c) => (c.event_menu_id ? [c.event_menu_id] : [])),
       });
       if (!result.ok) { setError(result.error); return; }
+      // SAVED IS CLEAN, for the window between the answer and the refresh —
+      // and for a booking with an empty price box, which is the one case the
+      // parent's remount cannot cover (saveCateringCharges replaces every
+      // charge row, so any save with a line changes every id and the key
+      // remounts this screen anyway). `derived` is deliberately not used:
+      // room_portion and the music fields are computed from the price box
+      // for the payload and never put back into the form, and the person did
+      // not type them.
+      setCleanAt(bookingSnapshot(form, lines));
       try { if (derived.staff_ids[0]) localStorage.setItem(LAST_TAKER_KEY, derived.staff_ids[0]); } catch { /* storage unavailable */ }
       router.push(issueQuote ? `/owner/catering/${result.id}/quote` : `/owner/catering/${result.id}`);
       router.refresh();
@@ -334,16 +396,29 @@ export function BookingScreen({
   // else nothing, and the person picks. Device memory is a convenience for
   // the shared `sale` login, which has no employee of its own; it never
   // overrides a saved booking or a linked login.
+  // ONE condition for both halves of the seed below. They used to be gated
+  // differently — the form on "no taker yet", the baseline on "the baseline
+  // is untouched" — which could seed one without the other (review,
+  // 2026-09-20).
+  const hasTaker = form.staff_ids.length > 0;
   useEffect(() => {
-    if (event || defaultStaffId) return;
+    if (event || defaultStaffId || hasTaker) return;
     try {
       const last = localStorage.getItem(LAST_TAKER_KEY);
       if (last && staffOptions.some((s) => s.id === last && s.takes_bookings && s.is_active)) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time seed from device storage, unavailable during render under SSR
         setForm((f) => (f.staff_ids.length === 0 ? { ...f, staff_ids: [last] } : f));
+        // AND THE BASELINE WITH IT: the device's remembered taker is a
+        // default this screen chose, not something the person typed, so it
+        // must not make a brand-new form read as edited. Only while the
+        // baseline is still the untouched one — if the person has already
+        // typed something, their edit is theirs and stays unsaved.
+        setCleanAt((c) => (c === initialClean
+          ? bookingSnapshot({ ...blankForm(defaultStaffId), staff_ids: [last] }, linesFromCharges(initialCharges))
+          : c));
       }
     } catch { /* storage unavailable: no default */ }
-  }, [event, defaultStaffId, staffOptions]);
+  }, [event, defaultStaffId, staffOptions, hasTaker, initialClean, initialCharges]);
 
   return (
     <div className="space-y-5">
@@ -644,6 +719,9 @@ export function BookingScreen({
         </div>
       </div>
 
+      {dirty && !isPending && (
+        <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>
+      )}
       {missingForSave.length > 0 && !isPending && (
         <p className="text-right text-xs text-neutral-500">
           กรอก {missingForSave.join(" และ ")} ก่อนบันทึก

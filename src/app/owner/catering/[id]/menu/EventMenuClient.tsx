@@ -177,6 +177,9 @@ function EventMenuEditor({
     if (!dirty) return;
     const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     const click = (e: globalThis.MouseEvent) => {
+      // A modified or middle click opens a new tab without leaving this one
+      // (review, 2026-09-20), the exemption Next's own Link makes.
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
       if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
       const href = a.getAttribute("href") ?? "";
@@ -649,7 +652,7 @@ function SourceChooser({
       </div>
       <p className="mb-2 text-xs text-neutral-500">
         {mode === "new"
-          ? "เลือกหนึ่งรายการ — ระบบจะสร้างชุดใหม่ให้ โดยใช้ชื่อและราคาต่อโต๊ะของชุดที่เลือก พร้อมรายการอาหารทั้งหมด จำนวนโต๊ะจะตั้งจากที่บันทึกไว้ในหน้าจอง (ถ้างานนี้มีชุดอยู่แล้วจะเริ่มที่ 1) แก้ได้ในกล่องราคาของหน้าจอง (มีผลเมื่อกดบันทึก)"
+          ? "เลือกหนึ่งรายการ — ระบบจะสร้างชุดใหม่ให้ โดยใช้ชื่อและราคาต่อโต๊ะของชุดที่เลือก พร้อมรายการอาหารทั้งหมด จำนวนโต๊ะจะตั้งจากหน้าจอง (ถ้างานนี้มีชุดอยู่แล้วจะเริ่มที่ 1) แก้ได้ในกล่องราคาของหน้าจอง (มีผลเมื่อกดบันทึก)"
           : "เลือกหนึ่งรายการ — รายการอาหารของชุดนั้นจะมาแทนที่รายการในชุดนี้ (มีผลเมื่อกดบันทึก)"}
       </p>
       {loading && !sources && <p className="text-xs text-neutral-500">กำลังโหลด…</p>}
