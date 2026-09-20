@@ -1,18 +1,16 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireSales } from "@/lib/auth";
 import { eventMenuAccess } from "@/lib/event-menu-access";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
 import { getCateringEvent, getCateringEventMenus, getCateringCharges, getCateringDishOptions, getEventMenuDishes } from "../../actions";
-import { thFullDate, StatusBadge } from "../../shared-utils";
-import { buildEventMenuLines, buildEventMenuView, foodCostFigure, type EventMenuCost, type EventMenuLine } from "../../event-menu";
+import { buildEventMenuLines, buildEventMenuView, viewVersion, type DishCost } from "../../event-menu";
 import { EventMenuClient } from "./EventMenuClient";
 
 /**
- * รายการอาหารของงาน — a booking's OWN menu (catering per-event menus, round 1).
+ * รายการอาหารของงาน — a booking's OWN menu (catering per-event menus).
  *
  * WHO SEES WHAT is decided in two places and nowhere else: eventMenuAccess()
  * for the role, and the booking's cost lock for the freeze. Sales views;
@@ -21,9 +19,15 @@ import { EventMenuClient } from "./EventMenuClient";
  * THE COST IS COMPUTED ONLY FOR "edit". This is one of the few places in the
  * catering module allowed to call getCostingContext()/computeMenuCost() (with
  * set-menus/page.tsx and [id]/cost); for a sales session the branch below is
- * never entered, so nothing cost-shaped exists to serialise. buildEventMenuView
- * then drops a cost for any access but "edit" as the second lock, and
- * event-menu.test.ts holds a sales view up to JSON.stringify to prove it.
+ * never entered, so nothing cost-shaped exists to serialise. What it ships is
+ * a per-dish cost map — the screen holds edits until บันทึก and recomputes
+ * the set's cost live from it — and buildEventMenuView drops that map for any
+ * access but "edit" as the second lock; event-menu.test.ts holds a sales view
+ * up to JSON.stringify to prove it.
+ *
+ * The editor is keyed on a fingerprint of the view: after a save the refresh
+ * brings new data and a clean draft; a refresh that brings the same data
+ * leaves the person's unsaved work alone.
  */
 export default async function EventMenuPage({ params }: { params: Promise<{ id: string }> }) {
   const profile = await requireSales();
@@ -43,47 +47,32 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
   const lines = buildEventMenuLines(eventMenus, charges, dishesByLine);
 
   // Owner and admin only. Not "computed and hidden": not computed.
-  let costByLine: Record<string, EventMenuCost> | null = null;
-  if (access === "edit") costByLine = await computeEventMenuCosts(lines);
+  let dishCostById: Record<string, DishCost> | null = null;
+  if (access === "edit") dishCostById = await computeDishCosts();
 
-  const view = buildEventMenuView({ access, locked: event.cost_locked_at != null, lines, costByLine });
+  const view = buildEventMenuView({ access, locked: event.cost_locked_at != null, lines, dishCostById });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href={`/owner/catering/${id}`} className="text-sm text-neutral-400 hover:text-neutral-700">← {event.customer_name ?? "การจอง"}</Link>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">รายการอาหารของงาน</h1>
-          <StatusBadge status={event.status} />
-          <span className="text-sm text-neutral-500">{thFullDate(event.event_date)}</span>
-        </div>
-      </div>
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
       <EventMenuClient
         eventId={id}
-        tableCount={event.table_count}
+        version={viewVersion(view)}
+        header={{ backHref: `/owner/catering/${id}`, backLabel: `← ${event.customer_name ?? "การจอง"}`, status: event.status, date: event.event_date }}
         view={view}
         dishOptions={dishOptions}
+        quote={event.quote_number ? { number: event.quote_number, revision: event.quote_revision } : null}
       />
     </div>
   );
 }
 
-/** Per set line: the food cost of one table, from the same computeMenuCost every cost screen uses. */
-async function computeEventMenuCosts(lines: EventMenuLine[]): Promise<Record<string, EventMenuCost>> {
+/** Per dish: the food cost of one portion, from the same computeMenuCost every cost screen uses. */
+async function computeDishCosts(): Promise<Record<string, DishCost>> {
   const { menus, menuItems, unitCosts, qFactorPct } = await getCostingContext();
-  const menuById = new Map(menus.map((m) => [m.id, m]));
-  const out: Record<string, EventMenuCost> = {};
-  for (const line of lines) {
-    let costPerTable = 0;
-    let hasUnknownCost = false;
-    for (const d of line.dishes) {
-      const menu = menuById.get(d.menu_id);
-      if (!menu) { hasUnknownCost = true; continue; }
-      const c = computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct);
-      costPerTable += c.totalCost * d.quantity;
-      if (c.hasUnknownCost) hasUnknownCost = true;
-    }
-    out[line.id] = { costPerTable, pct: foodCostFigure(costPerTable, line.pricePerTable).pct, hasUnknownCost };
+  const out: Record<string, DishCost> = {};
+  for (const menu of menus) {
+    const c = computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct);
+    out[menu.id] = { unit_cost: c.totalCost, has_unknown_cost: c.hasUnknownCost };
   }
   return out;
 }

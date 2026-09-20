@@ -5,9 +5,10 @@ import { notFound } from "next/navigation";
 import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
-  getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog,
+  getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog, getEventMenuDishes,
 } from "../actions";
 import { thFullDate, StatusBadge } from "../shared-utils";
+import { dishNamesForPriceBox } from "../event-menu";
 import { BookingScreen } from "../BookingScreen";
 import { ActivityLogSection } from "./ActivityLogSection";
 
@@ -29,11 +30,16 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
   const profile = await requireSales();
   const { id } = await params;
 
-  const [event, customers, staffOptions, charges, rates, eventTypes, setMenuOptions, dishOptions, activityLog] = await Promise.all([
+  const [event, customers, staffOptions, charges, rates, eventTypes, setMenuOptions, dishOptions, activityLog, dishesByLine] = await Promise.all([
     getCateringEvent(id), getCateringCustomers(), getStaffOptions(), getCateringCharges(id), getCateringRates(),
-    getCateringEventTypes(), getCateringSetMenuOptions(), getCateringDishOptions(), getCateringActivityLog(id),
+    getCateringEventTypes(), getCateringSetMenuOptions(), getCateringDishOptions(), getCateringActivityLog(id), getEventMenuDishes(id),
   ]);
   if (!event) notFound();
+
+  // What each set line serves, for the price box (item 5, Nik 2026-09-19).
+  // The same resolver the sheets, the quotation and the menu page read.
+  const dishNamesByMenuLine: Record<string, string[]> = {};
+  for (const [lineId, served] of dishesByLine) dishNamesByMenuLine[lineId] = dishNamesForPriceBox(served.dishes);
 
   const isAdmin = isAdminOrAbove(profile.role);
 
@@ -61,7 +67,14 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
+      {/* KEYED ON THE CHARGE ROWS. After a save the screen re-renders with the
+          rows just written (new ids); without a key it kept the state it was
+          saved FROM — set lines still marked "not yet created" — and the next
+          save removed and re-created them, deleting the booking's own copy and
+          the price set on the menu page (review, 2026-09-19). A remount when
+          the rows change is the fix; unrelated refreshes leave the key alone. */}
       <BookingScreen
+        key={charges.map((c) => `${c.id}:${c.unit_price}:${c.quantity}`).join("|")}
         event={event}
         initialCharges={charges}
         customers={customers}
@@ -71,6 +84,7 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         setMenuOptions={setMenuOptions}
         dishOptions={dishOptions}
         defaultStaffId={profile.employee_id}
+        dishNamesByMenuLine={dishNamesByMenuLine}
       />
 
       <div className="mt-6 flex flex-wrap gap-2">

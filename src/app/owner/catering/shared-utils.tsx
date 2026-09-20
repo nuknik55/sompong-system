@@ -16,6 +16,7 @@
 
 import type { CateringEvent, StaffOption } from "./actions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR } from "./event-status";
+import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -57,18 +58,14 @@ export const FOOD_FORMAT_OPTIONS: { value: string; label: string }[] = [
  * values mirror the CHECK constraint in
  * supabase/catering_set_menu_sections_migration.sql; the order is the order
  * the three documents print them in, which is why this is an array and not a
- * label map.
+ * label map. ONE definition: event-menu.ts holds it (the price box's dish
+ * names sort by the same list), and this is that list.
  *
  * A section with no rows prints NOTHING — no heading, no empty row. A package
  * with no dessert is a package with no dessert, not a document with a blank
  * ขนมหวาน line.
  */
-export const SET_MENU_SECTIONS: { value: string; label: string }[] = [
-  { value: "dish",    label: "รายการอาหาร" },
-  { value: "dessert", label: "ขนมหวาน" },
-  { value: "drink",   label: "เครื่องดื่ม" },
-  { value: "free",    label: "รายการแถมฟรี" },
-];
+export const SET_MENU_SECTIONS: { value: string; label: string }[] = EVENT_MENU_SECTION_LIST;
 
 export const MUSIC_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "none",         label: "ไม่มี" },

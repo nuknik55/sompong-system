@@ -8,7 +8,8 @@ import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { eventMenuAccess } from "@/lib/event-menu-access";
-import { isSetLine, resolveDishes, type DishSource, type EventMenuDish } from "./event-menu";
+import { fetchAllRows } from "@/lib/data";
+import { isSetLine, resolveDishes, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuSaveLine } from "./event-menu";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,12 @@ export type CateringCharge = {
    *  a display tag ("ชุดเมนู"/"เมนูเดี่ยว") for the unified line-item table;
    *  never round-tripped back through saveCateringCharges. */
   event_menu_kind: "set" | "dish" | null;
+  /** The shared set or dish the linked line references (set_menu_id ?? menu_id);
+   *  null for a custom set and for every non-menu charge. The price box uses it
+   *  to refuse adding a set the booking already has (review, 2026-09-19: a
+   *  loaded line carried no reference, so the same set could be added twice
+   *  and the save wrote two charge rows for one line). */
+  event_menu_ref: string | null;
 };
 
 export type CateringRate = {
@@ -635,6 +642,7 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
       note: r.note as string | null,
       event_menu_id: r.event_menu_id as string | null,
       event_menu_kind,
+      event_menu_ref: linked ? (linked.set_menu_id ?? linked.menu_id) : null,
       rate_id: r.rate_id as string | null,
       rate_type: rate?.rate_type ?? null,
       rate_display_label: rate?.display_label ?? null,
@@ -1828,6 +1836,11 @@ export async function saveBooking(input: {
     const menuIdByRef = new Map(menuRows.map((m) => [m.set_menu_id ?? m.menu_id ?? "", m.id]));
 
     const payload: Parameters<typeof saveCateringCharges>[1] = [];
+    // ONE charge row per menu line. Two rows for one line printed the set
+    // twice on the quotation and doubled the total (review, 2026-09-19): the
+    // screen could not see that a loaded line referenced the set being picked.
+    // The screen now refuses the pick; this is the server's own refusal.
+    const menuLinesSeen = new Set<string>();
     for (const l of input.lines) {
       if (l.kind === "charge") {
         payload.push({ label: l.label, charge_type: l.charge_type, unit_price: l.unit_price, quantity: l.quantity, amount: l.amount, note: l.note, event_menu_id: null, rate_id: l.rate_id });
@@ -1836,6 +1849,8 @@ export async function saveBooking(input: {
       const menuId = l.eventMenuId ?? menuIdByRef.get(l.refId);
       const row = menuId ? chargeByMenuId.get(menuId) : undefined;
       if (!row) return { ok: false, error: "บันทึกรายการเมนูไม่สำเร็จ — กรุณาอ่านหน้านี้ใหม่แล้วลองอีกครั้ง" };
+      if (menuLinesSeen.has(row.event_menu_id as string)) return { ok: false, error: "ชุดเมนูหรือเมนูเดียวกันอยู่ในกล่องราคา 2 บรรทัด — ลบบรรทัดที่ซ้ำก่อนบันทึก" };
+      menuLinesSeen.add(row.event_menu_id as string);
       payload.push({
         label: row.label, charge_type: "food", unit_price: row.unit_price,
         quantity: l.quantity, amount: row.unit_price * l.quantity, note: row.note, event_menu_id: row.event_menu_id,
@@ -1845,7 +1860,8 @@ export async function saveBooking(input: {
     // The charges of lines the screen never saw, as they are: the replace
     // below would otherwise delete them and leave those lines priceless.
     for (const c of after) {
-      if (c.event_menu_id && unknownMenuIds.has(c.event_menu_id)) {
+      if (c.event_menu_id && unknownMenuIds.has(c.event_menu_id) && !menuLinesSeen.has(c.event_menu_id)) {
+        menuLinesSeen.add(c.event_menu_id);
         payload.push({ label: c.label, charge_type: c.charge_type, unit_price: c.unit_price, quantity: c.quantity, amount: c.amount, note: c.note, event_menu_id: c.event_menu_id, rate_id: null });
       }
     }
@@ -2263,27 +2279,33 @@ export async function deleteCateringEvent(id: string): Promise<{ error?: string 
   return {};
 }
 
-// ─── A booking's own menu (catering per-event menus, round 1 — Nik, 2026-09-19) ──
+// ─── A booking's own menu (catering per-event menus — Nik, 2026-09-19) ────────
 //
 // The dishes a booking carries for each of its set lines: copied from a shared
-// set when the set was picked, or added from scratch to a custom set. The copy
-// is the record. Who may EDIT is eventMenuAccess() — one place — and every
-// write below checks it and the cost lock before touching a row; the database
-// (catering_event_menu_items_migration.sql) checks both again.
+// set when the set was picked, filled from a standard set or another booking
+// through the chooser, or built from nothing in a custom set. The copy is the
+// record. Who may EDIT is eventMenuAccess() — one place — and the ONE write
+// below checks it and the cost lock before anything is sent; the database
+// (catering_save_event_menus, one transaction) checks both again and writes
+// every changed line whole or not at all.
+//
+// THE SAVE MODEL (Nik): the screen holds every edit — swaps, quantities,
+// removals, additions, the price per table, a fill from a source, a new
+// custom set — and saveEventMenus commits them together. There is no
+// per-edit write any more; the six that existed in round 1 were removed with
+// the screen that called them.
 
 export type EventMenuActionResult = { status: "ok" } | { status: "error"; message: string };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-const EVENT_MENU_SECTIONS = ["dish", "dessert", "drink", "free"];
 const EDIT_REFUSED = "เฉพาะเจ้าของร้านและผู้จัดการเท่านั้นที่แก้ไขรายการอาหารของงานได้";
-const COPY_FIRST = "รายการนี้ยังอ่านจากชุดเมนูกลาง — กด \"คัดลอกมาเป็นของงานนี้\" ก่อน แล้วจึงเพิ่มหรือเปลี่ยนเมนู";
+const SAVE_NOT_READY = "ระบบบันทึกรายการอาหารของงานยังไม่พร้อม (ยังไม่ได้รัน migration catering_event_menu_save_migration.sql)";
 
 /**
  * The reads and calls that fail only because the schema is not there yet —
- * the table or the function of catering_event_menu_items_migration.sql before
- * it has run. Treated as "no copies", never as an error, so this code can
- * deploy before the SQL and every screen keeps reading the shared set.
+ * a table or function of a migration that has not run. Treated as "not
+ * there", never as an unexplained error, so code can deploy before its SQL.
  */
 function isMissingSchemaError(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
@@ -2291,7 +2313,7 @@ function isMissingSchemaError(error: { code?: string; message?: string } | null)
   return /schema cache|does not exist/i.test(error.message ?? "");
 }
 
-/** The ONE way a copy is made: the database function, under the caller's own session. */
+/** The ONE way the price box's pick makes a copy: the database function, under the caller's own session. */
 async function copySetMenuIntoLine(supabase: Db, eventMenuId: string): Promise<number> {
   const { data, error } = await supabase.rpc("catering_copy_set_menu", { p_event_menu_id: eventMenuId });
   if (error) {
@@ -2301,16 +2323,20 @@ async function copySetMenuIntoLine(supabase: Db, eventMenuId: string): Promise<n
   return typeof data === "number" ? data : 0;
 }
 
-function toEventMenuDish(it: CateringSetMenuItem, sort_order: number): EventMenuDish {
-  return { id: it.id, menu_id: it.menu_id, menu_name: it.menu_name, selling_price: it.selling_price, quantity: it.quantity, section: it.section, sort_order, note: it.note };
+function toEventMenuDish(it: CateringSetMenuItem, sort_order: number, setMenuId: string): EventMenuDish {
+  return {
+    id: it.id, menu_id: it.menu_id, menu_name: it.menu_name, selling_price: it.selling_price, quantity: it.quantity,
+    section: it.section, sort_order, note: it.note, source_set_menu_id: setMenuId, source_event_menu_id: null,
+  };
 }
 
 /**
  * What is served at each set line of a booking — the booking's own copy, or
  * the shared set for a line from before the copy existed. Sales-safe: names,
- * per-table counts, sections and customer prices only. Every screen that
- * expands a set (kitchen sheet, function sheet, quotation, cost page, the
- * lock, the menu page) reads THIS, so they cannot disagree.
+ * per-table counts, sections, customer prices and provenance ids only. Every
+ * screen that expands a set (kitchen sheet, function sheet, quotation, cost
+ * page, the lock, the menu page, the price box's dish names) reads THIS, so
+ * they cannot disagree.
  */
 export async function getEventMenuDishes(eventId: string): Promise<Map<string, { source: DishSource; dishes: EventMenuDish[] }>> {
   await requireSales();
@@ -2322,7 +2348,7 @@ export async function getEventMenuDishes(eventId: string): Promise<Map<string, {
   const copyByLine = new Map<string, EventMenuDish[]>();
   const { data, error } = await supabase
     .from("catering_event_menu_items")
-    .select("id, event_menu_id, menu_id, quantity, section, sort_order, note, menus(name, selling_price)")
+    .select("id, event_menu_id, menu_id, quantity, section, sort_order, note, source_set_menu_id, source_event_menu_id, menus(name, selling_price)")
     .eq("event_id", eventId)
     .order("sort_order")
     .order("id");
@@ -2340,6 +2366,8 @@ export async function getEventMenuDishes(eventId: string): Promise<Map<string, {
       section: r.section as string,
       sort_order: Number(r.sort_order),
       note: r.note as string | null,
+      source_set_menu_id: (r.source_set_menu_id as string | null) ?? null,
+      source_event_menu_id: (r.source_event_menu_id as string | null) ?? null,
     });
     copyByLine.set(key, list);
   }
@@ -2351,7 +2379,9 @@ export async function getEventMenuDishes(eventId: string): Promise<Map<string, {
   const needShared = lines.filter((l) => l.set_menu_id && !l.copied && !(copyByLine.get(l.id)?.length));
   const sharedBySet = await getCateringSetMenuItemsForSets([...new Set(needShared.map((l) => l.set_menu_id as string))]);
   for (const l of lines) {
-    const shared = l.set_menu_id && !l.copied ? sharedBySet.get(l.set_menu_id)?.map((it, i) => toEventMenuDish(it, (i + 1) * 10)) : undefined;
+    const shared = l.set_menu_id && !l.copied
+      ? sharedBySet.get(l.set_menu_id)?.map((it, i) => toEventMenuDish(it, (i + 1) * 10, l.set_menu_id as string))
+      : undefined;
     out.set(l.id, resolveDishes(copyByLine.get(l.id), shared, l.copied));
   }
   return out;
@@ -2370,211 +2400,152 @@ async function beginEventMenuEdit(eventId: string): Promise<{ ok: true; supabase
   return { ok: true, supabase, actorId: profile.id };
 }
 
-async function loadSetLine(supabase: Db, eventId: string, eventMenuId: string) {
-  const { data, error } = await supabase
-    .from("catering_event_menus")
-    .select("id, event_id, set_menu_id, menu_id, set_name, catering_set_menus(name), catering_event_charges(label)")
-    .eq("id", eventMenuId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const r = data as Record<string, unknown> | null;
-  if (!r || r.event_id !== eventId) return null;
-  const line = { set_menu_id: r.set_menu_id as string | null, menu_id: r.menu_id as string | null };
-  if (!isSetLine(line)) return null;
-  const setMenu = r.catering_set_menus as { name: string } | null;
-  const charges = r.catering_event_charges as { label: string }[] | null;
-  const set_name = (r.set_name as string | null) ?? null;
-  return { id: r.id as string, ...line, copied: set_name != null, name: set_name ?? setMenu?.name ?? charges?.[0]?.label ?? "ชุดเมนูของงาน" };
-}
-
-async function loadEventMenuItem(supabase: Db, eventId: string, itemId: string) {
-  const { data, error } = await supabase
-    .from("catering_event_menu_items")
-    .select("id, event_id, event_menu_id, menu_id, quantity, menus(name, selling_price)")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const r = data as Record<string, unknown> | null;
-  if (!r || r.event_id !== eventId) return null;
-  const menu = r.menus as { name: string; selling_price: number } | null;
-  return { id: r.id as string, event_menu_id: r.event_menu_id as string, menu_id: r.menu_id as string, quantity: Number(r.quantity), menu_name: menu?.name ?? "-" };
-}
-
-async function dishName(supabase: Db, menuId: string): Promise<string | null> {
-  const { data } = await supabase.from("menus").select("name").eq("id", menuId).maybeSingle();
-  return (data?.name as string | undefined) ?? null;
-}
-
 function eventMenuError(err: unknown, fallback: string): EventMenuActionResult {
   const message = err instanceof Error ? err.message : fallback;
   // The UNIQUE (event_menu_id, menu_id): the same dish twice in one set.
-  if (/duplicate key|23505/.test(message)) return { status: "error", message: "เมนูนี้มีอยู่ในชุดนี้แล้ว" };
+  if (/duplicate key|23505/.test(message)) return { status: "error", message: "เมนูเดียวกันอยู่ในชุดเดียวกันสองครั้ง" };
   return { status: "error", message };
 }
 
+/** Every screen that shows what a set holds, or what it costs the customer. */
 function revalidateEventMenu(eventId: string) {
-  revalidatePath(`/owner/catering/${eventId}`);
-  revalidatePath(`/owner/catering/${eventId}/menu`);
-}
-
-/** A line from before the copy existed: make its copy now, explicitly. */
-export async function copyEventMenuFromSet(eventId: string, eventMenuId: string): Promise<EventMenuActionResult> {
-  const ctx = await beginEventMenuEdit(eventId);
-  if (!ctx.ok) return { status: "error", message: ctx.message };
-  try {
-    const line = await loadSetLine(ctx.supabase, eventId, eventMenuId);
-    if (!line) return { status: "error", message: "ไม่พบรายการชุดเมนูของงานนี้" };
-    if (!line.set_menu_id) return { status: "error", message: "รายการนี้ไม่ได้อ้างอิงชุดเมนูกลาง จึงไม่มีอะไรให้คัดลอก" };
-    const { error } = await ctx.supabase.rpc("catering_copy_set_menu", { p_event_menu_id: eventMenuId });
-    if (error) {
-      if (isMissingSchemaError(error)) return { status: "error", message: "ระบบสำเนาชุดเมนูยังไม่พร้อม (ยังไม่ได้รัน migration)" };
-      return { status: "error", message: error.message };
-    }
-    await logCateringActivity(ctx.supabase, eventId, ctx.actorId, "menu_edited", `คัดลอกชุดเมนูมาเป็นของงาน: ${line.name}`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "คัดลอกชุดเมนูไม่สำเร็จ");
-  }
+  for (const p of ["", "/menu", "/quote", "/kitchen-sheet", "/function-sheet", "/cost"]) revalidatePath(`/owner/catering/${eventId}${p}`);
 }
 
 /**
- * A custom set for this booking: a set line with its own name and price per
- * table and no shared source, plus the food charge every set line has — the
- * same pair addCateringEventMenu writes, so the price box and the quotation
- * treat it exactly like a picked set. Dishes are then added one by one.
+ * THE ONE SAVE of a booking's own menu. Every changed line, whole: its
+ * courses (replacing the copy), its price per table (THE price — written to
+ * the linked charge's unit_price, the number the price box shows), and for a
+ * new custom set the line and its charge. One database transaction
+ * (catering_save_event_menus): a payload lands entirely or not at all, so a
+ * failure on the third line leaves the first two exactly as they were.
+ *
+ * The recorded quotation is NOT re-issued here. The printed quotation reads
+ * the live charges and follows the new price at once; quoted_total is the
+ * total of the last ISSUED revision and stays until the booking screen's
+ * บันทึกและออกใบเสนอราคาใหม่ — the same rule the price box follows when a
+ * price is saved without re-issuing.
  */
-export async function createCustomEventMenu(
-  eventId: string,
-  input: { name: string; pricePerTable: number; tables: number },
-): Promise<EventMenuActionResult> {
-  const name = input.name.trim();
-  if (!name) return { status: "error", message: "กรุณาตั้งชื่อชุด" };
-  if (!Number.isFinite(input.pricePerTable) || input.pricePerTable < 0) return { status: "error", message: "ราคาต่อโต๊ะไม่ถูกต้อง" };
-  if (!Number.isFinite(input.tables) || input.tables <= 0) return { status: "error", message: "จำนวนโต๊ะต้องมากกว่า 0" };
+export async function saveEventMenus(eventId: string, lines: EventMenuSaveLine[]): Promise<EventMenuActionResult> {
+  const problem = validateSavePayload(lines);
+  if (problem) return { status: "error", message: problem };
   const ctx = await beginEventMenuEdit(eventId);
   if (!ctx.ok) return { status: "error", message: ctx.message };
   const { supabase } = ctx;
   try {
-    const { data: last } = await supabase.from("catering_event_menus").select("sort_order").eq("event_id", eventId).order("sort_order", { ascending: false }).limit(1);
-    const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-    const { data: created, error } = await supabase
-      .from("catering_event_menus")
-      .insert({ event_id: eventId, set_menu_id: null, menu_id: null, set_name: name, quantity: input.tables, sort_order: nextSort })
-      .select("id")
-      .single();
+    const { error } = await supabase.rpc("catering_save_event_menus", { p_event_id: eventId, p_lines: lines });
     if (error) {
-      if (isMissingSchemaError(error) || /one_target/.test(error.message)) {
-        return { status: "error", message: "ระบบชุดเมนูของงานยังไม่พร้อม (ยังไม่ได้รัน migration)" };
-      }
-      throw new Error(error.message);
+      if (isMissingSchemaError(error)) return { status: "error", message: SAVE_NOT_READY };
+      return eventMenuError(new Error(error.message), "บันทึกรายการอาหารไม่สำเร็จ");
     }
-    const { data: lastCharge } = await supabase.from("catering_event_charges").select("sort_order").eq("event_id", eventId).order("sort_order", { ascending: false }).limit(1);
-    const nextChargeSort = ((lastCharge?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-    const { error: chargeError } = await supabase.from("catering_event_charges").insert({
-      event_id: eventId, label: name, charge_type: "food", unit_price: input.pricePerTable, quantity: input.tables,
-      amount: input.pricePerTable * input.tables, note: null, event_menu_id: created.id, sort_order: nextChargeSort,
+    const names = lines.map((l) => l.set_name ?? "").filter(Boolean);
+    const created = lines.filter((l) => l.event_menu_id == null).length;
+    const what = [
+      `${lines.length} ชุด`,
+      created > 0 ? `สร้างชุดใหม่ ${created} (${names.join(", ")})` : "",
+    ].filter(Boolean).join(" · ");
+    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `บันทึกรายการอาหารของงาน: ${what}`);
+    revalidateEventMenu(eventId);
+    return { status: "ok" };
+  } catch (err) {
+    return eventMenuError(err, "บันทึกรายการอาหารไม่สำเร็จ");
+  }
+}
+
+// ── The chooser: what a set line may be filled from ─────────────────────────
+
+/** A standard set menu, as the chooser lists it. Sales-safe fields, but the chooser itself is for "edit". */
+export type EventMenuSourceSet = { id: string; name: string; price_per_set: number; dish_count: number };
+
+/** Another booking with at least one set line, as the chooser lists it. ALL of them, newest first — no window (Nik). */
+export type EventMenuSourceBooking = {
+  id: string;
+  event_date: string;
+  customer_name: string | null;
+  status: string;
+  lines: { id: string; name: string; tables: number }[];
+};
+
+export type EventMenuSources = { sets: EventMenuSourceSet[]; bookings: EventMenuSourceBooking[] };
+
+/**
+ * The two groups of the chooser (Nik): the standard set menus, and every
+ * other booking that has a set line, newest first. The screen searches the
+ * bookings by name. Bookings are read through fetchAllRows, so the list is
+ * complete however many there are, in a total order (event_date, id).
+ */
+export async function listEventMenuSources(eventId: string): Promise<EventMenuSources> {
+  const profile = await requireSales();
+  if (eventMenuAccess(profile.role) !== "edit") throw new Error(EDIT_REFUSED);
+  const supabase = await createClient();
+
+  const { data: setRows, error: setError } = await supabase
+    .from("catering_set_menus")
+    .select("id, name, price_per_set, catering_set_menu_items(id)")
+    .eq("is_active", true)
+    .order("name");
+  if (setError) throw setError;
+  const sets: EventMenuSourceSet[] = (setRows ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    name: r.name as string,
+    price_per_set: Number(r.price_per_set),
+    dish_count: ((r.catering_set_menu_items as { id: string }[] | null) ?? []).length,
+  }));
+
+  type Line = {
+    id: string; set_menu_id: string | null; menu_id: string | null; set_name: string | null; quantity: number; sort_order: number;
+    catering_set_menus: { name: string } | null; catering_event_charges: { label: string }[] | null;
+  };
+  const rows = await fetchAllRows<Record<string, unknown>>(({ from, to }) =>
+    supabase
+      .from("catering_events")
+      .select("id, event_date, status, catering_customers(name), catering_event_menus(id, set_menu_id, menu_id, set_name, quantity, sort_order, catering_set_menus(name), catering_event_charges(label))")
+      .neq("id", eventId)
+      .order("event_date", { ascending: false })
+      .order("id")
+      .range(from, to),
+  );
+  const bookings: EventMenuSourceBooking[] = [];
+  for (const r of rows) {
+    const lines = ((r.catering_event_menus as Line[] | null) ?? [])
+      .filter((m) => isSetLine(m))
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((m) => ({
+        id: m.id,
+        name: m.set_name ?? m.catering_set_menus?.name ?? m.catering_event_charges?.[0]?.label ?? "ชุดเมนูของงาน",
+        tables: Number(m.quantity),
+      }));
+    if (lines.length === 0) continue;
+    bookings.push({
+      id: r.id as string, event_date: r.event_date as string, status: r.status as string, lines,
+      customer_name: (r.catering_customers as { name: string } | null)?.name ?? null,
     });
-    if (chargeError) throw new Error(chargeError.message);
-    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_added", `สร้างชุดเมนูของงาน: ${name} (${input.tables} โต๊ะ)`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "สร้างชุดเมนูไม่สำเร็จ");
   }
+  return { sets, bookings };
 }
 
-export async function addEventMenuDish(eventId: string, eventMenuId: string, menuId: string, section: string): Promise<EventMenuActionResult> {
-  if (!EVENT_MENU_SECTIONS.includes(section)) return { status: "error", message: "หมวดไม่ถูกต้อง" };
-  const ctx = await beginEventMenuEdit(eventId);
-  if (!ctx.ok) return { status: "error", message: ctx.message };
-  const { supabase } = ctx;
-  try {
-    const line = await loadSetLine(supabase, eventId, eventMenuId);
-    if (!line) return { status: "error", message: "ไม่พบรายการชุดเมนูของงานนี้" };
-    // A line still reading the shared set (never copied) has no copy to add
-    // to: adding one dish would make a one-dish copy and silently drop the
-    // other courses. A copied line with no rows is different — it was
-    // emptied on purpose and may be rebuilt (review, 2026-09-19).
-    if (line.set_menu_id && !line.copied) return { status: "error", message: COPY_FIRST };
-    const name = await dishName(supabase, menuId);
-    if (!name) return { status: "error", message: "ไม่พบเมนูที่เลือก" };
-    const { data: last } = await supabase.from("catering_event_menu_items").select("sort_order").eq("event_menu_id", eventMenuId).order("sort_order", { ascending: false }).limit(1);
-    const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-    const { error } = await supabase.from("catering_event_menu_items").insert({
-      event_id: eventId, event_menu_id: eventMenuId, menu_id: menuId, quantity: 1, section, sort_order: nextSort, source_set_menu_id: null,
-    });
-    if (error) throw new Error(error.message);
-    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `เพิ่มเมนูในชุด ${line.name}: ${name}`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "เพิ่มเมนูไม่สำเร็จ");
-  }
-}
+export type EventMenuSource = { kind: "set"; setMenuId: string } | { kind: "line"; eventId: string; eventMenuId: string };
 
-/** Swap a course for another dish. The >10% price warning is the screen's; this does the swap the person confirmed. */
-export async function replaceEventMenuDish(eventId: string, itemId: string, newMenuId: string): Promise<EventMenuActionResult> {
-  const ctx = await beginEventMenuEdit(eventId);
-  if (!ctx.ok) return { status: "error", message: ctx.message };
-  const { supabase } = ctx;
-  try {
-    const item = await loadEventMenuItem(supabase, eventId, itemId);
-    if (!item) return { status: "error", message: "ไม่พบรายการอาหารของงานนี้" };
-    if (item.menu_id === newMenuId) return { status: "ok" };
-    const newName = await dishName(supabase, newMenuId);
-    if (!newName) return { status: "error", message: "ไม่พบเมนูที่เลือก" };
-    const { error } = await supabase.from("catering_event_menu_items").update({ menu_id: newMenuId, updated_at: new Date().toISOString() }).eq("id", itemId);
-    if (error) throw new Error(error.message);
-    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `เปลี่ยนเมนู: ${item.menu_name} → ${newName}`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "เปลี่ยนเมนูไม่สำเร็จ");
+/**
+ * The courses a source holds, ready to place into a draft. A standard set
+ * gives its current rows; another booking's line gives THAT BOOKING'S OWN
+ * list — its copy, or the shared set it still falls back to — not the shared
+ * set behind it (Nik). Nothing is written: the save records the provenance.
+ */
+export async function getEventMenuSourceDishes(source: EventMenuSource): Promise<{ name: string; dishes: EventMenuDish[] }> {
+  const profile = await requireSales();
+  if (eventMenuAccess(profile.role) !== "edit") throw new Error(EDIT_REFUSED);
+  if (source.kind === "set") {
+    const supabase = await createClient();
+    const { data, error } = await supabase.from("catering_set_menus").select("name").eq("id", source.setMenuId).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("ไม่พบชุดเมนูที่เลือก");
+    const items = (await getCateringSetMenuItemsForSets([source.setMenuId])).get(source.setMenuId) ?? [];
+    return { name: data.name as string, dishes: items.map((it, i) => toEventMenuDish(it, (i + 1) * 10, source.setMenuId)) };
   }
-}
-
-export async function updateEventMenuItem(
-  eventId: string,
-  itemId: string,
-  patch: { quantity?: number; section?: string; note?: string | null },
-): Promise<EventMenuActionResult> {
-  if (patch.quantity !== undefined && (!Number.isFinite(patch.quantity) || patch.quantity <= 0)) return { status: "error", message: "จำนวนต่อโต๊ะต้องมากกว่า 0" };
-  if (patch.section !== undefined && !EVENT_MENU_SECTIONS.includes(patch.section)) return { status: "error", message: "หมวดไม่ถูกต้อง" };
-  const ctx = await beginEventMenuEdit(eventId);
-  if (!ctx.ok) return { status: "error", message: ctx.message };
-  const { supabase } = ctx;
-  try {
-    const item = await loadEventMenuItem(supabase, eventId, itemId);
-    if (!item) return { status: "error", message: "ไม่พบรายการอาหารของงานนี้" };
-    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (patch.quantity !== undefined) update.quantity = patch.quantity;
-    if (patch.section !== undefined) update.section = patch.section;
-    if (patch.note !== undefined) update.note = patch.note?.trim() || null;
-    const { error } = await supabase.from("catering_event_menu_items").update(update).eq("id", itemId);
-    if (error) throw new Error(error.message);
-    const what = patch.quantity !== undefined ? `จำนวน ${item.quantity} → ${patch.quantity} ต่อโต๊ะ` : patch.section !== undefined ? `หมวด → ${patch.section}` : "หมายเหตุ";
-    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `แก้ไข ${item.menu_name}: ${what}`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "แก้ไขรายการไม่สำเร็จ");
-  }
-}
-
-export async function removeEventMenuDish(eventId: string, itemId: string): Promise<EventMenuActionResult> {
-  const ctx = await beginEventMenuEdit(eventId);
-  if (!ctx.ok) return { status: "error", message: ctx.message };
-  const { supabase } = ctx;
-  try {
-    const item = await loadEventMenuItem(supabase, eventId, itemId);
-    if (!item) return { status: "error", message: "ไม่พบรายการอาหารของงานนี้" };
-    const { error } = await supabase.from("catering_event_menu_items").delete().eq("id", itemId);
-    if (error) throw new Error(error.message);
-    await logCateringActivity(supabase, eventId, ctx.actorId, "menu_edited", `ลบเมนูออกจากชุด: ${item.menu_name}`);
-    revalidateEventMenu(eventId);
-    return { status: "ok" };
-  } catch (err) {
-    return eventMenuError(err, "ลบเมนูไม่สำเร็จ");
-  }
+  const lines = await getCateringEventMenus(source.eventId);
+  const line = lines.find((l) => l.id === source.eventMenuId && l.kind === "set");
+  if (!line) throw new Error("ไม่พบรายการชุดเมนูของงานที่เลือก");
+  const served = (await getEventMenuDishes(source.eventId)).get(source.eventMenuId);
+  return { name: line.name, dishes: served?.dishes ?? [] };
 }

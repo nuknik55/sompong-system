@@ -110,7 +110,9 @@ function linesFromCharges(charges: CateringCharge[]): Line[] {
     // a manual line — the same thread-it-through rule as event_menu_id.
     kind: c.event_menu_id ? (c.event_menu_kind === "set" ? "set" : "dish") : c.rate_id ? "rate" : c.charge_type === "discount" ? "discount" : "manual",
     section: sectionForCharge(c),
-    refId: c.rate_id,
+    // A menu line's refId is the set or dish it references, so the picker's
+    // "one line per set" check sees a LOADED line too (review, 2026-09-19).
+    refId: c.event_menu_id ? c.event_menu_ref : c.rate_id,
     eventMenuId: c.event_menu_id,
     label: c.label,
     unitPrice: String(c.unit_price),
@@ -137,6 +139,7 @@ export function BookingScreen({
   setMenuOptions,
   dishOptions,
   defaultStaffId,
+  dishNamesByMenuLine = {},
 }: {
   event: CateringEvent | null;
   initialCharges: CateringCharge[];
@@ -151,6 +154,14 @@ export function BookingScreen({
   dishOptions: CateringDishOption[];
   /** The login's linked employee; pre-selected as taker on a new booking. */
   defaultStaffId: string | null;
+  /**
+   * Per set line (catering_event_menus.id): the names of what is served at it,
+   * in section order — the booking's own copy, or the shared set for a line
+   * from before the copy existed (getEventMenuDishes). Shown under the set's
+   * name in the price box (Nik, 2026-09-19: the names, not a count). A set
+   * added on this screen and not yet saved has no entry and shows nothing.
+   */
+  dishNamesByMenuLine?: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -202,7 +213,10 @@ export function BookingScreen({
     }]);
   }
   function addMenu(kind: "set" | "dish", id: string) {
-    if (lines.some((l) => l.kind === kind && l.refId === id)) return; // one line per set: the server bumps quantity on a repeat add
+    // One line per set or dish, loaded lines included. A second pick of a set
+    // the booking already has used to make TWO charge rows for one line and
+    // print the set twice (review, 2026-09-19); the server refuses it too.
+    if (lines.some((l) => l.kind === kind && l.refId === id)) return;
     const opt = kind === "set" ? setMenuOptions.find((s) => s.id === id) : dishOptions.find((d) => d.id === id);
     if (!opt) return;
     const price = kind === "set" ? (opt as CateringSetMenuOption).price_per_set : (opt as CateringDishOption).selling_price;
@@ -510,10 +524,22 @@ export function BookingScreen({
                       {l.kind === "manual" ? (
                         <input className="line-input" placeholder="รายการ" value={l.label} disabled={isPending} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
                       ) : (
-                        <span className="truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
+                          {/* THE DISH NAMES, under the set (Nik). Comma-separated,
+                              clamped to two rows by CSS with the full list in the
+                              tooltip — so a long set is cut by the space it has,
+                              never by a count or a "+3 more". */}
+                          {l.kind === "set" && l.eventMenuId && (dishNamesByMenuLine[l.eventMenuId]?.length ?? 0) > 0 && (
+                            <p className="line-clamp-2 text-xs leading-snug text-neutral-500" title={dishNamesByMenuLine[l.eventMenuId]!.join(", ")}>
+                              {dishNamesByMenuLine[l.eventMenuId]!.join(", ")}
+                            </p>
+                          )}
+                        </div>
                       )}
                       <input type="number" className="line-input text-right tabular-nums" value={l.kind === "discount" ? String(Math.abs(toNum(l.unitPrice) ?? 0) || "") : l.unitPrice}
-                        disabled={isPending || l.kind === "set" || l.kind === "dish"} title={l.kind === "set" || l.kind === "dish" ? "ราคาตามชุดเมนู" : "ราคาต่อหน่วย"}
+                        disabled={isPending || l.kind === "set" || l.kind === "dish"}
+                        title={l.kind === "set" ? "ราคาต่อโต๊ะ — แก้ไขได้ในหน้ารายการอาหารของงาน (ตัวเลขเดียวกัน)" : l.kind === "dish" ? "ราคาตามเมนู" : "ราคาต่อหน่วย"}
                         onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} />
                       <input type="number" min={1} className="line-input text-right tabular-nums" value={l.quantity} disabled={isPending}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
