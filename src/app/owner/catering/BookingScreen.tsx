@@ -617,8 +617,13 @@ export function BookingScreen({
             className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
             {isPending ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
           </button>
-          <button type="button" onClick={() => save(true)} disabled={!canSave || lines.length === 0}
-            title={lines.length === 0 ? "ยังไม่มีรายการราคา" : undefined}
+          {/* An EMPTY price box may still be issued once a quotation exists:
+              a booking whose set lines were all removed has a live total of 0
+              against a recorded total that is not, and re-issuing is the only
+              way to reconcile them — refusing it left the booking unlockable
+              for good (review, 2026-09-20). */}
+          <button type="button" onClick={() => save(true)} disabled={!canSave || (lines.length === 0 && !event?.quote_number)}
+            title={lines.length === 0 && !event?.quote_number ? "ยังไม่มีรายการราคา" : undefined}
             className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
             {isPending ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
           </button>

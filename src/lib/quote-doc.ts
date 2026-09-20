@@ -196,7 +196,53 @@ export function moneyRowsFor(state: DocState, m: DocMoney): { label: string; amo
     // sign, and "หัก ... -5,000.00" was double negation on a customer
     // document. The balance arithmetic is unchanged; only the printed sign.
     if (m.depositPaid != null) rows.push({ label: "หัก เงินมัดจำที่ชำระแล้ว", amount: m.depositPaid });
-    if (m.balance != null) rows.push({ label: "ยอดคงเหลือ", amount: m.balance, strong: true });
+    // AN OVERPAYMENT IS SAID OUT LOUD, NOT PRINTED AS A NEGATIVE (Nik,
+    // 2026-09-20). A booking whose total falls after the deposit was taken —
+    // a set removed, a price cut — leaves the customer in credit. "ยอดคงเหลือ
+    // −2,500.00" reads as an amount owed BY the customer with a stray minus
+    // in front of it, which is the opposite of the truth. The positive figure
+    // goes under a label that names the direction, the way the หัก row
+    // already carries its own sign. The arithmetic in DocMoney.balance is
+    // untouched; only what prints changes.
+    if (m.balance != null && m.balance < 0) {
+      rows.push({ label: "ชำระเกิน — ต้องคืนลูกค้า", amount: Math.abs(m.balance), strong: true });
+    } else if (m.balance != null) {
+      rows.push({ label: "ยอดคงเหลือ", amount: m.balance, strong: true });
+    }
   }
   return rows;
+}
+
+// ── Is the issued quotation still the one the lines describe? ───────────────
+
+/**
+ * Half a satang. The totals are NUMERIC in Postgres and plain numbers here,
+ * so a sum of the same rows can differ in the last bit; a difference smaller
+ * than this is not a difference anyone can be shown or paid.
+ */
+export const QUOTE_TOTAL_EPSILON = 0.005;
+
+/**
+ * STALE = the total recorded when the quotation was last ISSUED
+ * (`catering_events.quoted_total`) no longer equals the sum of the booking's
+ * current charge rows. Nothing else counts: not the time, not the revision,
+ * not which lines moved — only the two totals, because that is exactly the
+ * figure the cost page reports as revenue and the lock freezes forever.
+ *
+ * A booking with no recorded total is NOT stale: the cost page falls back to
+ * the live total for it, so there is nothing to disagree with.
+ */
+export function quoteIsStale(quotedTotal: number | null, liveTotal: number): boolean {
+  if (quotedTotal == null) return false;
+  return Math.abs(quotedTotal - liveTotal) > QUOTE_TOTAL_EPSILON;
+}
+
+const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Why the lock is refused, and what to do about it. */
+export function staleQuoteMessage(quotedTotal: number, liveTotal: number): string {
+  return (
+    `ใบเสนอราคาที่ออกไว้เป็นยอด ฿${baht(quotedTotal)} แต่ยอดรายการปัจจุบันคือ ฿${baht(liveTotal)} — ` +
+    `ล็อกตอนนี้จะบันทึกรายรับเป็นยอดเก่าไว้ถาวร กรุณากด “บันทึกและออกใบเสนอราคาใหม่” ในหน้าจองก่อน แล้วจึงล็อกต้นทุน`
+  );
 }

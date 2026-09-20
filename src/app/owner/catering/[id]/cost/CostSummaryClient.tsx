@@ -7,6 +7,7 @@ import { addCateringEventLabor, deleteCateringEventLabor } from "../../actions";
 import type { CateringEventLabor, CateringTransferCostRate } from "../../actions";
 import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum, thFullDate } from "../../shared-utils";
 import { lockCateringEventCost, unlockCateringEventCost } from "./actions";
+import { staleQuoteMessage } from "@/lib/quote-doc";
 import type { CateringEventCostSnapshot } from "./actions";
 
 // ต้นทุนภายใน has no sub-nav entry (see catering-sub-nav.tsx), so the link
@@ -101,6 +102,8 @@ export function CostSummaryClient({
   foodCost,
   laborCost,
   hasUnknownFoodCost,
+  staleQuote,
+  costLockedAt,
   snapshot,
 }: {
   eventId: string;
@@ -112,6 +115,10 @@ export function CostSummaryClient({
   foodCost: number;
   laborCost: number;
   hasUnknownFoodCost: boolean;
+  /** Set when the issued quotation no longer matches the lines: locking is refused until it is re-issued. */
+  staleQuote: { quoted: number; live: number } | null;
+  /** catering_events.cost_locked_at — the column every WRITE guard reads. */
+  costLockedAt: string | null;
   snapshot: CateringEventCostSnapshot | null;
 }) {
   const router = useRouter();
@@ -121,7 +128,17 @@ export function CostSummaryClient({
   const [confirmLock, setConfirmLock] = useState(false);
   const [confirmUnlock, setConfirmUnlock] = useState(false);
 
-  const locked = snapshot !== null;
+  // LOCKED IS EITHER HALF (review, 2026-09-20). The lock writes the snapshot
+  // and then stamps cost_locked_at, with no transaction between them, so
+  // half-written states exist. Reading "locked" from the snapshot alone let a
+  // stamped booking with no snapshot render the Lock button while every write
+  // guard read the stamp and refused — and with the staleness check added,
+  // that booking had no way out at all. Either half now counts as locked, so
+  // ปลดล็อก is always offered and always clears both.
+  const hasSnapshot = snapshot !== null;
+  const stamped = costLockedAt !== null;
+  const locked = stamped || hasSnapshot;
+  const halfLocked = stamped !== hasSnapshot;
   const profit = revenue - foodCost - laborCost;
   const profitPct = revenue > 0 ? (profit / revenue) * 100 : null;
 
@@ -129,7 +146,11 @@ export function CostSummaryClient({
   // the revenue figure — see COST_SNAPSHOT_DESIGN.md decision 2. Both are
   // re-checked server-side in lockCateringEventCost() too; this just keeps
   // the button honest about why it's disabled.
-  const canLock = eventStatus === "done" && quoteNumber !== null;
+  // The third condition is new (Nik, 2026-09-20): locking with a stale
+  // quotation freezes the OLD revenue against the NEW food cost, and the
+  // cost page then reads the snapshot instead of recomputing, so nothing
+  // detects it afterwards. lockCateringEventCost refuses it server-side too.
+  const canLock = eventStatus === "done" && quoteNumber !== null && staleQuote === null;
 
   function pickRate(rate: CateringTransferCostRate) {
     setError(null);
@@ -187,8 +208,11 @@ export function CostSummaryClient({
     setError(null);
     startTransition(async () => {
       try {
-        await lockCateringEventCost(eventId);
+        // A refusal comes back as a VALUE: production redacts a thrown Server
+        // Action message, and these refusals name the thing to go and do.
+        const res = await lockCateringEventCost(eventId);
         setConfirmLock(false);
+        if (!res.ok) { setError(res.error); return; }
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "ล็อกต้นทุนไม่สำเร็จ");
@@ -213,13 +237,17 @@ export function CostSummaryClient({
 
   return (
     <div className="space-y-5">
-      {locked && (
+      {/* Gated on the SNAPSHOT, not on "locked": this sentence describes the
+          frozen figures below it, and a stamped booking whose snapshot is
+          missing has none to describe (review, 2026-09-20). The half-lock
+          banner by the button covers that case instead. */}
+      {hasSnapshot && (
         <div className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-700">
           {/* snapshot_at is UTC — a raw .slice(0, 10) can read a day behind
               actual Thai calendar time for a lock made ~00:00-07:00 local
               (UTC+7). Converting via Bangkok-local formatting first avoids
               that. */}
-          ล็อกต้นทุนแล้วเมื่อ {thFullDate(new Date(snapshot.snapshot_at).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))} — ตัวเลขด้านล่างเป็นค่าที่บันทึกไว้ถาวร ไม่คำนวณสดอีกต่อไป
+          ล็อกต้นทุนแล้วเมื่อ {thFullDate(new Date(snapshot!.snapshot_at).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))} — ตัวเลขด้านล่างเป็นค่าที่บันทึกไว้ถาวร ไม่คำนวณสดอีกต่อไป
         </div>
       )}
 
@@ -323,6 +351,13 @@ export function CostSummaryClient({
         )}
 
         <div className="mt-4 border-t border-neutral-100 pt-3">
+          {halfLocked && (
+            <p className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ⚠ การล็อกต้นทุนของงานนี้บันทึกไว้ไม่ครบ
+              {stamped ? " (มีสถานะล็อกแต่ยังไม่มีตัวเลขที่บันทึกไว้)" : " (มีตัวเลขที่บันทึกไว้แต่ยังไม่ได้ตั้งสถานะล็อก)"}
+              {" "}— กดปลดล็อกเพื่อล้างให้เรียบร้อย แล้วจึงล็อกใหม่อีกครั้ง
+            </p>
+          )}
           {locked ? (
             <button
               type="button"
@@ -346,7 +381,9 @@ export function CostSummaryClient({
                 <p className="mt-1.5 text-xs text-neutral-400">
                   {eventStatus !== "done"
                     ? "ล็อกต้นทุนได้เฉพาะงานที่มีสถานะ \"เสร็จสิ้น\" เท่านั้น"
-                    : "ต้องออกใบเสนอราคาก่อนจึงจะล็อกต้นทุนได้"}
+                    : quoteNumber === null
+                      ? "ต้องออกใบเสนอราคาก่อนจึงจะล็อกต้นทุนได้"
+                      : staleQuoteMessage(staleQuote!.quoted, staleQuote!.live)}
                 </p>
               )}
             </>

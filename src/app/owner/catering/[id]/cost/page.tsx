@@ -5,6 +5,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
+import { quoteIsStale } from "@/lib/quote-doc";
 import {
   getCateringEvent, getCateringEventMenus, getCateringCharges, getEventMenuDishes,
   getCateringEventLabor, getCateringTransferCostRates,
@@ -41,6 +42,10 @@ export default async function CateringEventCostPage({
   let foodCost: number;
   let laborCost: number;
   let hasUnknownFoodCost: boolean;
+  // Set only for an UNLOCKED booking whose issued quotation no longer matches
+  // its lines. The lock action refuses that (see its comment); this is so the
+  // button says why rather than failing when pressed.
+  let staleQuote: { quoted: number; live: number } | null = null;
 
   if (snapshot) {
     // Locked — read the frozen record instead of recomputing. Skips the
@@ -92,6 +97,9 @@ export default async function CateringEventCostPage({
     const liveChargesTotal = charges.reduce((s, c) => s + c.amount, 0);
 
     revenue = event.quoted_total ?? liveChargesTotal;
+    if (quoteIsStale(event.quoted_total, liveChargesTotal)) {
+      staleQuote = { quoted: event.quoted_total as number, live: liveChargesTotal };
+    }
     foodCost = computedFoodCost;
     laborCost = laborEntries.reduce((s, l) => s + l.amount, 0);
     hasUnknownFoodCost = computedHasUnknown;
@@ -117,6 +125,8 @@ export default async function CateringEventCostPage({
         foodCost={foodCost}
         laborCost={laborCost}
         hasUnknownFoodCost={hasUnknownFoodCost}
+        staleQuote={staleQuote}
+        costLockedAt={event.cost_locked_at}
         snapshot={snapshot}
       />
     </div>

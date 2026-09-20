@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
+import { quoteIsStale, staleQuoteMessage } from "@/lib/quote-doc";
 import {
   getCateringEvent, getCateringEventMenus, getCateringCharges, getEventMenuDishes,
   getCateringEventLabor,
@@ -63,7 +64,9 @@ export async function getCateringEventCostSnapshot(eventId: string): Promise<Cat
  * overwrites the same row with freshly computed numbers and re-sets the
  * timestamp — safe to retry from either state.
  */
-export async function lockCateringEventCost(eventId: string): Promise<void> {
+export type LockResult = { ok: true } | { ok: false; error: string };
+
+export async function lockCateringEventCost(eventId: string): Promise<LockResult> {
   await requireAdmin();
   const supabase = await createClient();
 
@@ -74,9 +77,38 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
     getCateringEventLabor(eventId),
     getCostingContext(),
   ]);
-  if (!event) throw new Error("ไม่พบข้อมูลงาน");
-  if (event.status !== "done") throw new Error("ล็อกต้นทุนได้เฉพาะงานที่มีสถานะ \"เสร็จสิ้น\" เท่านั้น");
-  if (!event.quote_number) throw new Error("ต้องออกใบเสนอราคาก่อนจึงจะล็อกต้นทุนได้");
+  // RETURNED, NOT THROWN. Production redacts a thrown Server Action message
+  // to a digest, so a refusal the person is supposed to act on has to come
+  // back as a value — the same reason saveBooking returns its refusals.
+  if (!event) return { ok: false, error: "ไม่พบข้อมูลงาน" };
+  if (event.status !== "done") return { ok: false, error: "ล็อกต้นทุนได้เฉพาะงานที่มีสถานะ \"เสร็จสิ้น\" เท่านั้น" };
+  if (!event.quote_number) return { ok: false, error: "ต้องออกใบเสนอราคาก่อนจึงจะล็อกต้นทุนได้" };
+
+  // THE QUOTATION MUST STILL DESCRIBE THE LINES (Nik, 2026-09-20).
+  //
+  // `revenue` below is `quoted_total ?? live`, and the snapshot freezes it
+  // permanently. So between changing the lines and re-issuing the quotation
+  // there is a window where revenue is the OLD total and the food cost is the
+  // NEW one — remove a set and the profit is overstated by the whole set.
+  // Locking in that window makes the error the permanent record, and the cost
+  // page then reads the snapshot instead of recomputing, so nothing detects
+  // it afterwards. The review of 2026-09-20 found it; this refuses it.
+  //
+  // IN THE APP this action is the only way the column is set, so there is no
+  // second path around the check. AT THE DATABASE there is: the lock policies
+  // let owner and admin UPDATE any column of catering_events, so a direct
+  // PATCH can still stamp it. That is the same latitude those two roles have
+  // everywhere else here, and the half-lock repair below is what makes it
+  // recoverable rather than permanent.
+  //
+  // AN ALREADY-STAMPED BOOKING IS EXEMPT: re-running the lock is how a
+  // half-written one is completed, and refusing that left the booking with no
+  // way out at all — the lock refused for staleness, the cure refused by the
+  // lock, and no unlock offered (review, 2026-09-20).
+  const liveChargesTotal = charges.reduce((s, c) => s + c.amount, 0);
+  if (!event.cost_locked_at && quoteIsStale(event.quoted_total, liveChargesTotal)) {
+    return { ok: false, error: staleQuoteMessage(event.quoted_total as number, liveChargesTotal) };
+  }
 
   // Same computation as [id]/cost/page.tsx's live path — see that file for
   // the set-menu-expansion reasoning (a set's price_per_set is a sale
@@ -93,9 +125,13 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
   // from the copy. A function not yet installed (its migration unrun) is a
   // missing schema, tolerated: the snapshot falls back to the shared set as
   // before, and nothing is frozen that was not frozen already.
+  // Skipped entirely when the booking is already stamped: the copy function
+  // refuses a locked booking, so on a re-run to complete a half-written lock
+  // this loop would throw before the snapshot could be written (review,
+  // 2026-09-20). Nothing is lost — a stamped booking's lines are frozen.
   const before = await getEventMenuDishes(eventId);
   let copied = 0;
-  for (const [lineId, served] of before) {
+  for (const [lineId, served] of event.cost_locked_at ? [] : before) {
     if (served.source !== "shared") continue;
     const { data, error } = await supabase.rpc("catering_copy_set_menu", { p_event_menu_id: lineId });
     if (error) {
@@ -147,7 +183,7 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
   }
 
   const totalFoodCost = ingredientCost + qFactorAmount;
-  const liveChargesTotal = charges.reduce((s, c) => s + c.amount, 0);
+  // Equal to liveChargesTotal by the guard above, unless nothing was ever issued.
   const revenue = event.quoted_total ?? liveChargesTotal;
   const laborCost = laborEntries.reduce((s, l) => s + l.amount, 0);
   const grossProfit = revenue - totalFoodCost;
@@ -182,6 +218,7 @@ export async function lockCateringEventCost(eventId: string): Promise<void> {
 
   revalidatePath(`/owner/catering/${eventId}`);
   revalidatePath(`/owner/catering/${eventId}/cost`);
+  return { ok: true };
 }
 
 /**

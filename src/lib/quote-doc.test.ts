@@ -1,7 +1,10 @@
 /** Run with: npm test — the quote/deposit/invoice document's rules (document C). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDocState, docMoney, conditionsFor, moneyRowsFor, fmtMoneyDoc, sortForCustomerDoc, DOC_TITLE } from "./quote-doc.ts";
+import {
+  parseDocState, docMoney, conditionsFor, moneyRowsFor, fmtMoneyDoc, sortForCustomerDoc, DOC_TITLE,
+  quoteIsStale, staleQuoteMessage, QUOTE_TOTAL_EPSILON,
+} from "./quote-doc.ts";
 
 test("the three states, and an unknown one falls back to the quote", () => {
   assert.equal(parseDocState("quote"), "quote");
@@ -38,6 +41,44 @@ test("the balance uses what was RECEIVED, not what was due", () => {
   assert.equal(m.depositDue, 4500, "the agreed term");
   assert.equal(m.depositPaid, 5000, "the fact");
   assert.equal(m.balance, 10000, "15,000 - 5,000, not 15,000 - 4,500");
+});
+
+test("AN OVERPAYMENT IS SAID OUT LOUD, never printed as a negative balance", () => {
+  // Nik, 2026-09-20: a set removed after the deposit was taken can put the
+  // customer in credit. "ยอดคงเหลือ −2,500.00" reads as money the customer
+  // owes, with a stray minus in front of it.
+  const over = docMoney(2500, 30, 5000);
+  assert.equal(over.balance, -2500, "the arithmetic still tells the truth");
+  const rows = moneyRowsFor("invoice", over);
+  const last = rows[rows.length - 1]!;
+  assert.equal(last.label, "ชำระเกิน — ต้องคืนลูกค้า");
+  assert.equal(last.amount, 2500, "a positive figure under a label that names the direction");
+  assert.ok(rows.every((r) => r.amount >= 0), "no negative number prints on a customer document");
+  assert.ok(!rows.some((r) => r.label === "ยอดคงเหลือ"), "and not both rows");
+  // Exactly settled is a balance of zero, not an overpayment.
+  const settled = moneyRowsFor("invoice", docMoney(5000, 30, 5000));
+  assert.equal(settled[settled.length - 1]!.label, "ยอดคงเหลือ");
+  assert.equal(settled[settled.length - 1]!.amount, 0);
+  // The ordinary case is untouched.
+  const owing = moneyRowsFor("invoice", docMoney(15000, 30, 5000));
+  assert.equal(owing[owing.length - 1]!.label, "ยอดคงเหลือ");
+  assert.equal(owing[owing.length - 1]!.amount, 10000);
+});
+
+test("STALE = the issued total no longer equals the sum of the lines, and nothing else", () => {
+  assert.equal(quoteIsStale(15000, 15000), false);
+  assert.equal(quoteIsStale(15000, 12500), true, "a set was removed after the quotation was issued");
+  assert.equal(quoteIsStale(12500, 15000), true, "and the other direction");
+  assert.equal(quoteIsStale(null, 15000), false, "never issued: the cost page uses the live total, so nothing disagrees");
+  assert.equal(quoteIsStale(0, 0), false);
+  // Float dust in a sum of NUMERICs is not a difference anyone can be paid.
+  assert.equal(quoteIsStale(0.1 + 0.2, 0.3), false);
+  assert.equal(quoteIsStale(15000, 15000 + QUOTE_TOTAL_EPSILON / 2), false);
+  assert.equal(quoteIsStale(15000, 15000.01), true, "one satang is a real difference");
+  const msg = staleQuoteMessage(15000, 12500);
+  assert.match(msg, /฿15,000\.00/);
+  assert.match(msg, /฿12,500\.00/);
+  assert.match(msg, /บันทึกและออกใบเสนอราคาใหม่/);
 });
 
 test("nothing received means no balance line at all", () => {
