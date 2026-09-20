@@ -202,7 +202,8 @@ whenever a check is added or its definition changes.**
 | `public.current_role()` | returns the caller's `profiles.role`; NULL with no session | — | `migrations/0001_init.sql` |
 | `public.can_see_prep(id)` | owner by role; anyone else, admins included, only with a grant row for that prep | — | `prep_owner_only_predicate_migration.sql` |
 | `public.catering_event_unlocked(id)` | TRUE when the booking exists and `cost_locked_at` is null; used by the lock policies | — | `catering_sales_limits_migration.sql` |
-| `public.catering_copy_set_menu(line_id)` | **owner, admin, sales** — copies a shared set's dishes into a booking's set line, verbatim, once; refuses a locked booking. SECURITY DEFINER, so its own checks stand in for the write policies it bypasses | — | `catering_event_menu_items_migration.sql` (written 2026-09-19, NOT applied) |
+| `public.catering_copy_set_menu(line_id)` | **owner, admin, sales** — copies a shared set's dishes into a booking's set line, verbatim, once; refuses a locked booking. SECURITY DEFINER, so its own checks stand in for the write policies it bypasses | — | `catering_event_menu_items_migration.sql` (applied 2026-09-19) |
+| `public.catering_save_event_menus(event_id, lines)` | **owner, admin** — ONE save of a booking's own menu: every changed set line whole (courses, THE price per table on the linked charge, a new custom set with its charge), in one transaction; refuses a locked booking, a line of another booking, a single dish, a duplicate set name, and a draft whose conflict token (row ids + price as opened) is stale. SECURITY INVOKER: runs under the caller's own RLS | — | `catering_event_menu_save_migration.sql` (applied 2026-09-19) |
 
 **There is no `is_admin()`,** in the repo or in the database (the list of
 functions the database exposes, read 2026-09-17). "Owner, admin and editor"

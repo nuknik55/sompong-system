@@ -119,6 +119,7 @@ and dated here.
 | `permissions_batch_2026_09_17.sql` | 2026-09-17 | **Four parts.** A `profiles`: restrictive write policies, so an admin can no longer make itself owner, give the hr role, or touch the owner's, hr's or another admin's row. B `expense_entries` + `coa`: restrictive policies and `coa_is_open()`, so only the owner writes an owner-only account (790) or changes such an account; reads unchanged. C `pending_changes`: restrictive read and filing policies, four functions, and UPDATE narrowed to the four columns approval writes. D `sop-photos`: uploads by role and file name, no overwrite or delete through the API; reads stay public. **Verified by the file's own result table, which Nik pasted in full (168 rows):** every judged row ok (A1–A16, B1–B17, the 18-case prep-id check, C1–C19, "none of the 11 synthetic requests remains", D1–D14); no "PART D NOT APPLIED" and no "NOT DEMONSTRATED"; the survey rows list every new policy and none of the three old `sop photos auth …` write policies; `batch_log` count 0. The 15-row check query below was NOT run; that table is the evidence. **Its "before" rows already showed the closed state**, and the survey, which runs before any change, already listed the new policies, so the batch was already in place when this run began: an earlier run had applied it, and this one re-created the same objects, which the file is built to do safely. The first attempt had been cancelled before anything ran (the editor warned about a temporary table); the version that ran creates no table and changes no data. The five app checks at the end of the file are still Nik's to do. |
 | `catering_sales_limits_migration.sql` | 2026-09-17 | **Queue item 33.** 18 restrictive policies and `catering_event_unlocked(uuid)`. Only owner and admin write set menus and their items. For everyone else a cost-locked booking's own row, menu lines and charges are read-only, and `cost_locked_at` stays empty on every booking row they write. The history is append-only through the API for every role, and a new line must name its caller and carry the time of its own insert. **Verified by the file's own result table, as Nik reported it: 138 rows** (the header's 130 plus the 8 surveyed policies); every judged row ok (S1–S15, L1–L34 with L25, the cascade test, counted by hand, and H1–H14) and no FAIL; the last row: nothing the tests wrote remains, counts unchanged (set menus 3, items 17, events 3, menu lines 11, charges 17, history 54). No booking was locked at run time. The survey rows and the three app checks at the end of the file were not reported. Not covered, by design: a locked booking's staff list, and two foreign-key actions (the file's header). Changed on one point by `catering_history_owner_edit_migration.sql` (applied the same day, below): the owner may correct and remove history lines. **Survey rows 5 and 6, pasted by Nik 2026-09-17:** `catering_event_cost_snapshots.catering_cost_snapshots_rw` and `catering_event_labor.catering_event_labor_rw` are both PERMISSIVE ALL TO authenticated, USING and WITH CHECK `role IN ('owner','admin')`. The labor policy matches `catering_event_labor_migration.sql`. The snapshot policy matches the untracked `COST_SNAPSHOT_SCHEMA_SQL.md`, NOT `catering_migration.sql`, which still admits sales: the repo drift item 33 supposed, now confirmed live (see item 33). |
 | `catering_event_menu_items_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 1.** `catering_event_menu_items` (RLS on; owner/admin/sales read, owner/admin write, the sales-limits lock shape restrictively on top), `catering_event_menus.set_name`, the one-target CHECK widened to allow a custom set, and `catering_copy_set_menu(uuid)` SECURITY DEFINER. **Verified by the file's own result table, as Nik ran it: 32 rows, every judged row ok** — X1–X2 (the harness proving its own refusal attribution, both directions), the four survey rows, C1–C4, R1–R2, W1–W7, S1, K1–K3, L1–L4, D1, every test write rolled back, counts unchanged (events 4, lines 12, charges 22, copies 0), RLS on, and the row-count assertion confirming 31 evidence rows. It took four runs to get there: three defects, each of which let the file report something other than what happened — see "Three ways a migration lied" below. **Production holds 4 pre-feature set lines with no copy**: they fall back to the shared set menu, exactly as every screen read them before this feature, until someone copies them on the menu page or the booking is locked (locking copies them first). |
+| `catering_event_menu_save_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 2.** `catering_save_event_menus(uuid, jsonb)` — the ONE save of a booking's own menu: every changed set line whole (its courses, THE price per table on the linked charge, a new custom set with its charge), in one transaction, SECURITY INVOKER. **Verified by the file's own result table, as Nik ran it: 30 rows, every judged row ok** — X1–X2, the survey, V1–V18, S1, L1–L2, every test write rolled back, counts unchanged (events 4, lines 15, charges 25, copies 7), and the row-count assertion confirming 29 evidence rows. First run, no failures. It refuses: a caller who is not owner or admin, a booking that does not exist, a cost-locked booking, a line of another booking or a single dish, a new set with no name or no tables, a new set named like a set line the booking already has, a negative price, the same dish twice, an invalid section (the table's CHECK), and a draft whose conflict token — the row ids and price the screen opened with — is stale. **Production holds 3 pre-feature set lines still falling back to the shared set menu**, and 7 stored copies. |
 | `catering_history_owner_edit_migration.sql` | 2026-09-17 | **Item 33, follow-up B.** The two policies that refused every history update and delete replaced by two admitting the owner alone (`is_owner_only()`); UPDATE on `catering_event_activity_log` narrowed to `description` for anon and authenticated, so an edit through the app cannot change who wrote a line, when, its kind or its booking. Insert rule unchanged. **Verified by the file's own result table, as Nik reported it: 49 rows, all ok.** P1 after: authenticated may update `description` only, anon nothing. E1–E4 refused for sales and admin; E5–E10 (the owner touching any other column) error 42501; E11/E12 owner rows=1; I1–I5 as expected. Row 49: 54 history lines, checksum unchanged, no probe line left. **App check done by Nik, both directions:** before the run, the owner's edit showed "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้…"; after it, the owner's edit saved. |
 
 ### Three ways a migration lied, in one file, in one week
@@ -2518,8 +2519,187 @@ In order. Nothing here is started unless it says so.
 
 39. ~~**Catering per-event menus, round 1 of 2**~~ (Nik, 2026-09-19).
     **ROUND 1 DONE AND APPLIED.** The migration ran clean on 2026-09-19 (32
-    rows, every judged row ok — the applied table above). Round 2 — copying
-    from a past booking, and printing a menu card — is not started.
+    rows, every judged row ok — the applied table above).
+
+    **ROUND 2 (copy from a past booking, the save model, the price per
+    table, and Nik's simplifications) — DONE, APPLIED AND SHIPPED
+    2026-09-19/20.** `catering_event_menu_save_migration.sql` ran clean on
+    its first run (30 rows, every judged row ok — the applied table above).
+    Printing a menu card is still not started, and is the only part of
+    round 2 that is not built.
+
+    **THREE THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
+    recorded because each will look like one to whoever meets it first:
+
+    1. **The price per table is edited on the menu page now, and the price
+       box's input for a set line is disabled.** It is one stored number
+       (`catering_event_charges.unit_price` on the charge linked to the set
+       line), and the menu page is where it is typed. The price box shows
+       it and says so in the input's tooltip. Changing it there changes the
+       booking screen, the quotation and every total.
+    2. **A quotation already issued does not follow a later price change
+       until it is re-issued.** The printed document reads the live charge
+       rows, so it shows the new figure at once; `quoted_total` — the
+       number the cost page and the lock snapshot use — is the total of the
+       last ISSUED revision and stays until บันทึกและออกใบเสนอราคาใหม่ on the
+       booking screen. The menu page says exactly that beside a changed
+       price when a quotation exists. Two figures, both correct, for the
+       same booking.
+    3. **Production holds 3 pre-feature set lines with no copy** (7 copies
+       exist, from the run's counts). They fall back to the shared set
+       menu, exactly as every screen read them before this feature, until
+       someone saves them on the menu page or the booking is locked
+       (locking copies them first).
+
+    **Decided, not a gap: the browser's Back button leaves a dirty page
+    without warning** (Nik, 2026-09-20). Every other way out asks first —
+    closing or reloading the tab, a typed URL, and every in-app link
+    including the nav bar, caught in the capture phase. `popstate` cannot
+    be refused, and the workaround (pushing a history entry to swallow the
+    first Back) breaks the button for everyone in exchange. Nik accepts it.
+    Do not reopen this.
+
+    **What Nik found using round 1, and what changed:**
+    - *"2,977.06 is wrong."* It was not: quantity is PORTIONS PER TABLE
+      (confirmed), so 250 × 5 = 1,250 and the total was right. The row
+      showed the unit price and the quantity in two columns and never their
+      product, so the rows could not be added up to the total under them.
+      Every row now shows `฿250.00 × 5 = ฿1,250.00` (`dishLineTotalText`),
+      and the total is the sum of those same row figures by construction,
+      tested on his four courses.
+    - *"It works, but you have to be familiar with it."* One flat list per
+      set in the order courses were added, ONE picker with เพิ่ม, no
+      section groupings and no "— ไม่มี —" placeholders; สร้างชุดเมนูเอง
+      behind a button, closed by default, with a name and a price only (a
+      new set is one table; the count is set in the price box). A new set
+      may not take a name another set line of the booking already has (he
+      had three "t2000" at three prices, all counting toward one total) —
+      refused on the screen and in the function; his existing rows are left
+      for him to delete. More than one set per booking stays (ten normal
+      tables and two vegetarian).
+    - **The section column stays** (dish / dessert / drink / free). Checked
+      before the groupings were removed: the kitchen sheet and the function
+      sheet group by it (`groupBySection`), the quotation orders dish names
+      by it, and the shared set editor assigns it; the cost page and the
+      lock snapshot ignore it; NOTHING prices a section differently — "free"
+      is a print heading only. A copied course keeps its section; a course
+      added on the menu page is a `dish`, so it prints under รายการอาหาร on
+      all three documents. That is the one thing the screen can no longer
+      say, and it is a screen decision, not a schema one.
+    - **The save model.** Edits are held on the screen (`LineDraft`, tested:
+      what counts as a change, what ยกเลิก returns to, what the payload
+      carries); the figures update live; one บันทึก sends every CHANGED line
+      whole to `catering_save_event_menus`, which writes them in ONE
+      transaction — a payload lands entirely or not at all (V5 in the file
+      proves the first line stays untouched when the second is refused).
+      Leaving with unsaved changes asks first (beforeunload, and the back
+      link's own confirm). The editor is keyed on a fingerprint of the
+      server view, so a refresh after a save remounts it clean and a
+      refresh that brings the same data leaves the draft alone.
+    - **The chooser** (คัดลอกรายการอาหารจาก…): standard set menus, and every
+      other booking with a set line, newest first, searched by customer
+      name, no window (`fetchAllRows`, ordered event_date desc, id). A
+      booking's line gives THAT booking's own list (its copy, or its
+      fallback) — never the shared set behind it — and each course records
+      `source_event_menu_id`. Filling replaces the line's list after a
+      confirm; nothing is written until บันทึก.
+    - **THE price per table** is `catering_event_charges.unit_price` on the
+      charge linked to the set line — one stored number. The menu page edits
+      it; the price box shows it (its input for a set line stays disabled and
+      now says where to edit). It stays consistent because the booking
+      screen's save takes a set line's unit_price from the database row it
+      RE-READS, never from its own state (`event-menu.test.ts` reads
+      `saveBooking` as source to hold that), so a stale booking tab cannot
+      write the old price back. A cost-locked booking: the menu page shows
+      the frozen banner, no controls, the save refuses (app and function).
+      The recorded quotation is NOT re-issued by the menu page: the printed
+      quotation reads live charges and follows at once; `quoted_total` is
+      the last ISSUED revision's total until บันทึกและออกใบเสนอราคาใหม่ on the
+      booking screen — the same rule the price box follows. The screen says
+      so beside a changed price when a quote exists.
+    - **The price box shows the dish names** under each set line: comma-
+      separated, in section order, clamped to two rows by CSS with the whole
+      list in the tooltip — cut by the space it has, never by a count.
+    - **The comparison** is "ราคาอาหารชุดเทียบกับสั่งแยกจาน": the headline
+      is "สูงกว่าสั่งแยกจาน 51.16%" or "ต่ำกว่าสั่งแยกจาน 6.25%", the line
+      under it gives both totals, the direction in words, and the
+      difference in baht and in percent of the à-la-carte total. No
+      "menu incomplete" state. Same wording on the set-menu screen.
+    - **Removed:** the six per-edit server actions of round 1 (add, swap,
+      re-count, remove, create custom, copy) — every export of a "use
+      server" file is an endpoint, and the screen that called them is gone.
+      The lock still copies a never-copied line through
+      `catering_copy_set_menu` before snapshotting.
+    - **Unchanged and re-verified:** owner/admin edit, sales view;
+      `buildEventMenuView` drops the per-dish cost map for any access but
+      "edit" and the test holds a sales view up to `JSON.stringify` (no
+      cost figure, no `unit_cost` key); copies never write back (S1 in the
+      file); the 10% swap warning is untouched.
+
+    **The adversarial review (four independent readers, 2026-09-19, one
+    question each), and what it changed:**
+    - *Can unsaved state be lost or partially saved?* Partial: **no** — one
+      transaction, no branch persists before a refusal (V5). Lost: **three
+      real ways, all fixed.** (1) Two admins on one line: the second save
+      silently won. Every line now carries a CONFLICT TOKEN — the copy's row
+      ids and the price the page opened with; every save rewrites a line's
+      rows, so anyone else's save shows as different ids or price and the
+      function refuses that line (V16–V18), the whole payload with it. (2)
+      The editor was keyed on a hash of the whole view, cost map included;
+      a session-cookie refresh re-rendering the page mid-edit, or an
+      ingredient price changing anywhere, remounted it and threw the draft
+      away. The hash now covers the lines, the lock and the access only,
+      and new server data is adopted only when the draft is clean or the
+      change is the person's own save landing; otherwise the draft stays and
+      a banner says the data moved. (3) Only the back link asked before
+      leaving; the nav bar did not. Every click on an internal link is now
+      caught in the capture phase while dirty. **Still not caught, and
+      accepted by Nik (2026-09-20, above):** the browser's Back button
+      (popstate cannot be refused) and a session that expires during the
+      save (the auth helper redirects to /login). Also
+      fixed: the chooser and the ✕ on a new set could change the draft
+      during the save's own pending window.
+    - *Does the shared price stay consistent?* Server-side **yes**:
+      `saveBooking` writes a set line's unit_price from the row it re-reads
+      (tested on the source). **But two PRE-EXISTING price-box defects
+      became destructive once the menu page could edit the line, both
+      fixed:** (1) after บันทึกอย่างเดียว the booking screen kept the state it
+      was saved FROM — a set added in that session still read "not yet
+      created" — so the NEXT save removed and re-created the line, deleting
+      the copy and the menu page's price; the screen is now keyed on the
+      charge rows and remounts when they change. (2) A loaded set line
+      carried no reference to its set, so the same set could be picked
+      again and the save wrote TWO charge rows for one line — the set
+      printed twice and the total doubled; `CateringCharge.event_menu_ref`
+      now lets the picker refuse it, and `saveBooking` refuses a payload
+      with one line twice. Also reworded: the warning beside a changed price
+      when a quotation exists said the issued quotation "stays the old
+      total" — true of `quoted_total` (the cost page's figure), false of the
+      printed document, which reads live rows. Accepted, already recorded:
+      removing a set and re-adding it in one price-box save discards the
+      copy and comes back at the shared set's price.
+    - *Did removing the sections break a document?* **No** — every write
+      path yields a valid section, a copied or swapped course keeps its
+      group, the lock and cost page never read it, `sort_order` is
+      relabelled order-preservingly. One degradation remains, by design and
+      recorded: the screen lists a set in the order courses were added
+      while every document groups by section, so the on-screen numbers can
+      differ from the kitchen sheet's. The other — that a course added on
+      the menu page was always a `dish`, so a booking-specific dessert or
+      free item could not be filed as one — **was fixed by Nik's decision
+      of 2026-09-20: every row carries a small section selector.** The list
+      stays flat and in insertion order; the selector is a field of the
+      row, like จำนวน, and needs nothing new from the save function (the
+      payload has always carried `section` per item, `validateDrafts` and
+      `validateSavePayload` check it, and V10 in the migration proves the
+      table's CHECK refuses an invalid one). A new course starts as
+      รายการอาหาร; a copied one keeps what it came with. The print order had
+      two definitions; it now has one (`EVENT_MENU_SECTION_LIST`).
+    - *Can sales reach a cost figure?* **No** — every prop of the page, the
+      three new server actions (refused before any read), the function
+      (role check first, SECURITY INVOKER, RLS denies sales writes), the
+      set-menu screen (`requireAdmin`), and the error messages were traced;
+      nothing cost-bearing reaches a sales session.
 
     **Why.** Sompong Catering sells four standard Chinese-banquet sets
     (3,000 / 3,500 / 4,000 / 4,500 a table, 9–10 courses). In practice
