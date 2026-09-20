@@ -2528,7 +2528,7 @@ In order. Nothing here is started unless it says so.
     Printing a menu card is still not started, and is the only part of
     round 2 that is not built.
 
-    **THREE THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
+    **FIVE THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
     recorded because each will look like one to whoever meets it first:
 
     1. **The price per table is edited on the menu page now, and the price
@@ -2550,6 +2550,27 @@ In order. Nothing here is started unless it says so.
        menu, exactly as every screen read them before this feature, until
        someone saves them on the menu page or the booking is locked
        (locking copies them first).
+    4. **Swapping one set for another AT THE SAME PRICE leaves the
+       staleness guard silent** (Nik, 2026-09-20, accepted). The guard
+       compares one figure: the issued total against the current one. Swap
+       ชุด A at ฿4,500 for ชุด B at ฿4,500 after the quotation was issued
+       and the totals still match, so locking is allowed — correctly, since
+       the revenue figure really is unchanged. What IS out of date is the
+       printed quotation, which names the old set. The document reads the
+       live charge rows, so it prints B's name as soon as the save lands;
+       the PAPER the customer already holds still says A. Total-only is
+       deliberate: a guard on "anything changed" would refuse every
+       harmless edit and would be turned off within a week. If the set name
+       on the customer's copy matters, re-issue.
+    5. **Unlocking a booking that was locked with a STALE total is a
+       one-way door until the quotation is re-issued** (Nik, 2026-09-20,
+       accepted). The lock's staleness guard is new; bookings locked before
+       it are untouched and their snapshots stand. But the unlock clears
+       the snapshot, and the re-lock then meets the guard — so such a
+       booking cannot be re-locked until บันทึกและออกใบเสนอราคาใหม่ has run on
+       the booking screen. Unlock one of these only when ready to re-issue.
+       The query that finds any booking in that state is with the lock
+       precondition below.
 
     **THE GAP NIK FOUND AFTER `ebba2cc`: a set could be created on the menu
     page and not removed there** (2026-09-20). He made three test sets named
@@ -2660,6 +2681,102 @@ In order. Nothing here is started unless it says so.
       the record — and it is now recoverable anyway, by deleting the set
       line and picking the set again in the price box.
 
+    **THE TWO PRE-EXISTING DEFECTS, NOW DECIDED AND FIXED** (Nik,
+    2026-09-20; built locally, NOT COMMITTED, no migration).
+
+    **A. A stale quotation cannot be cost-locked.**
+    - **STALE means one thing:** `catering_events.quoted_total` — the total
+      recorded the last time the quotation was ISSUED — no longer equals the
+      sum of the booking's current charge rows, by more than half a satang
+      (`quoteIsStale` in `src/lib/quote-doc.ts`). Not the time, not the
+      revision, not which lines moved. That one figure is exactly what the
+      cost page reports as revenue and what the lock freezes forever.
+    - **Why it must be refused:** revenue is `quoted_total ?? live`, so
+      between changing the lines and re-issuing there is a window where
+      revenue is the OLD total and the food cost is the NEW one. Remove a
+      set and the profit is overstated by the whole set. Locking in that
+      window makes it the permanent record, and the cost page then reads the
+      snapshot instead of recomputing, so nothing detects it afterwards.
+    - **Every path checked, not just the button.** `lockCateringEventCost`
+      is the ONLY place in the app that sets `cost_locked_at`
+      (`upsertCateringEvent`'s payload is a hard-coded literal with no such
+      key, and its parameter type has no such field; no other action, route
+      or RPC writes the column). The guard sits before every write, so a
+      refusal lands nothing. The cost page's button is disabled with the
+      same predicate and prints the reason. **At the database the check can
+      still be walked around:** the lock policies let owner and admin UPDATE
+      any column of `catering_events`, so a direct PATCH can stamp it. That
+      is the same latitude those roles have everywhere else here, and the
+      half-lock repair below is what keeps it recoverable.
+    - **Rounding cannot trip it.** Both totals sum the same stored `amount`
+      values, so the float dust in a stored `unit_price × quantity` cancels;
+      only summation ORDER differs. Measured over 200,000 randomised
+      bookings (2–41 rows, satang precision, a negative discount row half
+      the time) the worst divergence was **3.7e-9 baht**, about a million
+      times below the half-satang tolerance.
+    - **Bookings ALREADY locked with a stale total are not touched.** The
+      guard runs only inside the lock action, and a locked booking shows
+      ปลดล็อก, not ล็อก. Their snapshots stand exactly as written. The one
+      change for them: **unlocking is now a one-way door until the quotation
+      is re-issued** — the unlock clears the snapshot, and the re-lock is
+      refused until `quoted_total` matches the lines again. To find any that
+      are in that state:
+
+      ```sql
+      SELECT e.id, e.quote_number, e.quoted_total,
+             COALESCE(SUM(c.amount), 0) AS live_total,
+             e.quoted_total - COALESCE(SUM(c.amount), 0) AS difference
+        FROM catering_events e
+        LEFT JOIN catering_event_charges c ON c.event_id = e.id
+       WHERE e.cost_locked_at IS NOT NULL
+       GROUP BY e.id, e.quote_number, e.quoted_total
+      HAVING abs(e.quoted_total - COALESCE(SUM(c.amount), 0)) > 0.005;
+      ```
+
+    **B. An overpayment is printed as one, not as a negative balance.** Only
+    the ใบแจ้งหนี้ (invoice) carries a balance row, so that is the only
+    document changed. When the deposit received exceeds the current total —
+    a set removed after the deposit was taken — it now prints
+    **ชำระเกิน — ต้องคืนลูกค้า** with the positive figure, instead of
+    "ยอดคงเหลือ −2,500.00", which read as money the customer owed with a
+    stray minus in front of it. `DocMoney.balance` keeps the signed
+    arithmetic; only the printed row changes. Exactly settled still prints
+    ยอดคงเหลือ 0.
+
+    **The review of the lock precondition (one reader, two questions,
+    2026-09-20) confirmed the guard is unreachable-around and that rounding
+    cannot trip it, and found five things, four fixed:**
+    - **The guard created a dead end.** The cost page called a booking
+      "locked" from the SNAPSHOT while every write guard reads
+      `cost_locked_at`. In the half-written state that the lock's own
+      docstring designs for — stamped, snapshot gone — the page showed the
+      Lock button, the new guard refused it for staleness, the cure was
+      refused by the lock itself, and no Unlock button rendered. Fixed:
+      either half now counts as locked so ปลดล็อก is always offered, a
+      banner names the half-written state, an already-stamped booking is
+      exempt from the staleness guard, and the copy loop is skipped when
+      stamped (it refuses a locked booking and would have thrown first).
+    - **The refusal could not reach the person.** Production redacts a
+      thrown Server Action message. `lockCateringEventCost` now RETURNS its
+      refusals, like `saveBooking` — which also fixes the two older
+      preconditions, whose messages had the same problem.
+    - **A booking with every set line deleted could never clear the block:**
+      live total 0 against a recorded total, and the re-issue button was
+      disabled on an empty price box. An empty box may now be re-issued when
+      the booking already has a quote number.
+    - **Not fixed, reported:** a room conflict can refuse the re-issue
+      outright (`saveBooking` throws before writing, and the rule counts a
+      missing time as a conflict), so a booking in that state stays
+      unlockable — but it also cannot be edited at all, which is the larger
+      pre-existing problem and Nik's call. Also accepted as a decision:
+      swapping one 4,500 set for another after issuing leaves the totals
+      equal and the guard silent, which is right for the revenue figure and
+      wrong for the printed set name. Total-only is deliberate.
+    - **Could not confirm:** the live RLS on
+      `catering_event_cost_snapshots` (the repo records drift there). If a
+      reader is ever hidden a snapshot row, they would see the half-locked
+      state without any partial failure having occurred.
+
     **Decided, not a gap: the browser's Back button leaves a dirty page
     without warning** (Nik, 2026-09-20). Every other way out asks first —
     closing or reloading the tab, a typed URL, and every in-app link
@@ -2667,6 +2784,10 @@ In order. Nothing here is started unless it says so.
     be refused, and the workaround (pushing a history entry to swallow the
     first Back) breaks the button for everyone in exchange. Nik accepts it.
     Do not reopen this.
+
+    **Item 40 came out of this work's review and is NOT part of it** — a
+    booking a room conflict has frozen cannot be re-issued, and so cannot be
+    locked. Pre-existing; Nik left it for later.
 
     **What Nik found using round 1, and what changed:**
     - *"2,977.06 is wrong."* It was not: quantity is PORTIONS PER TABLE
@@ -3114,6 +3235,42 @@ revenue and the accountant's file: exact per-month rows, a budget69-only
 month reads as partial. Panel expands with three or more open steps, one line
 otherwise, hidden when all done. Verified on live evidence for August before
 and after Nik's import.
+
+40. **A booking a room conflict has frozen cannot be edited at all — so it
+    cannot be re-issued, and so it cannot be cost-locked** (found by the
+    review of the lock precondition, 2026-09-20). **NOT STARTED. Nik's
+    decision is to leave it for later. PRE-EXISTING — no part of it was
+    caused by the per-event menu work or by the lock precondition**, which
+    only made one of its consequences visible.
+
+    `saveBooking` calls `upsertCateringEvent` first, and that throws on a
+    room conflict before anything is written; the booking screen's own save
+    button is disabled by the same rule. So a booking in conflict cannot be
+    saved by any route through the app. Two things follow, and the second
+    is the new one:
+
+    - **Nothing about it can be corrected** — not the customer, not the
+      note, not the price box — until the conflict is gone. The cure for a
+      conflict is editing one of the two bookings, and if the OTHER one is
+      the one that should move, this one is simply stuck meanwhile.
+    - **It therefore cannot be re-issued**, because `quoted_total` is only
+      written through `saveBooking`. With the staleness guard in place, a
+      frozen booking whose lines changed before it froze can no longer be
+      cost-locked either, and there is no way out inside the app.
+
+    **What makes it wider than it sounds:** `findRoomConflict` treats a
+    MISSING start or end time on either side as a same-day conflict. So a
+    finished in-house booking in room_v1 can be frozen by an unrelated
+    "inquiry" on the same date that nobody has put times on yet. The
+    server-side rule was added after the client-side one, so bookings
+    already in this state may exist.
+
+    **Not designed.** The obvious repairs each have a cost: letting a
+    `done` booking save through a conflict weakens the rule exactly where
+    double-booking would be most expensive; an admin override needs a place
+    to live and a record of who used it; a separate "record the revenue
+    total" action avoids the whole save path but adds a second writer of
+    `quoted_total`. Nik picks the shape when he picks it up.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
