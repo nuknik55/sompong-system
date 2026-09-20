@@ -58,6 +58,7 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
         eventId={id}
         version={viewVersion(view)}
         header={{ backHref: `/owner/catering/${id}`, backLabel: `← ${event.customer_name ?? "การจอง"}`, status: event.status, date: event.event_date }}
+        tableCount={event.table_count}
         view={view}
         dishOptions={dishOptions}
         quote={event.quote_number ? { number: event.quote_number, revision: event.quote_revision } : null}

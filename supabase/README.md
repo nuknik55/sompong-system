@@ -2528,7 +2528,7 @@ In order. Nothing here is started unless it says so.
     Printing a menu card is still not started, and is the only part of
     round 2 that is not built.
 
-    **FIVE THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
+    **SIX THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
     recorded because each will look like one to whoever meets it first:
 
     1. **The price per table is edited on the menu page now, and the price
@@ -2571,6 +2571,15 @@ In order. Nothing here is started unless it says so.
        the booking screen. Unlock one of these only when ready to re-issue.
        The query that finds any booking in that state is with the lock
        precondition below.
+    6. **The copy chooser's source list is read once per visit** (Nik,
+       2026-09-20, accepted). Opening คัดลอกชุดจากที่อื่น fetches the standard
+       set menus and every past booking once, and keeps that list for as
+       long as the menu page stays open. A standard set created — or
+       renamed, or deactivated — in another tab meanwhile does not appear
+       until the page is loaded again. Refreshing (F5) is the whole cure.
+       Re-fetching on every open would cost a round trip on a list that
+       changes a few times a year, and re-fetching in the background would
+       move a list under someone's cursor mid-pick.
 
     **THE GAP NIK FOUND AFTER `ebba2cc`: a set could be created on the menu
     page and not removed there** (2026-09-20). He made three test sets named
@@ -2784,6 +2793,68 @@ In order. Nothing here is started unless it says so.
     be refused, and the workaround (pushing a history entry to swallow the
     first Back) breaks the button for everyone in exchange. Nik accepts it.
     Do not reopen this.
+
+    **TWO DEAD ENDS ON AN EMPTY OR UNSAVED BOOKING** (Nik, 2026-09-20;
+    built locally, NOT COMMITTED, no migration).
+
+    1. **A booking with no set lines had no way to copy.** He deleted every
+       set line; the menu page then showed the empty-state text and the
+       create button, and nothing else — because คัดลอกรายการอาหารจาก… lived
+       ON a set card, and there were no cards. The only route back was the
+       price box on the other screen: a dead end on the screen that owns the
+       menu. **The chooser is now the BOOKING's, not a card's**, and a pick
+       has two modes. Aimed at a card it replaces that card's list, as
+       before. Aimed at the booking (+ คัดลอกชุดจากที่อื่น, always present)
+       it CREATES the set line: the source's name, the source's price per
+       table (a standard set's `price_per_set`, or a past booking's own
+       negotiated `unit_price`), and the courses with their provenance. The
+       save writes the line, its food charge and its courses in one
+       transaction — which is exactly what puts it in the price box, where
+       the table count stays editable. **The table count:** the booking's
+       own จำนวนโต๊ะ when it has no sets yet (it is being set up), and 1 when
+       it already has one (an extra set, like Nik's ten normal tables plus
+       two vegetarian, where the booking-wide count would be plausible and
+       wrong). The empty state now names all three routes, and only the ones
+       the reader's role has.
+    2. **A brand-new booking said nothing about the menu.** On บันทึกการจองใหม่
+       there is no รายการอาหารของงาน button and there cannot be — the menu
+       belongs to a booking and there is no id yet — but a screen that
+       simply lacks something reads as a screen that is broken. The create
+       form now says to save first, and that the button appears straight
+       afterwards. **Both landing screens confirmed:** บันทึกอย่างเดียว lands
+       on the booking page, which carries the button twice (header and the
+       row under the form); บันทึกและออกใบเสนอราคา lands on the QUOTATION,
+       which had no menu route at all — a link was added to its no-print
+       toolbar, so paper is unchanged.
+
+    **The review of the empty-booking copy path (one reader, three
+    questions, 2026-09-20) confirmed all three** — the new line cannot exist
+    without its charge (both inserts are unconditional in one statement, and
+    a refusal on the second of two lines rolls back the first), no duplicate
+    name can slip past the four checks, and the price box and the menu page
+    cannot disagree (both counts are written as the same `v_tables`, and the
+    booking screen's round trip is identity) — **and found five things,
+    four fixed:**
+    - **The price box could still make the duplicate.** A set copied in is
+      stored as the booking's OWN set (`set_menu_id` NULL), so the picker's
+      "one line per set" test, which matches on the referenced id, could not
+      see it — picking the same standard set there made a SECOND line with
+      the same label and price, the set printed twice and the total doubled.
+      That is Nik's three-t2000 complaint reached through the new door. Both
+      sides now compare by NAME as well: the picker refuses it with a
+      message, and `addCateringEventMenu` refuses it server-side, folding
+      the name exactly as the save function's own check does.
+    - **บันทึก was not blocked while a chooser pick was in flight**, so
+      saving mid-pick dropped the copied line under a "saved" notice. Both
+      buttons now follow the same busy flag as everything else.
+    - **A pick aimed at a card removed meanwhile closed as if it worked.**
+      It now says the card is gone.
+    - **The picker refused a duplicate silently**; it says why now.
+    - **Not fixed, recorded:** the chooser's source list is fetched once per
+      visit, so a standard set created in another tab appears only after a
+      reload; and the booking screen has no unsaved-changes guard, so an
+      unsaved จำนวนโต๊ะ is lost on the way to the menu page and the copy uses
+      the SAVED count — the chooser's wording now says "ที่บันทึกไว้".
 
     **Item 40 came out of this work's review and is NOT part of it** — a
     booking a room conflict has frozen cannot be re-issued, and so cannot be

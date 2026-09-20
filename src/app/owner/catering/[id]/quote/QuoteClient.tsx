@@ -76,7 +76,15 @@ export function QuoteClient({
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white px-6 py-3">
-        <a href={`/owner/catering/${event.id}`} className="text-sm text-neutral-500 hover:text-neutral-800">← กลับ</a>
+        <div className="flex items-center gap-3">
+          <a href={`/owner/catering/${event.id}`} className="text-sm text-neutral-500 hover:text-neutral-800">← กลับ</a>
+          {/* THE OTHER SCREEN THE FIRST SAVE CAN LAND ON. บันทึกและออกใบเสนอราคา
+              comes straight here, so without this the person who used that
+              button has no route to the menu but the back link — the same
+              shape of gap as the create form's missing hint (Nik,
+              2026-09-20). In the no-print toolbar, so paper is unchanged. */}
+          <a href={`/owner/catering/${event.id}/menu`} className="text-sm text-neutral-500 hover:text-neutral-800">รายการอาหารของงาน</a>
+        </div>
         {/* One route, three states. Plain links so each is its own URL and
             prints as itself — the browser's print dialog acts on the page it
             is on, not on a tab a component is holding in state. */}

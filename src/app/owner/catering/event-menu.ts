@@ -428,8 +428,14 @@ export function newCustomLineDraft(key: string, name: string, pricePerTable: num
   return { key, eventMenuId: null, name: name.trim(), tables: 1, price: String(pricePerTable), sourceSetMenuId: null, source: "none", materialize: true, dishes: [], knownItemIds: [], knownPrice: null, removed: false };
 }
 
-/** The name a set line is known by when two are compared: trimmed, case-folded. */
-const nameKey = (s: string) => s.trim().toLocaleLowerCase("th");
+/**
+ * The name a set line is known by when two are compared: trimmed,
+ * case-folded. The SAME expression the save function's own duplicate check
+ * folds with, so the screen, the server action and the database agree on
+ * what "the same name" means.
+ */
+export const foldSetName = (s: string) => s.trim().toLocaleLowerCase("th");
+const nameKey = foldSetName;
 
 /**
  * A set name already used by another set line of the same booking, or null.
@@ -448,6 +454,36 @@ export function duplicateSetName(drafts: LineDraft[]): string | null {
     if (drafts.some((o) => o !== d && nameKey(o.name) === nameKey(d.name))) return d.name.trim();
   }
   return null;
+}
+
+/**
+ * A WHOLE SET COPIED IN, line and all (Nik, 2026-09-20). Deleting every set
+ * line left a booking with no cards, and the copy button lived on a card —
+ * so the only way back was the price box on the other screen. Copying into
+ * an empty booking now creates the line itself: the source's name, the
+ * source's price per table, and the booking's own table count. The save
+ * writes the line, its food charge and its courses together, which is what
+ * puts it in the price box.
+ */
+export function newLineDraftFromSource(
+  key: string,
+  source: { name: string; pricePerTable: number; dishes: EventMenuDish[] },
+  tables: number,
+  provenance: { set_menu_id: string } | { event_menu_id: string },
+  keyFor: (i: number) => string,
+): LineDraft {
+  return applySourceDishes(
+    { ...newCustomLineDraft(key, source.name, source.pricePerTable), tables },
+    source.dishes,
+    provenance,
+    keyFor,
+  );
+}
+
+/** Would this name collide with a set line the booking already has? The same rule the save applies. */
+export function isSetNameTaken(drafts: LineDraft[], name: string): boolean {
+  const k = nameKey(name);
+  return k !== "" && drafts.some((d) => nameKey(d.name) === k);
 }
 
 /** The draft's courses as figures see them: an unparsable or non-positive quantity counts as 0. */

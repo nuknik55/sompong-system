@@ -9,7 +9,7 @@ import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { eventMenuAccess } from "@/lib/event-menu-access";
 import { fetchAllRows } from "@/lib/data";
-import { isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
+import { foldSetName, isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2031,6 +2031,31 @@ async function addCateringEventMenu(
     : existingQuery.eq("menu_id", item.id);
   const { data: existingRow } = await existingQuery.maybeSingle();
 
+  // ONE SET OF A GIVEN NAME PER BOOKING, checked by NAME and not only by id.
+  // A set copied in from the menu page is stored as the booking's OWN set —
+  // set_menu_id NULL with the source's name — so the id lookup above cannot
+  // see it, and picking the same standard set here would have made a SECOND
+  // line with the same label and price: the set printed twice and the total
+  // doubled (review, 2026-09-20; the same shape as Nik's three "t2000"). The
+  // menu page's save applies this rule already; this is the other door.
+  if (!existingRow && item.kind === "set") {
+    const { data: setLines, error: linesError } = await supabase
+      .from("catering_event_menus")
+      .select("id, set_name, catering_set_menus(name), catering_event_charges(label)")
+      .eq("event_id", eventId)
+      .is("menu_id", null);
+    if (linesError) throw linesError;
+    const taken = (setLines ?? []).some((r: Record<string, unknown>) => {
+      const setMenu = r.catering_set_menus as { name: string } | null;
+      const charges = r.catering_event_charges as { label: string }[] | null;
+      const known = (r.set_name as string | null) ?? setMenu?.name ?? charges?.[0]?.label ?? "";
+      return foldSetName(known) === foldSetName(name);
+    });
+    if (taken) {
+      throw new Error(`งานนี้มีชุดชื่อ "${name}" อยู่แล้ว — ถ้าต้องการเพิ่มจำนวนโต๊ะ ให้แก้จำนวนในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
+    }
+  }
+
   let eventMenuId: string;
 
   if (existingRow) {
@@ -2560,6 +2585,9 @@ export type EventMenuSourceBooking = {
   lines: { id: string; name: string; tables: number }[];
 };
 
+/** What a chooser pick will create when the booking has no line to fill: name, price, courses. */
+export type EventMenuSourcePreview = { name: string; pricePerTable: number; dishes: EventMenuDish[] };
+
 export type EventMenuSources = { sets: EventMenuSourceSet[]; bookings: EventMenuSourceBooking[] };
 
 /**
@@ -2626,20 +2654,35 @@ export type EventMenuSource = { kind: "set"; setMenuId: string } | { kind: "line
  * list — its copy, or the shared set it still falls back to — not the shared
  * set behind it (Nik). Nothing is written: the save records the provenance.
  */
-export async function getEventMenuSourceDishes(source: EventMenuSource): Promise<{ name: string; dishes: EventMenuDish[] }> {
+export async function getEventMenuSourceDishes(source: EventMenuSource): Promise<EventMenuSourcePreview> {
   const profile = await requireSales();
   if (eventMenuAccess(profile.role) !== "edit") throw new Error(EDIT_REFUSED);
+  // THE PRICE COMES BACK TOO, because copying into an EMPTY booking creates
+  // the set line and its food charge, not just a dish list (Nik, 2026-09-20).
+  // A standard set's price is its own price_per_set; a past booking's line
+  // costs what THAT booking charged per table — the linked charge's
+  // unit_price, the one number both screens read.
   if (source.kind === "set") {
     const supabase = await createClient();
-    const { data, error } = await supabase.from("catering_set_menus").select("name").eq("id", source.setMenuId).maybeSingle();
+    const { data, error } = await supabase
+      .from("catering_set_menus")
+      .select("name, price_per_set")
+      .eq("id", source.setMenuId)
+      .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("ไม่พบชุดเมนูที่เลือก");
     const items = (await getCateringSetMenuItemsForSets([source.setMenuId])).get(source.setMenuId) ?? [];
-    return { name: data.name as string, dishes: items.map((it, i) => toEventMenuDish(it, (i + 1) * 10, source.setMenuId)) };
+    return {
+      name: data.name as string,
+      pricePerTable: Number(data.price_per_set ?? 0),
+      dishes: items.map((it, i) => toEventMenuDish(it, (i + 1) * 10, source.setMenuId)),
+    };
   }
   const lines = await getCateringEventMenus(source.eventId);
   const line = lines.find((l) => l.id === source.eventMenuId && l.kind === "set");
   if (!line) throw new Error("ไม่พบรายการชุดเมนูของงานที่เลือก");
+  const charges = await getCateringCharges(source.eventId);
+  const linked = charges.find((c) => c.event_menu_id === source.eventMenuId);
   const served = (await getEventMenuDishes(source.eventId)).get(source.eventMenuId);
-  return { name: line.name, dishes: served?.dishes ?? [] };
+  return { name: line.name, pricePerTable: Number(linked?.unit_price ?? 0), dishes: served?.dishes ?? [] };
 }

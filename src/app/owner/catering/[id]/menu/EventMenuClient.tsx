@@ -9,7 +9,8 @@ import { fmtBaht, toNum, StatusBadge, thDate, thFullDate } from "../../shared-ut
 import {
   applySourceDishes, comparisonHeadline, comparisonText, COMPARISON_LABEL, dishLineTotalText, dishesTotalPerTable, draftDishes,
   draftFromLine, draftPrice, draftsEqual, foodCostFigure, lineFoodCost, newCustomLineDraft, setVsAlaCarte, swapPriceWarning,
-  swapWarningText, toSavePayload, validateDrafts, removedLineIds, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
+  swapWarningText, toSavePayload, validateDrafts, removedLineIds, isSetNameTaken, newLineDraftFromSource,
+  EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
   type DraftDish, type EventMenuSection, type EventMenuView, type LineDraft,
 } from "../../event-menu";
 
@@ -36,6 +37,9 @@ const RESULT_ERROR = "ทำไม่สำเร็จ — หน้าจอ�
 const LEAVE_MSG = "มีการแก้ไขที่ยังไม่ได้บันทึก — ออกจากหน้านี้โดยไม่บันทึกหรือไม่?";
 const REPLACE_MSG = "ชุดนี้มีรายการอาหารอยู่แล้ว — แทนที่ทั้งหมดด้วยรายการที่เลือกหรือไม่? (มีผลเมื่อกดบันทึก)";
 const CLEAR_MSG = "ลบรายการอาหารทั้งหมดของชุดนี้ออกจากหน้าจอ แล้วเริ่มเลือกใหม่ตั้งแต่ต้นหรือไม่? (มีผลเมื่อกดบันทึก)";
+const TAKEN_MSG = (name: string) =>
+  `มีชุดชื่อ “${name}” อยู่ในงานนี้แล้ว — ลบชุดเดิมก่อน หรือใช้ “สร้างชุดเมนูเอง” แล้วตั้งชื่ออื่น`;
+const makeKey = () => `new-${crypto.randomUUID()}`;
 
 type Header = { backHref: string; backLabel: string; status: string; date: string };
 type Quote = { number: string; revision: number } | null;
@@ -45,6 +49,7 @@ export function EventMenuClient(props: {
   /** viewVersion(view): changes when the data does, so a refresh after a save remounts the editor with a clean draft. */
   version: string;
   header: Header;
+  tableCount: number | null;
   view: EventMenuView;
   dishOptions: CateringDishOption[];
   quote: Quote;
@@ -56,11 +61,13 @@ export function EventMenuClient(props: {
 }
 
 function EventMenuEditor({
-  eventId, version, header, view, dishOptions, quote, notice, onNotice,
+  eventId, version, header, tableCount, view, dishOptions, quote, notice, onNotice,
 }: {
   eventId: string;
   version: string;
   header: Header;
+  /** The booking's จำนวนโต๊ะ: what a set line copied into an empty booking starts at. */
+  tableCount: number | null;
   view: EventMenuView;
   dishOptions: CateringDishOption[];
   quote: Quote;
@@ -92,6 +99,72 @@ function EventMenuEditor({
   const problem = validateDrafts(drafts);
   const canEdit = view.canEdit;
   const pendingRemovals = drafts.filter((d) => d.removed).length;
+
+  // ONE CHOOSER FOR THE WHOLE BOOKING (Nik, 2026-09-20). It used to live on a
+  // set card, so a booking whose set lines had all been deleted had no way to
+  // copy anything at all and the only route back was the price box on the
+  // other screen — a dead end on the screen that owns the menu. Its target is
+  // either a card (replace that card's list) or the booking itself (create
+  // the set line, with the source's name and price and the booking's tables).
+  const [chooserFor, setChooserFor] = useState<{ mode: "new" } | { mode: "line"; key: string } | null>(null);
+  const [sources, setSources] = useState<EventMenuSources | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceBusy, startSource] = useTransition();
+  const busy = isPending || sourceBusy;
+
+  function openChooser(target: { mode: "new" } | { mode: "line"; key: string }) {
+    setSourceError(null);
+    setChooserFor(target);
+    if (sources) return;
+    startSource(async () => {
+      try { setSources(await listEventMenuSources(eventId)); }
+      catch (err) { setSourceError(err instanceof Error ? err.message : RESULT_ERROR); setChooserFor(null); }
+    });
+  }
+
+  function pickSource(source: EventMenuSource) {
+    const target = chooserFor;
+    if (!target) return;
+    startSource(async () => {
+      try {
+        const got = await getEventMenuSourceDishes(source);
+        const prov = source.kind === "set" ? { set_menu_id: source.setMenuId } : { event_menu_id: source.eventMenuId };
+        if (target.mode === "line") {
+          // The card may have been removed or marked for deletion while the
+          // chooser was open: say so rather than closing as if it worked
+          // (review, 2026-09-20).
+          const current = drafts.find((d) => d.key === target.key);
+          if (!current || current.removed) {
+            setSourceError("ชุดที่เลือกไว้ถูกลบออกจากหน้าจอแล้ว — ปิดหน้าต่างนี้แล้วเลือกใหม่");
+            return;
+          }
+          if (current.dishes.length > 0 && !window.confirm(REPLACE_MSG)) return;
+          updateLine(target.key, (d) => applySourceDishes(d, got.dishes, prov, () => crypto.randomUUID()));
+        } else {
+          // A NEW set line, named and priced by whatever it was copied from.
+          // The table count is the booking's own — the same number the price
+          // box uses when a set is picked there — and stays editable there.
+          if (isSetNameTaken(drafts, got.name)) {
+            setSourceError(TAKEN_MSG(got.name));
+            return;
+          }
+          // THE TABLE COUNT. An EMPTY booking is being set up, so the
+          // booking's own จำนวนโต๊ะ is the right number — the same one the
+          // price box uses when a set is picked there. A booking that
+          // ALREADY has a set is getting an EXTRA one (Nik's ten normal
+          // tables plus two vegetarian), and the booking-wide count would be
+          // plausible and wrong, so that starts at 1. Either way it stays
+          // editable in the price box, which the card says.
+          const hasSets = drafts.some((d) => !d.removed);
+          const tables = !hasSets && tableCount != null && tableCount > 0 ? tableCount : 1;
+          addLine(newLineDraftFromSource(makeKey(), got, tables, prov, () => crypto.randomUUID()));
+        }
+        setChooserFor(null);
+      } catch (err) {
+        setSourceError(err instanceof Error ? err.message : RESULT_ERROR);
+      }
+    });
+  }
 
   // Leaving asks first while dirty. Two ways out, two guards: the browser
   // (close, reload, typed URL) fires beforeunload; an in-app link — this
@@ -213,36 +286,63 @@ function EventMenuEditor({
       )}
 
       {drafts.length === 0 && (
-        <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-6 text-center text-sm text-neutral-500">
-          งานนี้ยังไม่มีชุดเมนู — เพิ่มชุดเมนูในกล่องราคาของหน้าจอง หรือกด “สร้างชุดเมนูเอง” ด้านล่าง
-        </p>
+        <div className="rounded-lg border border-dashed border-neutral-300 px-4 py-6 text-center text-sm text-neutral-500">
+          <p>งานนี้ยังไม่มีชุดเมนู</p>
+          {canEdit && (
+            <p className="mt-1 text-xs">
+              เริ่มได้ 3 ทาง — กด “คัดลอกชุดจากที่อื่น” เพื่อดึงชุดเมนูมาตรฐานหรือรายการอาหารของงานที่เคยจัดมาใช้ ·
+              กด “สร้างชุดเมนูเอง” เพื่อเลือกเมนูเองตั้งแต่ต้น · หรือเพิ่มชุดเมนูในกล่องราคาของหน้าจอง
+            </p>
+          )}
+        </div>
       )}
 
       {drafts.map((d) => (
         <LineCard
           key={d.key}
-          eventId={eventId}
           draft={d}
           canEdit={canEdit}
           costById={view.dishCostById}
           dishOptions={dishOptions}
-          isPending={isPending}
+          isPending={busy}
           onChange={(fn) => updateLine(d.key, fn)}
           onRemoveNew={() => removeNewLine(d.key)}
+          onOpenChooser={() => openChooser({ mode: "line", key: d.key })}
         />
       ))}
 
       {/* A3: behind a button, closed by default — a booking that already has
           its set should not see an open form under it. A6: more than one set
-          per booking stays (ten normal tables and two vegetarian). */}
-      {canEdit && !creating && (
-        <button type="button" onClick={() => setCreating(true)}
-          className="rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50">
-          + สร้างชุดเมนูเอง
-        </button>
+          per booking stays (ten normal tables and two vegetarian). Both
+          buttons live at BOOKING level, so neither needs a card to exist. */}
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!creating && (
+            <>
+              <button type="button" disabled={busy} onClick={() => openChooser({ mode: "new" })}
+                className="rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                + คัดลอกชุดจากที่อื่น
+              </button>
+              <button type="button" disabled={busy} onClick={() => { setChooserFor(null); setCreating(true); }}
+                className="rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                + สร้างชุดเมนูเอง
+              </button>
+            </>
+          )}
+          {sourceError && <span className="text-xs text-red-700">{sourceError}</span>}
+        </div>
       )}
       {canEdit && creating && (
-        <NewCustomSetForm existingNames={existingNames} isPending={isPending} onAdd={addLine} onCancel={() => setCreating(false)} />
+        <NewCustomSetForm existingNames={existingNames} isPending={busy} onAdd={addLine} onCancel={() => setCreating(false)} />
+      )}
+      {canEdit && chooserFor && (
+        <SourceChooser
+          mode={chooserFor.mode}
+          sources={sources}
+          loading={busy}
+          onPick={pickSource}
+          onClose={() => setChooserFor(null)}
+        />
       )}
 
       {/* ONE WARNING FOR THE BOOKING, not one per card: a booking whose only
@@ -265,11 +365,15 @@ function EventMenuEditor({
                 : dirty ? "มีการแก้ไขที่ยังไม่บันทึก — กดบันทึกเพื่อเก็บทั้งหมดพร้อมกัน" : "ไม่มีการแก้ไข")}
           </p>
           <div className="flex gap-2">
-            <button type="button" onClick={cancel} disabled={!dirty || isPending}
+            {/* BOTH follow `busy`, not just isPending: a chooser pick is a
+                change to the draft, and saving or cancelling while one was
+                in flight dropped the copied line under a "saved" notice
+                (review, 2026-09-20). */}
+            <button type="button" onClick={cancel} disabled={!dirty || busy}
               className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
               ยกเลิก
             </button>
-            <button type="button" onClick={save} disabled={!dirty || !!problem || isPending}
+            <button type="button" onClick={save} disabled={!dirty || !!problem || busy}
               className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
               {isPending ? "กำลังบันทึก…" : "บันทึก"}
             </button>
@@ -283,9 +387,8 @@ function EventMenuEditor({
 // ── One set line ─────────────────────────────────────────────────────────────
 
 function LineCard({
-  eventId, draft, canEdit, costById, dishOptions, isPending, onChange, onRemoveNew,
+  draft, canEdit, costById, dishOptions, isPending, onChange, onRemoveNew, onOpenChooser,
 }: {
-  eventId: string;
   draft: LineDraft;
   canEdit: boolean;
   costById: EventMenuView["dishCostById"];
@@ -293,11 +396,10 @@ function LineCard({
   isPending: boolean;
   onChange: (fn: (d: LineDraft) => LineDraft) => void;
   onRemoveNew: () => void;
+  /** Opens the BOOKING's one chooser aimed at this card (Nik, 2026-09-20). */
+  onOpenChooser: () => void;
 }) {
-  const [chooser, setChooser] = useState(false);
-  const [sources, setSources] = useState<EventMenuSources | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [loading, startLoading] = useTransition();
 
   const dishes = draftDishes(draft);
   const price = draftPrice(draft);
@@ -306,28 +408,6 @@ function LineCard({
   const cost = costById ? lineFoodCost(dishes, costById) : null;
   const legacy = draft.source === "shared" && !draft.materialize;
 
-  function openChooser() {
-    setLocalError(null);
-    setChooser(true);
-    if (sources) return;
-    startLoading(async () => {
-      try { setSources(await listEventMenuSources(eventId)); }
-      catch (err) { setLocalError(err instanceof Error ? err.message : RESULT_ERROR); setChooser(false); }
-    });
-  }
-  function pickSource(source: EventMenuSource) {
-    startLoading(async () => {
-      try {
-        const got = await getEventMenuSourceDishes(source);
-        if (draft.dishes.length > 0 && !window.confirm(REPLACE_MSG)) return;
-        const prov = source.kind === "set" ? { set_menu_id: source.setMenuId } : { event_menu_id: source.eventMenuId };
-        onChange((d) => applySourceDishes(d, got.dishes, prov, () => crypto.randomUUID()));
-        setChooser(false);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : RESULT_ERROR);
-      }
-    });
-  }
   function startEmpty() {
     if (draft.dishes.length > 0 && !window.confirm(CLEAR_MSG)) return;
     onChange((d) => ({ ...d, materialize: true, dishes: [] }));
@@ -463,7 +543,7 @@ function LineCard({
 
       {canEdit && (
         <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <button type="button" disabled={isPending || loading} onClick={openChooser}
+          <button type="button" disabled={isPending} onClick={onOpenChooser}
             className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
             คัดลอกรายการอาหารจาก…
           </button>
@@ -475,10 +555,6 @@ function LineCard({
           )}
           {localError && <span className="text-red-700">{localError}</span>}
         </div>
-      )}
-
-      {chooser && (
-        <SourceChooser sources={sources} loading={loading || isPending} onPick={pickSource} onClose={() => setChooser(false)} />
       )}
 
       {/* A2: one flat list, in the order the courses were added. */}
@@ -542,8 +618,10 @@ function SourceBadge({ draft }: { draft: LineDraft }) {
 // ── The chooser: a standard set, or another booking's own list ──────────────
 
 function SourceChooser({
-  sources, loading, onPick, onClose,
+  mode, sources, loading, onPick, onClose,
 }: {
+  /** "new": the pick CREATES a set line. "line": it replaces one card's list. */
+  mode: "new" | "line";
   sources: EventMenuSources | null;
   loading: boolean;
   onPick: (source: EventMenuSource) => void;
@@ -557,7 +635,10 @@ function SourceChooser({
   // wants to repeat.
   const bookings = (sources?.bookings ?? []).filter((b) => q === "" || (b.customer_name ?? "").toLowerCase().includes(q));
   return (
-    <div className="mx-4 mt-3 rounded-lg border border-neutral-300 bg-neutral-50 p-3 text-sm">
+    <div className="rounded-xl border border-neutral-300 bg-neutral-50 p-3 text-sm">
+      <p className="mb-2 font-medium text-neutral-800">
+        {mode === "new" ? "คัดลอกชุดจากที่อื่นมาเป็นชุดใหม่ของงานนี้" : "คัดลอกรายการอาหารมาแทนที่ชุดนี้"}
+      </p>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 text-xs">
           {/* `loading` also covers a save in flight: nothing may change the draft while it is being written. */}
@@ -566,7 +647,11 @@ function SourceChooser({
         </div>
         <button type="button" onClick={onClose} className="text-xs text-neutral-500 hover:text-neutral-800">ปิด</button>
       </div>
-      <p className="mb-2 text-xs text-neutral-500">เลือกหนึ่งรายการ — รายการอาหารของชุดนั้นจะมาแทนที่รายการในชุดนี้ (มีผลเมื่อกดบันทึก)</p>
+      <p className="mb-2 text-xs text-neutral-500">
+        {mode === "new"
+          ? "เลือกหนึ่งรายการ — ระบบจะสร้างชุดใหม่ให้ โดยใช้ชื่อและราคาต่อโต๊ะของชุดที่เลือก พร้อมรายการอาหารทั้งหมด จำนวนโต๊ะจะตั้งจากที่บันทึกไว้ในหน้าจอง (ถ้างานนี้มีชุดอยู่แล้วจะเริ่มที่ 1) แก้ได้ในกล่องราคาของหน้าจอง (มีผลเมื่อกดบันทึก)"
+          : "เลือกหนึ่งรายการ — รายการอาหารของชุดนั้นจะมาแทนที่รายการในชุดนี้ (มีผลเมื่อกดบันทึก)"}
+      </p>
       {loading && !sources && <p className="text-xs text-neutral-500">กำลังโหลด…</p>}
       {sources && tab === "sets" && (
         <ul className="max-h-64 divide-y divide-neutral-200 overflow-y-auto rounded border border-neutral-200 bg-white">

@@ -20,6 +20,7 @@ import type {
   CateringRate, CateringSetMenuOption, StaffOption,
 } from "./actions";
 import { docMoney } from "@/lib/quote-doc";
+import { foldSetName } from "./event-menu";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -213,12 +214,25 @@ export function BookingScreen({
     }]);
   }
   function addMenu(kind: "set" | "dish", id: string) {
+    const opt = kind === "set" ? setMenuOptions.find((s) => s.id === id) : dishOptions.find((d) => d.id === id);
+    if (!opt) return;
     // One line per set or dish, loaded lines included. A second pick of a set
     // the booking already has used to make TWO charge rows for one line and
     // print the set twice (review, 2026-09-19); the server refuses it too.
-    if (lines.some((l) => l.kind === kind && l.refId === id)) return;
-    const opt = kind === "set" ? setMenuOptions.find((s) => s.id === id) : dishOptions.find((d) => d.id === id);
-    if (!opt) return;
+    if (lines.some((l) => l.kind === kind && l.refId === id)) {
+      setError(`${opt.name} อยู่ในกล่องราคาแล้ว — แก้จำนวนโต๊ะในบรรทัดเดิมแทน`);
+      return;
+    }
+    // AND BY NAME, because a set copied in on the menu page is stored as the
+    // booking's OWN set (no set_menu_id), so the id test above cannot see it
+    // — picking the same standard set here would have made a second line
+    // with the same label and price (review, 2026-09-20). The server refuses
+    // this too, in addCateringEventMenu.
+    if (kind === "set" && lines.some((l) => l.kind === "set" && foldSetName(l.label) === foldSetName(opt.name))) {
+      setError(`งานนี้มีชุดชื่อ “${opt.name}” อยู่แล้ว — แก้จำนวนโต๊ะในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
+      return;
+    }
+    setError(null);
     const price = kind === "set" ? (opt as CateringSetMenuOption).price_per_set : (opt as CateringDishOption).selling_price;
     const qty = kind === "set" ? (toNum(form.table_count) ?? 1) : 1;
     setLines((ls) => [...ls, {

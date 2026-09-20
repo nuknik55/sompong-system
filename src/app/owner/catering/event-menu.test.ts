@@ -20,6 +20,7 @@ import {
   dishLineTotal, dishLineTotalText, dishNamesForPriceBox, dishesTotalPerTable, draftDishes, draftFromLine, draftsEqual, duplicateSetName, EVENT_MENU_SECTION_LIST,
   foodCostFigure, isSetLine, lineDraftsEqual, lineFoodCost, newCustomLineDraft, resolveDishes, setVsAlaCarte,
   swapPriceWarning, swapWarningText, SWAP_WARN_RATIO, toSavePayload, validateDrafts, validateSavePayload, viewVersion, removedLineIds, validateRemoveIds,
+  isSetNameTaken, newLineDraftFromSource, draftPrice,
   type EventMenuDish, type EventMenuLine,
 } from "./event-menu.ts";
 
@@ -328,6 +329,54 @@ test("DELETING A SET: the name stays taken until the deletion is saved, because 
   assert.equal(duplicateSetName([marked, newCustomLineDraft("n", "t2000", 2000)]), "t2000");
   assert.match(validateDrafts([marked, newCustomLineDraft("n", "t2000", 2000)])!, /มีชุดชื่อ “t2000”/);
   assert.equal(validateDrafts([marked, newCustomLineDraft("n", "t2000 ใหม่", 2000)]), null);
+});
+
+test("COPYING INTO AN EMPTY BOOKING creates the whole set line: name, price, tables, courses, provenance", () => {
+  // Nik, 2026-09-20: deleting every set line left the menu page with no card,
+  // and the copy button lived on a card — so the screen that owns the menu
+  // had no way back. A pick now creates the line itself.
+  const source = {
+    name: "ชุด 4,500",
+    pricePerTable: 4500,
+    dishes: [dish("ปลากะพง", 1200, 1, "dish"), dish("ขนม", 100, 2, "dessert")],
+  };
+  const line = newLineDraftFromSource("new-1", source, 10, { set_menu_id: "s1" }, (i) => `k${i}`);
+  assert.equal(line.eventMenuId, null, "not on the server yet");
+  assert.equal(line.name, "ชุด 4,500", "named after its source");
+  assert.equal(draftPrice(line), 4500, "priced by its source");
+  assert.equal(line.tables, 10, "the booking's own table count");
+  assert.equal(line.materialize, true);
+  assert.deepEqual(line.dishes.map((d) => [d.menu_id, d.quantity, d.section, d.source_set_menu_id]),
+    [["m-ปลากะพง", "1", "dish", "s1"], ["m-ขนม", "2", "dessert", "s1"]], "courses and their sections, with provenance");
+
+  // And it saves as a new line: the function writes the line, its food charge
+  // and its courses together, which is what puts it in the price box.
+  assert.equal(validateDrafts([line]), null);
+  const payload = toSavePayload([line], []);
+  assert.equal(payload.length, 1);
+  assert.equal(payload[0]!.event_menu_id, null);
+  assert.equal(payload[0]!.set_name, "ชุด 4,500");
+  assert.equal(payload[0]!.tables, 10);
+  assert.equal(payload[0]!.price_per_table, 4500);
+  assert.equal(payload[0]!.items.length, 2);
+  assert.equal(validateSavePayload(payload), null);
+
+  // From a past booking instead: the other provenance column, same shape.
+  const fromBooking = newLineDraftFromSource("new-2", source, 1, { event_menu_id: "L9" }, (i) => `k${i}`);
+  assert.deepEqual(fromBooking.dishes.map((d) => [d.source_event_menu_id, d.source_set_menu_id]), [["L9", null], ["L9", null]]);
+  assert.equal(fromBooking.tables, 1, "no table count on the booking: one table");
+});
+
+test("COPYING INTO AN EMPTY BOOKING refuses a name the booking already uses", () => {
+  const existing = [draftFromLine(line({ id: "L1", name: "ชุด 4,500" }))];
+  assert.equal(isSetNameTaken(existing, "ชุด 4,500"), true);
+  assert.equal(isSetNameTaken(existing, " ชุด 4,500 "), true, "trimmed and case-folded, as the save compares");
+  assert.equal(isSetNameTaken(existing, "ชุด 3,500"), false);
+  assert.equal(isSetNameTaken([], "ชุด 4,500"), false, "an empty booking can take any name");
+  assert.equal(isSetNameTaken(existing, "   "), false, "a blank name is a different problem");
+  // The save would refuse it too, so the screen refusing first is the same rule earlier.
+  const clash = newLineDraftFromSource("new-1", { name: "ชุด 4,500", pricePerTable: 4500, dishes: [] }, 1, { set_menu_id: "s1" }, (i) => `k${i}`);
+  assert.match(validateDrafts([...existing, clash])!, /มีชุดชื่อ “ชุด 4,500”/);
 });
 
 test("SERVER: the delete list is distinct UUIDs, each carrying its conflict token", () => {
