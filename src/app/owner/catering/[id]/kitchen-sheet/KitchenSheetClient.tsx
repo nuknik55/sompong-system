@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import type { CateringEvent } from "../../actions";
 import { thWeekdayFullDate, kitchenHeading } from "@/lib/kitchen-sheet";
+import { AmountText } from "../amount-text";
 import { timeRange, locationLabel, FOOD_FORMAT_LABEL } from "../../shared-utils";
 
 export type KitchenRow = {
@@ -10,9 +11,12 @@ export type KitchenRow = {
   /** 1-based, as printed in the ลำดับ column. */
   index: number;
   name: string;
-  /** "200 x 50" — price × plates for the whole job (plateCount), literal,
+  /** "200", or "1,000/กก." for a dish sold by weight — the portion size,
    *  never multiplied. null prints an empty cell. */
   price: string | null;
+  /** "1 × 10 โต๊ะ = 10", "0.5 กก. × 20 โต๊ะ = 10 กก." — per set and the set
+   *  count separately, then the total (dishAmount). null prints an empty cell. */
+  amount: string | null;
   note: string | null;
 };
 
@@ -41,7 +45,8 @@ function HeadLine({ label, value }: { label: string; value: string | null }) {
 
 /**
  * ONE table per package, as the paper has it — headed ลำดับ | รายการอาหาร |
- * ราคา | หมายเหตุ.
+ * ราคา | จำนวน | หมายเหตุ. จำนวน was part of the ราคา cell ("200 x 50")
+ * until 2026-09-21; see @/lib/kitchen-sheet for why it has its own column.
  *
  * It previously rendered one table PER SECTION, with no <thead> at all, so a
  * package showed as a headerless grid whose fourth column looked like an
@@ -54,16 +59,20 @@ function PackageTable({ sections }: { sections: { label: string; rows: KitchenRo
   return (
     <table>
       <colgroup>
-        <col style={{ width: "8%" }} />
-        <col style={{ width: "47%" }} />
-        <col style={{ width: "17%" }} />
-        <col style={{ width: "28%" }} />
+        {/* 9%, and the header nowrap: at the printed width (592px) "ลำดับ" broke in two. */}
+        <col style={{ width: "9%" }} />
+        <col style={{ width: "30%" }} />
+        {/* 15%: "1,000/กก." is ~64px and ran past a 12% cell at print width. */}
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "24%" }} />
+        <col style={{ width: "22%" }} />
       </colgroup>
       <thead>
         <tr>
-          <th style={{ textAlign: "center" }}>ลำดับ</th>
+          <th style={{ textAlign: "center", whiteSpace: "nowrap" }}>ลำดับ</th>
           <th style={{ textAlign: "left" }}>รายการอาหาร</th>
           <th style={{ textAlign: "center" }}>ราคา</th>
+          <th style={{ textAlign: "center" }}>จำนวน</th>
           {/* หมายเหตุ is a real column now: the paper version has staff
               writing across the dish line. Blank cells stay writable. */}
           <th style={{ textAlign: "left" }}>หมายเหตุ</th>
@@ -74,15 +83,17 @@ function PackageTable({ sections }: { sections: { label: string; rows: KitchenRo
           <Fragment key={s.label}>
             {showSectionRows && (
               <tr>
-                <td colSpan={4} style={{ fontWeight: 600, background: "#f3f4f6" }}>{s.label}</td>
+                <td colSpan={5} style={{ fontWeight: 600, background: "#f3f4f6" }}>{s.label}</td>
               </tr>
             )}
             {s.rows.map((r) => (
               <tr key={r.id}>
                 <td style={{ textAlign: "center" }}>{r.index}</td>
                 <td>{r.name}</td>
-                {/* Literal. See src/lib/kitchen-sheet.ts for why this is not a sum. */}
+                {/* The size, literal: see src/lib/kitchen-sheet.ts for why it is
+                    never multiplied into money. */}
                 <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{r.price ?? ""}</td>
+                <td style={{ textAlign: "center" }}><AmountText text={r.amount} /></td>
                 <td>{r.note ?? ""}</td>
               </tr>
             ))}
@@ -123,9 +134,12 @@ export function KitchenSheetClient({
       : event.offsite_address || "นอกสถานที่";
 
   const foodFormat = event.food_format ? FOOD_FORMAT_LABEL[event.food_format] ?? event.food_format : null;
+  // A box-set booking counts boxes, and its rows say "× 200 กล่อง": the
+  // header must not say "200 โต๊ะ" above them.
+  const countUnit = event.food_format === "box_set" ? "กล่อง" : "โต๊ะ";
   const foodLine = foodFormat && tableCount != null
-    ? `${foodFormat} - จำนวน ${tableCount} โต๊ะ`
-    : foodFormat ?? (tableCount != null ? `จำนวน ${tableCount} โต๊ะ` : null);
+    ? `${foodFormat} - จำนวน ${tableCount} ${countUnit}`
+    : foodFormat ?? (tableCount != null ? `จำนวน ${tableCount} ${countUnit}` : null);
 
   return (
     <>

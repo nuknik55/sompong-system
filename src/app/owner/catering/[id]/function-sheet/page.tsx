@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
 import {
   getCateringEvent, getCateringEventMenus, getCateringCharges,
-  getEventMenuDishes, getStaffOptions,
+  getEventMenuDishes, getStaffOptions, getWeightSoldMenuIds,
 } from "../../actions";
 import { isSetLine } from "../../event-menu";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection, moneyFields, type SheetLine, type SheetPackage } from "@/lib/function-sheet";
-import { plateCount } from "@/lib/kitchen-sheet";
+import { dishAmount } from "@/lib/kitchen-sheet";
 import { printFont } from "../print-font";
 import { FunctionSheetClient } from "./FunctionSheetClient";
 
@@ -35,11 +35,12 @@ export default async function CateringFunctionSheetPage({
   await requireSales();
   const { id } = await params;
 
-  const [event, eventMenus, charges, staffOptions] = await Promise.all([
+  const [event, eventMenus, charges, staffOptions, weightIds] = await Promise.all([
     getCateringEvent(id),
     getCateringEventMenus(id),
     getCateringCharges(id),
     getStaffOptions(),
+    getWeightSoldMenuIds(),
   ]);
 
   if (!event) notFound();
@@ -56,25 +57,40 @@ export default async function CateringFunctionSheetPage({
 
   const packages: SheetPackage[] = eventMenus
     .filter(isSetLine)
+    .map((m) => {
+      const dishes = dishesByLine.get(m.id)?.dishes ?? [];
+      const menuById = new Map(dishes.map((d) => [d.id, d.menu_id]));
+      return {
+        id: m.id,
+        name: m.name,
+        quantity: m.quantity,
+        note: m.note,
+        // Grouped here rather than in the client so the client renders what
+        // it is given: a group that reaches it is a group with rows in it.
+        // Each line prints its per-set count and the sets ordered separately,
+        // then the whole job's total — dishAmount(), the one function the
+        // kitchen sheet prints through as well, so the two sheets cannot
+        // disagree about how many go out, and in kilos for a dish sold by
+        // weight.
+        groups: groupBySection(dishes, SET_MENU_SECTIONS).map((g) => ({
+          ...g,
+          lines: g.lines.map((l) => ({
+            ...l,
+            amount: dishAmount({ quantity: l.quantity, menu_id: menuById.get(l.id) ?? null }, m.quantity, weightIds, event.food_format),
+          })),
+        })),
+      };
+    });
+
+  const extras: SheetLine[] = eventMenus
+    .filter((m) => !isSetLine(m))
     .map((m) => ({
       id: m.id,
       name: m.name,
       quantity: m.quantity,
       note: m.note,
-      // Grouped here rather than in the client so the client renders what it
-      // is given: a group that reaches it is a group with rows in it. Each
-      // line quantity is plates for the WHOLE JOB — per-set count × sets
-      // ordered, the same plateCount() the kitchen sheet uses, so the two
-      // sheets can never disagree about how many go out.
-      groups: groupBySection(dishesByLine.get(m.id)?.dishes ?? [], SET_MENU_SECTIONS).map((g) => ({
-        ...g,
-        lines: g.lines.map((l) => ({ ...l, quantity: plateCount(l.quantity, m.quantity) })),
-      })),
+      amount: dishAmount({ quantity: m.quantity, menu_id: m.menu_id }, null, weightIds, event.food_format),
     }));
-
-  const extras: SheetLine[] = eventMenus
-    .filter((m) => !isSetLine(m))
-    .map((m) => ({ id: m.id, name: m.name, quantity: m.quantity, note: m.note }));
 
   // The four money fields: the figure where the booking holds one, a ruled
   // line where it does not. The rule and the reason ค่าไฟ is always a ruled

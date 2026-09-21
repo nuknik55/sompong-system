@@ -8,6 +8,7 @@ import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { eventMenuAccess } from "@/lib/event-menu-access";
+import { weightSoldMenuIds } from "@/lib/kitchen-sheet";
 import { fetchAllRows } from "@/lib/data";
 import { foldSetName, isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
 
@@ -2353,6 +2354,20 @@ function toEventMenuDish(it: CateringSetMenuItem, sort_order: number, setMenuId:
     id: it.id, menu_id: it.menu_id, menu_name: it.menu_name, selling_price: it.selling_price, quantity: it.quantity,
     section: it.section, sort_order, note: it.note, source_set_menu_id: setMenuId, source_event_menu_id: null,
   };
+}
+
+/**
+ * The menus the kitchen and service sheets print in KILOS: those whose POS
+ * name carries a ÷10 divisor (weightSoldMenuIds, with the reason, in
+ * @/lib/kitchen-sheet). pos_sales_aliases is readable by every signed-in
+ * account and holds no cost, so the sales role may read it.
+ */
+export async function getWeightSoldMenuIds(): Promise<Set<string>> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("pos_sales_aliases").select("menu_id, divisor");
+  if (error) throw error;
+  return weightSoldMenuIds((data ?? []).map((r) => ({ menu_id: r.menu_id as string, divisor: Number(r.divisor) })));
 }
 
 /**

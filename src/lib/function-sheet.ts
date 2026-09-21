@@ -15,6 +15,11 @@ export type SheetLine = {
   name: string;
   quantity: number;
   note: string | null;
+  /** The printed จำนวน cell — dishAmount() in @/lib/kitchen-sheet, the same
+   *  text the kitchen sheet prints. null prints a blank cell, as the
+   *  kitchen's does: never the raw quantity. Required, so a builder that
+   *  forgets it fails to compile instead of printing blanks. */
+  amount: string | null;
 };
 
 /**
@@ -79,7 +84,7 @@ export function groupBySection(
   for (const { value, label } of sections) {
     const lines = rows
       .filter((r) => r.section === value)
-      .map((r) => ({ id: r.id, name: r.menu_name, quantity: r.quantity, note: r.note }));
+      .map((r) => ({ id: r.id, name: r.menu_name, quantity: r.quantity, note: r.note, amount: null }));
     if (lines.length > 0) out.push({ key: value, label, lines });
   }
   return out;

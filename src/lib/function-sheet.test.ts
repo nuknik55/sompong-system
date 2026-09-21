@@ -60,7 +60,7 @@ test("line fields carry through, note included", () => {
     SECTIONS,
   );
   assert.deepEqual(groups[0].lines[0], {
-    id: "i1", name: "ปลากะพงนึ่งมะนาว", quantity: 3, note: "ไม่ใส่ผัก",
+    id: "i1", name: "ปลากะพงนึ่งมะนาว", quantity: 3, note: "ไม่ใส่ผัก", amount: null,
   });
 });
 

@@ -2,6 +2,7 @@
 
 import type { CateringEvent, StaffOption } from "../../actions";
 import type { SheetLine, SheetPackage, MoneyField } from "@/lib/function-sheet";
+import { AmountText } from "../amount-text";
 import {
   thFullDate, timeRange, locationLabel, fmtBaht, staffLabel,
 } from "../../shared-utils";
@@ -168,7 +169,7 @@ export function FunctionSheetClient({
                       <tr style={{ background: "#f3f4f6" }}>
                         <th style={{ width: "6%", textAlign: "center" }}>ลำดับ</th>
                         <th style={{ textAlign: "left" }}>รายการ</th>
-                        <th style={{ width: "12%", textAlign: "right" }}>จำนวน</th>
+                        <th style={{ width: "30%", textAlign: "right" }}>จำนวน</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -179,7 +180,7 @@ export function FunctionSheetClient({
                             {l.name}
                             {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
                           </td>
-                          <td style={{ width: "12%", textAlign: "right" }}>{l.quantity}</td>
+                          <td style={{ width: "30%", textAlign: "right" }}><AmountText text={l.amount ?? null} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -199,7 +200,7 @@ export function FunctionSheetClient({
                 <tr style={{ background: "#f3f4f6" }}>
                   <th style={{ width: "6%", textAlign: "center" }}>ลำดับ</th>
                   <th style={{ textAlign: "left" }}>รายการ</th>
-                  <th style={{ width: "12%", textAlign: "right" }}>จำนวน</th>
+                  <th style={{ width: "30%", textAlign: "right" }}>จำนวน</th>
                 </tr>
               </thead>
               <tbody>
@@ -210,7 +211,7 @@ export function FunctionSheetClient({
                       {l.name}
                       {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
                     </td>
-                    <td style={{ width: "12%", textAlign: "right" }}>{l.quantity}</td>
+                    <td style={{ width: "30%", textAlign: "right" }}><AmountText text={l.amount ?? null} /></td>
                   </tr>
                 ))}
               </tbody>

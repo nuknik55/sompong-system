@@ -2,11 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
-import { getCateringEvent, getCateringEventMenus, getEventMenuDishes } from "../../actions";
+import { getCateringEvent, getCateringEventMenus, getEventMenuDishes, getWeightSoldMenuIds } from "../../actions";
 import { isSetLine } from "../../event-menu";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
-import { priceCell, plateCount } from "@/lib/kitchen-sheet";
+import { dishAmount, dishPrice } from "@/lib/kitchen-sheet";
 import { printFont } from "../print-font";
 import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./KitchenSheetClient";
 
@@ -18,10 +18,11 @@ import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./Kitche
 // THE ราคา COLUMN IS A PORTION SIZE, NOT MONEY THE KITCHEN ACTS ON. The
 // reasoning is in src/lib/kitchen-sheet.ts, where the rule is tested; the
 // short version is that Sompong sells the same dish at several sizes, so the
-// à la carte selling price is how the chef is told which size to plate. The
-// second number is PLATES FOR THE WHOLE JOB — per-set count × sets ordered,
-// plateCount() — so "200 x 50" reads "fifty plates of the ฿200 size". It
-// prints literally — never multiplied, no row total, no grand total.
+// à la carte selling price is how the chef is told which size to plate. It
+// prints alone, never multiplied into money. The จำนวน column prints the
+// per-set quantity and the set count (โต๊ะ, กล่อง or ชุด) SEPARATELY, then the total —
+// "1 × 10 โต๊ะ = 10", and in kilos for a dish sold by weight, "0.5 กก. × 20
+// โต๊ะ = 10 กก." — because "1,000 x 10" read as ten one-kilo plates.
 //
 // No cost anywhere: no getCostingContext(), no computeMenuCost(). This is
 // requireSales(), and menus.selling_price is a customer price the sales role
@@ -35,9 +36,10 @@ export default async function CateringKitchenSheetPage({
   await requireSales();
   const { id } = await params;
 
-  const [event, eventMenus] = await Promise.all([
+  const [event, eventMenus, weightIds] = await Promise.all([
     getCateringEvent(id),
     getCateringEventMenus(id),
+    getWeightSoldMenuIds(),
   ]);
 
   if (!event) notFound();
@@ -48,12 +50,14 @@ export default async function CateringKitchenSheetPage({
   // shared set says today.
   const dishesByLine = await getEventMenuDishes(id);
 
-  // Header only. The ราคา column does NOT use this — see below.
+  // Header only. Neither the ราคา nor the จำนวน column uses this: each set
+  // line prints its own count of sets, which can differ from the booking's
+  // table count (it is copied only when the set is added).
   const tableCount = event.table_count;
 
   // A BUFFET PRINTS NO PER-DISH PRICES. Nik's paper buffet sheet has none —
   // a buffet is cooked to the guest count in the header, not per-plate
-  // portions — so the stored food_format blanks the ราคา column. That is the
+  // portions — so the stored food_format blanks the ราคา and จำนวน columns. That is the
   // only buffet rule built so far, because it is the only one the paper
   // attests: how a buffet BOOKING is even shaped (a per-head set? dish
   // lines?) has no real data yet, and the multiplier's three readings are
@@ -69,8 +73,7 @@ export default async function CateringKitchenSheetPage({
     .map((m) => {
       const source = dishesByLine.get(m.id)?.dishes ?? [];
       const groups = groupBySection(source, SET_MENU_SECTIONS);
-      const priceById = new Map(source.map((r) => [r.id, r.selling_price]));
-      const qtyById = new Map(source.map((r) => [r.id, r.quantity]));
+      const dishById = new Map(source.map((r) => [r.id, r]));
       let n = 0;
       return {
         id: m.id,
@@ -81,10 +84,14 @@ export default async function CateringKitchenSheetPage({
             id: l.id,
             index: ++n,
             name: l.name,
-            // price × plates for the WHOLE JOB: per-set count × sets
-            // ordered. This rule took three readings — the history is in
-            // @/lib/kitchen-sheet beside plateCount(), where it is tested.
-            price: isBuffet ? null : priceCell(priceById.get(l.id) ?? null, plateCount(qtyById.get(l.id) ?? 1, m.quantity)),
+            // The size, and then per-set count × sets ordered = the whole
+            // job. The count took three readings and the print a fourth —
+            // the history is in @/lib/kitchen-sheet, where it is tested.
+            price: isBuffet ? null : dishPrice(dishById.get(l.id)?.selling_price ?? null, dishById.get(l.id)?.menu_id ?? null, weightIds),
+            amount: isBuffet ? null : dishAmount(
+              { quantity: dishById.get(l.id)?.quantity ?? 1, menu_id: dishById.get(l.id)?.menu_id ?? null },
+              m.quantity, weightIds, event.food_format,
+            ),
             note: l.note,
           })),
         })),
@@ -100,11 +107,12 @@ export default async function CateringKitchenSheetPage({
       id: m.id,
       index: i + 1,
       name: m.name,
-      // Every dish row gets price × count, extras included (Nik, from the
-      // real 10-table booking: ข้าวผัดกุ้ง (กลาง) × 10 must print
-      // "160 x 10", not a blank). The line quantity already IS the plate
-      // count here — a direct dish line has no per-set factor.
-      price: isBuffet ? null : priceCell(m.selling_price, m.quantity),
+      // Every dish row gets its size and its count, extras included (Nik,
+      // from the real 10-table booking: ข้าวผัดกุ้ง (กลาง) × 10 must not
+      // print a blank). The line quantity already IS the whole job's here —
+      // a direct dish line has no per-set factor, so no set count.
+      price: isBuffet ? null : dishPrice(m.selling_price, m.menu_id, weightIds),
+      amount: isBuffet ? null : dishAmount({ quantity: m.quantity, menu_id: m.menu_id }, null, weightIds, event.food_format),
       note: m.note,
     }));
 
