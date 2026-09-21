@@ -22,6 +22,7 @@ import type {
 import { docMoney } from "@/lib/quote-doc";
 import { foldSetName } from "./event-menu";
 import { bookingSnapshot } from "./booking-dirty";
+import { markUnsaved } from "@/lib/unsaved-changes";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -193,6 +194,10 @@ export function BookingScreen({
   // flips, which is twice in a session, not once per keystroke.
   useEffect(() => {
     if (!dirty) return;
+    // ออกจากระบบ is a form submit ending in a redirect, so neither handler
+    // below can see it. Registering here keeps the two in step: the shell
+    // asks exactly when this screen would have (Nik, 2026-09-20).
+    const release = markUnsaved();
     const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     // An in-app link never fires beforeunload, so every internal anchor is
     // caught in the capture phase before Next.js sees it. The browser's own
@@ -213,6 +218,7 @@ export function BookingScreen({
     window.addEventListener("beforeunload", unload);
     document.addEventListener("click", click, true);
     return () => {
+      release();
       window.removeEventListener("beforeunload", unload);
       document.removeEventListener("click", click, true);
     };
@@ -719,7 +725,10 @@ export function BookingScreen({
         </div>
       </div>
 
-      {dirty && !isPending && (
+      {/* Gated on `dirty` alone, the same condition that arms the guard and
+          registers with the shell — so what the screen SAYS and what it
+          WARNS about can never disagree (review, 2026-09-20). */}
+      {dirty && (
         <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>
       )}
       {missingForSave.length > 0 && !isPending && (

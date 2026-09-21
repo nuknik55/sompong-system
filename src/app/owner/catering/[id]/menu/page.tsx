@@ -54,7 +54,12 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+      {/* Keyed on the booking: the editor deliberately holds its draft
+          across server refreshes, so without this a client navigation from
+          one booking menu to another would carry the first ones drafts
+          into the second (review, 2026-09-20). */}
       <EventMenuClient
+        key={id}
         eventId={id}
         version={viewVersion(view)}
         header={{ backHref: `/owner/catering/${id}`, backLabel: `← ${event.customer_name ?? "การจอง"}`, status: event.status, date: event.event_date }}

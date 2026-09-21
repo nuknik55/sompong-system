@@ -2528,7 +2528,7 @@ In order. Nothing here is started unless it says so.
     Printing a menu card is still not started, and is the only part of
     round 2 that is not built.
 
-    **SIX THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
+    **SEVEN THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
     recorded because each will look like one to whoever meets it first:
 
     1. **The price per table is edited on the menu page now, and the price
@@ -2580,6 +2580,19 @@ In order. Nothing here is started unless it says so.
        Re-fetching on every open would cost a round trip on a list that
        changes a few times a year, and re-fetching in the background would
        move a list under someone's cursor mid-pick.
+    7. **Every unsaved-changes guard uses the browser's own confirm dialog,
+       and a browser that has suppressed further dialogs defeats them all**
+       (Nik, 2026-09-21, known and accepted). Chrome and Firefox offer a
+       "prevent this page from creating additional dialogs" checkbox, and
+       it can be ticked on the very dialog these guards raise. From then on
+       every `confirm()` on that page returns `false` without showing
+       anything, and every guard — the in-app links, ออกจากระบบ — reads that
+       as a cancel, so the person stays put and is not told why. A reload
+       clears the suppression. Only an in-app modal in place of
+       `window.confirm` would remove it, and Nik is not asking for that.
+       (A prompt that returns anything OTHER than `false` — undefined from a
+       stub or an embedded webview — fails open and lets the person through;
+       only the explicit `false` traps.)
 
     **THE GAP NIK FOUND AFTER `ebba2cc`: a set could be created on the menu
     page and not removed there** (2026-09-20). He made three test sets named
@@ -2907,6 +2920,62 @@ In order. Nothing here is started unless it says so.
     - **Also not caught, recorded beside the Back button:** ออกจากระบบ in the
       header is a form submit ending in a redirect, so neither the click
       guard nor `beforeunload` sees it.
+
+    **ออกจากระบบ NOW RESPECTS THE GUARDS** (Nik, 2026-09-20; built locally,
+    NOT COMMITTED, no migration). It was the one exit no page guard could
+    see: a form submit that ends in a server-side redirect, so no anchor is
+    clicked and the document is never unloaded. A module-level COUNT of
+    dirty screens (`src/lib/unsaved-changes.ts`) is the smallest thing that
+    lets the header ask, because the header knows nothing about the page
+    under it and its layout does not re-render when that page's state
+    changes. Each screen registers from the SAME effect that arms its own
+    guard, so the two can never disagree, and releases in that effect's
+    cleanup. **Cancelling does nothing at all and leaves the person exactly
+    where they were:** React passes the action to `startHostTransition` only
+    when the submit event was not default-prevented, which was read out of
+    the React source rather than assumed.
+
+    **It is the only such control.** The shell has exactly one `<form>`, and
+    `logout` is imported and submitted in exactly one place; every other way
+    out of those screens is a link, which the capture-phase guards already
+    catch.
+
+    **The review of it (one reader, two questions, 2026-09-20) confirmed the
+    count cannot leak on any unmount path** — normal unmount, the keyed
+    remount, the route change after a save, an error boundary and React's
+    development double-invocation all run the cleanup, and unmount effects
+    flush before mount effects — **and that the sign-out still completes
+    after a confirm. It found six things, all fixed:**
+    - **A `confirm` returning anything but a boolean stranded the person.**
+      A stub or an embedded webview returning `undefined` read as a cancel,
+      so sign-out became impossible from a dirty catering screen with
+      nothing on screen to say why. It now FAILS OPEN: only an explicit
+      `false` cancels.
+    - **The missing-`confirm` guard was dead and could throw** from the very
+      expression that was meant to be guarded. The lookup is now a separate
+      `resolveAsk`, which returns null instead of throwing.
+    - **No test could go red for either**, because every test injected its
+      own prompt. `resolveAsk` is exported and tested against a window with
+      no `confirm`, a non-function `confirm`, and one that needs its
+      receiver.
+    - **The unsaved badge was hidden during a save while the guard was
+      armed**, so the prompt could appear with nothing on screen to explain
+      it. Both now read the same condition.
+    - **The menu editor was not keyed on the booking**, so navigating from
+      one booking's menu to another would have carried the first one's
+      drafts across. Unreachable by any link today; closed anyway.
+    - **NOT FIXED, recorded:** the recipe editor and the SOP form track
+      their own edits but do not register, so signing out still discards
+      those silently — two lines each, left until their dirty models have
+      been reviewed for false positives. And a deploy landing under an open
+      tab turns the post-confirm redirect into a full page load, which
+      raises the browser's own "Leave site?" on top of ours; cancelling that
+      leaves the person signed out server-side but still in the app.
+    - **A limit no code can remove:** a browser whose "prevent this page
+      from creating additional dialogs" checkbox has been ticked returns
+      `false` from every `confirm`, which reads as a cancel. Only an in-app
+      modal instead of `window.confirm` would fix it, on this guard and on
+      the two page guards alike.
 
     **Item 40 came out of this work's review and is NOT part of it** — a
     booking a room conflict has frozen cannot be re-issued, and so cannot be

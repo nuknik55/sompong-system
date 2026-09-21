@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CateringDishOption, EventMenuActionResult, EventMenuSource, EventMenuSources } from "../../actions";
 import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus } from "../../actions";
 import { fmtBaht, toNum, StatusBadge, thDate, thFullDate } from "../../shared-utils";
+import { markUnsaved } from "@/lib/unsaved-changes";
 import {
   applySourceDishes, comparisonHeadline, comparisonText, COMPARISON_LABEL, dishLineTotalText, dishesTotalPerTable, draftDishes,
   draftFromLine, draftPrice, draftsEqual, foodCostFigure, lineFoodCost, newCustomLineDraft, setVsAlaCarte, swapPriceWarning,
@@ -175,6 +176,9 @@ function EventMenuEditor({
   // leaves without asking.
   useEffect(() => {
     if (!dirty) return;
+    // ออกจากระบบ is a form submit ending in a redirect: no anchor, no unload,
+    // so neither handler below sees it (Nik, 2026-09-20).
+    const release = markUnsaved();
     const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     const click = (e: globalThis.MouseEvent) => {
       // A modified or middle click opens a new tab without leaving this one
@@ -189,6 +193,7 @@ function EventMenuEditor({
     window.addEventListener("beforeunload", unload);
     document.addEventListener("click", click, true);
     return () => {
+      release();
       window.removeEventListener("beforeunload", unload);
       document.removeEventListener("click", click, true);
     };

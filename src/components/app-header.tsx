@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logout } from "@/app/login/actions";
+import { confirmDiscardUnsaved, SIGN_OUT_UNSAVED_MSG } from "@/lib/unsaved-changes";
 import type { Profile } from "@/lib/auth";
 import {
   LayoutDashboard,
@@ -172,7 +173,22 @@ function SidebarContent({
             <p className="text-[11px] text-neutral-400">{ROLE_LABEL[profile.role] ?? profile.role}</p>
           </div>
         </div>
-        <form action={logout}>
+        {/* ออกจากระบบ IS THE ONE EXIT NO PAGE GUARD CAN SEE. It is a form
+            submit that ends in a server-side redirect: no anchor is clicked,
+            so the capture-phase link guards never fire, and the document is
+            never unloaded, so beforeunload never fires either. The page says
+            whether it has unsaved work (src/lib/unsaved-changes.ts) and this
+            asks before throwing it away.
+
+            Preventing the submit's default is what cancels it: React passes
+            the action to startHostTransition only when the event was NOT
+            default-prevented, so a cancel runs nothing at all and leaves the
+            person exactly where they were. A confirm — or a page with
+            nothing unsaved — goes through untouched. */}
+        <form
+          action={logout}
+          onSubmit={(e) => { if (!confirmDiscardUnsaved(SIGN_OUT_UNSAVED_MSG)) e.preventDefault(); }}
+        >
           <button
             type="submit"
             className="text-xs text-neutral-400 underline hover:text-neutral-700"
