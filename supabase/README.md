@@ -3632,6 +3632,33 @@ and after Nik's import.
     editor's model — BEFORE `useLeaveGuard` goes on it, or the guard will
     warn on a form nobody changed.
 
+45. **Rotate the Supabase keys — OPEN AND IMPORTANT. Postponed by Nik on
+    2026-09-21.** The service-role key bypasses every RLS policy. It sits in
+    full in two Claude transcripts on this PC, about 120 times between
+    2026-06-27 and 2026-08-18, so it has left the machine in plaintext. It
+    was never committed and never reached the browser bundle (checked
+    2026-09-21; AGENTS.md). Until it is rotated, AGENTS.md's rule holds:
+    read-only use against production, reported each time. The steps, in
+    order: Supabase → Project Settings → API Keys → create a secret key
+    (`sb_secret_…`) and use the publishable key (`sb_publishable_…`); put
+    them in `app/.env.local` and in the Vercel project **sompong-system**
+    (`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`);
+    redeploy; check that the app works (sign in, `/owner/team`); only THEN
+    deactivate the legacy keys, which can be undone. The old Vercel project
+    **app** (app-five-orpin-49.vercel.app) holds the key too until it is
+    deleted.
+
+46. **Nik or the head chef: three menus sold by weight** (Nik, 2026-09-21).
+    Named exactly as in the POS, per kilo:
+    - ปูม้าใหญ่ผัดพริกไทยดำ — ฿1,200 a kilo; ปูม้าเป็น 10 ขีด + the sauce
+      for a kilo.
+    - กั้งกระดานนึ่ง — ฿1,300 a kilo; กั้งกระดาน 1 โล.
+    - กั้งกระดานทอดกระเทียม — ฿1,300 a kilo; กั้งกระดาน 1 โล + the
+      garlic-fry ingredients.
+    Each needs ÷10 on its POS name at the next import (หาร in the import).
+    Later, a menu for "กุ้งแม่น้ำ Salt 4 lines", a different dish from
+    กุ้งแม่น้ำเผา 4 ขีด.
+
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
 `/owner/hr/schedule/print`, is opened through a computed `printUrl` in
@@ -4861,11 +4888,24 @@ plate, and the POS, which counts it in ขีด, is divided by 4. Set up on
   ขีด by `blue_crab_curry_per_kilo_migration.sql`, applied 2026-09-21).
 - No menu yet, so their POS sales are not counted: ปูม้าใหญ่ผัดพริกไทยดำ
   (฿120 a ขีด at the POS), กั้งกระดานนึ่ง and กั้งกระดานทอดกระเทียม (฿130).
-  Each needs a menu per kilo and a ÷10 divisor on its POS name.
+  **Nik or the head chef creates them** (queue item 46): each named
+  exactly as in the POS, per kilo, with ÷10 on its POS name at the next
+  import.
 - Left uncounted by Nik's decision: ข้าวเหนียว (ขีด) and มะม่วง (ขีด), ฿25 a
   ขีด, which have no menu.
-- The POS item "กุ้งแม่น้ำ Salt 4 lines" (FD3003-12, ฿200) has no menu:
-  there is no salt-baked river prawn dish in the app.
+- **"กุ้งแม่น้ำ Salt 4 lines" (FD3003-12, ฿200) is a DIFFERENT dish from
+  กุ้งแม่น้ำเผา 4 ขีด** (Nik, 2026-09-21). Do not tie it to that menu or
+  its ÷4. Nik will create its menu later; until then its sales stay
+  uncounted.
+
+**Decided 2026-09-21 (Nik), so they are not reopened:**
+- **÷10 stays the marker of a dish sold by weight.** There is no separate
+  "sold by weight" setting for now: the kitchen and service sheets print a
+  dish in kilos when a POS divisor of 10 points at its menu
+  (`getWeightSoldMenuIds`).
+- **หาร stays available on a POS name that has no divisor yet**, one name
+  at a time. A name that has one shows it instead, and it is changed on
+  `/owner/pos-divisors`.
 
 ## Known limits of the POS pricing rule
 

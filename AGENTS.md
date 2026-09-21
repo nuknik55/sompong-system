@@ -354,7 +354,8 @@ it was issued (2026-06-27) it was typed into commands, passed to
 sits in full in two Claude transcripts, about 120 times between 2026-06-27
 and 2026-08-18. It was never committed and never reached the browser
 bundle (checked 2026-09-21), but a key that has left the machine in
-plaintext is exposed, and rotating it was recommended that day.
+plaintext is exposed, and rotating it was recommended that day. **The
+rotation is OPEN: Nik postponed it on 2026-09-21 (README queue item 45).**
 
 **Using it without leaking it again:**
 - Read it from `.env.local` into a variable inside the script. Never print
