@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
+import { clearedSavedIds, priceChanged, recipeSnapshot } from "@/components/recipe-dirty";
 import { saveRecipeItems, type SavedItem } from "@/app/staff/actions";
 import { IngredientCombobox } from "@/components/ingredient-combobox";
 import { Plus, Save } from "lucide-react";
@@ -56,22 +58,30 @@ export function RecipeEditor({
 }: Props) {
   const [items, setItems] = useState(initialItems);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const [dirty, setDirty] = useState(false);
+  // UNSAVED IS A COMPARISON, NOT A FLAG (Nik, 2026-09-21). It used to be a
+  // boolean set on the first edit and cleared only by a save, so a quantity
+  // typed and put back, a row added and removed, or the same ingredient
+  // picked again all read as unsaved — on a screen the head chef and the
+  // prep head use every day, where a warning that cries wolf gets dismissed
+  // by reflex. The baseline is taken from the very rows the editor opened
+  // with, so at open the two are equal by construction. See recipe-dirty.ts.
+  const [cleanItems, setCleanItems] = useState(() => recipeSnapshot(initialItems));
   const [savedPrice, setSavedPrice] = useState(sellingPrice ?? 0);
   const [priceInput, setPriceInput] = useState(String(sellingPrice ?? ""));
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "pending">("idle");
 
-  const priceDirty = canEditPrice && priceInput !== String(savedPrice);
-  const overallDirty = dirty || priceDirty;
+  const itemsDirty = recipeSnapshot(items) !== cleanItems;
+  // Compared as the NUMBER a save would send: as text, "180.00" read as a
+  // change from 180 — and went on reading as one after the save that stored
+  // it, because the saved figure became 180 while the box kept its text.
+  const priceDirty = canEditPrice && priceChanged(priceInput, savedPrice);
+  const overallDirty = !readOnly && (itemsDirty || priceDirty);
 
-  useEffect(() => {
-    if (!overallDirty) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [overallDirty]);
+  // Asks before leaving by the browser, by any in-app link, and by
+  // ออกจากระบบ. It had beforeunload only: every in-app link left silently.
+  useLeaveGuard(overallDirty);
 
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
 
@@ -91,20 +101,17 @@ export function RecipeEditor({
 
   function patchLocal(id: string, patch: Partial<RecipeItem>) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    setDirty(true);
     setSaveStatus("idle");
   }
 
   function addRow() {
     setItems((prev) => [...prev, { id: newRowId(), ingredient_id: null, quantity: 0, unit: null }]);
-    setDirty(true);
     setSaveStatus("idle");
   }
 
   function removeRow(id: string) {
     setItems((prev) => prev.filter((it) => it.id !== id));
     if (!id.startsWith("new-")) setDeletedIds((prev) => [...prev, id]);
-    setDirty(true);
     setSaveStatus("idle");
   }
 
@@ -113,17 +120,24 @@ export function RecipeEditor({
     setSaveStatus("idle");
     startTransition(async () => {
       try {
+        // A saved row whose ingredient was cleared cannot be stored as it is
+        // — the column is NOT NULL — so saving it means deleting it. It used
+        // to be skipped: the screen dropped it, and it came back on reload
+        // with its old ingredient (review, 2026-09-21). It goes with the
+        // removed rows, the path ลบ uses, which the direct save and the
+        // approval both already honour.
         const result = await saveRecipeItems(
           target,
           parentId,
           items,
-          deletedIds,
+          [...deletedIds, ...clearedSavedIds(items)],
           parentName ? { parentName } : undefined
         );
 
         if (result.status === "error") { setSaveError(result.message); return; }
         if (result.status === "pending") {
-          setDirty(false);
+          // Sent for approval: what was sent is the new clean state.
+          setCleanItems(recipeSnapshot(items));
           setDeletedIds([]);
           setSaveStatus("pending");
           return;
@@ -132,7 +146,8 @@ export function RecipeEditor({
         // Saved directly (admin)
         setItems(result.items);
         setDeletedIds([]);
-        setDirty(false);
+        // The server's rows — real ids now for the ones that were new.
+        setCleanItems(recipeSnapshot(result.items));
         setSaveStatus("saved");
 
         if (priceDirty && onSavePrice) {
@@ -202,6 +217,13 @@ export function RecipeEditor({
 
   return (
     <div className="space-y-4">
+      {/* LOCKED WHILE A SAVE IS IN FLIGHT. A direct save replaces the rows
+          with the ones it sent and marks them clean, so anything typed in
+          the meantime was silently reverted (review, 2026-09-21). The
+          booking screen's price box does the same. The price box below is
+          left open: its save compares against the figure it SENT, so a
+          price typed mid-save correctly stays unsaved. */}
+      <fieldset disabled={isPending} className="m-0 min-w-0 border-0 p-0">
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
@@ -254,11 +276,13 @@ export function RecipeEditor({
           </tbody>
         </table>
       </div>
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          disabled={isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
           onClick={addRow}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -371,7 +395,7 @@ function CostSummary({
         </div>
       )}
       {hasMissingCost && <p className="mt-2 text-xs text-amber-600">* ยอดนี้ยังไม่รวมรายการที่ยังไม่มีราคา ต้นทุนจริงจะสูงกว่านี้</p>}
-      {hasIncompleteRow && <p className="mt-2 text-xs text-neutral-400">* แถวที่ยังไม่เลือกวัตถุดิบจะไม่ถูกบันทึก</p>}
+      {hasIncompleteRow && <p className="mt-2 text-xs text-neutral-400">* แถวที่ยังไม่เลือกวัตถุดิบจะไม่ถูกบันทึก — ถ้าเป็นแถวที่เคยบันทึกไว้แล้ว จะถูกลบออกจากสูตรเมื่อกดบันทึก</p>}
     </div>
   );
 }

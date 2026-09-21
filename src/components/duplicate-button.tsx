@@ -3,6 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CategorySelect } from "@/components/category-select";
+import { confirmDiscardUnsaved } from "@/lib/unsaved-changes";
+
+const DUPLICATE_UNSAVED_MSG =
+  "หน้านี้มีการแก้ไขที่ยังไม่ได้บันทึก — สำเนาจะทำจากสูตรที่บันทึกไว้ล่าสุด (ไม่รวมการแก้ไขนี้) และอาจเปิดหน้าสูตรใหม่ทันที ดำเนินการต่อหรือไม่?";
 
 export function DuplicateButton({
   id,
@@ -71,6 +75,13 @@ export function DuplicateButton({
         type="button"
         disabled={isPending}
         onClick={() => {
+          // Asked BEFORE anything is created, and in words that are true for
+          // every outcome: the copy is made from the recipe as last SAVED,
+          // not from the screen, and for an owner or admin it then opens the
+          // copy — leaving this page. For an editor it becomes a request and
+          // stays. Only a page with unsaved work asks at all (review,
+          // 2026-09-21).
+          if (!confirmDiscardUnsaved(DUPLICATE_UNSAVED_MSG)) return;
           setError(null);
           startTransition(async () => {
             try {

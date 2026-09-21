@@ -2977,6 +2977,76 @@ In order. Nothing here is started unless it says so.
       modal instead of `window.confirm` would fix it, on this guard and on
       the two page guards alike.
 
+    **THE RECIPE EDITOR AND THE SOP FORM NOW GUARD UNSAVED WORK** (Nik,
+    2026-09-21; built locally, NOT COMMITTED, no migration). These are used
+    daily by the head chef and the prep head — far more than any catering
+    screen — so a false warning costs more here, and both DIRTY MODELS WERE
+    FIXED BEFORE ANYTHING WAS WIRED TO THEM.
+
+    **What was wrong with each, before this pass:**
+    - **Both used a flag, set by the first edit and cleared only by a
+      save**, so neither could recover: a quantity typed and put back, a row
+      or step added and removed, a note typed and deleted — all read as
+      unsaved for the rest of the visit. Each now compares WHAT A SAVE WOULD
+      WRITE against what was last clean (`recipe-dirty.ts`, `sop-dirty.ts`,
+      both tested), mirroring its own save field by field — the recipe save
+      drops rows with no ingredient; the SOP save trims the video link and
+      the notes, writes no blank note, and drops blank steps.
+    - **The recipe price was compared as TEXT**, so "180.00" over 180 read
+      as a change — and went on reading as one after the save that stored
+      it. It is compared as the number sent, rounded the way the
+      `numeric(12,2)` column rounds.
+    - **Which already had a page guard:** both had `beforeunload`; NEITHER
+      had the in-app link guard, and neither was registered with
+      ออกจากระบบ. Both now use `useLeaveGuard` (`src/lib/use-leave-guard.ts`),
+      the same guard as the booking screen and the menu page, factored into
+      a hook. The two catering screens still carry their own inline copies,
+      which predate it; they differ only in treating a non-boolean `confirm`
+      as a cancel. Browser Back stays uncaught, as everywhere else.
+
+    **The review (one reader, two questions, 2026-09-21) found three real
+    bugs in this pass's own work, all fixed:**
+    - **The first recipe model still warned on a re-picked ingredient.** The
+      pages load every saved row with unit NULL, and a pick — even of the
+      same ingredient — fills it in; the model compared the unit. Its tests
+      passed because their rows carried a unit the pages never load with. The
+      unit is now left out (it is derived from the ingredient, and no screen
+      shows a row's stored unit), the fixtures load the way the pages do, and
+      the first model was run against them to show the test now separates
+      the two.
+    - **A saved row with its ingredient cleared was silently kept** — a
+      PRE-EXISTING save bug the new baseline made look settled. The save
+      skipped it, the screen dropped it, and it came back on reload with its
+      old ingredient. It is now deleted on save, sent with the removed rows
+      through the path ลบ already uses, which the direct save and the
+      approval both honour. The on-screen hint says so.
+    - **ดู SOP was a button calling `router.push`**, which no link guard can
+      see, so it left with the edits and asked nothing. It is a link now.
+    - **Also fixed:** คัดลอกสูตรนี้ could leave the page from unsaved edits,
+      and copies the SAVED recipe rather than the screen — it now asks first,
+      in words true for every outcome. And rows edited while a recipe save
+      was in flight were overwritten by the saved ones and marked clean; the
+      table is locked during a save, as the booking screen's price box is.
+
+    **Found and NOT fixed — pre-existing, and none of them in the guard:**
+    - **The recipe quantity box can turn 1.5 into 15.** It shows
+      `String(quantity)`, so a trailing "." is dropped while typing:
+      backspace the 5 of 1.5 and the box shows "1", type 5 and it is 15. The
+      warning is right — the value did change — but the chef believes they
+      typed it back. **This one matters most: a tenfold quantity silently
+      corrupts the recipe's cost.** The fix is to hold each row's typed
+      text, as the price box already does.
+    - **A step photo upload can undo other edits in the same section.** The
+      upload finishes against the list as it was when the file was picked,
+      so a step typed, removed or moved meanwhile is reverted — and the
+      comparison then faithfully reports the reverted state as clean.
+    - **A blank step's photo is dropped on save**, photo and all; the
+      comparison mirrors the save, so adding a photo to an empty step is not
+      a change, because saving would not keep it either.
+    - **The prep yield editor has no guard at all**, and its own unsaved
+      check compares text ("8.0" stays unsaved after saving 8), so it would
+      need the same treatment before a guard could go on it.
+
     **Item 40 came out of this work's review and is NOT part of it** — a
     booking a room conflict has frozen cannot be re-issued, and so cannot be
     locked. Pre-existing; Nik left it for later.
@@ -3492,6 +3562,41 @@ and after Nik's import.
     move that decision INSIDE the booking screen** rather than keying it
     from the parent — which is a real change to the most-used screen in the
     module, which is why it is queued rather than done.
+
+42. **An SOP step-photo upload can undo other edits in the same section**
+    (found by the review of the SOP form's guard, 2026-09-21). **NOT
+    STARTED. Pre-existing — not caused by the guard.** The upload in
+    `sop-photo-upload.tsx` calls back into `sop-step-list.tsx` with the
+    list as it stood WHEN THE FILE WAS PICKED, and `sop-form.tsx` replaces
+    the whole section with that list. Resizing and uploading takes seconds;
+    a step typed, removed or moved in the same section meanwhile is
+    reverted when the upload lands. The unsaved-changes comparison then
+    faithfully reports the reverted state, so nothing warns. The fix is to
+    update the photo by the step's `tempId` against the CURRENT list (let
+    the step list call `set(prev => …)`), or to lock the section while an
+    upload is in flight.
+
+43. **A step whose text is blank loses its photo on save** (found by the
+    same review, 2026-09-21). **NOT STARTED. Pre-existing.** `upsertSop`
+    keeps only lines whose text is not blank
+    (`.filter((s) => s.text.trim())`), photo or not, so a step that is only
+    a photo is dropped whole. The unsaved-changes comparison mirrors the save
+    on purpose — adding a photo to an empty step is not a change, because
+    saving would not keep it either — so the head chef loses the photo
+    whether they save or leave, with no warning. Either the save keeps a
+    step that has a photo, or the screen refuses to save one without text
+    and says why. Nik's call.
+
+44. **The prep yield editor has no unsaved-changes guard, and its own dirty
+    check compares text** (found by the same review, 2026-09-21). **NOT
+    STARTED.** `prep-yield-editor.tsx` (on the prep recipe page, beside the
+    recipe editor) loses an edited batch yield silently on any in-app link,
+    on sign-out and on closing the tab. Its unsaved check compares the typed
+    text with the props, so "8.0" stays unsaved after saving 8, and nothing
+    clears it after ส่งขออนุมัติ. That check has to become a comparison of
+    the number a save would send against what was last saved — the recipe
+    editor's model — BEFORE `useLeaveGuard` goes on it, or the guard will
+    warn on a form nobody changed.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,

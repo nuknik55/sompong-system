@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
+import { sopSnapshot } from "@/components/sop-dirty";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Save, StickyNote } from "lucide-react";
 import { upsertSop } from "@/app/sop/actions";
@@ -48,8 +51,6 @@ export function SopForm({
   submitMode?: "save" | "pending";
 }) {
   const router = useRouter();
-  const isDirty = useRef(false); // for beforeunload (no re-render needed)
-  const [hasUnsaved, setHasUnsaved] = useState(false); // for visual indicator
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -81,24 +82,32 @@ export function SopForm({
     existing ? toChecklistItems(existing.checklist) : []
   );
 
-  function markDirty() {
-    isDirty.current = true;
-    setHasUnsaved(true);
+  // Any edit clears the "saved" / "sent for approval" line. Whether the
+  // form is unsaved is no longer RECORDED here — it is computed below.
+  function onEdit() {
     setSaveSuccess(false);
     setSavePending(false);
   }
 
-  // Warn on accidental page close / refresh while unsaved
-  useEffect(() => {
-    function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (isDirty.current) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    }
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
+  // UNSAVED IS A COMPARISON, NOT A FLAG (Nik, 2026-09-21). Every onChange
+  // used to set a flag that only a save cleared, so a note typed and
+  // deleted, or a step added and removed, read as unsaved for the rest of
+  // the visit. Now: what upsertSop would write, against what was last clean
+  // (see sop-dirty.ts, which mirrors the save field by field).
+  //
+  // The baseline is captured from the FIRST render's own state rather than
+  // re-derived, because two derivations of this form are not equal: every
+  // step gets a fresh tempId from Date.now and Math.random, and a new SOP's
+  // date comes from the clock. Capturing what the form actually opened with
+  // makes the two equal by construction.
+  const current = sopSnapshot({ authorName, updatedAt, demoVideoUrl, ingredientNotes, prepSteps, cookSteps, platingSteps, checklist });
+  const [cleanAt, setCleanAt] = useState<string | null>(null);
+  if (cleanAt === null) setCleanAt(current);
+  const dirty = cleanAt !== null && current !== cleanAt;
+
+  // Asks before leaving by the browser, by any in-app link, and by
+  // ออกจากระบบ. It had beforeunload only: every in-app link left silently.
+  useLeaveGuard(dirty);
 
   function handleSave() {
     if (!isValidVideoUrl(demoVideoUrl)) {
@@ -106,6 +115,9 @@ export function SopForm({
       return;
     }
     setError(null);
+    // What this save sends. Captured now, so anything typed while it is in
+    // flight stays unsaved after it lands.
+    const saving = current;
     startTransition(async () => {
       try {
         const result = await upsertSop({
@@ -123,8 +135,7 @@ export function SopForm({
         // dirty, or navigating away would silently discard the edits the
         // save just failed to persist.
         if (result.status === "error") { setError(result.message); return; }
-        isDirty.current = false;
-        setHasUnsaved(false);
+        setCleanAt(saving);
         if (result.status === "pending") {
           setSavePending(true);
         } else {
@@ -155,7 +166,7 @@ export function SopForm({
           <p className="mt-0.5 text-sm text-neutral-500">
             {existing ? "แก้ไข SOP" : "สร้าง SOP ใหม่"}
           </p>
-          {hasUnsaved && !saveSuccess && (
+          {dirty && (
             <p className="mt-1 text-xs text-amber-600">● มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
           )}
           {saveSuccess && <p className="mt-1 text-xs text-green-600">✓ บันทึกสำเร็จ</p>}
@@ -163,13 +174,16 @@ export function SopForm({
         </div>
         {/* Save button at top — always visible on desktop */}
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => router.push(`/sop/${menuId}`)}
+          {/* A LINK, not a button calling router.push: navigation that is
+              a real anchor is what the leave guard can see and ask about.
+              As a button it left with the edits and asked nothing (review,
+              2026-09-21). */}
+          <Link
+            href={`/sop/${menuId}`}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
           >
             ดู SOP
-          </button>
+          </Link>
           <button
             type="button"
             disabled={isPending}
@@ -208,7 +222,7 @@ export function SopForm({
                     type="text"
                     value={ingredientNotes[ing.ingredientId] ?? ""}
                     onChange={(e) => {
-                      markDirty();
+                      onEdit();
                       setIngredientNotes((prev) => ({
                         ...prev,
                         [ing.ingredientId]: e.target.value,
@@ -231,7 +245,7 @@ export function SopForm({
           steps={prepSteps}
           sectionLabel={SECTION_LABEL.prep}
           placeholder="เช่น ซอยหมูบาง 3mm แช่น้ำปลาและน้ำตาล 15 นาที..."
-          onChange={(s) => { markDirty(); setPrepSteps(s); }}
+          onChange={(s) => { onEdit(); setPrepSteps(s); }}
         />
       </section>
 
@@ -242,7 +256,7 @@ export function SopForm({
           steps={cookSteps}
           sectionLabel={SECTION_LABEL.cook}
           placeholder="เช่น ตั้งกระทะไฟแรง ใส่น้ำมัน รอควัน..."
-          onChange={(s) => { markDirty(); setCookSteps(s); }}
+          onChange={(s) => { onEdit(); setCookSteps(s); }}
         />
       </section>
 
@@ -253,7 +267,7 @@ export function SopForm({
           steps={platingSteps}
           sectionLabel={SECTION_LABEL.plating}
           placeholder="เช่น วางเนื้อตรงกลางจาน โรยผักชีด้านบน..."
-          onChange={(s) => { markDirty(); setPlatingSteps(s); }}
+          onChange={(s) => { onEdit(); setPlatingSteps(s); }}
         />
       </section>
 
@@ -262,7 +276,7 @@ export function SopForm({
         <h2 className="mb-3 font-kanit font-medium text-brand-green">จุดตรวจสอบมาตรฐาน</h2>
         <SopChecklistEditor
           items={checklist}
-          onChange={(items) => { markDirty(); setChecklist(items); }}
+          onChange={(items) => { onEdit(); setChecklist(items); }}
         />
       </section>
 
@@ -272,7 +286,7 @@ export function SopForm({
         <input
           type="url"
           value={demoVideoUrl}
-          onChange={(e) => { markDirty(); setDemoVideoUrl(e.target.value); }}
+          onChange={(e) => { onEdit(); setDemoVideoUrl(e.target.value); }}
           placeholder="https://youtube.com/... หรือ https://drive.google.com/..."
           className={`w-full rounded-md border px-3 py-2 text-sm ${
             videoUrlInvalid ? "border-red-400" : "border-neutral-300"
@@ -293,7 +307,7 @@ export function SopForm({
           <input
             type="text"
             value={authorName}
-            onChange={(e) => { markDirty(); setAuthorName(e.target.value); }}
+            onChange={(e) => { onEdit(); setAuthorName(e.target.value); }}
             placeholder="ชื่อผู้จัดทำ..."
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
@@ -305,7 +319,7 @@ export function SopForm({
           <input
             type="date"
             value={updatedAt}
-            onChange={(e) => { markDirty(); setUpdatedAt(e.target.value); }}
+            onChange={(e) => { onEdit(); setUpdatedAt(e.target.value); }}
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </div>
@@ -318,7 +332,7 @@ export function SopForm({
             {error && <span className="text-red-600">{error}</span>}
             {saveSuccess && <span className="text-green-600">✓ บันทึกสำเร็จ</span>}
             {savePending && <span className="text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
-            {!error && !saveSuccess && !savePending && hasUnsaved && (
+            {!error && !saveSuccess && !savePending && dirty && (
               <span className="text-xs text-neutral-400">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
             )}
           </div>
