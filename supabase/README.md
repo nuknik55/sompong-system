@@ -3028,14 +3028,38 @@ In order. Nothing here is started unless it says so.
       was in flight were overwritten by the saved ones and marked clean; the
       table is locked during a save, as the booking screen's price box is.
 
-    **Found and NOT fixed — pre-existing, and none of them in the guard:**
-    - **The recipe quantity box can turn 1.5 into 15.** It shows
-      `String(quantity)`, so a trailing "." is dropped while typing:
-      backspace the 5 of 1.5 and the box shows "1", type 5 and it is 15. The
-      warning is right — the value did change — but the chef believes they
-      typed it back. **This one matters most: a tenfold quantity silently
-      corrupts the recipe's cost.** The fix is to hold each row's typed
-      text, as the price box already does.
+    **Found, pre-existing, and none of them in the guard** — the first
+    fixed the same day, the other three queued as items 42–44:
+    - **The recipe quantity box turned 1.5 into 15 — FIXED 2026-09-21, in
+      the commit after this work.** It showed `String(quantity)`, so a
+      trailing "." was dropped while typing: backspace the 5 of 1.5 and the
+      box showed "1", type 5 and it was 15; typed from empty, 0.5 became 5
+      and 1.05 became 105. The unsaved warning was right, but the chef
+      believed they had typed it back: a tenfold quantity, silently
+      corrupting the recipe's cost. The box now shows exactly what is typed
+      ("1.", "0.", "1.50", or nothing) and the number is read from that
+      text (`src/lib/decimal-input.ts`; its test types into it key by key,
+      and fails 8 of 11 against the old box). The ingredient manager's
+      number boxes (price, pack size, yield, par level) held the number the
+      same way and share the fix; a lone "." there showed NaN.
+      **Lines saved while the bug existed may still be wrong.** It shipped
+      on 2026-07-19 (`7c0909e`, the switch to a text box); the ingredient
+      boxes had it from the first commit. `recipe_item_history` records
+      every change to a line's quantity (old, new, who, when), so an edit
+      that multiplied a quantity by exactly 10 or 100 shows there; a line
+      typed wrong when it was first added does not, and only a comparison
+      with other recipes can flag it. `updated_at` cannot narrow it: every
+      save rewrites every line of the recipe. Nik has a read-only query
+      that uses both; the head chef decides which lines are real.
+      **Every numeric input in the app was checked — 72, found by parsing
+      the code.** Besides these two, 55 hold the typed text and are safe.
+      15 of type="number" hold a number: the supplier sort order, and the
+      HR attendance, salary, payroll and leave boxes. Chrome never reports
+      a half-typed "1." to a number box, so it stays on screen (tested on
+      a plain number box). Safari and Firefox are untested; in a browser
+      that reports "1." as empty, the 12 of them that turn empty into 0
+      would show "0" mid-typing — OT hours and the pay multiplier are the
+      two that take decimals.
     - **A step photo upload can undo other edits in the same section.** The
       upload finishes against the list as it was when the file was picked,
       so a step typed, removed or moved meanwhile is reverted — and the

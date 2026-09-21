@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { clearedSavedIds, priceChanged, recipeSnapshot } from "@/components/recipe-dirty";
+import { recipeQtyInput, recipeQtyText } from "@/lib/decimal-input";
 import { saveRecipeItems, type SavedItem } from "@/app/staff/actions";
 import { IngredientCombobox } from "@/components/ingredient-combobox";
 import { Plus, Save } from "lucide-react";
@@ -71,6 +72,10 @@ export function RecipeEditor({
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "pending">("idle");
+  // The quantity box being typed in, and exactly what is typed there. The
+  // box used to show the number read back, so "1." became "1" before the
+  // next key and 1.5 was saved as 15 (Nik, 2026-09-21). See decimal-input.ts.
+  const [qtyDraft, setQtyDraft] = useState<{ id: string; text: string } | null>(null);
 
   const itemsDirty = recipeSnapshot(items) !== cleanItems;
   // Compared as the NUMBER a save would send: as text, "180.00" read as a
@@ -146,6 +151,8 @@ export function RecipeEditor({
         // Saved directly (admin)
         setItems(result.items);
         setDeletedIds([]);
+        // The boxes show what was stored, not the text that was typed.
+        setQtyDraft(null);
         // The server's rows — real ids now for the ones that were new.
         setCleanItems(recipeSnapshot(result.items));
         setSaveStatus("saved");
@@ -257,11 +264,13 @@ export function RecipeEditor({
                       type="text"
                       inputMode="decimal"
                       className="w-24 rounded-md border border-neutral-300 px-2 py-1.5"
-                      value={item.quantity === 0 ? "" : String(item.quantity)}
+                      value={recipeQtyText(qtyDraft?.id === item.id ? qtyDraft.text : null, item.quantity)}
                       onChange={(e) => {
-                        const raw = e.target.value.replace(/[^0-9.]/g, "");
-                        patchLocal(item.id, { quantity: Number(raw) || 0 });
+                        const { text, quantity } = recipeQtyInput(e.target.value);
+                        setQtyDraft({ id: item.id, text });
+                        patchLocal(item.id, { quantity });
                       }}
+                      onBlur={() => setQtyDraft(null)}
                       placeholder="0"
                     />
                   </td>

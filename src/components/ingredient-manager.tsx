@@ -15,6 +15,7 @@ import {
   type PriceHistoryEntry,
 } from "@/app/owner/ingredients/actions";
 import { CategorySelect } from "@/components/category-select";
+import { decimalBoxInput, decimalBoxText } from "@/lib/decimal-input";
 import { Plus, Save, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 export type UsageMap = Record<string, { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] }>;
@@ -48,13 +49,6 @@ function emptyForm(): IngredientFields {
   };
 }
 
-function sanitizeDecimal(raw: string): string {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  const firstDot = cleaned.indexOf(".");
-  if (firstDot === -1) return cleaned;
-  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
@@ -73,15 +67,21 @@ function NumberInput({
   onChange: (v: number | null) => void;
   className?: string;
 }) {
+  // Exactly what is typed, while it is typed. Holding only the number made a
+  // half-typed "1." into "1", so a price of 1.5 was saved as 15, and a lone
+  // "." showed NaN. See decimal-input.ts.
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <input
       type="text"
       inputMode="decimal"
-      value={value ?? ""}
+      value={decimalBoxText(draft, value)}
       onChange={(e) => {
-        const sanitized = sanitizeDecimal(e.target.value);
-        onChange(sanitized === "" ? null : Number(sanitized));
+        const { text, value: next } = decimalBoxInput(e.target.value);
+        setDraft(text);
+        onChange(next);
       }}
+      onBlur={() => setDraft(null)}
       className={`rounded-md border border-neutral-300 px-2 py-1.5 text-sm ${className}`}
     />
   );
