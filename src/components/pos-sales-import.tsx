@@ -1,16 +1,24 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   applyPosSalesImport,
+  createPosSalesAlias,
   previewPosSalesImport,
-  upsertPosSalesAlias,
   type SalesImportPreview,
+  type SalesImportRow,
 } from "@/app/owner/sales-import-actions";
+import { divisibleSource, sourcesQty, validDivisor, withSessionChanges, type SalesSource } from "@/lib/pos-sales-divisor";
 import { unstable_rethrow, useRouter } from "next/navigation";
 
 function formatNum(n: number) {
   return n.toLocaleString("th-TH");
+}
+
+/** A divisor, to the four decimals pos_sales_aliases stores. */
+function formatDivisor(n: number) {
+  return n.toLocaleString("th-TH", { maximumFractionDigits: 4 });
 }
 
 export function PosSalesImport() {
@@ -30,9 +38,16 @@ export function PosSalesImport() {
   const [mergedNames, setMergedNames] = useState<Set<string>>(new Set());
   const [mergeTarget, setMergeTarget] = useState<Record<string, string>>({});
   const [mergeDivisor, setMergeDivisor] = useState<Record<string, string>>({});
-  const [qtyBump, setQtyBump] = useState<Record<string, number>>({});
-  const [qtyDivisor, setQtyDivisor] = useState<Record<string, number>>({});
+  // This session's changes, per menu row: the divisor just saved for the
+  // row's one unsaved POS name (หาร), and POS names just tied to it
+  // (ผูกเข้าเมนู). Every figure is the per-source sum — see pos-sales-divisor.ts.
+  const [divided, setDivided] = useState<Record<string, number>>({});
+  const [mergedInto, setMergedInto] = useState<Record<string, SalesSource[]>>({});
   const [rowDivisorInput, setRowDivisorInput] = useState<Record<string, string>>({});
+  // Set when saving a divisor fails: the divisor may exist after all (a
+  // lost response, another tab), so this preview's figures may be wrong and
+  // ยืนยัน waits for อ่านไฟล์, which re-reads every divisor.
+  const [stale, setStale] = useState(false);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     // A different file invalidates the previous preview and its per-row
@@ -58,9 +73,12 @@ export function PosSalesImport() {
         setPreview(result);
         setChecked(Object.fromEntries(result.matched.map((r) => [r.menuId, true])));
         setMergedNames(new Set());
-        setQtyBump({});
-        setQtyDivisor({});
+        setDivided({});
+        setMergedInto({});
         setRowDivisorInput({});
+        setMergeTarget({});
+        setMergeDivisor({});
+        setStale(false);
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "อ่านไฟล์ไม่สำเร็จ");
@@ -72,44 +90,66 @@ export function PosSalesImport() {
   function mergeUnmatched(productName: string, qtySold: number) {
     const targetMenuId = mergeTarget[productName];
     if (!targetMenuId) return;
-    const divisor = Number(mergeDivisor[productName]) || 1;
+    // Only a row of this preview: its share is added to that row, and a menu
+    // with no row here would take the name for good and show it nowhere.
+    if (!preview?.matched.some((r) => r.menuId === targetMenuId)) {
+      setError("เมนูปลายทางไม่อยู่ในไฟล์นี้ — เลือกใหม่");
+      return;
+    }
+    // A blank box means ÷1: the name is the same dish, counted the same way.
+    const typed = mergeDivisor[productName]?.trim() ? Number(mergeDivisor[productName]) : 1;
+    const divisor = validDivisor(typed);
+    if (divisor == null) { setError("ตัวหารต้องอยู่ระหว่าง 0.0001 ถึง 1,000"); return; }
     setError(null);
     startTransition(async () => {
       try {
         // Saved permanently — every future import will route this product
         // name into the chosen menu automatically, no need to redo this.
-        const result = await upsertPosSalesAlias(productName, targetMenuId, divisor);
-        if (result.status === "error") { setError(result.message); return; }
-        setQtyBump((prev) => ({ ...prev, [targetMenuId]: (prev[targetMenuId] ?? 0) + qtySold / divisor }));
+        const result = await createPosSalesAlias(productName, targetMenuId, divisor);
+        if (result.status === "error") { setError(result.message); setStale(true); return; }
+        setMergedInto((prev) => ({
+          ...prev,
+          [targetMenuId]: [...(prev[targetMenuId] ?? []), { productName: productName.trim(), qtySold, divisor, saved: true }],
+        }));
         setMergedNames((prev) => new Set(prev).add(productName));
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "ผูกเข้าเมนูไม่สำเร็จ");
+        setStale(true);
       }
     });
   }
 
-  function divideRow(menuName: string, menuId: string) {
-    const divisor = Number(rowDivisorInput[menuId]);
-    if (!divisor) return;
+  function sourcesFor(r: SalesImportRow): SalesSource[] {
+    return withSessionChanges(r.sources, divided[r.menuId], mergedInto[r.menuId]);
+  }
+
+  function divideRow(r: SalesImportRow) {
+    // Only a POS name with NO divisor may be divided, and only that name's
+    // count: dividing the row's total also divided kilos the other names had
+    // already converted, and the button came back on every import.
+    const divisible = divisibleSource(sourcesFor(r));
+    if (!divisible) return;
+    const divisor = validDivisor(Number(rowDivisorInput[r.menuId]));
+    if (divisor == null) { setError("ตัวหารต้องอยู่ระหว่าง 0.0001 ถึง 1,000"); return; }
     setError(null);
     startTransition(async () => {
       try {
-        // Saved permanently as an alias on the menu's own name, so future
-        // imports of this exact product apply the same divisor automatically.
-        const result = await upsertPosSalesAlias(menuName, menuId, divisor);
-        if (result.status === "error") { setError(result.message); return; }
-        setQtyDivisor((prev) => ({ ...prev, [menuId]: divisor }));
+        // Saved permanently for this POS name, so every later import divides
+        // it the same way — and shows the divisor instead of this box.
+        const result = await createPosSalesAlias(divisible.productName, r.menuId, divisor);
+        if (result.status === "error") { setError(result.message); setStale(true); return; }
+        setDivided((prev) => ({ ...prev, [r.menuId]: divisor }));
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+        setStale(true);
       }
     });
   }
 
-  function finalQtyFor(r: { menuId: string; newQty: number }): number {
-    const divided = r.newQty / (qtyDivisor[r.menuId] ?? 1);
-    return Math.round((divided + (qtyBump[r.menuId] ?? 0)) * 100) / 100;
+  function finalQtyFor(r: SalesImportRow): number {
+    return sourcesQty(sourcesFor(r));
   }
 
   function confirmApply() {
@@ -118,11 +158,17 @@ export function PosSalesImport() {
       .filter((r) => checked[r.menuId])
       .map((r) => ({ menuId: r.menuId, newQty: finalQtyFor(r) }));
     if (updates.length === 0) return;
+    // Every POS row of the file as read — matched and not — so the server can
+    // route them again against the divisors as they are at this moment.
+    const posRows = [
+      ...preview.matched.flatMap((r) => r.sources.map((s) => ({ productName: s.productName, qtySold: s.qtySold }))),
+      ...preview.unmatched.map((u) => ({ productName: u.productName, qtySold: u.qtySold })),
+    ];
     setError(null);
     startTransition(async () => {
       try {
-        const result = await applyPosSalesImport(updates, preview.dateFrom, preview.dateTo);
-        if (result.status === "error") { setError(result.message); return; }
+        const result = await applyPosSalesImport(updates, preview.dateFrom, preview.dateTo, posRows);
+        if (result.status === "error") { setError(result.message); setStale(true); return; }
         setDoneCount(result.count);
         setPreview(null);
         router.refresh();
@@ -136,15 +182,30 @@ export function PosSalesImport() {
   const checkedCount = preview ? preview.matched.filter((r) => checked[r.menuId]).length : 0;
   const sortedMenuOptions = preview ? [...preview.matched].sort((a, b) => a.name.localeCompare(b.name, "th")) : [];
 
+  // From the open panel the page opens in a new tab: leaving would drop a
+  // file already read and every tick in its preview.
+  const divisorsLink = (newTab: boolean) => (
+    <Link
+      href="/owner/pos-divisors"
+      className="text-xs text-neutral-500 underline hover:text-neutral-800"
+      {...(newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+    >
+      ตัวหารยอดขาย POS
+    </Link>
+  );
+
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
-      >
-        นำเข้ายอดขายจาก POS
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
+        >
+          นำเข้ายอดขายจาก POS
+        </button>
+        {divisorsLink(preview != null)}
+      </div>
     );
   }
 
@@ -155,11 +216,14 @@ export function PosSalesImport() {
           <p className="mb-2 font-medium text-neutral-700">นำเข้ายอดขาย (จำนวนขาย) จากรายงาน POS</p>
           <p className="mb-3 text-neutral-500">
             ไฟล์ &quot;รายงานการขายตามสินค้า&quot; จาก POS เลือกช่วงวันที่ตามที่ต้องการ (เช่น 2 เดือนล่าสุด หรือตั้งแต่ต้นปี) แล้ว Export
-            to Excel — ยอดขายจะถูกใช้แทนค่าเดิมทั้งหมดสำหรับเมนูที่พบในไฟล์ (เมนูที่ไม่อยู่ในไฟล์จะไม่ถูกแก้)
+            to Excel — เมื่อยืนยัน ยอดขายเดิมของทุกเมนูจะถูกล้างเป็น 0 ก่อน แล้วใส่ยอดจากไฟล์นี้ เมนูที่ไม่อยู่ในไฟล์
+            หรือไม่ได้เลือกไว้ จะมียอดขายเป็น 0
           </p>
           <p className="mb-3 text-xs text-neutral-400">
             ถ้าชื่อสินค้าใน POS ไม่ตรงกับเมนูเลย (อยู่ในรายการ &quot;ไม่พบในระบบ&quot; ด้านล่าง เช่น ขายตามน้ำหนักเป็นขีด) ใช้ปุ่ม
-            &quot;ผูกเข้าเมนู&quot; เพื่อรวมยอดเข้ากับเมนูที่มีอยู่ — ผูกครั้งเดียว ครั้งต่อไปนำเข้าใหม่จะรวมให้อัตโนมัติเลย
+            &quot;ผูกเข้าเมนู&quot; เพื่อรวมยอดเข้ากับเมนูที่มีอยู่ และใส่ตัวหารในช่อง ÷ — POS นับเป็นขีด แต่เมนูในแอป 1 หน่วย = 1 กก.
+            ให้ใส่ 10 (เว้นว่าง = ÷1) — ผูกครั้งเดียว ครั้งต่อไปนำเข้าใหม่จะรวมให้อัตโนมัติเลย ตัวหาร ÷10 ยังทำให้ใบฟังก์ชั่นงานจัดเลี้ยง
+            พิมพ์เมนูนั้นเป็น กก. ทันที ทุกงาน
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -185,9 +249,12 @@ export function PosSalesImport() {
             </p>
           )}
         </div>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-neutral-500 underline hover:text-neutral-800">
-          ปิด
-        </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {divisorsLink(true)}
+          <button type="button" onClick={() => setOpen(false)} className="text-xs text-neutral-500 underline hover:text-neutral-800">
+            ปิด
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -237,8 +304,15 @@ export function PosSalesImport() {
               </thead>
               <tbody>
                 {preview.matched.map((r) => {
+                  const sources = sourcesFor(r);
                   const finalQty = finalQtyFor(r);
-                  const adjusted = !!qtyBump[r.menuId] || !!qtyDivisor[r.menuId];
+                  const divisible = divisibleSource(sources);
+                  const adjusted = divided[r.menuId] != null || (mergedInto[r.menuId]?.length ?? 0) > 0;
+                  // The divisors in effect, shown where the หาร box would be.
+                  const inEffect = [...new Set(sources.filter((s) => s.saved).map((s) => s.divisor))];
+                  // Which POS names fed the row and by what, whenever that is
+                  // anything more than "this dish, counted as it stands".
+                  const showSources = sources.length > 1 || sources.some((s) => s.saved && s.divisor !== 1);
                   return (
                     <tr key={r.menuId} className="border-b border-neutral-100 last:border-0">
                       <td className="px-2 py-1.5">
@@ -248,15 +322,26 @@ export function PosSalesImport() {
                           onChange={(e) => setChecked((prev) => ({ ...prev, [r.menuId]: e.target.checked }))}
                         />
                       </td>
-                      <td className="px-2 py-1.5">{r.name}</td>
+                      <td className="px-2 py-1.5">
+                        {r.name}
+                        {showSources && (
+                          <div className="mt-0.5 text-xs text-neutral-400">
+                            {sources
+                              .map((s) => `${s.productName} (${formatNum(s.qtySold)}) ${s.saved ? `÷${formatDivisor(s.divisor)}` : "ยังไม่มีตัวหาร"}`)
+                              .join(" · ")}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">{formatNum(r.oldQty)}</td>
                       <td className="px-2 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <span className={`tabular-nums ${adjusted ? "font-medium text-amber-700" : "font-medium"}`}>
                             {formatNum(finalQty)}
                           </span>
-                          {qtyDivisor[r.menuId] ? (
-                            <span className="text-xs text-green-700">(÷{qtyDivisor[r.menuId]} ✓)</span>
+                          {!divisible ? (
+                            <span className="text-xs text-green-700" title="ตั้งตัวหารไว้แล้ว — แก้หรือลบได้ที่หน้า ตัวหารยอดขาย POS">
+                              ({inEffect.map((d) => `÷${formatDivisor(d)}`).join(" · ")} ✓)
+                            </span>
                           ) : (
                             <>
                               <span className="text-xs text-neutral-400">÷</span>
@@ -273,8 +358,8 @@ export function PosSalesImport() {
                               <button
                                 type="button"
                                 disabled={!rowDivisorInput[r.menuId] || isPending}
-                                onClick={() => divideRow(r.name, r.menuId)}
-                                title="หารยอดนี้ถาวร (เช่น POS นับเป็นขีดแต่จริงคือเศษส่วนของจาน) — บันทึกไว้ใช้ครั้งหน้าด้วย"
+                                onClick={() => divideRow(r)}
+                                title={`หารยอดของ "${divisible.productName}" ใน POS ถาวร (เช่น POS นับเป็นขีด แต่ในแอป 1 หน่วย = 1 กก. ให้หาร 10) — บันทึกไว้ใช้ครั้งหน้าด้วย ÷10 ยังทำให้ใบฟังก์ชั่นงานจัดเลี้ยงพิมพ์เมนูนี้เป็น กก.`}
                                 className="rounded border border-neutral-300 px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40"
                               >
                                 หาร
@@ -353,9 +438,18 @@ export function PosSalesImport() {
             </details>
           )}
 
+          <p className="text-xs text-neutral-500">
+            เมื่อยืนยัน ยอดขายของทุกเมนูจะถูกล้างเป็น 0 ก่อน — เมนูที่ไม่ได้เลือก และเมนูที่ไม่อยู่ในไฟล์นี้ จะมียอดขายเป็น 0
+          </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {stale && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              บันทึกตัวหารไม่สำเร็จ ตัวเลขในตารางนี้อาจไม่ตรงกับตัวหารที่บันทึกไว้จริง — กด &quot;อ่านไฟล์&quot; อีกครั้งก่อนยืนยัน
+            </p>
+          )}
           <button
             type="button"
-            disabled={isPending || checkedCount === 0}
+            disabled={isPending || checkedCount === 0 || stale}
             onClick={confirmApply}
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
           >
