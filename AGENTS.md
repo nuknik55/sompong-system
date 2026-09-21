@@ -339,6 +339,33 @@ And if one does get printed: **say so immediately and recommend rotating**,
 before and separately from whatever task it interrupted. A leaked credential
 does not become safe because the command that leaked it was well intentioned,
 and the person who can revoke it needs to know first, not as a footnote.
+
+# The service-role key: read-only against production, and say when it was used
+
+**Nik's rule (2026-09-21).** `SUPABASE_SERVICE_ROLE_KEY` bypasses every RLS
+policy in this project. It may be used for READ-ONLY queries against
+production, and every report must say when it was used and what it read.
+It must never be used to write, update or delete anything without Nik's
+explicit permission for that specific change.
+
+**Why there is a rule.** Nik did not know the key was secret. From the day
+it was issued (2026-06-27) it was typed into commands, passed to
+`vercel env add` on the command line, and opened with the Read tool, so it
+sits in full in two Claude transcripts, about 120 times between 2026-06-27
+and 2026-08-18. It was never committed and never reached the browser
+bundle (checked 2026-09-21), but a key that has left the machine in
+plaintext is exposed, and rotating it was recommended that day.
+
+**Using it without leaking it again:**
+- Read it from `.env.local` into a variable inside the script. Never print
+  it, never paste it into a command line, never open `.env.local` with
+  Read or `cat`: each of those writes it into the transcript. To check that
+  a variable exists, print its name or a boolean.
+- A read-only script calls `select` and nothing else. Before running it,
+  grep it for `.insert(`, `.update(`, `.upsert(`, `.delete(` and `.rpc(`,
+  and run the same grep once on a line that has one, so the check can fail.
+- The report names the tables it read with the key, and when.
+
 <!-- END:secret-printing-rules -->
 
 <!-- BEGIN:editing-and-verification-rules -->
