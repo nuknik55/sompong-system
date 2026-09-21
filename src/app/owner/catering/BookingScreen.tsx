@@ -16,9 +16,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getRoomConflictCandidates, saveBooking } from "./actions";
 import type {
-  BookingLine, CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringEventType,
+  CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringEventType,
   CateringRate, CateringSetMenuOption, StaffOption,
 } from "./actions";
+import { bookingLinesForSave, linesFromCharges, menuLineQuantityOk, priceBoxQuantityProblem, type Line, type Section } from "./booking-lines";
 import { docMoney } from "@/lib/quote-doc";
 import { foldSetName } from "./event-menu";
 import { bookingSnapshot } from "./booking-dirty";
@@ -35,22 +36,6 @@ import { CustomerCombobox, SearchSelect, Time24Input, ToggleGroup } from "./shar
 
 // ─── Price box model ─────────────────────────────────────────────────────────
 
-type Line = {
-  key: string;
-  /** set/dish: a menu line (unit price locked to the menu). rate: from catering_rates. manual: typed. discount: negative. */
-  kind: "set" | "dish" | "rate" | "manual" | "discount";
-  section: Section;
-  refId: string | null;
-  eventMenuId: string | null;
-  label: string;
-  unitPrice: string;
-  quantity: string;
-  amount: string;
-  chargeType: string;
-};
-
-type Section = "menu" | "room" | "drink" | "delivery" | "music" | "other" | "discount";
-
 /** Provisional order and titles — see the file header. */
 const SECTIONS: { key: Section; title: string; rateType: string | null }[] = [
   { key: "menu",     title: "ชุดเมนู / เมนู",     rateType: null },
@@ -61,69 +46,6 @@ const SECTIONS: { key: Section; title: string; rateType: string | null }[] = [
   { key: "other",    title: "อื่นๆ / เบี้ยเลี้ยง",   rateType: "staff_bonus" },
   { key: "discount", title: "ส่วนลด",               rateType: null },
 ];
-
-const SECTION_BY_CHARGE_TYPE: Record<string, Section> = {
-  venue: "room", drink: "drink", transport: "delivery", discount: "discount", food: "menu",
-};
-
-/** rate_type -> price-box section, for charges that KNOW their rate. */
-const SECTION_BY_RATE_TYPE: Record<string, Section> = {
-  room: "room", delivery: "delivery", drink: "drink", music: "music",
-  staff_bonus: "other", food_set: "other", other: "other",
-};
-
-/**
- * Which price-box section a STORED charge belongs to, on reload. While the
- * screen is open the section is known exactly — the row was added from that
- * section's own rate picker — but nothing persists it, so it has to be
- * reconstructed from the charge.
- *
- * ── THE ดนตรี BRANCH WAS DEAD, AND THIS IS THE PARTIAL FIX ────────────────
- *
- * It tested charge_type === 'service'. No rate maps to 'service':
- * RATE_TYPE_TO_CHARGE_TYPE sends rate_type 'music' to **'other'**. So every
- * music charge added from the rate picker — including the karaoke sets and
- * ค่าไฟวงดนตรีลูกค้า — reloaded into อื่นๆ, and the ดนตรี section was
- * unreachable except for a hand-typed row somebody had set to บริการ. Both
- * charge types are now tested, so the rate-picker path works.
- *
- * ── NOW STRUCTURAL, WITH A LEGACY TAIL ────────────────────────────────────
- *
- * catering_rate_provenance_migration.sql gave charges a rate_id, so a
- * rate-backed charge maps rate_type -> section directly — no label reading.
- * The label regex below survives ONLY for legacy rows saved before the
- * column existed (rate_id NULL forever, by design: history was not given
- * provenance it never had). It shrinks to nothing as old bookings close,
- * and it can still misfile a legacy อื่นๆ line named "ค่าวงดนตรี" — known,
- * bounded, and dying.
- */
-function sectionForCharge(c: CateringCharge): Section {
-  if (c.event_menu_id) return "menu";
-  if (c.rate_type) return SECTION_BY_RATE_TYPE[c.rate_type] ?? "other";
-  if (c.charge_type === "discount") return "discount";
-  if ((c.charge_type === "service" || c.charge_type === "other") && /ดนตรี|คาราโอเกะ|วง/.test(c.label)) return "music";
-  return SECTION_BY_CHARGE_TYPE[c.charge_type] ?? "other";
-}
-
-function linesFromCharges(charges: CateringCharge[]): Line[] {
-  return charges.map((c) => ({
-    key: c.id,
-    // A stored rate-backed row round-trips as kind "rate" with its refId, so
-    // the NEXT save re-sends rate_id instead of silently demoting the row to
-    // a manual line — the same thread-it-through rule as event_menu_id.
-    kind: c.event_menu_id ? (c.event_menu_kind === "set" ? "set" : "dish") : c.rate_id ? "rate" : c.charge_type === "discount" ? "discount" : "manual",
-    section: sectionForCharge(c),
-    // A menu line's refId is the set or dish it references, so the picker's
-    // "one line per set" check sees a LOADED line too (review, 2026-09-19).
-    refId: c.event_menu_id ? c.event_menu_ref : c.rate_id,
-    eventMenuId: c.event_menu_id,
-    label: c.label,
-    unitPrice: String(c.unit_price),
-    quantity: String(c.quantity),
-    amount: String(c.amount),
-    chargeType: c.charge_type,
-  }));
-}
 
 function money(n: number) { return `฿${fmtBaht(n)}`; }
 
@@ -288,7 +210,10 @@ export function BookingScreen({
     }
     setError(null);
     const price = kind === "set" ? (opt as CateringSetMenuOption).price_per_set : (opt as CateringDishOption).selling_price;
-    const qty = kind === "set" ? (toNum(form.table_count) ?? 1) : 1;
+    // A set counts whole tables (booking-lines.ts), so the booking's table
+    // count is the default only when it is one; otherwise 1, in plain view.
+    const tables = toNum(form.table_count);
+    const qty = kind === "set" ? (tables !== null && menuLineQuantityOk("set", tables) ? tables : 1) : 1;
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind, section: "menu", refId: id, eventMenuId: null,
       label: opt.name, unitPrice: String(price), quantity: String(qty), amount: String(price * qty), chargeType: "food",
@@ -344,18 +269,12 @@ export function BookingScreen({
     return [...dups];
   })();
 
-  function buildLines(): BookingLine[] {
-    return lines
-      .filter((l) => l.kind === "set" || l.kind === "dish" || l.label.trim() !== "")
-      .map((l): BookingLine =>
-        l.kind === "set" || l.kind === "dish"
-          ? { kind: l.kind, refId: l.refId ?? "", eventMenuId: l.eventMenuId, quantity: Math.max(1, toNum(l.quantity) ?? 1) }
-          : { kind: "charge", label: l.label, charge_type: l.chargeType, unit_price: toNum(l.unitPrice) ?? 0, quantity: toNum(l.quantity) ?? 1, amount: toNum(l.amount) ?? 0, note: null, rate_id: l.kind === "rate" ? l.refId : null },
-      );
-  }
-
   function save(issueQuote: boolean) {
     setError(null);
+    // A menu line's quantity is saved exactly as typed, so one outside its
+    // rule is refused here, naming the line, never changed (booking-lines.ts).
+    const quantityProblem = priceBoxQuantityProblem(lines);
+    if (quantityProblem) { setError(quantityProblem); return; }
     // Fields the screen no longer shows are derived from the price box, so
     // the columns keep meaning: room_portion from the chosen room rate,
     // music from the chosen music line.
@@ -369,7 +288,7 @@ export function BookingScreen({
     };
     startTransition(async () => {
       const result = await saveBooking({
-        event: formToUpsertPayload(derived, event?.id), lines: buildLines(), issueQuote,
+        event: formToUpsertPayload(derived, event?.id), lines: bookingLinesForSave(lines), issueQuote,
         // What this screen loaded with: a menu line missing from the box is
         // dropped only if it is in here. One created since — by the menu page
         // in another tab — is kept (saveBooking).
@@ -636,7 +555,11 @@ export function BookingScreen({
                         disabled={isPending || l.kind === "set" || l.kind === "dish"}
                         title={l.kind === "set" ? "ราคาต่อโต๊ะ — แก้ไขได้ในหน้ารายการอาหารของงาน (ตัวเลขเดียวกัน)" : l.kind === "dish" ? "ราคาตามเมนู" : "ราคาต่อหน่วย"}
                         onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} />
-                      <input type="number" min={1} className="line-input text-right tabular-nums" value={l.quantity} disabled={isPending}
+                      {/* A dish takes any quantity above 0 — half a kilo is 0.5;
+                          a set, whole tables (booking-lines.ts). */}
+                      <input type="number" className="line-input text-right tabular-nums" value={l.quantity} disabled={isPending}
+                        min={l.kind === "dish" ? 0 : 1} step={l.kind === "dish" ? "any" : undefined}
+                        title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ เช่น 0.5" : l.kind === "set" ? "จำนวนโต๊ะ — จำนวนเต็ม" : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                       <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-red-700" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
                       <button type="button" onClick={() => removeLine(l.key)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600">✕</button>

@@ -17,6 +17,9 @@
 import type { CateringEvent, StaffOption } from "./actions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR } from "./event-status";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
+import { toNum } from "./to-num";
+
+export { toNum };
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -184,13 +187,6 @@ export function timeRange(start: string | null, end: string | null): string {
   const e = toTimeInput(end);
   if (s && e) return `${s}–${e}`;
   return s || e || "–";
-}
-
-export function toNum(s: string): number | null {
-  const t = s.trim();
-  if (t === "") return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
 }
 
 export function staffLabel(s: StaffOption): string {

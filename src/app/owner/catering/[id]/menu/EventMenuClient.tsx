@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CateringDishOption, EventMenuActionResult, EventMenuSource, EventMenuSources } from "../../actions";
 import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus } from "../../actions";
 import { fmtBaht, toNum, StatusBadge, thDate, thFullDate } from "../../shared-utils";
+import { menuLineQuantityOk } from "../../booking-lines";
 import { markUnsaved } from "@/lib/unsaved-changes";
 import {
   applySourceDishes, comparisonHeadline, comparisonText, COMPARISON_LABEL, dishLineTotalText, dishesTotalPerTable, draftDishes,
@@ -151,13 +152,15 @@ function EventMenuEditor({
           }
           // THE TABLE COUNT. An EMPTY booking is being set up, so the
           // booking's own จำนวนโต๊ะ is the right number — the same one the
-          // price box uses when a set is picked there. A booking that
-          // ALREADY has a set is getting an EXTRA one (Nik's ten normal
-          // tables plus two vegetarian), and the booking-wide count would be
-          // plausible and wrong, so that starts at 1. Either way it stays
-          // editable in the price box, which the card says.
+          // price box uses when a set is picked there, and by the same rule:
+          // only a whole number of tables, at least 1 (booking-lines.ts);
+          // otherwise 1. A booking that ALREADY has a set is getting an
+          // EXTRA one (Nik's ten normal tables plus two vegetarian), and the
+          // booking-wide count would be plausible and wrong, so that starts
+          // at 1. Either way it stays editable in the price box, which the
+          // card says.
           const hasSets = drafts.some((d) => !d.removed);
-          const tables = !hasSets && tableCount != null && tableCount > 0 ? tableCount : 1;
+          const tables = !hasSets && tableCount != null && menuLineQuantityOk("set", tableCount) ? tableCount : 1;
           addLine(newLineDraftFromSource(makeKey(), got, tables, prov, () => crypto.randomUUID()));
         }
         setChooserFor(null);

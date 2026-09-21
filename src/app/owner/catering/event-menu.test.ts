@@ -510,3 +510,15 @@ test("THE ONE PRICE: saveBooking writes a set line's unit_price from the databas
   assert.equal(inits.length, 1, "exactly one menu-line charge is pushed in saveBooking");
   assert.equal(inits[0], "row.unit_price");
 });
+
+test("A NEW SET's tables follow the price box's rule: whole, at least 1 — or the booking screen would refuse every later save", () => {
+  // Found by the review of the booking-screen quantity fix (2026-09-21): a
+  // booking whose จำนวนโต๊ะ was 2.5 got a 2.5-table set from this page, and
+  // the booking screen then refused to save the booking at all.
+  for (const tables of [2.5, 0.5, 0, -1, 100_001]) {
+    assert.match(validateDrafts([{ ...newCustomLineDraft("n", "ชุด", 100), tables }])!, /^ชุด: จำนวน/, `draft ${tables}`);
+    assert.match(validateSavePayload([{ event_menu_id: null, set_name: "ชุด", tables, price_per_table: 1, known_item_ids: [], known_price: null, items: [] }])!, /^จำนวน/, `payload ${tables}`);
+  }
+  assert.equal(validateDrafts([{ ...newCustomLineDraft("n", "ชุด", 100), tables: 10 }]), null);
+  assert.equal(validateSavePayload([{ event_menu_id: null, set_name: "ชุด", tables: 10, price_per_table: 1, known_item_ids: [], known_price: null, items: [] }]), null);
+});

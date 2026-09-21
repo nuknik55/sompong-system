@@ -49,6 +49,7 @@
  * rather than asserted.
  */
 import type { EventMenuAccess } from "@/lib/event-menu-access";
+import { menuLineQuantityError } from "./booking-lines.ts";
 
 /** One course of a booking's set: a copied row, or a shared row when falling back. */
 export type EventMenuDish = {
@@ -575,7 +576,10 @@ export function validateDrafts(drafts: LineDraft[]): string | null {
     // save function creates before the deletions run.
     if (d.removed) continue;
     if (d.eventMenuId == null && d.name.trim() === "") return "ชุดเมนูต้องมีชื่อ";
-    if (d.eventMenuId == null && !(d.tables > 0)) return `${d.name}: จำนวนโต๊ะต้องมากกว่า 0`;
+    // A new set's tables follow the price box's rule — whole, at least 1 —
+    // or the booking screen would refuse every later save (booking-lines.ts).
+    const tablesError = d.eventMenuId == null ? menuLineQuantityError("set", d.tables) : null;
+    if (tablesError) return `${d.name}: ${tablesError}`;
     const price = draftPrice(d);
     if (price == null || price < 0) return `${d.name}: ราคาต่อโต๊ะต้องเป็นตัวเลข 0 หรือมากกว่า`;
     const seen = new Set<string>();
@@ -687,7 +691,10 @@ export function validateSavePayload(lines: unknown): string | null {
       if (newNames.has(k)) return `มีชุดชื่อ “${(l.set_name as string).trim()}” อยู่ในงานนี้แล้ว — ตั้งชื่อชุดใหม่ให้ต่างกัน`;
       newNames.add(k);
     }
-    if (isNew && !(typeof l.tables === "number" && Number.isFinite(l.tables) && l.tables > 0)) return "จำนวนโต๊ะต้องมากกว่า 0";
+    if (isNew) {
+      const tablesError = menuLineQuantityError("set", l.tables);
+      if (tablesError) return tablesError;
+    }
     if (!isNew && typeof l.event_menu_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
     if (!(typeof l.price_per_table === "number" && Number.isFinite(l.price_per_table) && l.price_per_table >= 0)) return "ราคาต่อโต๊ะต้องเป็นตัวเลข 0 หรือมากกว่า";
     if (!Array.isArray(l.known_item_ids) || (l.known_item_ids as unknown[]).some((x) => typeof x !== "string")) return "รูปแบบข้อมูลไม่ถูกต้อง";

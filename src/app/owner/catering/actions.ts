@@ -11,6 +11,7 @@ import { eventMenuAccess } from "@/lib/event-menu-access";
 import { weightSoldMenuIds } from "@/lib/kitchen-sheet";
 import { fetchAllRows } from "@/lib/data";
 import { foldSetName, isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
+import { bookingLinesQuantityProblem, menuChargeAmount } from "./booking-lines";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1758,7 +1759,8 @@ export type SaveBookingResult =
  * THE ONE SAVE. Booking fields, price box, and optionally the quote number,
  * in one call, in this order — each step relies on the one before:
  *
- *   0. an existing booking's cost lock, before anything is written
+ *   0. the menu lines' quantities (booking-lines.ts) and an existing
+ *      booking's cost lock, before anything is written
  *   1. upsertCateringEvent  → the event id (created or existing)
  *   2. menu lines dropped from the box → removeCateringEventMenu
  *   3. menu lines new to the box      → addCateringEventMenu (creates the
@@ -1802,6 +1804,17 @@ export async function saveBooking(input: {
 }): Promise<SaveBookingResult> {
   await requireSales();
   try {
+    // A menu line's quantity is written as sent, never rounded or floored,
+    // so one outside its rule is refused here, before anything is written;
+    // the screen refuses it first, naming the line (booking-lines.ts). A line
+    // the booking already stores is judged by its STORED kind, not the kind
+    // it was sent with (review, 2026-09-21).
+    const storedKinds = new Map(
+      input.event.id ? (await getCateringEventMenus(input.event.id)).map((m) => [m.id, m.kind] as const) : [],
+    );
+    const quantityProblem = bookingLinesQuantityProblem(input.lines, storedKinds);
+    if (quantityProblem) return { ok: false, error: quantityProblem };
+
     // A cost-locked booking is frozen. Steps 2-4 check the lock too, but
     // step 1 ran first and had already rewritten the staff list, created a
     // typed-in customer, added an "แก้ไขข้อมูลงาน" history line and, for
@@ -1854,7 +1867,7 @@ export async function saveBooking(input: {
       menuLinesSeen.add(row.event_menu_id as string);
       payload.push({
         label: row.label, charge_type: "food", unit_price: row.unit_price,
-        quantity: l.quantity, amount: row.unit_price * l.quantity, note: row.note, event_menu_id: row.event_menu_id,
+        quantity: l.quantity, amount: menuChargeAmount(row.unit_price, l.quantity), note: row.note, event_menu_id: row.event_menu_id,
         rate_id: null,
       });
     }
@@ -2079,7 +2092,7 @@ async function addCateringEventMenu(
       const newQty = (linkedCharge.quantity as number) + item.quantity;
       const { error: bumpError } = await supabase
         .from("catering_event_charges")
-        .update({ quantity: newQty, amount: (linkedCharge.unit_price as number) * newQty })
+        .update({ quantity: newQty, amount: menuChargeAmount(linkedCharge.unit_price as number, newQty) })
         .eq("id", linkedCharge.id);
       if (bumpError) throw bumpError;
 
@@ -2134,7 +2147,7 @@ async function addCateringEventMenu(
     charge_type: "food",
     unit_price: unitPrice,
     quantity: item.quantity,
-    amount: unitPrice * item.quantity,
+    amount: menuChargeAmount(unitPrice, item.quantity),
     note: item.note?.trim() || null,
     event_menu_id: eventMenuId,
     sort_order: nextChargeSort,

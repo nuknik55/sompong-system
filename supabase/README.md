@@ -1239,7 +1239,8 @@ In order. Nothing here is started unless it says so.
 
     While the booking screen is open, a charge's price-box section is known
     exactly — the row was added from that section's own rate picker. Nothing
-    persists it, so `sectionForCharge` in `BookingScreen.tsx` reconstructs it
+    persists it, so `sectionForCharge` (in `booking-lines.ts` since
+    2026-09-21, moved out of `BookingScreen.tsx`) reconstructs it
     from the stored charge, and for ดนตรี that means **a label match**:
     `charge_type` is `'other'` for music, `staff_bonus` and every typed
     อื่นๆ line alike, so the only thing separating them is whether the label
