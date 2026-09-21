@@ -121,6 +121,7 @@ and dated here.
 | `catering_event_menu_items_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 1.** `catering_event_menu_items` (RLS on; owner/admin/sales read, owner/admin write, the sales-limits lock shape restrictively on top), `catering_event_menus.set_name`, the one-target CHECK widened to allow a custom set, and `catering_copy_set_menu(uuid)` SECURITY DEFINER. **Verified by the file's own result table, as Nik ran it: 32 rows, every judged row ok** — X1–X2 (the harness proving its own refusal attribution, both directions), the four survey rows, C1–C4, R1–R2, W1–W7, S1, K1–K3, L1–L4, D1, every test write rolled back, counts unchanged (events 4, lines 12, charges 22, copies 0), RLS on, and the row-count assertion confirming 31 evidence rows. It took four runs to get there: three defects, each of which let the file report something other than what happened — see "Three ways a migration lied" below. **Production holds 4 pre-feature set lines with no copy**: they fall back to the shared set menu, exactly as every screen read them before this feature, until someone copies them on the menu page or the booking is locked (locking copies them first). |
 | `catering_event_menu_save_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 2.** `catering_save_event_menus(uuid, jsonb)` — the ONE save of a booking's own menu: every changed set line whole (its courses, THE price per table on the linked charge, a new custom set with its charge), in one transaction, SECURITY INVOKER. **Verified by the file's own result table, as Nik ran it: 30 rows, every judged row ok** — X1–X2, the survey, V1–V18, S1, L1–L2, every test write rolled back, counts unchanged (events 4, lines 15, charges 25, copies 7), and the row-count assertion confirming 29 evidence rows. First run, no failures. It refuses: a caller who is not owner or admin, a booking that does not exist, a cost-locked booking, a line of another booking or a single dish, a new set with no name or no tables, a new set named like a set line the booking already has, a negative price, the same dish twice, an invalid section (the table's CHECK), and a draft whose conflict token — the row ids and price the screen opened with — is stale. **Production holds 3 pre-feature set lines still falling back to the shared set menu**, and 7 stored copies. |
 | `catering_history_owner_edit_migration.sql` | 2026-09-17 | **Item 33, follow-up B.** The two policies that refused every history update and delete replaced by two admitting the owner alone (`is_owner_only()`); UPDATE on `catering_event_activity_log` narrowed to `description` for anon and authenticated, so an edit through the app cannot change who wrote a line, when, its kind or its booking. Insert rule unchanged. **Verified by the file's own result table, as Nik reported it: 49 rows, all ok.** P1 after: authenticated may update `description` only, anon nothing. E1–E4 refused for sales and admin; E5–E10 (the owner touching any other column) error 42501; E11/E12 owner rows=1; I1–I5 as expected. Row 49: 54 history lines, checksum unchanged, no probe line left. **App check done by Nik, both directions:** before the run, the owner's edit showed "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้…"; after it, the owner's edit saved. |
+| `blue_crab_curry_per_kilo_migration.sql` | 2026-09-21 | **ปูม้าใหญ่ผัดผงกะหรี่ moved to the kilo rule** (see "Dishes sold by weight"): `selling_price` 120.00 → 1200.00, its only recipe line ปูม้าเป็น 1 → 10 ขีด, and a new POS divisor `'ปูม้าใหญ่ผัดผงกะหรี่'` ÷10. **Verified by the file's own result table, as Nik reported it: 15 rows, all ok, first run** ("untouched: converting the three rows"). Nothing else changed: 255 menus, 1,852 recipe lines, 8 divisors, every other checksum equal. Owner and admin, each read as the real account, both read back `1200.00 \| 10.0000 \| 10.0000`, and the row-count assertion held (14 evidence rows + its own = 15). **Two after-effects, both expected:** `recipe_item_history` now holds a 1 → 10 line for 245624d1 with `changed_by` NULL, which is this file, not the quantity-box bug whose ×10 shape it has; and a sold count imported before the run was taken per ขีด, so the dish counts in kilos from the next POS import (it is not in the August file). Since `1b3b94d` the ÷10 also makes it print in kilos on the kitchen and service sheets. |
 
 ### Three ways a migration lied, in one file, in one week
 
@@ -1322,7 +1323,10 @@ In order. Nothing here is started unless it says so.
     Found by the item-12 conversions (steps 2 and 3), zero
     callers each:
     - `addExpenseEntry` (owner/accounting/actions.ts)
-    - `listPosSalesAliases` and `deletePosSalesAlias` (sales-import-actions.ts)
+    - `listPosSalesAliases` and `deletePosSalesAlias` (sales-import-actions.ts).
+      `deletePosSalesAlias` came back on 2026-09-21 WITH a caller — the
+      divisors page, /owner/pos-divisors — and `upsertPosSalesAlias` became
+      the insert-only `createPosSalesAlias`.
     A dead export in a "use server" file is not just clutter — every export
     there is a network-callable endpoint, so unused ones are attack and
     maintenance surface with no consumer to notice a behaviour change. All
@@ -3678,16 +3682,24 @@ separate on the printed sheet.
 
 ### The rules that are NOT obvious from the layouts
 
-- **B's ราคา column is a PORTION SIZE, not money.** `selling_price x
-  plates-for-the-whole-job` (per-set count × sets ordered — `plateCount()`),
-  literal, never multiplied. THE MULTIPLIER TOOK THREE READINGS — table
+- **B's ราคา column is a PORTION SIZE, not money** — the selling price
+  alone ("1,000/กก." for a dish sold by weight), never multiplied. The COUNT
+  has its own จำนวน column since 2026-09-21: per-set quantity × sets
+  ordered = the whole job ("0.5 กก. × 20 โต๊ะ = 10 กก.", "1 × 10 โต๊ะ =
+  10"), rounded to three decimals, the unit โต๊ะ / กล่อง / ชุด by food
+  format, and service sheet A prints the same cell through the same
+  function (dishAmount). It used to be one "price x plates" cell, and half
+  a kilo a table for 20 tables read "1,000 x 10": ten one-kilo plates.
+  A dish prints in kilos when a POS divisor of 10 points at it — the
+  marker of Nik's kilo rule (see "Dishes sold by weight"). THE MULTIPLIER
+  (plates for the whole job, `plateCount()`) TOOK THREE READINGS — table
   count, then per-set count alone, both shipped and both wrong on paper;
   the paper's "590 x 6" was 1 × 6 sets, which all three readings happened
   to equal, so only Nik's real 10-set booking could tell them apart. The
   full history is beside plateCount() in src/lib/kitchen-sheet.ts. No row
   total, no grand total — the dishes deliberately do not sum to the package
-  price. Extras print price × count too, never a blank. EXCEPT a buffet:
-  `food_format = 'buffet'` blanks the whole ราคา column, because Nik's
+  price. Extras print their price and count too, never a blank. EXCEPT a buffet:
+  `food_format = 'buffet'` blanks the ราคา and จำนวน columns, because Nik's
   paper buffet sheet has no per-dish prices — a buffet is cooked to the
   header's guest count. That is the only buffet rule built; how a buffet
   booking is shaped, and what its จำนวน column should say, waits for the
@@ -4834,6 +4846,25 @@ turns either into kilos only through a `pos_sales_aliases` row for that
 exact POS product name: ÷10 for a per-ขีด name, ÷2 for a half-kilo
 button, ÷1 for a kilo button. A POS name that matches a menu exactly and
 has no alias is counted as it stands, ÷1.
+
+**The one exception: river prawn (Nik, 2026-09-21).** River prawn is
+always sold as one prawn of 4 ขีด per plate, so for กุ้งแม่น้ำเผา 4 ขีด one
+app unit is ONE 4-ขีด PLATE: the recipe is กุ้งแม่น้ำ 4 ขีด, the price ฿800 a
+plate, and the POS, which counts it in ขีด, is divided by 4. Set up on
+2026-06-29 and correct as it stands; do not move it to kilos.
+
+**Where each weight-sold dish stands (2026-09-21).**
+- Per kilo and complete: กุ้งก้ามกรามเผา (÷10, and ÷1 / ÷2 for the kilo
+  and half-kilo buttons), กุ้งก้ามกรามซอสมะขาม ÷10, ปูม้าใหญ่นึ่ง ÷10, and
+  ปูม้าใหญ่ผัดผงกะหรี่ ÷10 (฿1,200, ปูม้าเป็น 10 ขีด; converted from per
+  ขีด by `blue_crab_curry_per_kilo_migration.sql`, applied 2026-09-21).
+- No menu yet, so their POS sales are not counted: ปูม้าใหญ่ผัดพริกไทยดำ
+  (฿120 a ขีด at the POS), กั้งกระดานนึ่ง and กั้งกระดานทอดกระเทียม (฿130).
+  Each needs a menu per kilo and a ÷10 divisor on its POS name.
+- Left uncounted by Nik's decision: ข้าวเหนียว (ขีด) and มะม่วง (ขีด), ฿25 a
+  ขีด, which have no menu.
+- The POS item "กุ้งแม่น้ำ Salt 4 lines" (FD3003-12, ฿200) has no menu:
+  there is no salt-baked river prawn dish in the app.
 
 ## Known limits of the POS pricing rule
 

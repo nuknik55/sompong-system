@@ -31,7 +31,7 @@ D:\Claud Code\restaurant-cost-system\
     │   │   └── owner/
     │   │       ├── page.tsx            ← Dashboard: summary cards + chart + table
     │   │       ├── layout.tsx
-    │   │       ├── sales-import-actions.ts   ← previewPosSalesImport, applyPosSalesImport, upsertPosSalesAlias, deletePosSalesAlias, listPosSalesAliases
+    │   │       ├── sales-import-actions.ts   ← previewPosSalesImport, applyPosSalesImport, createPosSalesAlias, updatePosSalesAlias, deletePosSalesAlias
     │   │       ├── settings/actions.ts        ← updateQFactor
     │   │       ├── team/
     │   │       │   ├── page.tsx
@@ -219,9 +219,9 @@ update public.menu_recipe_items set quantity = quantity * 4
 ```
 ตรวจสอบ: ใน Owner Dashboard ราคาขาย ปูม้าใหญ่นึ่ง, กุ้งก้ามกรามเผา, กุ้งก้ามกรามซอสมะขาม ควรเพิ่ม ×10, กุ้งแม่น้ำเผา 4 ขีด ควรเพิ่ม ×4
 
-### P3 — pos_sales_aliases management UI ยังไม่มี
-ปัจจุบัน owner ต้องลบ alias ผ่าน Supabase dashboard โดยตรง  
-ควรเพิ่มหน้าหรือ modal สำหรับดู/ลบ aliases (ใช้ `listPosSalesAliases()` + `deletePosSalesAlias()` ที่มีอยู่แล้ว)
+### P3 — pos_sales_aliases management UI — ทำแล้ว (2026-09-21)
+หน้า /owner/pos-divisors (owner/admin) แสดงตัวหารทุกตัว แก้เมนูปลายทาง แก้ตัวหาร และลบได้
+ตัวหารใหม่ยังสร้างจากหน้านำเข้ายอดขาย (ปุ่ม หาร หรือ ผูกเข้าเมนู)
 
 ---
 

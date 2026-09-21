@@ -423,7 +423,8 @@ comments included — otherwise the reference is left dangling.
 
 Note the assertion has to be structural, for the reason in section 2: on this
 very deletion, checking that `PosSalesAlias` was gone reported it still
-present, because it is a substring of the surviving `upsertPosSalesAlias`.
+present, because it is a substring of the surviving `upsertPosSalesAlias`
+(since renamed `createPosSalesAlias`, 2026-09-21).
 
 ## 2. A verification check that matches text will match your own prose
 
