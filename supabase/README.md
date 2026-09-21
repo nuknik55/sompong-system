@@ -3042,15 +3042,20 @@ In order. Nothing here is started unless it says so.
       and fails 8 of 11 against the old box). The ingredient manager's
       number boxes (price, pack size, yield, par level) held the number the
       same way and share the fix; a lone "." there showed NaN.
-      **Lines saved while the bug existed may still be wrong.** It shipped
-      on 2026-07-19 (`7c0909e`, the switch to a text box); the ingredient
-      boxes had it from the first commit. `recipe_item_history` records
-      every change to a line's quantity (old, new, who, when), so an edit
-      that multiplied a quantity by exactly 10 or 100 shows there; a line
-      typed wrong when it was first added does not, and only a comparison
-      with other recipes can flag it. `updated_at` cannot narrow it: every
-      save rewrites every line of the recipe. Nik has a read-only query
-      that uses both; the head chef decides which lines are real.
+      **It did no damage — checked 2026-09-21.** It shipped on 2026-07-19
+      (`7c0909e`, the switch to a text box); the ingredient boxes had it
+      from the first commit. Nik ran two read-only queries. Every recipe
+      line the first one flagged has `could_be_this_bug = false`; the
+      three it flagged as tenfold edits (1 → 10 ขีด on 29 Jun) were
+      deliberate — see "Dishes sold by weight". The second found one
+      ingredient hit: กรรเชียงปู 2,100 → 21,000 on 29 Jun at 14:01, put
+      back to 2,100 at 14:02, and no catering booking has a cost lock, so
+      nothing froze the wrong price. How the check worked:
+      `recipe_item_history` records every change to a line's quantity
+      (old, new, who, when), so an edit that multiplied a quantity by
+      exactly 10 or 100 shows there; a line typed wrong when first added
+      does not, and only the comparison with other recipes can flag it.
+      `updated_at` cannot narrow it: every save rewrites every line.
       **Every numeric input in the app was checked — 72, found by parsing
       the code.** Besides these two, 55 hold the typed text and are safe.
       15 of type="number" hold a number: the supplier sort order, and the
@@ -4810,6 +4815,25 @@ group red once actual exceeds target + 3, so at 38 the COGS bar was red every
 single month — an indicator that always fires carries no information, the same
 failure as a warning that always fires. Nik changes it to 43 through the CoA
 screen.
+
+## Dishes sold by weight — one app unit is one kilo (Nik, 2026-09-21)
+
+**The rule: for a dish sold by weight, one unit in this app is one kilo.**
+Its recipe is written per kilo and `menus.selling_price` is the price per
+kilo: กุ้งก้ามกรามเผา is ฿1,000 with a recipe of 10 ขีด of prawn. The
+reason is Menu Engineering: a hundred customers eating a ขีด each count as
+10 units, not 100, so a weight-sold dish's popularity stays meaningful
+beside a plated one. The three recipes changed from 1 to 10 ขีด on
+2026-06-29 (กุ้งก้ามกรามเผา, ปูม้าใหญ่นึ่ง, กุ้งก้ามกรามซอสมะขาม) did
+exactly this and are correct. Do not propose changing them.
+
+**What it asks of the POS sales import.** The POS does not count these
+dishes in kilos. A dish rung up per ขีด records half a kilo as 5, and a
+fixed-weight button (…5 ขีด, …1 กก.) records one per portion. The import
+turns either into kilos only through a `pos_sales_aliases` row for that
+exact POS product name: ÷10 for a per-ขีด name, ÷2 for a half-kilo
+button, ÷1 for a kilo button. A POS name that matches a menu exactly and
+has no alias is counted as it stands, ÷1.
 
 ## Known limits of the POS pricing rule
 
