@@ -3813,19 +3813,44 @@ and after Nik's import.
     and two share a 3-digit phone ("พี่ไก่", "aa").
 
 51. **A customer-page edit can still be lost — to the customer page itself**
-    (review of items 49–50, 2026-09-22). **NOT STARTED. Existed before;
-    no booking save is involved.** `CustomerDetailClient` fills its form
+    (review of items 49–50, 2026-09-22). **DONE: asked for by Nik,
+    committed `2a3b52f`, deployed 2026-09-22. Existed before; no booking
+    save is involved.** `CustomerDetailClient` fills its form
     once, when the page opens, and `updateCateringCustomer` writes all eight
     fields with no conflict check (and takes a zero-row answer as success),
     so an older copy of the page — a second tab, a second login, or one
     brought back by the browser's Back button — writes its stale values over
     a newer edit, silently; nothing records customer changes, so no trace
     is left. The page also has no unsaved-changes guard, and typing while it
-    saves is dropped. The fix needs no SQL: `catering_customers.updated_at`
-    exists and its trigger keeps it current, so the page sends the
-    `updated_at` it loaded and the save is a compare-and-set on it, as the
-    booking screen's is (actions.ts, `upsertCateringEvent`); plus the booking
-    screen's leave guard and a lock while saving.
+    saves is dropped.
+    **What shipped (no SQL).**
+    - The save is a compare-and-set on the `updated_at` the edit started
+      from; `catering_customers.updated_at` is stamped by its BEFORE UPDATE
+      trigger.
+    - If someone else saved in between, the save is refused and nothing is
+      written. The page shows a Thai message and a โหลดข้อมูลล่าสุด button,
+      and the draft is kept.
+    - An edit starts from the page's current data when แก้ไข is pressed.
+    - `useLeaveGuard` guards an unsaved edit, the same model as the booking
+      screen and the menu page; Back stays uncaught.
+    - The whole form is locked through the save and the refresh.
+    - `customer-page.test.ts` checks the save and the page on parsed
+      source. It fails on the old files and on each regression the review
+      tried.
+
+    **Review (2026-09-22, independent, adversarial): no blocker.**
+    Accepted, not fixed:
+    - `requireSales()` inside the save redirects a caller whose role was
+      changed away, or whose profile is gone, and that navigation drops an
+      open draft without asking. Rare, and it existed before.
+    - On phones, closing the tab or the OS discarding it shows no leave
+      prompt, as on the booking screen.
+    - After a conflict, the only way to the latest data is to discard the
+      draft; the page asks first.
+    - Unchecked: whether a tab opened before a deploy can still reach the
+      old, unchecked save. That depends on Vercel's Skew Protection and on
+      `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. Sales reloads open tabs after
+      each deploy either way.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
@@ -3846,6 +3871,22 @@ it must find cost-settings. Its first version did not: a `${...}`
 placeholder matched a fixed path segment, so `/owner/catering/${id}`
 counted as a link to cost-settings. Fixed, it finds 2 on HEAD and 1 after
 the link: `/owner/catering/status`, queued as item 26.
+
+## The catering module is in informal use by sales (Nik, 2026-09-22)
+
+As of 2026-09-22 sales is using the catering module informally, for real
+customers, and any booking may be edited or redone at any time. So a small
+or odd-looking booking may be real. What follows from that:
+
+- **Never assume a row is test data from how it looks.** Anything to delete
+  is listed for Nik first — what it is, why it looks like a test, who made it
+  and when, what depends on it and what deleting it takes along — split into
+  "clearly test" and "unsure", and deleted only by id, in one migration, after
+  he has confirmed each row. A booking that could be a real informal one is
+  "unsure".
+- **Every deploy lands while bookings are being taken.** A booking or
+  customer tab left open across a deploy must be reloaded; tell sales after
+  each push that touches the catering screens.
 
 ## The three catering documents — built 2026-09-11/12
 
