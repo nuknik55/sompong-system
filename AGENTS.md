@@ -758,6 +758,17 @@ inside it. **When a diff against a proven file is expected to differ, justify
 every differing line individually, or the expected differences will hide the
 unexpected one.**
 
+**The mirror image: an escape that is DECODED.** The tools that write files
+here (Write and Edit) turn a backslash-u escape — backslash, u, four hex
+digits — into the character itself, and leave every other backslash as typed
+(tested on a scratch file, 2026-09-22). A zero-width space written as its
+escape landed as a real zero-width space inside a regex and in test strings:
+the code worked, the source looked innocent, and no backslash count could
+see it, because the backslash was gone. So never write that escape through
+them; build the character from its code point (`String.fromCharCode(0x200b)`,
+a `Set` of code points), and after writing, scan the file for invisible
+characters (U+00A0, U+200B–U+200F, U+2060, U+FEFF), not only for backslashes.
+
 ## 4. Line endings are mixed in this repo — do not assume `\n`
 
 `src/app/owner/hr/actions.ts` is CRLF while the files around it are LF. Three

@@ -3761,20 +3761,71 @@ and after Nik's import.
     applied function, so read its live definition first (AGENTS.md, rule 4).
 
 49. **The booking screen writes the customer's address and contact back on
-    every save** (review of item 47, 2026-09-21). **NOT STARTED. Existed
-    before item 47.** The screen has no inputs for them, but
-    `formToUpsertPayload` (shared-utils.tsx) always sends `customer_edits`,
-    so a change made on the customer page while a booking is open is undone
-    by that booking's next save. Send them only when the screen changed
-    them, or not at all.
+    every save** (review of item 47, 2026-09-21). **DONE: approved by Nik,
+    committed `fd160fd`, deployed 2026-09-22. Existed before item 47.** The
+    screen has no inputs for them, but `formToUpsertPayload`
+    always sent `customer_edits`, so a change made on the customer page
+    while a booking was open was undone by that booking's next save.
+    **Fixed by writing none, deliberately:** the screen never let anyone
+    edit a customer's address, contact person, LINE or company, so all it
+    could send back was what it had loaded — and a customer picked, then
+    renamed, handed that customer's address and contact to the new one. The
+    form holds no customer details now (`booking-form.ts`); the payload
+    sends the picked id, or the name and phone typed; and
+    `upsertCateringEvent` ignores anything more from an older screen, its
+    one customer write being a new customer's name and phone
+    (`customer-pick.test.ts` checks the source). The customer page is the
+    one place a customer's details change. Should the booking screen ever
+    get such an input, it sends what was edited, never what was loaded.
 
 50. **Picking a customer from the list never keeps the pick** (review of
-    item 47, 2026-09-21). **NOT STARTED. Existed before item 47.**
-    `CustomerCombobox` (shared.tsx) calls `onPick`, then `onQueryChange`,
-    and the booking screen's `onQueryChange` clears `customerId`. The save
-    then finds the customer by name with no phone, so with two customers of
-    one name a booking can attach to the other one. Spun off as its own
-    task on 2026-09-21.
+    item 47, 2026-09-21). **DONE: approved by Nik, committed `fd160fd`,
+    deployed 2026-09-22. Existed before item 47.** `CustomerCombobox`
+    (shared.tsx) called `onPick`, then `onQueryChange` with the name, and
+    the booking screen's `onQueryChange` clears `customerId`, so every pick
+    reached the save as a typed name with no phone, and the save took the
+    FIRST customer of that name (no phone could match an empty one). Now a
+    pick is one update, the id and the name together (`pickCustomer`), the
+    list calls nothing after it, and the save attaches exactly that id,
+    checked to exist. A TYPED name follows one rule on the screen and in
+    the save (`matchTypedCustomer`, customer-match.ts), which the save runs
+    against every customer on file: the one customer whose name AND phone
+    match; a new customer when nobody has the name, or when every namesake
+    has another real phone; otherwise refused before anything is written,
+    saying the way out — no phone typed, a namesake with no phone on file
+    (the phone cannot tell them apart: pick, or make the name distinct),
+    namesakes sharing the phone, or a phone number typed as the name. A
+    line under the name box says which it will be before the save. A name
+    is the same name after NFC, zero-width characters dropped, whitespace
+    as one space, trimmed, case aside; a phone is its digits, Thai digits
+    and +66 read as what they are, and under 9 digits it proves nothing, so
+    a placeholder like "000" can never make two people one. A new customer
+    is added only after the room check, right before the booking row, and
+    any failure hands the save's customer back, so the retry sends it as a
+    pick instead of meeting it as a second of the name. The review
+    (2026-09-22, two reviewers) found no wrong attachment; its findings
+    were fixed as above, or are item 51.
+    **Production, read-only 2026-09-22:** 14 customers, no two share a
+    name, and all 4 bookings are attached as their creation shows (three
+    customers made in the same minute as their booking, one existing
+    "test"), so the bug had nothing to misattach yet. Two test customers
+    share an address and contact ("อู๋", "aiatest", 26 Aug, no bookings),
+    and two share a 3-digit phone ("พี่ไก่", "aa").
+
+51. **A customer-page edit can still be lost — to the customer page itself**
+    (review of items 49–50, 2026-09-22). **NOT STARTED. Existed before;
+    no booking save is involved.** `CustomerDetailClient` fills its form
+    once, when the page opens, and `updateCateringCustomer` writes all eight
+    fields with no conflict check (and takes a zero-row answer as success),
+    so an older copy of the page — a second tab, a second login, or one
+    brought back by the browser's Back button — writes its stale values over
+    a newer edit, silently; nothing records customer changes, so no trace
+    is left. The page also has no unsaved-changes guard, and typing while it
+    saves is dropped. The fix needs no SQL: `catering_customers.updated_at`
+    exists and its trigger keeps it current, so the page sends the
+    `updated_at` it loaded and the save is a compare-and-set on it, as the
+    booking screen's is (actions.ts, `upsertCateringEvent`); plus the booking
+    screen's leave guard and a lock while saving.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
