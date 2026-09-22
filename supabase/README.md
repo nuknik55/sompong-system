@@ -121,6 +121,7 @@ and dated here.
 | `catering_event_menu_items_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 1.** `catering_event_menu_items` (RLS on; owner/admin/sales read, owner/admin write, the sales-limits lock shape restrictively on top), `catering_event_menus.set_name`, the one-target CHECK widened to allow a custom set, and `catering_copy_set_menu(uuid)` SECURITY DEFINER. **Verified by the file's own result table, as Nik ran it: 32 rows, every judged row ok** — X1–X2 (the harness proving its own refusal attribution, both directions), the four survey rows, C1–C4, R1–R2, W1–W7, S1, K1–K3, L1–L4, D1, every test write rolled back, counts unchanged (events 4, lines 12, charges 22, copies 0), RLS on, and the row-count assertion confirming 31 evidence rows. It took four runs to get there: three defects, each of which let the file report something other than what happened — see "Three ways a migration lied" below. **Production holds 4 pre-feature set lines with no copy**: they fall back to the shared set menu, exactly as every screen read them before this feature, until someone copies them on the menu page or the booking is locked (locking copies them first). |
 | `catering_event_menu_save_migration.sql` | 2026-09-19 | **Queue item 39, catering per-event menus round 2.** `catering_save_event_menus(uuid, jsonb)` — the ONE save of a booking's own menu: every changed set line whole (its courses, THE price per table on the linked charge, a new custom set with its charge), in one transaction, SECURITY INVOKER. **Verified by the file's own result table, as Nik ran it: 30 rows, every judged row ok** — X1–X2, the survey, V1–V18, S1, L1–L2, every test write rolled back, counts unchanged (events 4, lines 15, charges 25, copies 7), and the row-count assertion confirming 29 evidence rows. First run, no failures. It refuses: a caller who is not owner or admin, a booking that does not exist, a cost-locked booking, a line of another booking or a single dish, a new set with no name or no tables, a new set named like a set line the booking already has, a negative price, the same dish twice, an invalid section (the table's CHECK), and a draft whose conflict token — the row ids and price the screen opened with — is stale. **Production holds 3 pre-feature set lines still falling back to the shared set menu**, and 7 stored copies. |
 | `catering_history_owner_edit_migration.sql` | 2026-09-17 | **Item 33, follow-up B.** The two policies that refused every history update and delete replaced by two admitting the owner alone (`is_owner_only()`); UPDATE on `catering_event_activity_log` narrowed to `description` for anon and authenticated, so an edit through the app cannot change who wrote a line, when, its kind or its booking. Insert rule unchanged. **Verified by the file's own result table, as Nik reported it: 49 rows, all ok.** P1 after: authenticated may update `description` only, anon nothing. E1–E4 refused for sales and admin; E5–E10 (the owner touching any other column) error 42501; E11/E12 owner rows=1; I1–I5 as expected. Row 49: 54 history lines, checksum unchanged, no probe line left. **App check done by Nik, both directions:** before the run, the owner's edit showed "ทำไม่สำเร็จ — ไม่พบบรรทัดนี้…"; after it, the owner's edit saved. |
+| `catering_booking_prices_save_migration.sql` | 2026-09-22 | **Queue item 47.** `catering_save_booking_prices(uuid, jsonb, jsonb, boolean)`, the booking screen's ONE save of a booking's price box: every line checked first; then, in one transaction, the menu lines the screen dropped removed (the history naming each), new ones added with the booking's own copy of a set, every charge rewritten at THE ONE PRICE, and the booking's `updated_at` (the screen's conflict token) moved. A dry run checks and writes nothing. SECURITY INVOKER. **Verified by the file's own result table, as Nik ran it: 46 rows, every judged row ok, first run** ("exists: f") — X1–X2, P1–P33, E1 (all 4 real bookings saved unchanged through the function, as sales and as owner), L1–L2, every test write rolled back, counts unchanged (bookings 4, lines 12, charges 22, copies 9, history 83, set menus 4) with every row byte for byte as before, and the row-count assertion confirming 45 evidence rows + its own = 46. **Nik accepted the file's deliberate break of the one-row-per-test-write rule** (AGENTS.md), which its header states. The code that calls it: `bb94d3a`, deployed the same day. |
 | `blue_crab_curry_per_kilo_migration.sql` | 2026-09-21 | **ปูม้าใหญ่ผัดผงกะหรี่ moved to the kilo rule** (see "Dishes sold by weight"): `selling_price` 120.00 → 1200.00, its only recipe line ปูม้าเป็น 1 → 10 ขีด, and a new POS divisor `'ปูม้าใหญ่ผัดผงกะหรี่'` ÷10. **Verified by the file's own result table, as Nik reported it: 15 rows, all ok, first run** ("untouched: converting the three rows"). Nothing else changed: 255 menus, 1,852 recipe lines, 8 divisors, every other checksum equal. Owner and admin, each read as the real account, both read back `1200.00 \| 10.0000 \| 10.0000`, and the row-count assertion held (14 evidence rows + its own = 15). **Two after-effects, both expected:** `recipe_item_history` now holds a 1 → 10 line for 245624d1 with `changed_by` NULL, which is this file, not the quantity-box bug whose ×10 shape it has; and a sold count imported before the run was taken per ขีด, so the dish counts in kilos from the next POS import (it is not in the August file). Since `1b3b94d` the ÷10 also makes it print in kilos on the kitchen and service sheets. |
 
 ### Three ways a migration lied, in one file, in one week
@@ -3569,9 +3570,11 @@ and after Nik's import.
     `quoted_total`. Nik picks the shape when he picks it up.
 
 41. **A remount discards unsaved work on the booking screen without asking**
-    (found by the review of the unsaved-changes guard, 2026-09-20). **NOT
-    STARTED. Nik's decision: leave it until the booking screen is more
-    settled, and DO IT BEFORE SALES STARTS USING THE MODULE FOR REAL.**
+    (found by the review of the unsaved-changes guard, 2026-09-20).
+    **DONE with item 47: committed `bb94d3a`, deployed 2026-09-22.** Nik had
+    decided to leave it until the booking screen was more settled and to do
+    it before sales starts using the module for real; he asked for it on
+    2026-09-21. What was built is under item 47; the problem as found:
 
     `[id]/page.tsx` keys `BookingScreen` on its charge rows, so that a save
     cannot leave the screen holding the state it was saved FROM — the defect
@@ -3658,6 +3661,120 @@ and after Nik's import.
     Each needs ÷10 on its POS name at the next import (หาร in the import).
     Later, a menu for "กุ้งแม่น้ำ Salt 4 lines", a different dish from
     กุ้งแม่น้ำเผา 4 ขีด.
+
+47. **The booking screen's price box is saved in ONE transaction, every line
+    checked first** (Nik, 2026-09-21). **DONE: its migration
+    `catering_booking_prices_save_migration.sql` applied 2026-09-22 (see
+    "Applied since"); the code committed `bb94d3a` and deployed the same
+    day. A booking tab left open across that deploy has to be reloaded.**
+    Closes the two data-loss risks Nik named before sales uses the module
+    for real:
+    - **A bad line emptied the price box.** saveBooking removed dropped
+      menu lines, added new ones, then deleted EVERY charge row of the
+      booking and inserted the new list — so one line the insert refused
+      (no amount, a string, an overflowing figure, a negative price on a
+      typed line) left the booking with no price lines. Now every line is
+      checked on the screen (naming it), again in saveBooking
+      (`bookingLinesProblem`, booking-lines.ts), and again by the database
+      in a DRY RUN before anything at all is written; then the booking's own
+      fields are written (compare-and-set on `updated_at`), then the whole
+      price box by `catering_save_booking_prices` in one transaction, which
+      moves `updated_at` again. A failure in the middle of that write undoes
+      all of it — the migration proves it by breaking a new set's copy AFTER
+      the charges were deleted and six rewritten (P10), and re-saves every
+      real booking unchanged, touching nothing outside it, rolled back (E1).
+      The booking's own fields and the price box are two transactions: if
+      the second fails, the price box is exactly as it was, the screen says
+      the fields were saved, and a retry saves the same booking.
+    - **Item 41, done with it.** The page keys the screen on the booking
+      alone; new server data is taken when the form is clean or the
+      person's own save lands, and otherwise held with a banner
+      (`serverViewAction`, booking-dirty.ts); the whole form locks from the
+      click until the saved data is on screen. A save sends the booking's
+      `updated_at` as the screen took it, so a second booking-screen save
+      in between is refused rather than written over. A failed save keeps
+      the draft on screen with "โหลดข้อมูลล่าสุด" beside the message, and so
+      does a save that brings no answer at all — a dropped connection, a
+      deploy mid-session, a sign-in that has ended — which used to replace
+      the screen, draft and all.
+    - **The history names what was removed** — "ลบเมนู: <set_name>" for a
+      custom or copied set, where it used to read "ลบเมนู: -". The three
+      old "-" lines are left as they are.
+    - **Nik's two quantity decisions:** the whole-count refusal names the
+      booking's own unit (โต๊ะ / กล่อง / ชุด, the kitchen sheet's word), and
+      a dish quantity takes at most three decimals — on the booking screen,
+      the menu page and the set-menu screen — so the quote and the sheets
+      print the same number, and below 0.001 is refused, not printed blank.
+    - **The adversarial review (four reviewers, 2026-09-21)** found one
+      blocker, fixed: after a partial save, the screen took the booking's
+      CURRENT menu lines as the ones its draft was based on, so the retry
+      removed a set the menu page had added meanwhile, with its charge and
+      courses (`seenAfter`, booking-dirty.ts; reproduced on the real screen
+      before the fix, gone after). Also fixed from it: the price box moving
+      the token (above); a failure after the booking row but before the
+      price box (the staff list) reported with the booking's id and token;
+      a save whose price box landed but whose quotation failed taken like a
+      successful one; no automatic refresh after a failed save except a
+      conflict; a lost answer on a new booking saying to look in the list
+      before saving again; a new booking's retry no longer clashing with its
+      own room; charges loaded
+      in a fixed order (`sort_order`, then id); a NULL dry-run flag refused;
+      and the migration's own checks widened (E1 compares every other
+      booking, the copied courses and the sort order; Step 3 covers booking
+      rows and asserts one function of the name). Recorded, not fixed:
+      items 48–50.
+    - **Still open, deliberately:** the browser's Back button loses a draft
+      without asking (decided for the menu page, for the same reason);
+      `upsertCateringEvent` still replaces the staff list by
+      delete-then-insert, and a new customer typed on a save that is then
+      refused as a conflict stays as a customer (a race: the conflict is
+      checked before any write first). The function's EXECUTE is left at
+      the default, as `catering_save_event_menus`'s is: a caller with no
+      profile role is refused before anything is read. Rare and visible,
+      recorded by the check of the fixes: when a save's answer is lost after
+      its price box landed, a line it created and the person then removes is
+      kept (it is not yet the screen's own) and shows again when the next
+      save lands; a page load that straddles another screen's save by
+      milliseconds can take the new token with the old price box (the page
+      reads both at once); on the new-booking page a conflict after a
+      partial save has no "โหลดข้อมูลล่าสุด" (open the booking's own page).
+    - **The migration ran 2026-09-22**, first time, 46 rows all ok (the
+      table under "Applied since"). A re-run must also be made while nobody
+      is saving a booking: Step 3 compares whole-table checksums, so a save
+      during the run rolls the whole file back. Its tests break the
+      one-row-per-test-write rule on purpose, all inside the rolled-back
+      block; Nik accepted that for this file.
+
+48. **The menu page's save does not wait for the booking screen's**
+    (review of item 47, 2026-09-21). **NOT STARTED. Existed before item 47,
+    which narrows it.** `catering_save_booking_prices` locks the booking
+    row; `catering_save_event_menus` does not, and its price and course
+    updates take no lock that waits for it. If a menu-page save lands while
+    a booking-screen save is between deleting and re-writing the charges,
+    the menu page finds its set's charge gone and inserts another: the set
+    prints twice, the total counts it twice, and the next booking-screen
+    save is refused ("the same line twice") until someone removes one.
+    Landing just before the delete, its new price is written back to the
+    old one. The window is milliseconds (it used to be the whole time the
+    screen was open). The fix: `catering_save_event_menus` takes the same
+    `FOR UPDATE` on the booking row first — a CREATE OR REPLACE of an
+    applied function, so read its live definition first (AGENTS.md, rule 4).
+
+49. **The booking screen writes the customer's address and contact back on
+    every save** (review of item 47, 2026-09-21). **NOT STARTED. Existed
+    before item 47.** The screen has no inputs for them, but
+    `formToUpsertPayload` (shared-utils.tsx) always sends `customer_edits`,
+    so a change made on the customer page while a booking is open is undone
+    by that booking's next save. Send them only when the screen changed
+    them, or not at all.
+
+50. **Picking a customer from the list never keeps the pick** (review of
+    item 47, 2026-09-21). **NOT STARTED. Existed before item 47.**
+    `CustomerCombobox` (shared.tsx) calls `onPick`, then `onQueryChange`,
+    and the booking screen's `onQueryChange` clears `customerId`. The save
+    then finds the customer by name with no phone, so with two customers of
+    one name a booking can attach to the other one. Spun off as its own
+    task on 2026-09-21.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
