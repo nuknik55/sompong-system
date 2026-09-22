@@ -503,12 +503,35 @@ test("CHECK: the checker sees a client-supplied unit price and a database one", 
   assert.deepEqual(menuLineUnitPriceInitializers(db), ["row.unit_price"]);
 });
 
-test("THE ONE PRICE: saveBooking writes a set line's unit_price from the database row it re-read, never from the screen", () => {
+test("THE ONE PRICE: saveBooking builds no charge row of its own; the price box goes whole to the database function, which prices a kept menu line from its STORED charge", () => {
+  // Since 2026-09-21 the booking screen's save writes its price box through
+  // catering_save_booking_prices, in one transaction: a kept menu line's
+  // unit_price is read from its stored charge INSIDE the function (P3 in
+  // supabase/catering_booking_prices_save_migration.sql), and a menu line
+  // sends no price at all (booking-lines.test.ts). What is held here: no
+  // charge literal is left in saveBooking for a screen's price to reach, and
+  // the price box is written by the function.
   const here = path.dirname(fileURLToPath(import.meta.url));
   const source = fs.readFileSync(path.join(here, "actions.ts"), "utf8");
-  const inits = menuLineUnitPriceInitializers(source);
-  assert.equal(inits.length, 1, "exactly one menu-line charge is pushed in saveBooking");
-  assert.equal(inits[0], "row.unit_price");
+  assert.deepEqual(menuLineUnitPriceInitializers(source), [], "no menu-line charge is built in saveBooking");
+  const file = ts.createSourceFile("actions.ts", source, ts.ScriptTarget.Latest, true);
+  let body: ts.Block | undefined;
+  file.forEachChild((n) => { if (ts.isFunctionDeclaration(n) && n.name?.text === "saveBooking") body = n.body; });
+  const calls: string[] = [];
+  const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) calls.push(n.expression.text); n.forEachChild(walk); };
+  if (body) walk(body);
+  assert.ok(calls.includes("writeBookingPrices"), "saveBooking writes the price box through writeBookingPrices");
+});
+
+test("A COURSE takes up to three decimals per table: a fourth would print rounded on the sheets, below 0.001 blank (Nik, 2026-09-21)", () => {
+  const withQty = (q: string) => { const d = draftFromLine(line()); d.dishes[0]!.quantity = q; return d; };
+  assert.equal(validateDrafts([withQty("0.5")]), null);
+  assert.equal(validateDrafts([withQty("1.125")]), null);
+  assert.match(validateDrafts([withQty("1.0005")])!, /จำนวนต่อโต๊ะ.*ทศนิยมไม่เกิน 3 ตำแหน่ง/);
+  assert.match(validateDrafts([withQty("0.0005")])!, /จำนวนต่อโต๊ะ/);
+  const payload = (q: number) => [{ event_menu_id: "L1", price_per_table: 1, known_item_ids: [], known_price: null, items: [{ menu_id: "m", quantity: q, section: "dish" }] }];
+  assert.match(validateSavePayload(payload(1.0005))!, /^จำนวนต่อโต๊ะ: /);
+  assert.equal(validateSavePayload(payload(0.5)), null);
 });
 
 test("A NEW SET's tables follow the price box's rule: whole, at least 1 — or the booking screen would refuse every later save", () => {

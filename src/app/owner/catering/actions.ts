@@ -8,10 +8,10 @@ import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { eventMenuAccess } from "@/lib/event-menu-access";
-import { weightSoldMenuIds } from "@/lib/kitchen-sheet";
+import { setCountUnit, weightSoldMenuIds } from "@/lib/kitchen-sheet";
 import { fetchAllRows } from "@/lib/data";
-import { foldSetName, isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
-import { bookingLinesQuantityProblem, menuChargeAmount } from "./booking-lines";
+import { isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
+import { bookingLinesProblem, menuLineQuantityError } from "./booking-lines";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -118,8 +118,9 @@ export type CateringCharge = {
   quantity: number;
   amount: number;
   note: string | null;
-  /** Set only when addCateringEventMenu() created this charge; NULL for
-   *  every other charge (rate picker, "+ เพิ่มรายการ", hand-typed). */
+  /** Set only on a menu line's charge (catering_save_booking_prices, or the
+   *  menu page's save for a custom set); NULL for every other charge (rate
+   *  picker, "+ เพิ่มรายการ", hand-typed). */
   event_menu_id: string | null;
   /** Which rate produced this charge (rate-picker inserts only) — NULL for
    *  menu lines, hand-typed lines, discounts, and every charge from before
@@ -133,7 +134,7 @@ export type CateringCharge = {
   /** Derived from the linked catering_event_menus row's set_menu_id/menu_id
    *  (see getCateringCharges) — null whenever event_menu_id is null. Purely
    *  a display tag ("ชุดเมนู"/"เมนูเดี่ยว") for the unified line-item table;
-   *  never round-tripped back through saveCateringCharges. */
+   *  never sent back by a save. */
   event_menu_kind: "set" | "dish" | null;
   /** The shared set or dish the linked line references (set_menu_id ?? menu_id);
    *  null for a custom set and for every non-menu charge. The price box uses it
@@ -627,7 +628,11 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
     .from("catering_event_charges")
     .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, rate_id, catering_event_menus(set_menu_id, menu_id), catering_rates(rate_type, display_label)")
     .eq("event_id", eventId)
-    .order("sort_order");
+    // Ending on the id: two rows at one sort_order load in one order every
+    // time, so a refresh cannot read as a change, and a save writes them
+    // back as they were (review, 2026-09-21).
+    .order("sort_order")
+    .order("id");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => {
     const linked = r.catering_event_menus as { set_menu_id: string | null; menu_id: string | null } | null;
@@ -1013,6 +1018,11 @@ export async function saveCateringSetMenu(data: {
   items: { menu_id: string; quantity: number; note: string | null; section: string }[];
 }): Promise<string> {
   await requireAdmin();
+  // The screen's rule again (booking-lines.ts): a 0 would fail every
+  // booking's copy of this set (the courses table's CHECK), and the sheets
+  // print three decimals.
+  const badItem = data.items.find((it) => menuLineQuantityError("dish", it.quantity) !== null);
+  if (badItem) throw new Error(`จำนวนต่อชุดไม่ถูกต้อง: ${menuLineQuantityError("dish", badItem.quantity)}`);
   const supabase = await createClient();
 
   const payload = {
@@ -1593,7 +1603,7 @@ async function upsertCateringEvent(data: {
   detail_note: string | null;
   kitchen_note: string | null;
   staff_ids: string[];
-}): Promise<string> {
+}, expectedUpdatedAt?: string | null, onRowWritten?: (eventId: string) => void): Promise<string> {
   const profile = await requireSales();
   const supabase = await createClient();
 
@@ -1703,8 +1713,17 @@ async function upsertCateringEvent(data: {
   let eventId = data.id;
   if (eventId) {
     // created_by is set once, on creation, and never touched by an edit.
-    const { error } = await supabase.from("catering_events").update(payload).eq("id", eventId);
+    // COMPARE-AND-SET on the conflict token (saveBooking): the row is written
+    // only while its updated_at is still what the screen took, so of two
+    // saves racing, the second is refused rather than written over the first.
+    // A zero-row answer is never taken as success: it used to pass in silence.
+    let update = supabase.from("catering_events").update(payload).eq("id", eventId);
+    if (typeof expectedUpdatedAt === "string") update = update.eq("updated_at", expectedUpdatedAt);
+    const { data: updatedRows, error } = await update.select("id");
     if (error) throw error;
+    if ((updatedRows ?? []).length === 0) {
+      throw new Error(typeof expectedUpdatedAt === "string" ? SAVE_CONFLICT : "ไม่พบข้อมูลงาน");
+    }
   } else {
     const { data: created, error } = await supabase
       .from("catering_events")
@@ -1714,6 +1733,11 @@ async function upsertCateringEvent(data: {
     if (error) throw error;
     eventId = created.id;
   }
+  // The booking row is written, and its conflict token has moved: whatever
+  // fails from here on, the caller must know, or its retry is refused as
+  // someone else's change and a new booking is created twice (review,
+  // 2026-09-21).
+  onRowWritten?.(eventId as string);
 
   // Replace the staff assignment set wholesale — simpler than diffing, and the
   // row count per event is tiny.
@@ -1746,458 +1770,219 @@ async function upsertCateringEvent(data: {
   return eventId as string;
 }
 
-/** One line of the booking screen's price box. Menu lines reference a set menu or dish; charge lines are rates, hand-typed items, or the discount. */
+/**
+ * One line of the booking screen's price box. Menu lines reference a set menu
+ * or dish and carry NO price — a menu line's price is its stored charge's
+ * (THE ONE PRICE; the menu page edits it). Charge lines are rates,
+ * hand-typed items, or the discount.
+ */
 export type BookingLine =
   | { kind: "set" | "dish"; refId: string; eventMenuId: string | null; quantity: number }
   | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null; rate_id: string | null };
 
 export type SaveBookingResult =
-  | { ok: true; id: string; quoteNumber: string | null }
-  | { ok: false; error: string };
+  | {
+      ok: true;
+      id: string;
+      quoteNumber: string | null;
+      /** The booking's updated_at after this save: the token its next save sends. */
+      updatedAt: string | null;
+    }
+  | {
+      ok: false;
+      error: string;
+      /** Someone else saved this booking since the screen took it. Nothing was written. */
+      conflict?: boolean;
+      /**
+       * Set only when part of the save DID land — the booking's own fields,
+       * or everything but the quotation — so that the screen knows the
+       * booking's id (new, if this save created it) and its token now, and a
+       * retry is not refused as someone else's change.
+       */
+      id?: string;
+      updatedAt?: string | null;
+      /**
+       * Everything but the quotation landed: the booking's fields AND its
+       * price box. The screen takes the saved booking as it does after a
+       * successful save, so the lines this save created are the screen's own
+       * from then on and removing one later holds (review, 2026-09-21).
+       */
+      pricesSaved?: boolean;
+    };
+
+const SAVE_CONFLICT =
+  "งานนี้ถูกบันทึกจากที่อื่นหลังจากเปิดหน้านี้ — กด “โหลดข้อมูลล่าสุด” แล้วแก้ไขอีกครั้ง ยังไม่ได้บันทึกอะไร";
+const PRICES_NOT_READY =
+  "ระบบบันทึกกล่องราคายังไม่พร้อม (ยังไม่ได้รัน migration catering_booking_prices_save_migration.sql) — ยังไม่ได้บันทึกอะไร";
+
+/** The booking row's updated_at — the conflict token the screen holds; null when there is no row. */
+async function readUpdatedAt(supabase: Db, eventId: string): Promise<string | null> {
+  const { data, error } = await supabase.from("catering_events").select("updated_at").eq("id", eventId).maybeSingle();
+  if (error) throw error;
+  return (data?.updated_at as string | undefined) ?? null;
+}
+
+/**
+ * The database's own check of the whole price box, WRITING NOTHING (a dry run
+ * of catering_save_booking_prices): every rule the save applies, and the ones
+ * only the database can apply — a line removed elsewhere, a set or rate that
+ * no longer exists, a set name the booking already has. A booking not created
+ * yet is checked without one. The refusal to show, or null.
+ */
+async function checkBookingPrices(supabase: Db, eventId: string | null, lines: BookingLine[], knownMenuIds: string[] | undefined): Promise<string | null> {
+  const { error } = await supabase.rpc("catering_save_booking_prices", {
+    p_event_id: eventId, p_lines: lines, p_known_menu_ids: knownMenuIds ?? null, p_dry_run: true,
+  });
+  if (!error) return null;
+  return isMissingSchemaError(error) ? PRICES_NOT_READY : error.message;
+}
+
+/**
+ * THE WRITE of the price box, in ONE transaction — lines dropped, lines added
+ * with the booking's own copy of a set, every charge rewritten — whole, or
+ * not at all (catering_save_booking_prices). Throws the refusal.
+ */
+async function writeBookingPrices(supabase: Db, eventId: string, lines: BookingLine[], knownMenuIds: string[] | undefined): Promise<void> {
+  const { error } = await supabase.rpc("catering_save_booking_prices", {
+    p_event_id: eventId, p_lines: lines, p_known_menu_ids: knownMenuIds ?? null, p_dry_run: false,
+  });
+  if (error) throw new Error(isMissingSchemaError(error) ? PRICES_NOT_READY : error.message);
+}
 
 /**
  * THE ONE SAVE. Booking fields, price box, and optionally the quote number,
- * in one call, in this order — each step relies on the one before:
+ * in this order — each step relies on the one before:
  *
- *   0. the menu lines' quantities (booking-lines.ts) and an existing
- *      booking's cost lock, before anything is written
- *   1. upsertCateringEvent  → the event id (created or existing)
- *   2. menu lines dropped from the box → removeCateringEventMenu
- *   3. menu lines new to the box      → addCateringEventMenu (creates the
- *                                        catering_event_menus row and its
- *                                        charge at the set/dish price)
- *   4. saveCateringCharges with every line: menu-linked rows carry their
- *      event_menu_id and the box's quantity; rate/manual/discount rows as
- *      typed. This is what keeps catering_event_menus.quantity in sync.
- *   5. issueCateringQuote when asked — it totals from the rows just written.
+ *   0. Before anything is written: every line of the price box
+ *      (bookingLinesProblem — each quantity by its rule, every charge line);
+ *      an existing booking's cost lock; its CONFLICT TOKEN (its updated_at as
+ *      the screen took it); and the database's own dry run of the price box
+ *      (checkBookingPrices).
+ *   1. upsertCateringEvent → the event id (created or existing). An existing
+ *      row is written only if its updated_at is still the token
+ *      (compare-and-set), so of two saves racing, one is refused.
+ *   2. writeBookingPrices: the whole price box in one transaction. It used to
+ *      be three steps here, the last of which deleted every charge row and
+ *      then inserted the new list, so one bad line left the booking with no
+ *      price lines at all (Nik, 2026-09-21).
+ *   3. issueCateringQuote when asked — it totals from the rows just written.
+ *
+ * Steps 1 and 2 are two transactions. A failure in 2 leaves the booking's own
+ * fields saved and its price box EXACTLY as it was, never with fewer lines,
+ * and the result says so with the booking's id and new token, so the screen
+ * keeps the draft and a retry is not refused as someone else's change. The
+ * dry run in step 0 makes that the rare case. So does a failure inside step 1
+ * after the booking row is written (its staff list): upsertCateringEvent
+ * reports the row the moment it lands. Step 2 moves the token again, so a
+ * screen that took the booking between the two cannot save over it. A
+ * failure in step 3 alone says so (pricesSaved): the screen then takes the
+ * saved booking as it does after a successful save.
  *
  * Expected failures are RETURNED (the room-conflict block, a cost lock, a
- * refused charge): production redacts a thrown Server Action message, and a
- * sales person needs to read why the save was refused.
+ * refused line, a conflict): production redacts a thrown Server Action
+ * message, and a sales person needs to read why the save was refused.
  *
- * Not one transaction: the Supabase client cannot open one, and these
- * steps were already separate writes on the old three-page path. A failure
- * mid-way leaves the booking saved with whatever lines landed, which the
- * screen shows on refresh; nothing here can double a line, because step 4
- * replaces the charge list wholesale.
- *
- * THE FIVE STEPS ARE NOT EXPORTED, deliberately, since 2026-09-16. Every
- * export of a "use server" file is a network-callable endpoint, and until
- * then a sales session could call saveCateringCharges or issueCateringQuote
- * on its own, outside the order above, although nothing in the app did.
- * Each keeps its own requireSales(); the only way in is this function.
- * Do not re-export one to reuse it: call saveBooking.
+ * The steps are not exported, deliberately, since 2026-09-16: every export of
+ * a "use server" file is a network-callable endpoint. The only way in is this
+ * function.
  */
 export async function saveBooking(input: {
   event: Parameters<typeof upsertCateringEvent>[0];
   lines: BookingLine[];
   issueQuote: boolean;
   /**
-   * The menu lines the screen HAD when it loaded (their event_menu ids). A
-   * line absent from `lines` is removed only if it is here: the screen
-   * dropped it. A line absent from both was created since the screen loaded
-   * — by the menu page in another tab, since 2026-09-19 a second writer of
-   * set lines — and is kept, charge and copy included. Undefined from an
-   * older bundle mid-deploy means "every stored line", the old behaviour.
+   * The menu lines the screen HAD when it took the booking (their event_menu
+   * ids). A line absent from `lines` is removed only if it is here: the
+   * screen dropped it. A line absent from both was created since — by the
+   * menu page in another tab — and is kept, charge and copy included.
+   * Undefined from an older bundle means "every stored line".
    */
   knownMenuIds?: string[];
+  /**
+   * THE CONFLICT TOKEN: the booking's updated_at as the screen took it from
+   * the server. Every save of the booking screen writes the booking row, so
+   * a different value now means someone saved it since, and this save would
+   * write over their work: refused, nothing written. Null for a new booking;
+   * undefined from an older bundle, which is not checked.
+   */
+  expectedUpdatedAt?: string | null;
 }): Promise<SaveBookingResult> {
   await requireSales();
+  const supabase = await createClient();
+  // The booking row, once written: set by upsertCateringEvent the moment it
+  // lands, so a failure in the rest of step 1 is reported like one in step 2.
+  const written: { id: string | null } = { id: null };
+  let eventDone = false;
+  let pricesWritten = false;
   try {
-    // A menu line's quantity is written as sent, never rounded or floored,
-    // so one outside its rule is refused here, before anything is written;
-    // the screen refuses it first, naming the line (booking-lines.ts). A line
-    // the booking already stores is judged by its STORED kind, not the kind
-    // it was sent with (review, 2026-09-21).
+    const existingId = input.event.id ?? null;
+
+    // 0a. Every line. A line the booking stores is judged by its STORED
+    // kind; a set's refusal names the booking's own unit, as the kitchen
+    // sheet counts it (booking-lines.ts).
     const storedKinds = new Map(
-      input.event.id ? (await getCateringEventMenus(input.event.id)).map((m) => [m.id, m.kind] as const) : [],
+      existingId ? (await getCateringEventMenus(existingId)).map((m) => [m.id, m.kind] as const) : [],
     );
-    const quantityProblem = bookingLinesQuantityProblem(input.lines, storedKinds);
-    if (quantityProblem) return { ok: false, error: quantityProblem };
+    const linesProblem = bookingLinesProblem(input.lines, storedKinds, setCountUnit(input.event.food_format));
+    if (linesProblem) return { ok: false, error: linesProblem };
 
-    // A cost-locked booking is frozen. Steps 2-4 check the lock too, but
-    // step 1 ran first and had already rewritten the staff list, created a
-    // typed-in customer, added an "แก้ไขข้อมูลงาน" history line and, for
-    // owner and admin, saved the booking's own fields by the time they
-    // refused (queue item 33). So the lock is checked before any write. Like
-    // every other lock check in the app it has no role exception: owner and
-    // admin unlock on the cost page first. A refusal is returned by the catch
-    // below, so the screen shows it in production.
-    if (input.event.id) {
-      await assertCostNotLocked(await createClient(), input.event.id);
-    }
-
-    const eventId = await upsertCateringEvent(input.event);
-
-    const before = await getCateringCharges(eventId);
-    const keptMenuIds = new Set(input.lines.flatMap((l) => (l.kind !== "charge" && l.eventMenuId ? [l.eventMenuId] : [])));
-    const known = input.knownMenuIds ? new Set(input.knownMenuIds) : null;
-    // Lines the screen never saw are not the screen's to drop.
-    const unknownMenuIds = new Set(
-      before.flatMap((c) => (c.event_menu_id && !keptMenuIds.has(c.event_menu_id) && known && !known.has(c.event_menu_id) ? [c.event_menu_id] : [])),
-    );
-    for (const c of before) {
-      if (c.event_menu_id && !keptMenuIds.has(c.event_menu_id) && !unknownMenuIds.has(c.event_menu_id)) await removeCateringEventMenu(c.event_menu_id, eventId);
-    }
-    for (const l of input.lines) {
-      if (l.kind !== "charge" && !l.eventMenuId) await addCateringEventMenu(eventId, { kind: l.kind, id: l.refId, quantity: l.quantity, note: null });
-    }
-
-    // Re-read: the adds above created event_menu ids the client cannot know.
-    const after = await getCateringCharges(eventId);
-    const menuRows = await getCateringEventMenus(eventId);
-    const chargeByMenuId = new Map(after.filter((c) => c.event_menu_id).map((c) => [c.event_menu_id as string, c]));
-    const menuIdByRef = new Map(menuRows.map((m) => [m.set_menu_id ?? m.menu_id ?? "", m.id]));
-
-    const payload: Parameters<typeof saveCateringCharges>[1] = [];
-    // ONE charge row per menu line. Two rows for one line printed the set
-    // twice on the quotation and doubled the total (review, 2026-09-19): the
-    // screen could not see that a loaded line referenced the set being picked.
-    // The screen now refuses the pick; this is the server's own refusal.
-    const menuLinesSeen = new Set<string>();
-    for (const l of input.lines) {
-      if (l.kind === "charge") {
-        payload.push({ label: l.label, charge_type: l.charge_type, unit_price: l.unit_price, quantity: l.quantity, amount: l.amount, note: l.note, event_menu_id: null, rate_id: l.rate_id });
-        continue;
-      }
-      const menuId = l.eventMenuId ?? menuIdByRef.get(l.refId);
-      const row = menuId ? chargeByMenuId.get(menuId) : undefined;
-      if (!row) return { ok: false, error: "บันทึกรายการเมนูไม่สำเร็จ — กรุณาอ่านหน้านี้ใหม่แล้วลองอีกครั้ง" };
-      if (menuLinesSeen.has(row.event_menu_id as string)) return { ok: false, error: "ชุดเมนูหรือเมนูเดียวกันอยู่ในกล่องราคา 2 บรรทัด — ลบบรรทัดที่ซ้ำก่อนบันทึก" };
-      menuLinesSeen.add(row.event_menu_id as string);
-      payload.push({
-        label: row.label, charge_type: "food", unit_price: row.unit_price,
-        quantity: l.quantity, amount: menuChargeAmount(row.unit_price, l.quantity), note: row.note, event_menu_id: row.event_menu_id,
-        rate_id: null,
-      });
-    }
-    // The charges of lines the screen never saw, as they are: the replace
-    // below would otherwise delete them and leave those lines priceless.
-    for (const c of after) {
-      if (c.event_menu_id && unknownMenuIds.has(c.event_menu_id) && !menuLinesSeen.has(c.event_menu_id)) {
-        menuLinesSeen.add(c.event_menu_id);
-        payload.push({ label: c.label, charge_type: c.charge_type, unit_price: c.unit_price, quantity: c.quantity, amount: c.amount, note: c.note, event_menu_id: c.event_menu_id, rate_id: null });
+    if (existingId) {
+      // 0b. A cost-locked booking is frozen, for everyone, like every lock
+      // check in the app: owner and admin unlock on the cost page first.
+      await assertCostNotLocked(supabase, existingId);
+      // 0c. The conflict token.
+      if (typeof input.expectedUpdatedAt === "string" && (await readUpdatedAt(supabase, existingId)) !== input.expectedUpdatedAt) {
+        return { ok: false, conflict: true, error: SAVE_CONFLICT };
       }
     }
-    await saveCateringCharges(eventId, payload);
 
+    // 0d. The database's dry run: still nothing written.
+    const pricesProblem = await checkBookingPrices(supabase, existingId, input.lines, input.knownMenuIds);
+    if (pricesProblem) return { ok: false, error: pricesProblem };
+
+    // 1. The booking's own fields.
+    const eventId = await upsertCateringEvent(input.event, existingId ? input.expectedUpdatedAt : undefined,
+      (id) => { written.id = id; });
+    eventDone = true;
+
+    // 2. The price box, one transaction.
+    await writeBookingPrices(supabase, eventId, input.lines, input.knownMenuIds);
+    pricesWritten = true;
+    revalidatePath(`/owner/catering/${eventId}`);
+
+    // 3. The quotation. The reads after it only report: a failed read-back is
+    // not a failed save.
     let quoteNumber: string | null = null;
     if (input.issueQuote) {
       await issueCateringQuote(eventId);
-      const ev = await getCateringEvent(eventId);
+      const ev = await getCateringEvent(eventId).catch(() => null);
       quoteNumber = ev?.quote_number ?? null;
     }
-    return { ok: true, id: eventId, quoteNumber };
+    return { ok: true, id: eventId, quoteNumber, updatedAt: await readUpdatedAt(supabase, eventId).catch(() => null) };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "บันทึกไม่สำเร็จ" };
+    const message = err instanceof Error ? err.message : "บันทึกไม่สำเร็จ";
+    if (message === SAVE_CONFLICT) return { ok: false, conflict: true, error: SAVE_CONFLICT };
+    if (!written.id) return { ok: false, error: message };
+    const updatedAt = await readUpdatedAt(supabase, written.id).catch(() => undefined);
+    return {
+      ok: false,
+      error: pricesWritten
+        ? `บันทึกข้อมูลงานและกล่องราคาแล้ว แต่ออกใบเสนอราคาไม่สำเร็จ — ${message}`
+        : eventDone
+          ? `บันทึกข้อมูลงานแล้ว แต่กล่องราคายังไม่ได้บันทึก (ยังเหมือนก่อนกดบันทึก) — ${message}`
+          : `บันทึกข้อมูลงานได้ไม่ครบ (ผู้รับงานอาจยังไม่ถูกบันทึก) และกล่องราคายังไม่ได้บันทึก — กดบันทึกอีกครั้ง: ${message}`,
+      id: written.id,
+      updatedAt,
+      pricesSaved: pricesWritten,
+    };
   }
-}
-
-/**
- * Replaces the full charge list wholesale — same reasoning as
- * catering_event_staff above: simpler than diffing, and the row count per
- * event is tiny.
- */
-async function saveCateringCharges(
-  eventId: string,
-  charges: {
-    label: string;
-    charge_type: string;
-    unit_price: number;
-    quantity: number;
-    amount: number;
-    note: string | null;
-    event_menu_id: string | null;
-    rate_id: string | null;
-  }[],
-): Promise<void> {
-  const profile = await requireSales();
-  const supabase = await createClient();
-  await assertCostNotLocked(supabase, eventId);
-
-  // "food" without a linked menu row would claim real recipe cost behind a
-  // charge that has none — MenuPicker is the only path that both sets
-  // event_menu_id and produces charge_type "food" now: food_set rates are
-  // no longer offered anywhere in the quotation-side rate picker (see
-  // RATE_PICKER_TYPE_OPTIONS) or creatable in settings, and
-  // MANUAL_CHARGE_TYPE_OPTIONS excludes "food" from the hand-typed row's
-  // own dropdown — so a legitimate save should never hit this. Server-side
-  // because the UI restriction alone isn't a guarantee, same reasoning as
-  // assertCostNotLocked above.
-  if (charges.some((c) => c.event_menu_id === null && c.charge_type === "food")) {
-    throw new Error("รายการที่ไม่ได้เลือกจากเมนู ต้องไม่ใช้ประเภท \"อาหาร\" — ประเภทนี้ใช้ได้เฉพาะรายการที่เพิ่มผ่าน + เพิ่มเมนู เท่านั้น");
-  }
-
-  // Deletes and reinserts every row, so event_menu_id MUST be threaded
-  // through the caller's payload — otherwise this silently drops every link
-  // to catering_event_menus on the very next unrelated charges edit. See
-  // ChargeRow/rowFromCharge/toPayload in ChargesSection.tsx.
-  // Checked: this is the money-affecting one. saveCateringCharges' whole
-  // contract is "replace the charge list wholesale", so an unchecked delete
-  // that silently fails leaves the old lines in place and the insert adds the
-  // new ones alongside them — a quotation with every line item twice, and a
-  // quoted_total to match. Absence would be noticed; duplication might not.
-  {
-    const { error } = await supabase.from("catering_event_charges").delete().eq("event_id", eventId);
-    if (error) throw error;
-  }
-  if (charges.length > 0) {
-    const { error } = await supabase.from("catering_event_charges").insert(
-      charges.map((c, i) => ({
-        event_id: eventId,
-        label: c.label.trim(),
-        charge_type: c.charge_type,
-        unit_price: c.unit_price,
-        quantity: c.quantity,
-        amount: c.amount,
-        note: c.note?.trim() || null,
-        event_menu_id: c.event_menu_id,
-        // Threaded like event_menu_id, and for the same reason: this is a
-        // wholesale replace, so a payload without it silently strips every
-        // charge of its rate provenance on the next unrelated edit.
-        rate_id: c.rate_id,
-        sort_order: (i + 1) * 10,
-      })),
-    );
-    if (error) throw error;
-  }
-
-  // Keep catering_event_menus.quantity (read by the cost page and the
-  // function-sheet) in sync with whatever quantity the sales rep just saved
-  // on a menu-linked row — otherwise editing quantity here would silently
-  // desync from the "what did we actually order" record. Safe to assume at
-  // most one charge row per event_menu_id: addCateringEventMenu bumps the
-  // existing linked row in place on repeat-add rather than inserting a
-  // second one (see its comment), so there's never an ambiguous group to
-  // reconcile here.
-  for (const c of charges) {
-    if (c.event_menu_id) {
-      const { error: syncError } = await supabase
-        .from("catering_event_menus")
-        .update({ quantity: c.quantity })
-        .eq("id", c.event_menu_id);
-      if (syncError) throw syncError;
-    }
-  }
-
-  // One coarse entry per save, not per line item — favors a readable log
-  // over a noisy one, per your call.
-  await logCateringActivity(supabase, eventId, profile.id, "charges_updated", "แก้ไขรายการค่าใช้จ่าย");
-
-  revalidatePath(`/owner/catering/${eventId}`);
-}
-
-/**
- * Adds one line to catering_event_menus (the "what did we order" list) and a
- * matching line to catering_event_charges (the quotation), so the two never
- * drift apart at the moment of entry.
- *
- * The same dish/set added twice bumps quantity on the existing
- * catering_event_menus row AND on its linked charge row (never inserts a
- * second charge row for the same item) — the linked row's label/unit_price
- * stay frozen from the first add, same snapshot-at-write-time convention
- * used elsewhere; only quantity/amount move. This keeps a strict 1:1 between
- * a catering_event_menus row and its charge row, which saveCateringCharges'
- * quantity-sync relies on. Once a row exists, later charge-side edits
- * (label/unit_price/note on a *manual* row, or quantity on any row via
- * saveCateringCharges) are the only way those fields change — this function
- * only ever runs at initial-add or repeat-add time.
- *
- * Resolves name/price from catering_set_menus or menus only — both already
- * sales-readable sale-price data, never touching ingredients/menu_recipe_items.
- */
-async function addCateringEventMenu(
-  eventId: string,
-  item: { kind: "set" | "dish"; id: string; quantity: number; note: string | null },
-): Promise<void> {
-  const profile = await requireSales();
-  const supabase = await createClient();
-  await assertCostNotLocked(supabase, eventId);
-
-  let name: string;
-  let unitPrice: number;
-  if (item.kind === "set") {
-    const { data, error } = await supabase
-      .from("catering_set_menus")
-      .select("name, price_per_set")
-      .eq("id", item.id)
-      .single();
-    if (error) throw error;
-    name = data.name;
-    unitPrice = data.price_per_set;
-  } else {
-    const { data, error } = await supabase
-      .from("menus")
-      .select("name, selling_price")
-      .eq("id", item.id)
-      .single();
-    if (error) throw error;
-    name = data.name;
-    unitPrice = data.selling_price;
-  }
-
-  let existingQuery = supabase
-    .from("catering_event_menus")
-    .select("id, quantity")
-    .eq("event_id", eventId);
-  existingQuery = item.kind === "set"
-    ? existingQuery.eq("set_menu_id", item.id)
-    : existingQuery.eq("menu_id", item.id);
-  const { data: existingRow } = await existingQuery.maybeSingle();
-
-  // ONE SET OF A GIVEN NAME PER BOOKING, checked by NAME and not only by id.
-  // A set copied in from the menu page is stored as the booking's OWN set —
-  // set_menu_id NULL with the source's name — so the id lookup above cannot
-  // see it, and picking the same standard set here would have made a SECOND
-  // line with the same label and price: the set printed twice and the total
-  // doubled (review, 2026-09-20; the same shape as Nik's three "t2000"). The
-  // menu page's save applies this rule already; this is the other door.
-  if (!existingRow && item.kind === "set") {
-    const { data: setLines, error: linesError } = await supabase
-      .from("catering_event_menus")
-      .select("id, set_name, catering_set_menus(name), catering_event_charges(label)")
-      .eq("event_id", eventId)
-      .is("menu_id", null);
-    if (linesError) throw linesError;
-    const taken = (setLines ?? []).some((r: Record<string, unknown>) => {
-      const setMenu = r.catering_set_menus as { name: string } | null;
-      const charges = r.catering_event_charges as { label: string }[] | null;
-      const known = (r.set_name as string | null) ?? setMenu?.name ?? charges?.[0]?.label ?? "";
-      return foldSetName(known) === foldSetName(name);
-    });
-    if (taken) {
-      throw new Error(`งานนี้มีชุดชื่อ "${name}" อยู่แล้ว — ถ้าต้องการเพิ่มจำนวนโต๊ะ ให้แก้จำนวนในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
-    }
-  }
-
-  let eventMenuId: string;
-
-  if (existingRow) {
-    eventMenuId = existingRow.id as string;
-    const { error } = await supabase
-      .from("catering_event_menus")
-      .update({ quantity: (existingRow.quantity as number) + item.quantity })
-      .eq("id", eventMenuId);
-    if (error) throw error;
-
-    const { data: linkedCharge } = await supabase
-      .from("catering_event_charges")
-      .select("id, unit_price, quantity")
-      .eq("event_menu_id", eventMenuId)
-      .order("sort_order")
-      .limit(1)
-      .maybeSingle();
-
-    if (linkedCharge) {
-      const newQty = (linkedCharge.quantity as number) + item.quantity;
-      const { error: bumpError } = await supabase
-        .from("catering_event_charges")
-        .update({ quantity: newQty, amount: menuChargeAmount(linkedCharge.unit_price as number, newQty) })
-        .eq("id", linkedCharge.id);
-      if (bumpError) throw bumpError;
-
-      await logCateringActivity(supabase, eventId, profile.id, "menu_added", `เพิ่มเมนู: ${name}`);
-      revalidatePath(`/owner/catering/${eventId}`);
-      return;
-    }
-    // No linked charge found (shouldn't happen — every catering_event_menus
-    // row is created together with its charge row below) — fall through to
-    // insert one fresh, same as the brand-new-row path.
-  } else {
-    const { data: last } = await supabase
-      .from("catering_event_menus")
-      .select("sort_order")
-      .eq("event_id", eventId)
-      .order("sort_order", { ascending: false })
-      .limit(1);
-    const nextSort = ((last?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-    const { data: created, error } = await supabase
-      .from("catering_event_menus")
-      .insert({
-        event_id: eventId,
-        set_menu_id: item.kind === "set" ? item.id : null,
-        menu_id: item.kind === "dish" ? item.id : null,
-        quantity: item.quantity,
-        note: item.note?.trim() || null,
-        sort_order: nextSort,
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-    eventMenuId = created.id;
-    // PICKING A SET COPIES ITS DISHES INTO THE BOOKING (catering per-event
-    // menus, Nik 2026-09-19): from here the copy is the record, and editing it
-    // never touches the shared set. The database function does the copy under
-    // its own checks, so a sales session gets exactly that and nothing else.
-    // Until its migration runs the function is missing; then there is no copy
-    // and every screen falls back to the shared set, as before.
-    if (item.kind === "set") await copySetMenuIntoLine(supabase, eventMenuId);
-  }
-
-  const { data: lastCharge } = await supabase
-    .from("catering_event_charges")
-    .select("sort_order")
-    .eq("event_id", eventId)
-    .order("sort_order", { ascending: false })
-    .limit(1);
-  const nextChargeSort = ((lastCharge?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-  const { error: chargeError } = await supabase.from("catering_event_charges").insert({
-    event_id: eventId,
-    label: name,
-    charge_type: "food",
-    unit_price: unitPrice,
-    quantity: item.quantity,
-    amount: menuChargeAmount(unitPrice, item.quantity),
-    note: item.note?.trim() || null,
-    event_menu_id: eventMenuId,
-    sort_order: nextChargeSort,
-  });
-  if (chargeError) throw chargeError;
-
-  await logCateringActivity(supabase, eventId, profile.id, "menu_added", `เพิ่มเมนู: ${name}`);
-
-  revalidatePath(`/owner/catering/${eventId}`);
-}
-
-/**
- * Relies entirely on catering_event_charges.event_menu_id's ON DELETE
- * CASCADE (see catering_event_menu_link_migration.sql) to remove every
- * charge line this menu row is linked to — a single menu row can be linked
- * to more than one charge row (re-adding the same dish/set bumps quantity
- * here but always inserts a fresh charge, see addCateringEventMenu above),
- * so an explicit single-row delete here would miss the rest. No separate
- * catering_event_charges delete needed.
- */
-async function removeCateringEventMenu(id: string, eventId: string): Promise<void> {
-  const profile = await requireSales();
-  const supabase = await createClient();
-  await assertCostNotLocked(supabase, eventId);
-
-  // Resolved before the delete purely for the activity-log description —
-  // the row (and its name join) won't exist to read afterward.
-  const { data: row } = await supabase
-    .from("catering_event_menus")
-    .select("catering_set_menus(name), menus(name)")
-    .eq("id", id)
-    .maybeSingle();
-  const r = row as Record<string, unknown> | null;
-  const setMenu = r?.catering_set_menus as { name: string } | null;
-  const dish = r?.menus as { name: string } | null;
-  const name = setMenu?.name ?? dish?.name ?? "-";
-
-  const { error } = await supabase.from("catering_event_menus").delete().eq("id", id);
-  if (error) throw error;
-
-  await logCateringActivity(supabase, eventId, profile.id, "menu_removed", `ลบเมนู: ${name}`);
-
-  revalidatePath(`/owner/catering/${eventId}`);
 }
 
 /**
  * Issues (or re-issues) the quotation. Recomputes quoted_total from the
  * catering_event_charges rows actually in the database — not from whatever
- * the caller thinks the total is — so this must run after
- * saveCateringCharges, never before.
+ * the caller thinks the total is — so this must run after the price box is
+ * written (writeBookingPrices), never before.
  *
  * quote_number is assigned once via next_catering_quote_seq() (see
  * supabase/catering_quote_sequence_function.sql) and never changes after
@@ -2350,16 +2135,6 @@ function isMissingSchemaError(error: { code?: string; message?: string } | null)
   if (!error) return false;
   if (error.code && ["42P01", "42883", "42703", "PGRST202", "PGRST204", "PGRST205"].includes(error.code)) return true;
   return /schema cache|does not exist/i.test(error.message ?? "");
-}
-
-/** The ONE way the price box's pick makes a copy: the database function, under the caller's own session. */
-async function copySetMenuIntoLine(supabase: Db, eventMenuId: string): Promise<number> {
-  const { data, error } = await supabase.rpc("catering_copy_set_menu", { p_event_menu_id: eventMenuId });
-  if (error) {
-    if (isMissingSchemaError(error)) return 0;
-    throw new Error(error.message);
-  }
-  return typeof data === "number" ? data : 0;
 }
 
 function toEventMenuDish(it: CateringSetMenuItem, sort_order: number, setMenuId: string): EventMenuDish {

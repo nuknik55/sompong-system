@@ -25,6 +25,20 @@
  * saveBooking judges a line it already stores by the STORED kind, not the
  * kind the caller sends: a set line cannot be held to the dish rule by
  * calling it a dish.
+ *
+ * ── EVERY LINE IS CHECKED BEFORE ANYTHING IS WRITTEN (Nik, 2026-09-21) ─────
+ *
+ * The save used to delete every charge row of the booking and then insert
+ * the new list, so ONE bad line — a missing amount, a negative price, an
+ * overflowing figure — failed the insert after the delete and left the
+ * booking with no price lines at all. Now the screen checks every line
+ * (priceBoxProblem), saveBooking checks what it was sent
+ * (bookingLinesProblem), the database function checks again in a dry run
+ * before the booking's own fields are written, and the price box itself is
+ * written by catering_save_booking_prices in ONE transaction: whole, or not
+ * at all. A dish quantity takes at most three decimals, so the quote and the
+ * kitchen's sheets print the same number, and a quantity too small to print
+ * (below 0.001) is refused rather than printed blank.
  */
 import type { BookingLine, CateringCharge } from "./actions";
 import { toNum } from "./to-num.ts";
@@ -41,6 +55,8 @@ export type Line = {
   quantity: string;
   amount: string;
   chargeType: string;
+  /** The stored charge's note; null for a new line. The screen shows none; the save carries it through. */
+  note: string | null;
 };
 
 export type Section = "menu" | "room" | "drink" | "delivery" | "music" | "other" | "discount";
@@ -105,85 +121,170 @@ export function linesFromCharges(charges: CateringCharge[]): Line[] {
     quantity: String(c.quantity),
     amount: String(c.amount),
     chargeType: c.charge_type,
+    note: c.note,
   }));
 }
 
 /** Well above any real booking; there only so that price × quantity stays finite. */
 export const MENU_LINE_QUANTITY_MAX = 100_000;
 
-const SET_RULE = "จำนวนโต๊ะต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป";
-const DISH_RULE = "จำนวนต้องมากกว่า 0 (ใส่ทศนิยมได้ เช่น 0.5)";
-const TOO_MANY = "จำนวนต้องไม่เกิน 100,000";
+/** The most one charge line may carry either way: far above any catering line, far below an overflow. */
+export const CHARGE_MONEY_MAX = 100_000_000;
 
-/** Why `q` is not a valid quantity for a menu line of this kind, in Thai; null when it is (the file header). */
-export function menuLineQuantityError(kind: "set" | "dish", q: unknown): string | null {
-  if (typeof q !== "number" || !Number.isFinite(q)) return kind === "set" ? SET_RULE : DISH_RULE;
+/** What catering_event_charges' CHECK accepts. "food" belongs to menu lines only. */
+export const CHARGE_TYPES = ["food", "drink", "venue", "service", "transport", "equipment", "other", "discount"] as const;
+
+const TOO_MANY = "จำนวนต้องไม่เกิน 100,000";
+const DISH_RULE = "จำนวนต้องมากกว่า 0 และมีทศนิยมไม่เกิน 3 ตำแหน่ง (เช่น 0.5)";
+const setRule = (unit: string) => `จำนวน${unit}ต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป`;
+
+/**
+ * At most three decimal places, read with a tolerance, because 1.005 × 1000
+ * is 1004.9999999999999 in floating point and must still count as three. The
+ * sheets print three decimals (dishAmount), so a fourth would print rounded
+ * on the kitchen's paper and in full on the customer's quote.
+ */
+export function hasAtMost3Decimals(q: number): boolean {
+  const scaled = q * 1000;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-6;
+}
+
+/**
+ * Why `q` is not a valid quantity for a menu line of this kind, in Thai; null
+ * when it is (the file header). `unit` is what a set counts on THIS booking —
+ * โต๊ะ, กล่อง or ชุด, the kitchen sheet's own word (setCountUnit).
+ */
+export function menuLineQuantityError(kind: "set" | "dish", q: unknown, unit = "โต๊ะ"): string | null {
+  if (typeof q !== "number" || !Number.isFinite(q)) return kind === "set" ? setRule(unit) : DISH_RULE;
   if (q > MENU_LINE_QUANTITY_MAX) return TOO_MANY;
-  if (kind === "set") return Number.isInteger(q) && q >= 1 ? null : SET_RULE;
-  return q > 0 ? null : DISH_RULE;
+  if (kind === "set") return Number.isInteger(q) && q >= 1 ? null : setRule(unit);
+  return q > 0 && hasAtMost3Decimals(q) ? null : DISH_RULE;
 }
 
 export function menuLineQuantityOk(kind: "set" | "dish", q: unknown): boolean {
   return menuLineQuantityError(kind, q) === null;
 }
 
+/** A rate, a typed line or the discount, as saveBooking takes it. */
+export type ChargeLine = Extract<BookingLine, { kind: "charge" }>;
+
 /**
- * The screen's check before it saves: the first menu line whose typed
- * quantity breaks its rule, named, or null when there is none. Rate, typed
- * and discount lines are not menu lines and are not checked here.
+ * Why a charge line cannot be written, in Thai and without its name (the
+ * caller names the line); null when it can. Each rule is one the database
+ * would otherwise enforce by failing the insert — and until
+ * catering_save_booking_prices that failure came AFTER every charge row of
+ * the booking had been deleted, so it left the price box empty (Nik,
+ * 2026-09-21).
  */
-export function priceBoxQuantityProblem(lines: Line[]): string | null {
+export function chargeLineError(c: ChargeLine): string | null {
+  if (typeof c.label !== "string" || c.label.trim() === "") return "ต้องมีชื่อรายการ";
+  if (!(CHARGE_TYPES as readonly string[]).includes(c.charge_type)) return "ประเภทรายการไม่ถูกต้อง";
+  if (c.charge_type === "food") return "อาหารต้องเลือกจากชุดเมนูหรือเมนูเดี่ยว — รายการที่พิมพ์เองหรือเลือกจากอัตราใช้ประเภทอาหารไม่ได้";
+  for (const n of [c.unit_price, c.quantity, c.amount]) {
+    if (typeof n !== "number" || !Number.isFinite(n)) return "ราคา จำนวน และยอดเงินต้องเป็นตัวเลข";
+  }
+  if (Math.abs(c.unit_price) > CHARGE_MONEY_MAX || Math.abs(c.amount) > CHARGE_MONEY_MAX) return "ยอดเงินต้องไม่เกิน 100,000,000 บาท";
+  if (c.quantity < 0 || c.quantity > MENU_LINE_QUANTITY_MAX) return "จำนวนต้องอยู่ระหว่าง 0 ถึง 100,000";
+  if (c.charge_type === "discount") {
+    if (c.amount > 0) return "ส่วนลดต้องเป็นยอดติดลบหรือ 0";
+  } else if (c.unit_price < 0 || c.amount < 0) {
+    return "ราคาและยอดเงินต้องไม่ติดลบ — ถ้าเป็นส่วนลด ให้ใช้แถวส่วนลด";
+  }
+  if (c.rate_id !== null && typeof c.rate_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
+  if (c.note !== null && typeof c.note !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
+  return null;
+}
+
+/** A typed row nobody filled in — no name, no price, no amount: not a line. Dropped from the save, as it always was. */
+export function isEmptyTypedRow(l: Line): boolean {
+  return l.kind === "manual" && l.label.trim() === "" && (toNum(l.unitPrice) ?? 0) === 0 && (toNum(l.amount) ?? 0) === 0;
+}
+
+/** The charge a rate, typed or discount line sends — one mapping, for the save and for its check. */
+function chargeFromLine(l: Line): ChargeLine {
+  return {
+    kind: "charge", label: l.label, charge_type: l.chargeType,
+    unit_price: toNum(l.unitPrice) ?? 0, quantity: toNum(l.quantity) ?? 1, amount: toNum(l.amount) ?? 0,
+    // The stored note, carried through: the screen shows none, and a save
+    // used to write null over it (2026-09-21).
+    note: l.note,
+    rate_id: l.kind === "rate" ? l.refId : null,
+  };
+}
+
+/**
+ * The screen's check before it saves: the first line that cannot be written,
+ * named, or null when every line can. Menu lines by the quantity rule of their
+ * kind, `unit` being what a set counts on this booking; every other line by
+ * chargeLineError. An empty typed row is not a line.
+ */
+export function priceBoxProblem(lines: Line[], unit = "โต๊ะ"): string | null {
   for (const l of lines) {
-    if (l.kind !== "set" && l.kind !== "dish") continue;
-    const error = menuLineQuantityError(l.kind, toNum(l.quantity));
-    if (error) return `“${l.label}”: ${error}`;
+    if (l.kind === "set" || l.kind === "dish") {
+      const error = menuLineQuantityError(l.kind, toNum(l.quantity), unit);
+      if (error) return `“${l.label}”: ${error}`;
+      continue;
+    }
+    if (isEmptyTypedRow(l)) continue;
+    const error = chargeLineError(chargeFromLine(l));
+    if (error) {
+      return l.label.trim() === ""
+        ? `มีรายการที่ยังไม่มีชื่อในกล่องราคา — ${error} (ใส่ชื่อ หรือกด ✕ ลบแถวนั้น)`
+        : `“${l.label.trim()}”: ${error}`;
+    }
   }
   return null;
 }
 
 /**
- * saveBooking's own check of the same rule, on what it was sent: the screen
- * is not the only possible caller. A line of any kind but "charge" is a menu
- * line, as saveBooking treats it. A line the booking already stores is held
- * to its STORED kind (`storedKinds`, by event_menu id); any other line to
- * the kind sent, anything but "set" being a dish, as addCateringEventMenu
- * treats it. `storedKinds` is required, so that no caller can leave it out
- * and let a set line through under the dish rule (review, 2026-09-21).
+ * saveBooking's own check, on what it was sent — the screen is not the only
+ * possible caller. Every line an object of kind set, dish or charge. A menu
+ * line the booking already stores is held to its STORED kind (`storedKinds`,
+ * by event_menu id — required, so that no caller can leave it out and let a
+ * set line through under the dish rule; review, 2026-09-21); any other line
+ * to the kind sent. Charge lines by chargeLineError. Nothing has been written
+ * when this refuses, and the message says so.
  */
-export function bookingLinesQuantityProblem(
-  lines: BookingLine[],
+export function bookingLinesProblem(
+  lines: unknown,
   storedKinds: ReadonlyMap<string, "set" | "dish">,
+  unit = "โต๊ะ",
 ): string | null {
-  const bad = lines.some((l) => {
-    if (l.kind === "charge") return false;
-    const kind = (l.eventMenuId ? storedKinds.get(l.eventMenuId) : undefined) ?? (l.kind === "set" ? "set" : "dish");
-    return !menuLineQuantityOk(kind, l.quantity);
-  });
-  return bad
-    ? "จำนวนในกล่องราคาไม่ถูกต้อง — เมนูเดี่ยวต้องมากกว่า 0 ชุดเมนูต้องเป็นจำนวนโต๊ะเต็มตั้งแต่ 1 และไม่เกิน 100,000 ยังไม่ได้บันทึกอะไร"
-    : null;
+  const BAD = "รูปแบบข้อมูลไม่ถูกต้อง — ยังไม่ได้บันทึกอะไร";
+  if (!Array.isArray(lines)) return BAD;
+  for (const raw of lines as unknown[]) {
+    if (!raw || typeof raw !== "object") return BAD;
+    const l = raw as BookingLine;
+    if (l.kind === "charge") {
+      const error = chargeLineError(l);
+      if (error) {
+        const name = typeof l.label === "string" && l.label.trim() !== "" ? `“${l.label.trim()}”` : "รายการที่ยังไม่มีชื่อ";
+        return `${name}: ${error} — ยังไม่ได้บันทึกอะไร`;
+      }
+      continue;
+    }
+    if (l.kind !== "set" && l.kind !== "dish") return BAD;
+    const kind = (typeof l.eventMenuId === "string" ? storedKinds.get(l.eventMenuId) : undefined) ?? l.kind;
+    const error = menuLineQuantityError(kind, l.quantity, unit);
+    if (error) return `จำนวนในกล่องราคาไม่ถูกต้อง: ${error} — ยังไม่ได้บันทึกอะไร`;
+  }
+  return null;
 }
 
 /**
- * A menu line's charge: price × quantity TO THE SATANG, the rounding the
- * screen already shows (updateLine). 1,300 × 0.7 is 909.9999999999999 in
- * floating point; the charge row would have kept it.
- */
-export function menuChargeAmount(unitPrice: number, quantity: number): number {
-  return Math.round(unitPrice * quantity * 100) / 100;
-}
-
-/**
- * The price box as saveBooking takes it. A menu line's quantity goes as
- * typed: the screen has refused one outside its rule before it gets here
- * (priceBoxQuantityProblem), and saveBooking refuses it again.
+ * The price box as saveBooking takes it. A menu line sends its quantity as
+ * typed and NO PRICE: a menu line's price is the stored charge's (THE ONE
+ * PRICE — the menu page edits it), taken from the database by
+ * catering_save_booking_prices. The screen has refused a line outside its
+ * rule before it gets here (priceBoxProblem), and saveBooking refuses it
+ * again.
  */
 export function bookingLinesForSave(lines: Line[]): BookingLine[] {
   return lines
-    .filter((l) => l.kind === "set" || l.kind === "dish" || l.label.trim() !== "")
+    .filter((l) => !isEmptyTypedRow(l))
     .map((l): BookingLine =>
       l.kind === "set" || l.kind === "dish"
         ? { kind: l.kind, refId: l.refId ?? "", eventMenuId: l.eventMenuId, quantity: toNum(l.quantity) ?? 0 }
-        : { kind: "charge", label: l.label, charge_type: l.chargeType, unit_price: toNum(l.unitPrice) ?? 0, quantity: toNum(l.quantity) ?? 1, amount: toNum(l.amount) ?? 0, note: null, rate_id: l.kind === "rate" ? l.refId : null },
+        : chargeFromLine(l),
     );
 }

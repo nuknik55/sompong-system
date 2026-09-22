@@ -67,14 +67,16 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {/* KEYED ON THE CHARGE ROWS. After a save the screen re-renders with the
-          rows just written (new ids); without a key it kept the state it was
-          saved FROM — set lines still marked "not yet created" — and the next
-          save removed and re-created them, deleting the booking's own copy and
-          the price set on the menu page (review, 2026-09-19). A remount when
-          the rows change is the fix; unrelated refreshes leave the key alone. */}
+      {/* KEYED ON THE BOOKING ALONE (queue item 41, Nik 2026-09-21). It used
+          to be keyed on the charge rows, so that after a save the screen did
+          not keep the state it was saved FROM (review, 2026-09-19); but then
+          ANY refresh that brought changed rows — another tab's save, the menu
+          page — remounted it and threw away unsaved typing, with the guard
+          reporting clean. The screen now decides itself: it takes new data
+          when its form is clean or its own save lands, and otherwise keeps
+          the draft and says the booking changed (serverViewAction). */}
       <BookingScreen
-        key={charges.map((c) => `${c.id}:${c.unit_price}:${c.quantity}`).join("|")}
+        key={event.id}
         event={event}
         initialCharges={charges}
         customers={customers}

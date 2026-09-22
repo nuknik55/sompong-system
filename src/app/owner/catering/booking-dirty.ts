@@ -71,3 +71,63 @@ export function bookingSnapshot(form: FormState, lines: DirtyLine[]): string {
     ]),
   });
 }
+
+/** The server's view of the booking as the screen compares it: its conflict token and what the screen would show. */
+export type ServerView = { updatedAt: string | null; snapshot: string };
+
+export type ServerViewAction = "same" | "ack" | "adopt" | "token" | "hold";
+
+/**
+ * What the booking screen does when the server's view of the booking arrives:
+ * the menu page's rule, moved INSIDE the screen (queue item 41, Nik
+ * 2026-09-21). The page used to key the screen on its charge rows, so any
+ * refresh that brought changed rows — another tab's save, the menu page, a
+ * second sales login — remounted it from the server, threw the person's
+ * typing away, and the guard reported clean.
+ *
+ *   ack    the person's OWN partial save came back (the booking's fields
+ *          written, the price box not): take the server's view as the new
+ *          baseline and token, KEEP the draft — and the lines it is based
+ *          on (seenAfter).
+ *   same   nothing moved.
+ *   adopt  take the server's data whole: the form is clean, or this is the
+ *          person's own save landing.
+ *   token  someone saved but nothing the screen shows changed: take the
+ *          token, so the next save is not refused, and keep the draft.
+ *   hold   what the screen shows changed elsewhere while the form holds
+ *          unsaved work: keep the draft and say so. Never taken silently —
+ *          the person reloads, or saves, and a save is refused if another
+ *          booking-screen save came in between (saveBooking's token).
+ */
+export function serverViewAction(
+  seen: ServerView,
+  server: ServerView,
+  state: { dirty: boolean; landing: boolean; ackAt: string | null },
+): ServerViewAction {
+  if (state.ackAt !== null && server.updatedAt === state.ackAt) return "ack";
+  if (server.updatedAt === seen.updatedAt && server.snapshot === seen.snapshot) return "same";
+  if (state.landing || !state.dirty) return "adopt";
+  if (server.snapshot === seen.snapshot) return "token";
+  return "hold";
+}
+
+/** What the screen holds of the server's view: the token, the snapshot, and
+ *  the menu lines (event_menu ids) its draft is BASED ON. */
+export type SeenView = ServerView & { menuIds: string[] };
+
+/**
+ * The view the screen holds after acting on new server data. `menuIds` are
+ * the lines a save may remove because the draft no longer has them, so they
+ * change ONLY with the draft itself, on "adopt". On "ack" the draft stays and
+ * so does its basis: taking the server's lines there named a line the menu
+ * page had added meanwhile, which the draft does not have, and the retry
+ * removed it with its charge and courses (review, 2026-09-21). A line the
+ * partial save itself created is not in the basis either; the retry sends it
+ * as new, and the database takes it as that line (same set or dish).
+ */
+export function seenAfter(action: ServerViewAction, seen: SeenView, server: ServerView, serverMenuIds: string[]): SeenView {
+  if (action === "adopt") return { ...server, menuIds: serverMenuIds };
+  if (action === "ack") return { ...server, menuIds: seen.menuIds };
+  if (action === "token") return { ...seen, updatedAt: server.updatedAt };
+  return seen;
+}

@@ -8,6 +8,7 @@ import {
 import type { CateringSetMenu } from "../actions";
 import { fmtBaht, toNum, SET_MENU_SECTIONS } from "../shared-utils";
 import { comparisonHeadline, comparisonText, COMPARISON_LABEL, setVsAlaCarte } from "../event-menu";
+import { menuLineQuantityError } from "../booking-lines";
 
 /** Per-dish cost, computed once server-side in page.tsx — see the comment there. */
 export type DishCostOption = {
@@ -266,6 +267,14 @@ export function SetMenusClient({
     if (!f.name.trim() || f.price_per_set.trim() === "") {
       setError("กรุณากรอกชื่อชุดเมนูและราคา");
       return;
+    }
+    // Every booking that picks this set copies these portions, and the sheets
+    // print them at three decimals: the dish rule (booking-lines.ts). A 0 used
+    // to save here and then fail every booking's copy of the set.
+    for (const it of f.items) {
+      if (!it.menu_id) continue;
+      const qtyError = menuLineQuantityError("dish", toNum(it.quantity));
+      if (qtyError) { setError(`${it.menu_name}: จำนวนต่อชุด — ${qtyError}`); return; }
     }
     setError(null);
     startTransition(async () => {

@@ -77,23 +77,26 @@ function bodyOf(file: ts.SourceFile, fnName: string): ts.Block | undefined {
 }
 
 /**
- * Null when saveBooking keeps the quantity check's answer and RETURNS on it
- * before its first write; otherwise why not. Since 2026-09-21 a menu line's
- * quantity is written as sent, never lifted to 1, so the refusal is the only
- * thing between a bad number and the charge rows. A call whose answer is
- * ignored refuses nothing, so the order of the calls alone is not enough
- * (review, 2026-09-21).
+ * Null when saveBooking, before its first write (upsertCateringEvent): keeps
+ * the lines check's answer and RETURNS on it, and runs the database's dry run
+ * of the price box (checkBookingPrices) — and writes the price box
+ * (writeBookingPrices) only AFTER the booking's own fields; otherwise why not.
+ * A call whose answer is ignored refuses nothing, so the order of the calls
+ * alone is not enough (review, 2026-09-21).
  */
-function quantityFirstProblem(source: string): string | null {
+function linesFirstProblem(source: string): string | null {
   const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
   const body = bodyOf(file, "saveBooking");
   if (!body) return "no saveBooking";
-  let writeAt = -1, checkAt = -1, returnAt = -1;
+  let writeAt = -1, checkAt = -1, returnAt = -1, dryAt = -1, pricesAt = -1;
   let answer: string | null = null;
   const walk = (node: ts.Node) => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      if (node.expression.text === "upsertCateringEvent" && writeAt < 0) writeAt = node.getStart(file);
-      if (node.expression.text === "bookingLinesQuantityProblem" && checkAt < 0) {
+      const name = node.expression.text;
+      if (name === "upsertCateringEvent" && writeAt < 0) writeAt = node.getStart(file);
+      if (name === "checkBookingPrices" && dryAt < 0) dryAt = node.getStart(file);
+      if (name === "writeBookingPrices" && pricesAt < 0) pricesAt = node.getStart(file);
+      if (name === "bookingLinesProblem" && checkAt < 0) {
         checkAt = node.getStart(file);
         if (ts.isVariableDeclaration(node.parent) && ts.isIdentifier(node.parent.name)) answer = node.parent.name.text;
       }
@@ -108,28 +111,83 @@ function quantityFirstProblem(source: string): string | null {
   };
   walk(body);
   if (writeAt < 0) return "no upsertCateringEvent call";
-  if (checkAt < 0) return "no bookingLinesQuantityProblem call";
-  if (checkAt > writeAt) return "the quantities are checked after the booking is written";
+  if (checkAt < 0) return "no bookingLinesProblem call";
+  if (checkAt > writeAt) return "the lines are checked after the booking is written";
   if (!answer) return "the check's answer is not kept";
   if (returnAt < 0) return "nothing returns on the check's answer";
   if (returnAt > writeAt) return "the refusal comes after the booking is written";
+  if (dryAt < 0) return "no checkBookingPrices call";
+  if (dryAt > writeAt) return "the dry run comes after the booking is written";
+  if (pricesAt < 0) return "no writeBookingPrices call";
+  if (pricesAt < writeAt) return "the price box is written before the booking";
   return null;
 }
 
-test("the check flags quantities checked late, not checked, a comment, an answer ignored, and an answer not returned on", () => {
+test("the check flags lines checked late, not checked, a comment, an answer ignored or not returned on, and a dry run late or missing", () => {
   const fn = (inner: string) => `export async function saveBooking(i) {\n${inner}\n}`;
+  const check = "const bad = bookingLinesProblem(i.lines, kinds);\nif (bad) return { ok: false, error: bad };";
+  const dry = "const dry = await checkBookingPrices(db, id, i.lines, i.known);\nif (dry) return { ok: false, error: dry };";
   const write = "const id = await upsertCateringEvent(i.event);";
-  assert.equal(quantityFirstProblem(fn(`${write}\nconst bad = bookingLinesQuantityProblem(i.lines);\nif (bad) return { ok: false, error: bad };`)),
-    "the quantities are checked after the booking is written");
-  assert.equal(quantityFirstProblem(fn(`// bookingLinesQuantityProblem(i.lines) — in a comment only\n${write}`)), "no bookingLinesQuantityProblem call");
-  assert.equal(quantityFirstProblem(fn(`bookingLinesQuantityProblem(i.lines);\n${write}`)), "the check's answer is not kept");
-  assert.equal(quantityFirstProblem(fn(`const bad = bookingLinesQuantityProblem(i.lines);\nif (bad) console.log(bad);\n${write}`)), "nothing returns on the check's answer");
-  assert.equal(quantityFirstProblem(fn(`const bad = bookingLinesQuantityProblem(i.lines);\nif (bad) return { ok: false, error: bad };\n${write}`)), null);
+  const prices = "await writeBookingPrices(db, id, i.lines, i.known);";
+  assert.equal(linesFirstProblem(fn(`${write}\n${check}\n${dry}\n${prices}`)), "the lines are checked after the booking is written");
+  assert.equal(linesFirstProblem(fn(`// bookingLinesProblem(i.lines) — in a comment only\n${dry}\n${write}\n${prices}`)), "no bookingLinesProblem call");
+  assert.equal(linesFirstProblem(fn(`bookingLinesProblem(i.lines, kinds);\n${dry}\n${write}\n${prices}`)), "the check's answer is not kept");
+  assert.equal(linesFirstProblem(fn(`const bad = bookingLinesProblem(i.lines, kinds);\nif (bad) console.log(bad);\n${dry}\n${write}\n${prices}`)), "nothing returns on the check's answer");
+  assert.equal(linesFirstProblem(fn(`${check}\n${write}\n${dry}\n${prices}`)), "the dry run comes after the booking is written");
+  assert.equal(linesFirstProblem(fn(`${check}\n${write}\n${prices}`)), "no checkBookingPrices call");
+  assert.equal(linesFirstProblem(fn(`${check}\n${dry}\n${prices}\n${write}`)), "the price box is written before the booking");
+  assert.equal(linesFirstProblem(fn(`${check}\n${dry}\n${write}\n${prices}`)), null);
 });
 
-test("saveBooking refuses a bad menu-line quantity, and returns, before it writes anything", () => {
+test("saveBooking checks every line and dry-runs the price box before it writes anything, and writes the price box after the booking", () => {
   const actions = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts");
-  assert.equal(quantityFirstProblem(fs.readFileSync(actions, "utf8")), null);
+  assert.equal(linesFirstProblem(fs.readFileSync(actions, "utf8")), null);
+});
+
+/**
+ * Every statement in the file that writes catering_event_charges directly —
+ * `.from("catering_event_charges")` followed by insert, update, upsert or
+ * delete. Since 2026-09-21 the price box is written by
+ * catering_save_booking_prices in one transaction; a direct write is the
+ * shape that deleted every charge row, then failed the insert, and left a
+ * booking with no price lines.
+ */
+function directChargeWrites(source: string): string[] {
+  const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
+  const hits: string[] = [];
+  const walk = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+        && ["insert", "update", "upsert", "delete"].includes(node.expression.name.text)) {
+      // Down the chain to its .from("…").
+      let inner: ts.Expression = node.expression.expression;
+      while (ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text !== "from") {
+        inner = inner.expression.expression;
+      }
+      if (ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text === "from"
+          && inner.arguments[0] && ts.isStringLiteral(inner.arguments[0]) && inner.arguments[0].text === "catering_event_charges") {
+        hits.push(`${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}: .${node.expression.name.text}`);
+      }
+    }
+    node.forEachChild(walk);
+  };
+  walk(file);
+  return hits;
+}
+
+test("the direct-write check finds a delete and an insert on the charges, and not a read, a comment or another table", () => {
+  const src = `async function f(db) {
+    // db.from("catering_event_charges").delete() — in a comment only
+    await db.from("catering_event_charges").delete().eq("event_id", id);
+    await db.from("catering_event_charges").insert(rows);
+    await db.from("catering_event_charges").select("id").eq("event_id", id);
+    await db.from("catering_event_menus").delete().eq("id", id);
+  }`;
+  assert.deepEqual(directChargeWrites(src), ["3: .delete", "4: .insert"]);
+});
+
+test("nothing in the catering actions writes a charge row directly: the price box is one transaction", () => {
+  const actions = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts");
+  assert.deepEqual(directChargeWrites(fs.readFileSync(actions, "utf8")), []);
 });
 
 const ROUNDERS = new Set(["max", "min", "round", "floor", "ceil", "trunc"]);
@@ -155,60 +213,15 @@ function quantityRounding(source: string, fnNames: string[]): string[] {
   return hits;
 }
 
-const WRITERS = ["saveBooking", "saveCateringCharges", "addCateringEventMenu"];
-
-test("the rounding check flags a clamp put back on the server's write path, and not a comment", () => {
+test("the rounding check flags a clamp put back on the save path, and not a comment", () => {
   const clamped = `export async function saveBooking(i) {
     // Math.max(1, l.quantity) — in a comment only
-    payload.push({ quantity: Math.max(1, l.quantity) });
-  }
-  async function saveCateringCharges() {}
-  async function addCateringEventMenu() {}`;
-  assert.deepEqual(quantityRounding(clamped, WRITERS), ["saveBooking: Math.max(1, l.quantity)"]);
-});
-
-test("no server writer of a menu line rounds or clamps its quantity", () => {
-  const actions = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts");
-  assert.deepEqual(quantityRounding(fs.readFileSync(actions, "utf8"), WRITERS), []);
-});
-
-/**
- * The initializer of `prop` in saveBooking's menu-line charge — the pushed
- * object with charge_type "food" and an event_menu_id — as source text: what
- * a menu line's charge row is written with. Read on the parsed source, like
- * THE ONE PRICE in event-menu.test.ts, which holds the same object's
- * unit_price to the row saveBooking re-read.
- */
-function menuLinePushInitializers(source: string, prop: string): string[] {
-  const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
-  const body = bodyOf(file, "saveBooking");
-  if (!body) return [];
-  const out: string[] = [];
-  const walk = (node: ts.Node) => {
-    if (ts.isObjectLiteralExpression(node)) {
-      const byName = new Map<string, ts.Expression>();
-      for (const p of node.properties) if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) byName.set(p.name.text, p.initializer);
-      const type = byName.get("charge_type");
-      const init = byName.get(prop);
-      if (byName.has("event_menu_id") && type && ts.isStringLiteral(type) && type.text === "food" && init) out.push(init.getText(file));
-    }
-    node.forEachChild(walk);
-  };
-  walk(body);
-  return out;
-}
-
-test("the check reads what a menu line's charge row is written with", () => {
-  const clamped = `export async function saveBooking(i) {
-    payload.push({ label: row.label, charge_type: "food", unit_price: row.unit_price, quantity: Math.max(1, l.quantity), amount: row.unit_price * l.quantity, event_menu_id: row.event_menu_id });
-    payload.push({ label: l.label, charge_type: l.charge_type, quantity: l.quantity, event_menu_id: null });
+    const lines = i.lines.map((l) => ({ ...l, quantity: Math.max(1, l.quantity) }));
   }`;
-  assert.deepEqual(menuLinePushInitializers(clamped, "quantity"), ["Math.max(1, l.quantity)"]);
-  assert.deepEqual(menuLinePushInitializers(clamped, "amount"), ["row.unit_price * l.quantity"]);
+  assert.deepEqual(quantityRounding(clamped, ["saveBooking"]), ["saveBooking: Math.max(1, l.quantity)"]);
 });
 
-test("saveBooking writes a menu line's quantity as sent and its charge to the satang", () => {
-  const source = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts"), "utf8");
-  assert.deepEqual(menuLinePushInitializers(source, "quantity"), ["l.quantity"]);
-  assert.deepEqual(menuLinePushInitializers(source, "amount"), ["menuChargeAmount(row.unit_price, l.quantity)"]);
+test("saveBooking sends every quantity as it came: nothing rounds or clamps it", () => {
+  const actions = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts");
+  assert.deepEqual(quantityRounding(fs.readFileSync(actions, "utf8"), ["saveBooking"]), []);
 });

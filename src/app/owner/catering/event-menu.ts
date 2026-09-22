@@ -43,7 +43,8 @@
  * under them. dishLineTotal is now the row's figure AND the term the total
  * sums, so they cannot disagree.
  *
- * Pure — no import of a value — so every figure here is a test, and the page
+ * Pure — the one value it imports is the quantity rule, from the equally pure
+ * booking-lines.ts — so every figure here is a test, and the page
  * that renders them can be given exactly what it will send to the browser
  * (buildEventMenuView), which is how "sales never receives a cost" is tested
  * rather than asserted.
@@ -585,7 +586,10 @@ export function validateDrafts(drafts: LineDraft[]): string | null {
     const seen = new Set<string>();
     for (const x of d.dishes) {
       const q = Number(x.quantity);
-      if (x.quantity.trim() === "" || !Number.isFinite(q) || q <= 0) return `${d.name}: จำนวนต่อโต๊ะของ ${x.menu_name} ต้องมากกว่า 0`;
+      // A course prints on the kitchen and service sheets at three decimals:
+      // a fourth would print rounded, below 0.001 blank (Nik, 2026-09-21).
+      const qtyError = x.quantity.trim() === "" ? "ต้องมากกว่า 0" : menuLineQuantityError("dish", q);
+      if (qtyError) return `${d.name}: จำนวนต่อโต๊ะของ ${x.menu_name} — ${qtyError}`;
       if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(x.section)) return `${d.name}: หมวดของ ${x.menu_name} ไม่ถูกต้อง`;
       if (seen.has(x.menu_id)) return `${d.name}: ${x.menu_name} อยู่ในชุดนี้ซ้ำกัน`;
       seen.add(x.menu_id);
@@ -703,7 +707,8 @@ export function validateSavePayload(lines: unknown): string | null {
     const seen = new Set<string>();
     for (const it of l.items as Record<string, unknown>[]) {
       if (typeof it.menu_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
-      if (!(typeof it.quantity === "number" && Number.isFinite(it.quantity) && it.quantity > 0)) return "จำนวนต่อโต๊ะต้องมากกว่า 0";
+      const qtyError = menuLineQuantityError("dish", it.quantity);
+      if (qtyError) return `จำนวนต่อโต๊ะ: ${qtyError}`;
       if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(it.section as string)) return "หมวดไม่ถูกต้อง";
       if (seen.has(it.menu_id)) return "เมนูซ้ำในชุดเดียวกัน";
       seen.add(it.menu_id);

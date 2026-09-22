@@ -19,10 +19,11 @@ import type {
   CateringCharge, CateringCustomer, CateringDishOption, CateringEvent, CateringEventType,
   CateringRate, CateringSetMenuOption, StaffOption,
 } from "./actions";
-import { bookingLinesForSave, linesFromCharges, menuLineQuantityOk, priceBoxQuantityProblem, type Line, type Section } from "./booking-lines";
+import { bookingLinesForSave, linesFromCharges, menuLineQuantityOk, priceBoxProblem, type Line, type Section } from "./booking-lines";
 import { docMoney } from "@/lib/quote-doc";
+import { setCountUnit } from "@/lib/kitchen-sheet";
 import { foldSetName } from "./event-menu";
-import { bookingSnapshot } from "./booking-dirty";
+import { bookingSnapshot, seenAfter, serverViewAction, type SeenView, type ServerView } from "./booking-dirty";
 import { markUnsaved } from "@/lib/unsaved-changes";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
@@ -53,6 +54,20 @@ function money(n: number) { return `฿${fmtBaht(n)}`; }
 const LAST_TAKER_KEY = "catering.lastTaker";
 
 const LEAVE_MSG = "มีการแก้ไขที่ยังไม่ได้บันทึก — ออกจากหน้านี้โดยไม่บันทึกหรือไม่?";
+const RELOAD_MSG = "ทิ้งการแก้ไขที่ยังไม่ได้บันทึก แล้วโหลดข้อมูลล่าสุดของงานนี้หรือไม่?";
+/**
+ * A save that brought no answer at all: the connection, the server, a deploy
+ * mid-session, or a sign-in that has ended (the proxy sends that request to
+ * the login page, so it too arrives here as no answer).
+ */
+const RESULT_LOST =
+  "ไม่ได้รับคำตอบจากระบบ — ข้อมูลที่แก้ไขยังอยู่ในหน้านี้ ลองกดบันทึกอีกครั้ง ถ้ายังไม่ได้ อาจหลุดจากระบบ: เปิดแท็บใหม่ เข้าสู่ระบบ แล้วกลับมากดบันทึกที่หน้านี้ ถ้ายังไม่ได้อีก ให้จดสิ่งที่แก้ไว้ แล้วรีเฟรชหน้านี้ (ระบบอาจเพิ่งอัปเดต)";
+/** The same for a booking not created yet: it may have been, and saving again would make a second. */
+const RESULT_LOST_NEW =
+  "ไม่ได้รับคำตอบจากระบบ — งานนี้อาจถูกสร้างไปแล้ว: ดูในรายการงาน (เปิดแท็บใหม่) ก่อนกดบันทึกอีกครั้ง เพื่อไม่ให้เกิดงานซ้ำ ข้อมูลที่แก้ไขยังอยู่ในหน้านี้ ถ้าหลุดจากระบบ ให้เข้าสู่ระบบในแท็บใหม่ แล้วกลับมาที่หน้านี้";
+
+/** The menu lines a set of charges shows: the lines a save may drop. */
+const menuIdsOf = (charges: CateringCharge[]) => charges.flatMap((c) => (c.event_menu_id ? [c.event_menu_id] : []));
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +110,10 @@ export function BookingScreen({
   const [form, setForm] = useState<FormState>(() => (event ? formFromEvent(event) : blankForm(defaultStaffId)));
   const [lines, setLines] = useState<Line[]>(() => linesFromCharges(initialCharges));
   const [error, setError] = useState<string | null>(null);
+  // The error a SAVE returned, which "โหลดข้อมูลล่าสุด" is offered beside —
+  // never beside the screen's own checks, where it would only tempt someone
+  // to throw a draft away over a typo.
+  const [reloadFor, setReloadFor] = useState<string | null>(null);
 
   // ── Leaving with unsaved changes asks first (Nik, 2026-09-20) ──────────
   //
@@ -110,6 +129,92 @@ export function BookingScreen({
     bookingSnapshot(event ? formFromEvent(event) : blankForm(defaultStaffId), linesFromCharges(initialCharges)));
   const [cleanAt, setCleanAt] = useState<string>(initialClean);
   const dirty = bookingSnapshot(form, lines) !== cleanAt;
+
+  // ── The server's view, decided INSIDE the screen (queue item 41, Nik 2026-09-21) ──
+  //
+  // The page keys this screen on the booking alone. New server data — after
+  // a save, another tab's save, the menu page, a second sales login — arrives
+  // as new props and is taken ONLY when it cannot cost the person anything:
+  // the form is clean, or it is their own save landing. Otherwise the draft
+  // stays and a banner says the booking changed elsewhere. The rule is
+  // serverViewAction (booking-dirty.ts), where it is tested; this is React's
+  // "adjust state when a prop changes", during render, as the menu page does.
+  const serverSnapshot = useMemo(
+    () => (event ? bookingSnapshot(formFromEvent(event), linesFromCharges(initialCharges)) : initialClean),
+    [event, initialCharges, initialClean],
+  );
+  const [seen, setSeen] = useState<SeenView>(() => ({
+    updatedAt: event?.updated_at ?? null, snapshot: initialClean, menuIds: menuIdsOf(initialCharges),
+  }));
+  // From a successful save until its data is on screen: the form stays
+  // locked, so nothing typed in between can be thrown away by the landing.
+  const [landing, setLanding] = useState(false);
+  // The token of the person's OWN partial save (the booking's fields written,
+  // the price box not): the retry sends it, and the refresh that brings it is
+  // taken as the baseline with the draft kept.
+  const [ackAt, setAckAt] = useState<string | null>(null);
+  // A NEW booking this screen created (by a partial save, or a save whose
+  // landing never came): the next save updates it instead of creating a
+  // second one.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const server: ServerView = { updatedAt: event?.updated_at ?? null, snapshot: serverSnapshot };
+  const viewAction = event ? serverViewAction(seen, server, { dirty, landing, ackAt }) : "same";
+  if (viewAction === "adopt" && event) {
+    setForm(formFromEvent(event));
+    setLines(linesFromCharges(initialCharges));
+    setCleanAt(serverSnapshot);
+    setSeen(seenAfter("adopt", seen, server, menuIdsOf(initialCharges)));
+    setLanding(false);
+    setAckAt(null);
+    setNotice(null);
+  } else if (viewAction === "ack") {
+    // The draft stays, and so do the lines it is based on (seenAfter).
+    setSeen(seenAfter("ack", seen, server, menuIdsOf(initialCharges)));
+    setCleanAt(serverSnapshot);
+    setAckAt(null);
+  } else if (viewAction === "token") {
+    setSeen(seenAfter("token", seen, server, menuIdsOf(initialCharges)));
+  }
+  const serverMoved = viewAction === "hold";
+  // The whole form, not only the price box, while a save is in flight and
+  // until it lands (Nik, 2026-09-21: typing during a save used to be lost).
+  const busy = isPending || landing;
+  // What a set counts on THIS booking — โต๊ะ, กล่อง or ชุด, the kitchen sheet's word.
+  const countUnit = setCountUnit(form.food_format || null);
+
+  // The landing's own safety: if the saved data never arrives (the refresh
+  // failed), unlock after a while and say so, rather than leave the form
+  // locked for good.
+  useEffect(() => {
+    if (!landing || isPending) return;
+    const t = setTimeout(() => {
+      setLanding(false);
+      setNotice("บันทึกแล้ว แต่ยังโหลดข้อมูลล่าสุดไม่ได้ — รีเฟรชหน้านี้ก่อนแก้ไขต่อ");
+    }, 10_000);
+    return () => clearTimeout(t);
+  }, [landing, isPending]);
+
+  /**
+   * The way out of the banner and of a refused save: drop the draft (asking
+   * first), show what the screen last took from the server, and fetch the
+   * newest, which the clean form takes as it lands. The props can be older
+   * than the refusal: only a conflict refreshes on its own. Not locked while
+   * it loads: a lock with no answer would stay, and typing before the newest
+   * lands only holds it, with the banner.
+   */
+  function reloadLatest() {
+    if (!event) return;
+    if (dirty && !window.confirm(RELOAD_MSG)) return;
+    setForm(formFromEvent(event));
+    setLines(linesFromCharges(initialCharges));
+    setCleanAt(serverSnapshot);
+    setSeen(seenAfter("adopt", seen, server, menuIdsOf(initialCharges)));
+    setAckAt(null);
+    setError(null);
+    setNotice(null);
+    router.refresh();
+  }
 
   // Registered only WHILE DIRTY, so a clean form has no listeners at all and
   // the handlers cannot read a stale value: the effect re-runs when dirty
@@ -149,7 +254,9 @@ export function BookingScreen({
   function set<K extends keyof FormState>(k: K, v: FormState[K]) { setForm((f) => ({ ...f, [k]: v })); }
 
   // ── Room conflict: same rule as the server (conflict.ts); hard-blocks save ──
-  const excludeId = event?.id ?? null;
+  // A new booking a partial save already created does not clash with itself
+  // (review, 2026-09-21: the retry's save button was disabled by it).
+  const excludeId = event?.id ?? createdId;
   const conflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue];
   const [candidates, setCandidates] = useState<RoomConflictCandidate[]>([]);
   useEffect(() => {
@@ -186,7 +293,7 @@ export function BookingScreen({
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind: "rate", section, refId: rate.id, eventMenuId: null,
       label: rate.label, unitPrice: String(rate.amount), quantity: String(qty), amount: String(rate.amount * qty),
-      chargeType: section === "music" ? "service" : (RATE_TYPE_TO_CHARGE_TYPE[rate.rate_type] ?? "other"),
+      chargeType: section === "music" ? "service" : (RATE_TYPE_TO_CHARGE_TYPE[rate.rate_type] ?? "other"), note: null,
     }]);
   }
   function addMenu(kind: "set" | "dish", id: string) {
@@ -202,8 +309,8 @@ export function BookingScreen({
     // AND BY NAME, because a set copied in on the menu page is stored as the
     // booking's OWN set (no set_menu_id), so the id test above cannot see it
     // — picking the same standard set here would have made a second line
-    // with the same label and price (review, 2026-09-20). The server refuses
-    // this too, in addCateringEventMenu.
+    // with the same label and price (review, 2026-09-20). The database refuses
+    // it too (catering_save_booking_prices, the A5 rule).
     if (kind === "set" && lines.some((l) => l.kind === "set" && foldSetName(l.label) === foldSetName(opt.name))) {
       setError(`งานนี้มีชุดชื่อ “${opt.name}” อยู่แล้ว — แก้จำนวนโต๊ะในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
       return;
@@ -216,13 +323,13 @@ export function BookingScreen({
     const qty = kind === "set" ? (tables !== null && menuLineQuantityOk("set", tables) ? tables : 1) : 1;
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind, section: "menu", refId: id, eventMenuId: null,
-      label: opt.name, unitPrice: String(price), quantity: String(qty), amount: String(price * qty), chargeType: "food",
+      label: opt.name, unitPrice: String(price), quantity: String(qty), amount: String(price * qty), chargeType: "food", note: null,
     }]);
   }
   function addManual(section: Section) {
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind: section === "discount" ? "discount" : "manual", section, refId: null, eventMenuId: null,
-      label: section === "discount" ? "ส่วนลด" : "", unitPrice: "", quantity: "1", amount: "", chargeType: section === "discount" ? "discount" : "other",
+      label: section === "discount" ? "ส่วนลด" : "", unitPrice: "", quantity: "1", amount: "", chargeType: section === "discount" ? "discount" : "other", note: null,
     }]);
   }
   function updateLine(key: string, patch: Partial<Line>) {
@@ -245,7 +352,7 @@ export function BookingScreen({
   function removeLine(key: string) { setLines((ls) => ls.filter((l) => l.key !== key)); }
 
   // ── Save ──
-  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !isPending && !conflict;
+  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflict;
   // 7.7: a silently greyed-out save button is the same "is this broken?"
   // confusion the print links caused. Name what is missing, right where the
   // buttons are. The room conflict has its own louder message elsewhere.
@@ -271,10 +378,13 @@ export function BookingScreen({
 
   function save(issueQuote: boolean) {
     setError(null);
-    // A menu line's quantity is saved exactly as typed, so one outside its
-    // rule is refused here, naming the line, never changed (booking-lines.ts).
-    const quantityProblem = priceBoxQuantityProblem(lines);
-    if (quantityProblem) { setError(quantityProblem); return; }
+    setNotice(null);
+    // Every line is checked before anything is sent, and named when refused
+    // (booking-lines.ts): a set by whole counts of the booking's own unit, a
+    // dish by up to three decimals, every other line by what the database
+    // would refuse.
+    const problem = priceBoxProblem(lines, countUnit);
+    if (problem) { setError(problem); return; }
     // Fields the screen no longer shows are derived from the price box, so
     // the columns keep meaning: room_portion from the chosen room rate,
     // music from the chosen music line.
@@ -286,24 +396,70 @@ export function BookingScreen({
       music_type: musicLine ? "other" : form.music_type === "other" ? "none" : form.music_type,
       music_note: musicLine ? musicLine.label : form.music_note,
     };
+    // A new booking that a partial save already created is saved again,
+    // never created twice.
+    const targetId = event?.id ?? createdId ?? undefined;
     startTransition(async () => {
+      // A save that THROWS (no answer: the connection, the server, a deploy
+      // mid-session, an ended sign-in) used to take the whole screen to the
+      // error page, draft and all (review, 2026-09-21). It may or may not
+      // have landed; the draft stays either way. On an existing booking a
+      // retry that finds it landed is refused as a change made elsewhere;
+      // a NEW booking may already exist, and the message says to look first.
       const result = await saveBooking({
-        event: formToUpsertPayload(derived, event?.id), lines: bookingLinesForSave(lines), issueQuote,
-        // What this screen loaded with: a menu line missing from the box is
-        // dropped only if it is in here. One created since — by the menu page
-        // in another tab — is kept (saveBooking).
-        knownMenuIds: initialCharges.flatMap((c) => (c.event_menu_id ? [c.event_menu_id] : [])),
-      });
-      if (!result.ok) { setError(result.error); return; }
-      // SAVED IS CLEAN, for the window between the answer and the refresh —
-      // and for a booking with an empty price box, which is the one case the
-      // parent's remount cannot cover (saveCateringCharges replaces every
-      // charge row, so any save with a line changes every id and the key
-      // remounts this screen anyway). `derived` is deliberately not used:
-      // room_portion and the music fields are computed from the price box
-      // for the payload and never put back into the form, and the person did
-      // not type them.
+        event: formToUpsertPayload(derived, targetId), lines: bookingLinesForSave(lines), issueQuote,
+        // The lines the DRAFT is based on — not the newest props, which may
+        // hold lines created elsewhere since; those are kept (saveBooking).
+        knownMenuIds: seen.menuIds,
+        // THE CONFLICT TOKEN: the booking as this screen took it, or as its
+        // own partial save left it.
+        expectedUpdatedAt: targetId ? (ackAt ?? seen.updatedAt) : null,
+      }).catch(() => null);
+      if (!result) {
+        const lost = targetId ? RESULT_LOST : RESULT_LOST_NEW;
+        setError(lost);
+        setReloadFor(lost);
+        return;
+      }
+      if (!result.ok && result.pricesSaved && result.id) {
+        // Everything but the quotation landed: the draft IS the booking now.
+        // Take the saved data as a successful save does, locked until it is
+        // on screen, so the lines this save created become the screen's own
+        // and removing one later holds (review, 2026-09-21). The message
+        // stays; a new booking goes to its own page.
+        setError(result.error);
+        setCleanAt(bookingSnapshot(form, lines));
+        setLanding(true);
+        if (!event) router.push(`/owner/catering/${result.id}`);
+        router.refresh();
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error);
+        setReloadFor(result.error);
+        // Part of the save landed (the booking's own fields, or all but the
+        // quotation): take its id and token so a retry saves the same booking
+        // and is not refused as someone else's change. The draft stays.
+        if (result.id) {
+          if (!event) setCreatedId(result.id);
+          if (result.updatedAt !== undefined) setAckAt(result.updatedAt ?? null);
+        }
+        // Only a conflict fetches on its own: the database has just answered,
+        // and the newest data lets the screen show what moved, or, when
+        // nothing it shows did, lets the next save through. After any other
+        // failure a refresh can load the page into that same failure and take
+        // the draft with it (review, 2026-09-21); the error offers
+        // "โหลดข้อมูลล่าสุด" instead.
+        if (event && result.conflict) router.refresh();
+        return;
+      }
+      // SAVED IS CLEAN, and the form stays locked until the saved data is on
+      // screen, so nothing typed in between can be lost by the landing.
       setCleanAt(bookingSnapshot(form, lines));
+      setLanding(true);
+      // A NEW booking is this one from now on: should the landing never come,
+      // the next save updates it rather than creating a second.
+      if (!event) { setCreatedId(result.id); setAckAt(result.updatedAt); }
       try { if (derived.staff_ids[0]) localStorage.setItem(LAST_TAKER_KEY, derived.staff_ids[0]); } catch { /* storage unavailable */ }
       router.push(issueQuote ? `/owner/catering/${result.id}/quote` : `/owner/catering/${result.id}`);
       router.refresh();
@@ -347,6 +503,18 @@ export function BookingScreen({
 
   return (
     <div className="space-y-5">
+      {serverMoved && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          ข้อมูลของงานนี้ถูกแก้ไขจากที่อื่นหลังจากเปิดหน้านี้ — การแก้ไขของคุณยังอยู่ บันทึกต่อได้ (ถ้ามีคนบันทึกงานนี้จากหน้าจองอื่น ระบบจะไม่ให้บันทึกทับ)
+          <button type="button" onClick={reloadLatest} disabled={busy} className="ml-2 font-medium underline hover:text-amber-950 disabled:opacity-50">โหลดข้อมูลล่าสุด</button>
+        </div>
+      )}
+      {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>}
+
+      {/* ONE lock for the whole form while a save is in flight and until it
+          lands: a disabled fieldset disables every control inside it,
+          including those the shared components render. */}
+      <fieldset disabled={busy} className="m-0 min-w-0 space-y-5 border-0 p-0">
       {/* ── The booking: the sheet's row ── */}
       <section className="space-y-4 rounded-xl border border-neutral-300 bg-white p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -536,7 +704,7 @@ export function BookingScreen({
                   {rows.map((l) => (
                     <div key={l.key} className="grid grid-cols-[1fr_6rem_4.5rem_7rem_2rem] items-center gap-2">
                       {l.kind === "manual" ? (
-                        <input className="line-input" placeholder="รายการ" value={l.label} disabled={isPending} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
+                        <input className="line-input" placeholder="รายการ" value={l.label} disabled={busy} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
                       ) : (
                         <div className="min-w-0">
                           <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
@@ -552,17 +720,18 @@ export function BookingScreen({
                         </div>
                       )}
                       <input type="number" className="line-input text-right tabular-nums" value={l.kind === "discount" ? String(Math.abs(toNum(l.unitPrice) ?? 0) || "") : l.unitPrice}
-                        disabled={isPending || l.kind === "set" || l.kind === "dish"}
+                        disabled={busy || l.kind === "set" || l.kind === "dish"}
                         title={l.kind === "set" ? "ราคาต่อโต๊ะ — แก้ไขได้ในหน้ารายการอาหารของงาน (ตัวเลขเดียวกัน)" : l.kind === "dish" ? "ราคาตามเมนู" : "ราคาต่อหน่วย"}
                         onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} />
-                      {/* A dish takes any quantity above 0 — half a kilo is 0.5;
-                          a set, whole tables (booking-lines.ts). */}
-                      <input type="number" className="line-input text-right tabular-nums" value={l.quantity} disabled={isPending}
+                      {/* A dish takes a quantity above 0 with up to three decimals —
+                          half a kilo is 0.5; a set, whole counts of the booking's
+                          own unit (booking-lines.ts). */}
+                      <input type="number" className="line-input text-right tabular-nums" value={l.quantity} disabled={busy}
                         min={l.kind === "dish" ? 0 : 1} step={l.kind === "dish" ? "any" : undefined}
-                        title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ เช่น 0.5" : l.kind === "set" ? "จำนวนโต๊ะ — จำนวนเต็ม" : undefined}
+                        title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${countUnit} — จำนวนเต็ม` : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                       <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-red-700" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
-                      <button type="button" onClick={() => removeLine(l.key)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600">✕</button>
+                      <button type="button" onClick={() => removeLine(l.key)} disabled={busy} className="text-xs text-neutral-400 hover:text-red-600">✕</button>
                     </div>
                   ))}
                   <div className="flex flex-wrap items-center gap-2">
@@ -573,7 +742,7 @@ export function BookingScreen({
                           <SearchSelect
                             options={setMenuOptions.map((s) => ({ id: s.id, name: s.name, price: s.price_per_set }))}
                             placeholder="+ ชุดเมนู × โต๊ะ — พิมพ์เพื่อค้นหา"
-                            disabled={isPending}
+                            disabled={busy}
                             onPick={(id) => addMenu("set", id)}
                           />
                         </div>
@@ -581,14 +750,14 @@ export function BookingScreen({
                           <SearchSelect
                             options={dishOptions.map((d) => ({ id: d.id, name: d.name, price: d.selling_price }))}
                             placeholder="+ เมนูเดี่ยว — พิมพ์เพื่อค้นหา"
-                            disabled={isPending}
+                            disabled={busy}
                             onPick={(id) => addMenu("dish", id)}
                           />
                         </div>
                       </>
                     )}
                     {sectionRates.length > 0 && (
-                      <select className="line-input w-64" value="" disabled={isPending} onChange={(e) => { const r = sectionRates.find((x) => x.id === e.target.value); if (r) addRate(sec.key, r); }}>
+                      <select className="line-input w-64" value="" disabled={busy} onChange={(e) => { const r = sectionRates.find((x) => x.id === e.target.value); if (r) addRate(sec.key, r); }}>
                         <option value="">+ เลือกจากอัตรา</option>
                         {sectionRates.map((r) => (
                           <option key={r.id} value={r.id}>
@@ -598,7 +767,7 @@ export function BookingScreen({
                       </select>
                     )}
                     {(sec.key === "other" || sec.key === "discount") && (
-                      <button type="button" onClick={() => addManual(sec.key)} disabled={isPending} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
+                      <button type="button" onClick={() => addManual(sec.key)} disabled={busy} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
                         {sec.key === "discount" ? "+ ส่วนลด" : "+ พิมพ์รายการเอง"}
                       </button>
                     )}
@@ -616,8 +785,20 @@ export function BookingScreen({
           <span className="text-lg font-semibold tabular-nums text-neutral-900">{money(total)}</span>
         </div>
       </section>
+      </fieldset>
 
-      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+          {/* Beside every refused or lost save of an existing booking, so a
+              message that says "โหลดข้อมูลล่าสุด" always has the button
+              (review, 2026-09-21: after a conflict or a partial save it had
+              none). It asks before dropping a draft. */}
+          {event && error === reloadFor && (
+            <button type="button" onClick={reloadLatest} disabled={busy} className="ml-2 font-medium underline hover:text-red-900 disabled:opacity-50">โหลดข้อมูลล่าสุด</button>
+          )}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-3 text-sm">
@@ -633,7 +814,7 @@ export function BookingScreen({
         <div className="flex gap-2">
           <button type="button" onClick={() => save(false)} disabled={!canSave}
             className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
-            {isPending ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
+            {busy ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
           </button>
           {/* An EMPTY price box may still be issued once a quotation exists:
               a booking whose set lines were all removed has a live total of 0
@@ -643,7 +824,7 @@ export function BookingScreen({
           <button type="button" onClick={() => save(true)} disabled={!canSave || (lines.length === 0 && !event?.quote_number)}
             title={lines.length === 0 && !event?.quote_number ? "ยังไม่มีรายการราคา" : undefined}
             className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
-            {isPending ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
+            {busy ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
           </button>
         </div>
       </div>
@@ -654,7 +835,12 @@ export function BookingScreen({
       {dirty && (
         <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>
       )}
-      {missingForSave.length > 0 && !isPending && (
+      {serverMoved && (
+        <p className="text-right text-xs text-amber-800">
+          ข้อมูลของงานนี้ถูกแก้ไขจากที่อื่น — <button type="button" onClick={reloadLatest} disabled={busy} className="underline disabled:opacity-50">โหลดข้อมูลล่าสุด</button>
+        </p>
+      )}
+      {missingForSave.length > 0 && !busy && (
         <p className="text-right text-xs text-neutral-500">
           กรอก {missingForSave.join(" และ ")} ก่อนบันทึก
         </p>

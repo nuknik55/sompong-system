@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookingSnapshot, type DirtyLine } from "./booking-dirty.ts";
+import { bookingSnapshot, seenAfter, serverViewAction, type DirtyLine } from "./booking-dirty.ts";
 import type { FormState } from "./shared-utils.tsx";
 
 /**
@@ -120,4 +120,66 @@ test("TEXT IS COMPARED AS TYPED — which over-warns on the fields the server tr
 test("THE CLIENT KEY IS NOT PART OF IT: removing a row and adding an identical one leaves nothing to warn about", () => {
   // The screen gives a new row a fresh uuid key; the booking is unchanged.
   assert.equal(bookingSnapshot(blankForm(), [line()]), bookingSnapshot(blankForm(), [line()]));
+});
+
+// ── What the screen does with new server data (queue item 41, Nik 2026-09-21) ──
+
+const view = (updatedAt: string | null, snapshot: string) => ({ updatedAt, snapshot });
+
+test("SERVER VIEW: nothing moved is nothing to do", () => {
+  assert.equal(serverViewAction(view("t1", "A"), view("t1", "A"), { dirty: true, landing: false, ackAt: null }), "same");
+});
+
+test("SERVER VIEW: a clean form takes new data; so does the person's own save landing, dirty or not", () => {
+  assert.equal(serverViewAction(view("t1", "A"), view("t2", "B"), { dirty: false, landing: false, ackAt: null }), "adopt");
+  assert.equal(serverViewAction(view("t1", "A"), view("t2", "B"), { dirty: true, landing: true, ackAt: null }), "adopt");
+});
+
+test("SERVER VIEW: unsaved work is NEVER replaced — it is held, and the screen says the booking changed", () => {
+  // Another tab's save, the menu page, a second sales login: what the screen
+  // shows changed while the person has typing of their own.
+  assert.equal(serverViewAction(view("t1", "A"), view("t2", "B"), { dirty: true, landing: false, ackAt: null }), "hold");
+  // The menu page changes lines without touching the booking row: same token, new data.
+  assert.equal(serverViewAction(view("t1", "A"), view("t1", "B"), { dirty: true, landing: false, ackAt: null }), "hold");
+});
+
+test("SERVER VIEW: a save elsewhere that changed nothing shown only moves the token, and the draft stays", () => {
+  assert.equal(serverViewAction(view("t1", "A"), view("t2", "A"), { dirty: true, landing: false, ackAt: null }), "token");
+});
+
+test("SERVER VIEW: the person's own partial save coming back is taken as the baseline, the draft kept — not held as someone else's", () => {
+  assert.equal(serverViewAction(view("t1", "A"), view("t2", "B"), { dirty: true, landing: false, ackAt: "t2" }), "ack");
+  // A different change than the one acknowledged is someone else's.
+  assert.equal(serverViewAction(view("t1", "A"), view("t3", "B"), { dirty: true, landing: false, ackAt: "t2" }), "hold");
+});
+
+// ── What the screen then holds: the lines its draft is based on ──
+//
+// A save removes every line in that basis that the draft no longer has. The
+// review of 2026-09-21 found the ack taking the SERVER's lines as the basis:
+// after a partial save, a set the menu page had added meanwhile (not in the
+// draft) joined the basis, and the retry removed it with its charge and
+// courses. Reproduced on the real screen before the fix.
+
+const seenOf = (updatedAt: string, snapshot: string, menuIds: string[]) => ({ updatedAt, snapshot, menuIds });
+
+test("SEEN: after the person's own partial save, the draft's basis stays — a line added elsewhere is never named for removal", () => {
+  const seen = seenOf("t1", "A", ["set", "dish"]);
+  const after = seenAfter("ack", seen, view("t2", "B"), ["set", "dish", "added-elsewhere"]);
+  assert.deepEqual(after.menuIds, ["set", "dish"]);
+  // The token and snapshot are the server's, so the retry is not refused as someone else's change.
+  assert.equal(after.updatedAt, "t2");
+  assert.equal(after.snapshot, "B");
+});
+
+test("SEEN: adopting replaces the draft, so the basis becomes the server's lines", () => {
+  const after = seenAfter("adopt", seenOf("t1", "A", ["set"]), view("t2", "B"), ["set", "new"]);
+  assert.deepEqual(after, seenOf("t2", "B", ["set", "new"]));
+});
+
+test("SEEN: a token-only change moves the token alone; nothing moved, or held, changes nothing", () => {
+  const seen = seenOf("t1", "A", ["set"]);
+  assert.deepEqual(seenAfter("token", seen, view("t2", "A"), ["set", "other"]), seenOf("t2", "A", ["set"]));
+  assert.equal(seenAfter("same", seen, view("t1", "A"), ["set"]), seen);
+  assert.equal(seenAfter("hold", seen, view("t2", "B"), ["set", "other"]), seen);
 });

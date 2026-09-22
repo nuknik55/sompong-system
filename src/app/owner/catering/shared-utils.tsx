@@ -100,7 +100,8 @@ export const CHARGE_TYPE_OPTIONS: { value: string; label: string }[] = [
  *  displayable charge_type (menu-picker rows still carry it, and
  *  CHARGE_TYPE_OPTIONS/CHARGE_TYPE_LABEL stay unfiltered for rendering
  *  those), it's just not offered as a choice when hand-typing a row. Also
- *  enforced server-side in saveCateringCharges — see its comment. */
+ *  refused on save: chargeLineError (booking-lines.ts) and the database
+ *  function catering_save_booking_prices. */
 export const MANUAL_CHARGE_TYPE_OPTIONS = CHARGE_TYPE_OPTIONS.filter((o) => o.value !== "food");
 // Values mirror the CHECK constraint in supabase/catering_quotation_migration.sql.
 // Order here is also the group order shown in the rate picker.
