@@ -1051,7 +1051,7 @@ BEGIN
   v_snap := pg_temp.snapshot();
   FOREACH v_t IN ARRAY pg_temp.checked_tables() LOOP
     IF (v_snap -> v_t ->> 'doomed')::bigint
-       <> CASE WHEN v_first THEN greatest(pg_temp.expected_fall(v_t), 0) ELSE 0 END
+       <> (CASE WHEN v_first THEN greatest(pg_temp.expected_fall(v_t), 0) ELSE 0 END)
        OR (v_snap -> v_t ->> 'new')::bigint <> 0 THEN
       RAISE EXCEPTION 'FAIL    % holds % listed rows (% new), expected %. Nothing deleted.',
         v_t, v_snap -> v_t ->> 'doomed', v_snap -> v_t ->> 'new',
@@ -1148,14 +1148,14 @@ BEGIN
   -- Counts: each table fell by exactly the stated amount, and holds no listed row.
   FOREACH v_t IN ARRAY pg_temp.checked_tables() LOOP
     IF (v_after -> v_t ->> 'n')::bigint
-       <> (v_before -> v_t ->> 'n')::bigint - CASE WHEN v_first THEN pg_temp.expected_fall(v_t) ELSE 0 END THEN
+       <> (v_before -> v_t ->> 'n')::bigint - (CASE WHEN v_first THEN pg_temp.expected_fall(v_t) ELSE 0 END) THEN
       v_bad := v_bad || format(' %s went from %s to %s;', v_t, v_before -> v_t ->> 'n', v_after -> v_t ->> 'n');
     END IF;
     IF (v_after -> v_t ->> 'doomed')::bigint <> 0 THEN
       v_bad := v_bad || format(' %s still holds %s listed rows;', v_t, v_after -> v_t ->> 'doomed');
     END IF;
     IF (v_after -> v_t ->> 'new')::bigint
-       <> CASE WHEN v_first AND v_t = 'prep_recipe_access_history' THEN 2 ELSE 0 END THEN
+       <> (CASE WHEN v_first AND v_t = 'prep_recipe_access_history' THEN 2 ELSE 0 END) THEN
       v_bad := v_bad || format(' %s gained %s rows;', v_t, v_after -> v_t ->> 'new');
     END IF;
     IF (v_after -> v_t ->> 'n') <> (v_before -> v_t ->> 'n') THEN
