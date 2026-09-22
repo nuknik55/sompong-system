@@ -125,7 +125,7 @@ export function CateringClient({
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-800 text-left text-xs text-neutral-100">
+            <tr className="border-b border-neutral-300 bg-neutral-100 text-left text-xs font-semibold text-neutral-700">
               <th className="px-3 py-2 whitespace-nowrap">วันที่</th>
               <th className="px-3 py-2 whitespace-nowrap">เวลา</th>
               <th className="px-3 py-2">ลูกค้า</th>
