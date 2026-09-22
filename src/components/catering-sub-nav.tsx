@@ -16,7 +16,13 @@ type NavItem = { href: string; label: string; exact?: boolean };
  *                  status page and link it (queue item 26). Its guard is
  *                  requireSales, the same roles as every page that shows
  *                  this nav, so the link needs no role check of its own.
- *   ลูกค้า          behind เพิ่มเติม on the booking, still reachable
+ *   ลูกค้า          back on the nav 2026-09-22. Off it, the list was reached
+ *                  only from a booking's ข้อมูลลูกค้า · ประวัติการจอง and
+ *                  then ← กลับ; Nik looked for it and could not find it.
+ *                  Its guard is requireSales, the same roles as every page
+ *                  that shows this nav, so the link needs no role check.
+ *                  src/lib/route-links.test.ts now fails any page no link
+ *                  outside its own folder reaches.
  *   ต้นทุนภายใน     admin-only, reached from a booking's ต้นทุน-กำไร page
  *                  by the ตั้งค่าต้นทุนภายใน link beside + เพิ่มต้นทุน. It is
  *                  internal COST, easily confused with the prices under
@@ -44,6 +50,7 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     { href: "/owner/catering", label: "การจอง", exact: true },
     { href: "/owner/catering/calendar", label: "ปฏิทิน" },
     { href: "/owner/catering/status", label: "สถานะ" },
+    { href: "/owner/catering/customers", label: "ลูกค้า" },
     ...(isAdmin ? [{ href: "/owner/catering/set-menus", label: "ชุดเมนู" }] : []),
     // "ราคา" until 2026-09-15, when ประเภทงาน joined the rates on that page.
     // Keeping the sub-nav short was the point of the reduction from seven, so
