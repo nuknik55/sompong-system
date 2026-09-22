@@ -182,6 +182,57 @@ So, in any migration:
   The same trap catches a `LANGUAGE sql` function body, which IS resolved at
   CREATE time; a `LANGUAGE plpgsql` body is not.
 
+# The SQL checker: `scripts/sqlcheck.mjs`
+
+Every migration is run by hand in the Supabase SQL editor and nothing deploys
+it, so this checker is the only look a file gets before Nik runs it. Each
+check exists because a file got past without it:
+
+| check | catches | when it was missed |
+|---|---|---|
+| A | dollar-quote tags unbalanced, `BEGIN;`/`COMMIT;` unpaired, a test label used twice | — |
+| B | a `format()` whose placeholders and arguments disagree (the call aborts) | — |
+| C | an object the file creates, named in executable SQL before its CREATE: PL/pgSQL plans a statement before running any guard inside it | `catering_event_menu_items_migration.sql`, first run |
+| D | a regex whose backslashes a generator ate (`\s+` landing as `s+`) | the same file, second run |
+| E | result lines written inside a block that always aborts, so rolled back with it | the same file, third run (8 rows of 31, applied) |
+| F | no declared row count (`c_expected`), or one that disagrees with the emitting sites | why E's defect passed every earlier check |
+| G | a PL/pgSQL IF/ELSIF condition cut at the THEN of a bare CASE | `test_data_cleanup_migration.sql` (`3057c55`), first run |
+
+**Run it**, from the app folder:
+- `node scripts/sqlcheck.mjs supabase/<file>.sql` on every new or changed
+  migration BEFORE it goes to Nik. No exception applies: a new file passes
+  all seven checks, or it is fixed.
+- `node scripts/sqlcheck.mjs --all` is what CI runs on every push (the "SQL
+  migration checks" step), and `npm test` runs it as well
+  (`src/lib/sqlcheck.test.ts`). It checks every tracked migration and applies
+  `scripts/sqlcheck-exceptions.json`.
+
+**The exceptions are the history, recorded rather than skipped.** 84 files
+were written and applied before check F existed (2026-09-19) and declare no
+row count. Two trip check C on top-level DDL that ran cleanly: a `DROP
+FUNCTION IF EXISTS` of an old signature before its re-CREATE, and one column
+name added to two tables. Each entry names a file and a check letter, with
+its reason. **Never add a new file to it: fix the file.** When a check stops
+flagging a file, `--all` fails until that entry is deleted, so the list only
+shrinks. Checking only the files a push changed was the alternative, and it
+was rejected for two reasons. It depends on reconstructing the push's range,
+and CI's checkout is shallow and a branch's first push has no "before". And an
+edit to an old file's comment would demand row counts retrofitted onto a file
+that has already run.
+
+**The lesson behind G (2026-09-22).** PL/pgSQL reads an IF condition only as
+far as the first THEN outside brackets (`pl_gram.y`: `expr_until_then` calls
+`read_sql_construct`, which counts `(` and `[` and never CASE/END). So
+`IF x <> CASE WHEN a THEN 1 ELSE 0 END THEN` is cut at the CASE's own THEN
+and fails with "syntax error at end of input". Checks A–F and two reviews
+passed it, because all of them read the condition as SQL, where it is valid.
+**Inside any IF or ELSIF condition, wrap a CASE in parentheses.** G does not
+yet read a CASE statement's WHEN clauses (the same reader) or dynamic SQL.
+
+`scripts/sqlcheck-fixtures/test_data_cleanup_migration.3057c55.sql` is that
+failing file, pinned by hash, so the test proves the checker can still fail.
+**Do not run it.**
+
 # Role checks: what each one actually admits — the list
 
 Rule 4 above says to read a function's LAST definition before reasoning from

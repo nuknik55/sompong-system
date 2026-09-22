@@ -45,6 +45,9 @@
 # are tempted to add `tsc --noEmit` here: it takes over two minutes in this
 # repo and tells you nothing the deploy would not.
 #
+# The SQL migration checks (added 2026-09-22) are the same kind of gap: a
+# migration file is never built or deployed, so no other check ever reads it.
+#
 # ── Node 24 is REQUIRED, not a preference ──────────────────────────────────
 #
 # `npm test` is `node --test "src/**/*.test.ts"` — it runs TypeScript source
@@ -98,3 +101,11 @@ jobs:
 
       - name: Tests
         run: npm test
+
+      # Migrations are run by hand in the Supabase SQL editor, and nothing
+      # deploys them, so this is the only check a file gets before Nik runs
+      # it: checks A-G over every tracked migration, with the historical
+      # exceptions recorded in scripts/sqlcheck-exceptions.json. About a
+      # second. AGENTS.md, "The SQL checker".
+      - name: SQL migration checks
+        run: node scripts/sqlcheck.mjs --all
