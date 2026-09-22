@@ -7,7 +7,9 @@ import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
   getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog, getEventMenuDishes,
 } from "../actions";
-import { thFullDate, StatusBadge } from "../shared-utils";
+import { thFullDate, BookingStatusBadge } from "../shared-utils";
+import { buttonClass } from "@/components/ui/button";
+import { ButtonGroup, PageHeader, PageShell } from "@/components/ui/page";
 import { dishNamesForPriceBox } from "../event-menu";
 import { BookingScreen } from "../BookingScreen";
 import { ActivityLogSection } from "./ActivityLogSection";
@@ -44,28 +46,22 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
   const isAdmin = isAdminOrAbove(profile.role);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">{event.customer_name ?? "การจอง"}</h1>
-          <StatusBadge status={event.status} />
-          <span className="text-sm text-neutral-500">{thFullDate(event.event_date)}</span>
-        </div>
-        {/* AT THE TOP AS WELL AS THE BOTTOM. The bottom row sits under the
-            entire booking form — a screen or two of scrolling — and on the
-            day this shipped the head chef could not find it there
-            (2026-09-19). The button below stays: that row is where someone
-            who has just finished editing a booking looks next. */}
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/owner/catering/${event.id}/menu`}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-          >
+    <PageShell>
+      <PageHeader
+        back={{ href: "/owner/catering", label: "รายการจอง" }}
+        title={event.customer_name ?? "การจอง"}
+        subtitle={<><BookingStatusBadge status={event.status} /><span>{thFullDate(event.event_date)}</span></>}
+        // AT THE TOP AS WELL AS THE BOTTOM. The bottom row sits under the
+        // entire booking form — a screen or two of scrolling — and on the
+        // day this shipped the head chef could not find it there
+        // (2026-09-19). The button below stays: that row is where someone
+        // who has just finished editing a booking looks next.
+        actions={
+          <Link href={`/owner/catering/${event.id}/menu`} className={buttonClass("secondary")}>
             รายการอาหารของงาน
           </Link>
-          <Link href="/owner/catering" className="text-sm text-neutral-500 hover:text-neutral-800">← รายการจอง</Link>
-        </div>
-      </div>
+        }
+      />
 
       {/* KEYED ON THE BOOKING ALONE (queue item 41, Nik 2026-09-21). It used
           to be keyed on the charge rows, so that after a save the screen did
@@ -89,34 +85,27 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         dishNamesByMenuLine={dishNamesByMenuLine}
       />
 
-      <div className="mt-6 flex flex-wrap gap-2">
+      {/* ดูข้อมูลเพิ่ม: the pages about this booking, in Nik's order
+          (2026-09-22). Each keeps its old condition. */}
+      <ButtonGroup label="ดูข้อมูลเพิ่ม">
+        {/* The booking's own menu (catering per-event menus): sales views, owner and admin edit — decided on that page. */}
+        <Link href={`/owner/catering/${event.id}/menu`} className={buttonClass("secondary")}>
+          รายการอาหารของงาน
+        </Link>
         {event.customer_id && (
-          <Link
-            href={`/owner/catering/customers/${event.customer_id}`}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-          >
+          <Link href={`/owner/catering/customers/${event.customer_id}`} className={buttonClass("secondary")}>
             ข้อมูลลูกค้า · ประวัติการจอง
           </Link>
         )}
-        {/* The booking's own menu (catering per-event menus): sales views, owner and admin edit — decided on that page. */}
-        <Link
-          href={`/owner/catering/${event.id}/menu`}
-          className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          รายการอาหารของงาน
-        </Link>
         {isAdmin && (
-          <Link
-            href={`/owner/catering/${event.id}/cost`}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-          >
+          <Link href={`/owner/catering/${event.id}/cost`} className={buttonClass("secondary")}>
             ต้นทุน-กำไร ของงานนี้
           </Link>
         )}
         {/* Edit and delete buttons for the owner alone (Nik, 2026-09-17);
             the database allows the same account and nothing more. */}
         <ActivityLogSection eventId={event.id} entries={activityLog} canEdit={profile.role === "owner"} />
-      </div>
-    </div>
+      </ButtonGroup>
+    </PageShell>
   );
 }

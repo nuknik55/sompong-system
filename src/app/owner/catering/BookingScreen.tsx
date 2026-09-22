@@ -25,6 +25,8 @@ import { setCountUnit } from "@/lib/kitchen-sheet";
 import { foldSetName } from "./event-menu";
 import { bookingSnapshot, seenAfter, serverViewAction, type SeenView, type ServerView } from "./booking-dirty";
 import { markUnsaved } from "@/lib/unsaved-changes";
+import { Button, buttonClass } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/page";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -721,7 +723,13 @@ export function BookingScreen({
               : "ยังไม่เคยออกใบเสนอราคา"}
           </p>
         </div>
-        <div className="divide-y divide-neutral-200">
+        {/* On a phone the price rows are wider than the screen (a 9rem label
+            beside five fixed columns, since be8ea1c), which made the WHOLE
+            page scroll sideways and the phone shrink it to fit. The rows now
+            scroll inside the box instead, like the booking table; from 36rem
+            of width up, nothing changes (2026-09-22). */}
+        <div className="-mx-1 overflow-x-auto px-1">
+        <div className="min-w-[36rem] divide-y divide-neutral-200">
           {SECTIONS.map((sec) => {
             const rows = lines.filter((l) => l.section === sec.key);
             const sectionRates = sec.rateType ? rates.filter((r) => r.rate_type === sec.rateType) : [];
@@ -759,7 +767,7 @@ export function BookingScreen({
                         title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${countUnit} — จำนวนเต็ม` : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                       <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-red-700" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
-                      <button type="button" onClick={() => removeLine(l.key)} disabled={busy} className="text-xs text-neutral-400 hover:text-red-600">✕</button>
+                      <Button kind="link" size="sm" onClick={() => removeLine(l.key)} disabled={busy} aria-label="เอาบรรทัดนี้ออก">✕</Button>
                     </div>
                   ))}
                   <div className="flex flex-wrap items-center gap-2">
@@ -795,18 +803,19 @@ export function BookingScreen({
                       </select>
                     )}
                     {(sec.key === "other" || sec.key === "discount") && (
-                      <button type="button" onClick={() => addManual(sec.key)} disabled={busy} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
+                      <Button kind="secondary" size="sm" onClick={() => addManual(sec.key)} disabled={busy}>
                         {sec.key === "discount" ? "+ ส่วนลด" : "+ พิมพ์รายการเอง"}
-                      </button>
+                      </Button>
                     )}
                     {sec.key === "delivery" && form.location_type !== "offsite" && rows.length === 0 && (
-                      <span className="text-xs text-neutral-400">เฉพาะงานนอกสถานที่</span>
+                      <span className="text-xs text-neutral-500">เฉพาะงานนอกสถานที่</span>
                     )}
                   </div>
                 </div>
               </div>
             );
           })}
+        </div>
         </div>
         <div className="mt-3 flex items-baseline justify-between border-t-2 border-neutral-300 pt-3">
           <span className="text-sm font-medium text-neutral-700">รวมทั้งหมด</span>
@@ -828,33 +837,23 @@ export function BookingScreen({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-3 text-sm">
-          {/* Two sheets, named for who reads them — the old single
-              "พิมพ์ใบฟังก์ชั่นงาน" was ambiguous once the kitchen got its own.
-              BUTTONS, not text links: Nik used the page for a real job and
-              thought there were no print buttons at all. Anything that DOES
-              something looks like a button on this screen. */}
-          {event && <Link href={`/owner/catering/${event.id}/function-sheet`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบฟังก์ชั่นงาน (บริการ)</Link>}
-          {event && <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบฟังก์ชั่นงาน (ครัว)</Link>}
-          {event?.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className="rounded-lg border border-neutral-300 px-4 py-2 text-neutral-700 hover:bg-neutral-50">พิมพ์ใบเสนอราคา</Link>}
-        </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => save(false)} disabled={!canSave}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
-          </button>
-          {/* An EMPTY price box may still be issued once a quotation exists:
-              a booking whose set lines were all removed has a live total of 0
-              against a recorded total that is not, and re-issuing is the only
-              way to reconcile them — refusing it left the booking unlockable
-              for good (review, 2026-09-20). */}
-          <button type="button" onClick={() => save(true)} disabled={!canSave || (lines.length === 0 && !event?.quote_number)}
-            title={lines.length === 0 && !event?.quote_number ? "ยังไม่มีรายการราคา" : undefined}
-            className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
-          </button>
-        </div>
+      {/* THE BUTTONS BELOW THE PRICE BOX, in three groups (Nik, 2026-09-22):
+          save first, right-aligned, the one that also issues the quotation
+          the main action; then พิมพ์; then ดูข้อมูลเพิ่ม, on the booking page
+          (catering/[id]/page.tsx) because those links are the page's. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button kind="secondary" onClick={() => save(false)} disabled={!canSave}>
+          {busy ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
+        </Button>
+        {/* An EMPTY price box may still be issued once a quotation exists:
+            a booking whose set lines were all removed has a live total of 0
+            against a recorded total that is not, and re-issuing is the only
+            way to reconcile them — refusing it left the booking unlockable
+            for good (review, 2026-09-20). */}
+        <Button kind="primary" onClick={() => save(true)} disabled={!canSave || (lines.length === 0 && !event?.quote_number)}
+          title={lines.length === 0 && !event?.quote_number ? "ยังไม่มีรายการราคา" : undefined}>
+          {busy ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
+        </Button>
       </div>
 
       {/* Gated on `dirty` alone, the same condition that arms the guard and
@@ -877,6 +876,18 @@ export function BookingScreen({
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           รายการซ้ำ: {duplicateRateLabels.join(", ")} ถูกเพิ่มไว้มากกว่า 1 บรรทัด — ตรวจสอบก่อนบันทึก (บันทึกได้ตามปกติ)
         </p>
+      )}
+
+      {/* พิมพ์: the documents, named for who reads them (the service sheet and
+          the kitchen's). BUTTONS, not text links: Nik used the page for a
+          real job and thought there were no print buttons at all. Each keeps
+          its old condition: a saved booking; the quotation once one exists. */}
+      {event && (
+        <ButtonGroup label="พิมพ์">
+          {event.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className={buttonClass("secondary")}>ใบเสนอราคา</Link>}
+          <Link href={`/owner/catering/${event.id}/function-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน บริการ</Link>
+          <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน ครัว</Link>
+        </ButtonGroup>
       )}
 
       {/* Borders: #d4d4d4 is neutral-300, the app's own commonest control

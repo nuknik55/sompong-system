@@ -5,25 +5,14 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { deleteSop } from "@/app/sop/actions";
 import type { SopListItem } from "@/lib/sop-data";
+import { Button, buttonClass } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { AccentTag, Badge, accentFor } from "@/components/ui/badge";
 
 type Tab = "all" | "has" | "none";
 
-const BADGE_COLORS: Record<string, string> = {};
-const PALETTE = [
-  "bg-sky-100 text-sky-700",
-  "bg-amber-100 text-amber-700",
-  "bg-emerald-100 text-emerald-700",
-  "bg-violet-100 text-violet-700",
-  "bg-rose-100 text-rose-700",
-];
-function catColor(cat: string): string {
-  if (!BADGE_COLORS[cat]) {
-    let h = 0;
-    for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) & 0xffffff;
-    BADGE_COLORS[cat] = PALETTE[Math.abs(h) % PALETTE.length];
-  }
-  return BADGE_COLORS[cat];
-}
+// Category tags take a brand ACCENT (components/ui/badge.tsx): told apart,
+// not judged; the same category always gets the same one.
 
 export function SopListClient({
   items,
@@ -72,21 +61,10 @@ export function SopListClient({
   return (
     <div className="space-y-3">
       {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p className="rounded-md border border-danger/25 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>
       )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="flex gap-1">
-          {TAB_LABELS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={`rounded-full px-3 py-1 text-sm ${tab === key ? "bg-brand-green text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="กรองรายการ" value={tab} options={TAB_LABELS.map(({ key, label }) => ({ value: key, label }))} onChange={setTab} />
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
           <input
@@ -99,7 +77,7 @@ export function SopListClient({
         </div>
       </div>
 
-      <p className="text-xs text-neutral-400">พบ {filtered.length} รายการ</p>
+      <p className="text-xs text-neutral-500">พบ {filtered.length} รายการ</p>
 
       <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white">
         {filtered.map((item) => {
@@ -119,25 +97,25 @@ export function SopListClient({
             <li key={item.menuId} className="flex flex-wrap items-center gap-2 px-4 py-3">
               <Link
                 href={`/sop/${item.menuId}`}
-                className="min-w-0 flex-1 font-medium text-neutral-800 hover:text-brand-green"
+                className="min-w-0 flex-1 font-medium text-neutral-800 hover:text-primary"
               >
                 {item.menuName}
               </Link>
 
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${catColor(cat)}`}>{cat}</span>
+              <span className="shrink-0"><AccentTag accent={accentFor(cat)}>{cat}</AccentTag></span>
 
               {item.sopId ? (
-                <span className={`shrink-0 text-xs ${sopComplete ? "text-green-600" : "text-amber-600"}`}>
+                <span className={`shrink-0 text-xs ${sopComplete ? "text-success-ink" : "text-pending-ink"}`}>
                   {sopComplete ? "✓" : "⚠"} มี SOP — {item.updatedAt ?? ""}
                   {item.authorName ? ` (${item.authorName})` : ""}
                   {missing.length > 0 && ` · ขาด: ${missing.join(", ")}`}
                 </span>
               ) : (
-                <span className="shrink-0 text-xs text-neutral-400">ยังไม่มี SOP</span>
+                <span className="shrink-0 text-xs text-neutral-500">ยังไม่มี SOP</span>
               )}
 
               {item.hasVideo && (
-                <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">🎬 VDO</span>
+                <span className="shrink-0"><Badge tone="info">🎬 VDO</Badge></span>
               )}
 
               {canEdit && (
@@ -146,25 +124,26 @@ export function SopListClient({
                     <>
                       <Link
                         href={`/sop/${item.menuId}/edit`}
-                        className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                        className={buttonClass("secondary", { size: "sm" })}
                       >
                         แก้ไข
                       </Link>
                       {isAdmin && (
-                        <button
-                          type="button"
+                        <Button
+                          kind="secondary"
+                          size="sm"
+                          danger
                           disabled={isPending && deletingId === item.menuId}
                           onClick={() => handleDelete(item.menuId, item.menuName)}
-                          className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50"
                         >
                           ลบ
-                        </button>
+                        </Button>
                       )}
                     </>
                   ) : (
                     <Link
                       href={`/sop/${item.menuId}/edit`}
-                      className="rounded border border-brand-green px-2 py-0.5 text-xs text-brand-green hover:bg-brand-green/5"
+                      className={buttonClass("secondary", { size: "sm" })}
                     >
                       + สร้าง SOP
                     </Link>
@@ -175,7 +154,7 @@ export function SopListClient({
           );
         })}
         {filtered.length === 0 && (
-          <li className="px-4 py-8 text-center text-sm text-neutral-400">ไม่พบรายการ</li>
+          <li className="px-4 py-8 text-center text-sm text-neutral-500">ไม่พบรายการ</li>
         )}
       </ul>
     </div>

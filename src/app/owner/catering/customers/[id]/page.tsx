@@ -5,6 +5,7 @@ import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import { getCateringCustomer, getCateringCustomerEvents } from "../../actions";
 import { CateringSubNav } from "@/components/catering-sub-nav";
 import { CustomerDetailClient } from "./CustomerDetailClient";
+import { PageShell } from "@/components/ui/page";
 
 export default async function CateringCustomerDetailPage({
   params,
@@ -22,9 +23,9 @@ export default async function CateringCustomerDetailPage({
   if (!customer) notFound();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <CateringSubNav isAdmin={isAdminOrAbove(profile.role)} />
       <CustomerDetailClient customer={customer} events={events} />
-    </div>
+    </PageShell>
   );
 }

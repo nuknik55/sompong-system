@@ -13,13 +13,16 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { CateringCustomer } from "./actions";
+import { Segmented } from "@/components/ui/segmented";
 
 // ─── Sub-components (module level on purpose) ─────────────────────────────────
 // Declaring these inside a page component would give them a new function
 // identity on every render, so React would remount them instead of updating —
 // which destroys input DOM nodes and resets the caret on every keystroke.
 
-/** Toggle-button group shared by location_type / room_portion / music_type. */
+/** Toggle-button group shared by location_type / room_portion / music_type.
+ *  The shared look's Segmented (components/ui/segmented.tsx): the same
+ *  buttons, one onPick per click, the selection in the primary tint. */
 export function ToggleGroup({
   options,
   value,
@@ -29,24 +32,7 @@ export function ToggleGroup({
   value: string;
   onPick: (v: string) => void;
 }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onPick(o.value)}
-          className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-            value === o.value
-              ? "border-neutral-900 bg-neutral-900 text-white"
-              : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <Segmented label="ตัวเลือก" value={value} options={options} onChange={onPick} />;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
@@ -78,13 +64,13 @@ export function Time24Input({ value, onChange }: { value: string; onChange: (v: 
         <option value="">--</option>
         {HOURS.map((hh) => <option key={hh} value={hh}>{hh}</option>)}
       </select>
-      <span className="text-neutral-400">:</span>
+      <span className="text-neutral-500">:</span>
       <select className={timeSelectCls} value={m} onChange={(e) => setMinute(e.target.value)}>
         <option value="">--</option>
         {MINUTES.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
       </select>
       {value && (
-        <button type="button" onClick={() => onChange("")} title="ล้างเวลา" className="text-xs text-neutral-400 hover:text-neutral-700">
+        <button type="button" onClick={() => onChange("")} title="ล้างเวลา" className="text-xs text-neutral-500 hover:text-neutral-700">
           ✕
         </button>
       )}
@@ -178,7 +164,7 @@ export function SearchSelect({
       />
       {open && !disabled && (
         <ul ref={listRef} className="absolute z-30 mt-1 max-h-64 w-full min-w-64 overflow-y-auto rounded-lg border border-neutral-300 bg-white shadow-xl">
-          {matches.length === 0 && <li className="px-3 py-2 text-sm text-neutral-400">ไม่พบรายการ</li>}
+          {matches.length === 0 && <li className="px-3 py-2 text-sm text-neutral-500">ไม่พบรายการ</li>}
           {matches.map((o, i) => (
             <li key={o.id}>
               <button
@@ -252,7 +238,7 @@ export function CustomerCombobox({
         <button
           type="button"
           onClick={() => { onPick(null); setOpen(false); }}
-          className="absolute right-2 top-1.5 text-xs text-neutral-400 hover:text-neutral-700"
+          className="absolute right-2 top-1.5 text-xs text-neutral-500 hover:text-neutral-700"
         >
           ล้าง
         </button>
@@ -268,9 +254,9 @@ export function CustomerCombobox({
               >
                 <span className="text-neutral-800">
                   {c.name}
-                  {c.company_name && <span className="ml-1 text-xs text-neutral-400">{c.company_name}</span>}
+                  {c.company_name && <span className="ml-1 text-xs text-neutral-500">{c.company_name}</span>}
                 </span>
-                <span className="text-xs text-neutral-400">{c.phone ?? ""}</span>
+                <span className="text-xs text-neutral-500">{c.phone ?? ""}</span>
               </button>
             </li>
           ))}

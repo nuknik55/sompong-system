@@ -4,6 +4,7 @@ import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import { getCateringEvents, getCateringEventsForYear, getStaffOptions } from "./actions";
 import { CateringClient } from "./CateringClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
+import { PageShell } from "@/components/ui/page";
 
 export default async function CateringPage({
   searchParams,
@@ -23,7 +24,7 @@ export default async function CateringPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <CateringSubNav isAdmin={isAdminOrAbove(profile.role)} />
 
       <CateringClient
@@ -33,6 +34,6 @@ export default async function CateringPage({
         month={month}
         view={view}
       />
-    </div>
+    </PageShell>
   );
 }

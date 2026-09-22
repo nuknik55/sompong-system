@@ -17,6 +17,54 @@
   --font-heading: var(--font-montserrat), var(--font-kanit), sans-serif;
   --color-brand-green: #2F5A16;
   --color-brand-gold: #DFAF19;
+
+  /* ── The look: tokens (AGENTS.md, "The app's look", Nik 2026-09-22) ─────
+     The brand palette from Krua Sompong's guideline, then the colour ROLES,
+     each with one meaning, used the same way everywhere. Values are literal,
+     not var() chains, because @theme inline copies them into the utilities.
+     Every text/background pair used is checked for WCAG AA in AGENTS.md.
+     Gold and teal fail as text on white (2.0:1, 2.2:1): they are FILLS, with
+     near-black or the matching -ink colour for text. */
+
+  /* Brand palette. Pantone 2259 C, 7406 C, 2424 C, 541 C, 2227 C. */
+  --color-brand-green-hover: #234311;
+  --color-brand-green-soft: #EAEFE8;
+  --color-brand-gold-soft: #F9F1D6;
+  --color-brand-gold-ink: #5C4300;
+  --color-brand-bright: #358000;
+  --color-brand-bright-soft: #EBF2E6;
+  --color-brand-bright-ink: #2B6600;
+  --color-brand-navy: #00365B;
+  --color-brand-navy-soft: #E6EBEF;
+  --color-brand-teal: #5DBEB3;
+  --color-brand-teal-soft: #DFF2F0;
+  --color-brand-teal-ink: #0B4F48;
+
+  /* Roles. primary = dark green: the one main action, the active tab, the
+     selected option. pending = gold: waiting on someone (รอมัดจำ), and
+     highlight. success = bright green: confirmed, done well. info = navy:
+     a neutral fact worth a colour. danger = red, the one colour not in the
+     brand, for delete and errors ONLY. Neutral is Tailwind's neutral. */
+  --color-primary: #2F5A16;
+  --color-primary-hover: #234311;
+  --color-primary-soft: #EAEFE8;
+  --color-pending: #DFAF19;
+  --color-pending-soft: #F9F1D6;
+  --color-pending-ink: #5C4300;
+  --color-success: #358000;
+  --color-success-soft: #EBF2E6;
+  --color-success-ink: #2B6600;
+  --color-info: #00365B;
+  --color-info-soft: #E6EBEF;
+  --color-danger: #B42318;
+  --color-danger-hover: #912018;
+  --color-danger-soft: #FEF3F2;
+
+  /* Depth: a button sits slightly above the page and sinks when pressed. */
+  --shadow-btn: 0 1px 2px rgb(24 45 12 / 0.24), 0 1px 1px rgb(24 45 12 / 0.12);
+  --shadow-btn-danger: 0 1px 2px rgb(90 16 10 / 0.24), 0 1px 1px rgb(90 16 10 / 0.12);
+  --shadow-btn-soft: 0 1px 2px rgb(23 23 23 / 0.07);
+  --shadow-tile: 0 1px 2px rgb(23 23 23 / 0.08), 0 1px 3px rgb(23 23 23 / 0.06);
 }
 
 /* Body text: Noto Sans Thai (layout.tsx). Until 2026-09-22 this was

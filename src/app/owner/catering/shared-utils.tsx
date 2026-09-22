@@ -15,7 +15,8 @@
 // file is allowed to skip "use client".
 
 import type { CateringEvent, StaffOption } from "./actions";
-import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR } from "./event-status";
+import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR, STATUS_TONE } from "./event-status";
+import { Badge } from "@/components/ui/badge";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 import { toNum } from "./to-num";
 import { toTimeInput } from "./booking-form";
@@ -233,5 +234,15 @@ export function StatusBadge({ status }: { status: string }) {
     <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[status] ?? ""}`}>
       {STATUS_LABEL[status] ?? status}
     </span>
+  );
+}
+
+/** A booking's status in the shared look's colour roles (STATUS_TONE). Used by
+ *  the pages already moved to that look; StatusBadge stays for the rest. */
+export function BookingStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge tone={STATUS_TONE[status] ?? "neutral"} className={status === "cancelled" ? "line-through" : undefined}>
+      {STATUS_LABEL[status] ?? status}
+    </Badge>
   );
 }

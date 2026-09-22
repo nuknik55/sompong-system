@@ -841,6 +841,124 @@ common cause: the count rarely matches what you typed, so anchor on the code
 instead.
 <!-- END:editing-and-verification-rules -->
 
+<!-- BEGIN:look-rules -->
+# The app's look: one palette, one set of components (Nik, 2026-09-22)
+
+Nik found the app inconsistent: catering used black primary buttons and a
+wide left-aligned page, the SOP page green buttons and a narrow centred one;
+the back link sat top-left on one page and top-right on another; every button
+looked alike. The shared look below comes from the restaurant's brand
+guideline (Krua Sompong, "Always Delicious"). **Step 1 (2026-09-22) moved four
+pages to it:** the booking list, the booking screen (with the new-booking
+page), the customer page and the SOP list, plus the catering sub-nav. Every
+other page moves in step 2, after Nik approves step 1. **New work uses these,
+and invents none of its own.**
+
+## Palette (tokens in `src/app/globals.css`)
+
+| name | hex | Pantone | use |
+|---|---|---|---|
+| dark green `brand-green` | #2F5A16 | 2259 C | primary |
+| gold `brand-gold` | #DFAF19 | 7406 C | pending, highlight; accent |
+| bright green `brand-bright` | #358000 | 2424 C | success; accent |
+| navy `brand-navy` | #00365B | 541 C | info; accent |
+| teal `brand-teal` | #5DBEB3 | 2227 C | accent |
+| red `danger` | #B42318 | (not brand) | delete and errors ONLY |
+
+The guideline prints the dark green's RGB as 28/29/1, which is near-black
+(#1C1D01) and contradicts its own HEX: a typo. The HEX is right, and it is
+also the green the sidebar badge and active nav item have used all along.
+
+## Colour roles: each has ONE meaning, the same everywhere
+
+| role | means | badge (text on tint) | contrast |
+|---|---|---|---|
+| primary | the one main action, the active tab, the selected option | #2F5A16 on #EAEFE8 | 6.9:1 |
+| pending | waiting on someone (รอมัดจำ), highlight | #5C4300 on #F9F1D6 | 8.2:1 |
+| success | confirmed, secured (มัดจำแล้ว, คอนเฟิร์มแล้ว) | #2B6600 on #EBF2E6 | 6.1:1 |
+| info | a neutral fact worth a colour (สอบถาม) | #00365B on #E6EBEF | 10.4:1 |
+| neutral | nothing to flag (เสร็จสิ้น; ยกเลิก struck through) | #404040 on #F5F5F5 | 9.5:1 |
+| danger | deleting, errors | #B42318 on #FEF3F2 | 6.1:1 |
+
+**Red is danger and nothing else.** A cancelled booking is not dangerous, so
+it is neutral and struck through, not red. **Accents** (the five brand
+colours) are for things told apart, not judged: summary tiles, category tags
+(`accentFor(key)` gives a key the same accent every time). An accent never
+carries a role's meaning.
+
+**Gold and teal FAIL as text on white** (2.0:1 and 2.2:1), and so does white
+on them. They are fills, with near-black text (8.8:1 on gold, 8.1:1 on teal)
+or their `-ink` colour on their `-soft` tint. The brand's own green-on-gold
+is 4.0:1: large text only. **Every text/background pair must reach WCAG AA,
+4.5:1** (3:1 for text 24px and up). `neutral-400` text (2.5:1) fails and is
+out of the moved pages. **Still failing, app-wide, for step 2:** input
+placeholders (#A3A3A3, 2.5:1) and input borders (#D4D4D4, 1.5:1).
+
+Pairs checked (2026-09-22): white on dark green 8.1 and on its hover
+#234311 11.2; white on navy 12.5, on bright green 5.0 (AA, just), on red 6.6
+and its hover 8.7; dark green on white 8.1; navy on white 12.5; bright green
+on white 5.0; red on white 6.6; navy on teal 5.7; neutral-900 on white 17.9,
+-700 10.4, -600 7.8, -500 4.7 (4.5 on the neutral-50 zebra row); neutral-100
+on the neutral-800 table header 13.9.
+
+## Fonts (`src/app/layout.tsx`, loaded by next/font, no font CDN)
+
+- **Body text and tables: Noto Sans Thai** (Thai and Latin). Its digits are
+  tabular. **Kanit's are not**: with `tabular-nums` on, "111,111.11" measured
+  33px against 61px for "888,888.88", so a column of Kanit amounts cannot line
+  up. Amounts in tables still carry `tabular-nums`.
+- **Headings and buttons: `font-heading`** = Montserrat for Latin letters and
+  digits (the brand's English face), Kanit for Thai (the brand's Thai face;
+  Light, Medium, Bold in the guideline). `font-kanit` (Kanit alone) stays for
+  the headings not yet moved.
+- Arpona, the logo's display face, is paid: never loaded. The logo is an
+  image.
+- The printed catering documents keep Sarabun (`catering/[id]/print-font.ts`).
+  **Never set a font on bare `h1`–`h3` globally**: an element's own font rule
+  beats the one the document wrapper hands down.
+
+## Buttons: three kinds (`src/components/ui/button.tsx`)
+
+- **primary**: the ONE main action of an area. Filled dark green, a faint
+  shadow, darker on hover, sinks 1px when pressed.
+- **secondary**: every other action. White, outlined, a lighter shadow.
+- **link**: quiet actions and navigation (back links, ดู). Plain grey text.
+- **danger** turns any kind red, for ลบ. **Disabled** is the same for all:
+  half opacity, no shadow, no hover, never sinks.
+
+`<Button kind>` for a `<button>` (type defaults to "button"); `buttonClass(kind)`
+for a Link that is an action. Each (kind, danger) pair is ONE complete class
+list: two Tailwind classes that set the same property do not override each
+other by their order in the string, so never add a colour class on top of
+`buttonClass(...)`.
+
+## Page layout (`src/components/ui/page.tsx`)
+
+- **`PageShell`**: every page's container, and the content uses all of it:
+  the same width (the booking list's, `max-w-6xl`) and the same left edge on
+  every page, forms included. A narrower column for forms was tried and
+  dropped: the header's actions floated beyond the content.
+- **`PageHeader`**: the back link top LEFT, above the title; the title and a
+  subtitle; the page's actions top RIGHT.
+- **`ButtonGroup`**: a labelled row of buttons (the booking screen's พิมพ์ and
+  ดูข้อมูลเพิ่ม).
+- **Tabs** (`ui/tabs.ts`): the sub-navs. The active tab is dark green with a
+  green underline.
+- **`StatTile`** (`ui/stat-tile.tsx`): a coloured summary tile, filled with an
+  accent, the figure large (Nik likes dashboards with coloured tiles).
+- **`Badge`** (a role), **`AccentTag`** (an accent), **`Segmented`** (a choice
+  of a few options: the selected one is the primary tint, because a
+  selection is not an action).
+
+## The brand's graphic elements, for later, sparingly
+
+The guideline also has a shell, sun rays, sea waves and a diamond net
+pattern. None is used yet. Where they could go: the login page (the net as a
+faint background, the waves along the bottom); empty states such as "no
+bookings this month"; the printed quotation's header or footer band; the
+sidebar's footer. Never behind data or text a person has to read.
+<!-- END:look-rules -->
+
 <!-- BEGIN:local-gate-rules -->
 # `tsc` + `lint` is NOT enough before pushing
 

@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { updateCateringCustomer } from "../../actions";
 import type { CateringCustomerDetail, CateringCustomerEventSummary } from "../../actions";
-import { Field, thDate, locationLabel, fmtBaht, StatusBadge } from "../../shared-utils";
+import { Field, thDate, locationLabel, fmtBaht, BookingStatusBadge } from "../../shared-utils";
 import { customerFormDirty, customerPayload, formFromCustomer, type CustomerFormState } from "../../customer-form";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
+import { StatTile } from "@/components/ui/stat-tile";
 
 const DISCARD_MSG = "ทิ้งการแก้ไขที่ยังไม่ได้บันทึกหรือไม่?";
 const RELOAD_MSG = "ทิ้งการแก้ไขที่ยังไม่ได้บันทึก แล้วโหลดข้อมูลล่าสุดของลูกค้ารายนี้หรือไม่?";
@@ -89,15 +92,19 @@ export function CustomerDetailClient({
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <Link href="/owner/catering/customers" className="text-sm text-neutral-500 hover:text-neutral-800">← กลับ</Link>
-        {!edit && (
-          <button onClick={startEdit} disabled={isPending} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+      {/* The shared page header. The back link is a plain <a>, which the
+          leave guard above catches like every other link on the page. */}
+      <PageHeader
+        back={{ href: "/owner/catering/customers", label: "กลับ" }}
+        title={customer.name}
+        actions={!edit ? (
+          <Button kind="secondary" onClick={startEdit} disabled={isPending}>
             {isPending ? "กำลังโหลด…" : "แก้ไข"}
-          </button>
-        )}
-      </div>
+          </Button>
+        ) : undefined}
+      />
 
+      <div className="space-y-5">
       {edit && form ? (
         <div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-6">
           {/* ONE lock for the whole form while a save is in flight. */}
@@ -130,10 +137,10 @@ export function CustomerDetailClient({
             </div>
           </fieldset>
           {error && (
-            <p className="text-sm text-red-600">
+            <p className="text-sm text-danger">
               {error.text}
               {error.conflict && (
-                <button type="button" onClick={reloadLatest} disabled={isPending} className="ml-2 font-medium underline hover:text-red-800 disabled:opacity-50">
+                <button type="button" onClick={reloadLatest} disabled={isPending} className="ml-2 font-medium underline hover:text-danger-hover disabled:opacity-50">
                   โหลดข้อมูลล่าสุด
                 </button>
               )}
@@ -141,81 +148,73 @@ export function CustomerDetailClient({
           )}
           {dirty && <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>}
           <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-            <button onClick={cancelEdit} disabled={isPending} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-50">
+            <Button kind="secondary" onClick={cancelEdit} disabled={isPending}>
               ยกเลิก
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isPending || form.name.trim() === ""}
-              className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button kind="primary" onClick={handleSave} disabled={isPending || form.name.trim() === ""}>
               {isPending ? "กำลังบันทึก…" : "บันทึก"}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <div className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
-          <h2 className="font-kanit text-lg font-semibold text-neutral-900">{customer.name}</h2>
+        <div className="rounded-xl border border-neutral-200 bg-white p-6">
+          {/* The name is the page's title now (PageHeader above). */}
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-xs text-neutral-400">เบอร์โทร</p>
+              <p className="text-xs text-neutral-500">เบอร์โทร</p>
               <p className="text-neutral-700">{customer.phone ?? "–"}</p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400">LINE ID</p>
+              <p className="text-xs text-neutral-500">LINE ID</p>
               <p className="text-neutral-700">{customer.line_id ?? "–"}</p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400">บริษัท</p>
+              <p className="text-xs text-neutral-500">บริษัท</p>
               <p className="text-neutral-700">{customer.company_name ?? "–"}</p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400">ผู้ติดต่อ</p>
+              <p className="text-xs text-neutral-500">ผู้ติดต่อ</p>
               <p className="text-neutral-700">{customer.contact_person ?? "–"}</p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400">เลขผู้เสียภาษี</p>
+              <p className="text-xs text-neutral-500">เลขผู้เสียภาษี</p>
               <p className="text-neutral-700">{customer.tax_id ?? "–"}</p>
             </div>
             <div className="col-span-2">
-              <p className="text-xs text-neutral-400">ที่อยู่</p>
+              <p className="text-xs text-neutral-500">ที่อยู่</p>
               <p className="text-neutral-700">{customer.address ?? "–"}</p>
             </div>
             <div className="col-span-2">
-              <p className="text-xs text-neutral-400">หมายเหตุ</p>
+              <p className="text-xs text-neutral-500">หมายเหตุ</p>
               <p className="whitespace-pre-wrap text-neutral-700">{customer.note ?? "–"}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Summary stats */}
-      <div className="mt-5 grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-400">จำนวนงานทั้งหมด</p>
-          <p className="text-lg font-semibold tabular-nums text-neutral-900">{totalEvents}</p>
+      {/* Summary: coloured tiles (components/ui/stat-tile.tsx). */}
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatTile accent="navy" label="จำนวนงานทั้งหมด" value={totalEvents} />
+          <StatTile accent="green" label="ยอดใบเสนอราคารวม *" value={`฿${fmtBaht(totalQuoted)}`} />
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-400">ยอดใบเสนอราคารวม *</p>
-          <p className="text-lg font-semibold tabular-nums text-neutral-900">฿{fmtBaht(totalQuoted)}</p>
-        </div>
+        <p className="text-xs text-neutral-500">
+          * ยอดรวมจากยอด ณ วันที่ออกใบเสนอราคาล่าสุดของแต่ละงาน อาจไม่ตรงกับรายการค่าใช้จ่ายปัจจุบันหากมีการแก้ไขภายหลังออกใบเสนอราคา
+        </p>
       </div>
-      <p className="mt-1 text-xs text-neutral-400">
-        * ยอดรวมจากยอด ณ วันที่ออกใบเสนอราคาล่าสุดของแต่ละงาน อาจไม่ตรงกับรายการค่าใช้จ่ายปัจจุบันหากมีการแก้ไขภายหลังออกใบเสนอราคา
-      </p>
 
       {/* History */}
-      <div className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-neutral-700">ประวัติการจอง</h3>
+      <div className="rounded-xl border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 font-heading text-sm font-semibold text-neutral-800">ประวัติการจอง</h2>
         {events.length === 0 ? (
-          <p className="py-3 text-center text-xs text-neutral-400">ยังไม่มีประวัติการจอง</p>
+          <p className="py-3 text-center text-xs text-neutral-500">ยังไม่มีประวัติการจอง</p>
         ) : (
           <div className="divide-y divide-neutral-100">
             {events.map((e) => (
               <Link key={e.id} href={`/owner/catering/${e.id}`} className="flex items-start justify-between gap-3 py-2.5 hover:bg-neutral-50">
                 <div>
                   <div className="text-sm text-neutral-800">{thDate(e.event_date)} · {locationLabel(e)}</div>
-                  <div className="mt-0.5"><StatusBadge status={e.status} /></div>
+                  <div className="mt-0.5"><BookingStatusBadge status={e.status} /></div>
                 </div>
                 <div className="shrink-0 text-right text-xs text-neutral-600">
                   <div>{e.quote_number ?? "ยังไม่ออกใบเสนอราคา"}</div>
@@ -226,7 +225,7 @@ export function CustomerDetailClient({
           </div>
         )}
       </div>
-
+      </div>
     </>
   );
 }

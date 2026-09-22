@@ -6,6 +6,7 @@ import type { CateringActivityLogEntry } from "../actions";
 import { updateCateringActivityLine, deleteCateringActivityLine } from "../actions";
 import { thFullDate } from "../shared-utils";
 import { bangkokDateTime } from "../log-time";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * Combines thFullDate's Thai date with HH:MM — the log's "when" is a full
@@ -99,12 +100,12 @@ export function ActivityLogSection({
     // summary is styled as a button so it sits in the secondary button row;
     // w-full puts the expanded log on its own lines below the row.
     <details className="w-full">
-      <summary className="inline-flex cursor-pointer list-none rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+      <summary className={buttonClass("secondary", { className: "cursor-pointer list-none [&::-webkit-details-marker]:hidden" })}>
         ประวัติการแก้ไข ({entries.length})
       </summary>
       <div className="mt-2 rounded-xl border border-neutral-200 bg-white px-6 py-3">
         {entries.length === 0 ? (
-          <p className="py-3 text-center text-xs text-neutral-400">ยังไม่มีกิจกรรม</p>
+          <p className="py-3 text-center text-xs text-neutral-500">ยังไม่มีกิจกรรม</p>
         ) : (
           <div className="divide-y divide-neutral-100">
             {entries.map((e) => (
@@ -138,7 +139,7 @@ export function ActivityLogSection({
                 ) : (
                   <>
                     <span className="text-neutral-800">{e.description}</span>
-                    <span className="ml-2 text-xs text-neutral-400">
+                    <span className="ml-2 text-xs text-neutral-500">
                       {e.actor_name ?? "ไม่ทราบ"} · {formatLogTimestamp(e.created_at)}
                     </span>
                     {canEdit && confirmDeleteId !== e.id && (

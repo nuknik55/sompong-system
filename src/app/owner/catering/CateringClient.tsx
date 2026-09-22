@@ -8,8 +8,12 @@ import type { CateringEvent, StaffOption } from "./actions";
 import {
   MONTHS_TH, BOOKING_TYPE_LABEL, FOOD_FORMAT_LABEL,
   thDate, timeRange, staffLabel, locationLabel,
-  StatusBadge,
+  BookingStatusBadge,
 } from "./shared-utils";
+import { Button, buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
+import { Segmented } from "@/components/ui/segmented";
+import { AccentTag } from "@/components/ui/badge";
 
 export function CateringClient({
   initialEvents,
@@ -86,47 +90,35 @@ export function CateringClient({
 
   return (
     <>
-      {/* Header: h1 LEFT, view toggle + nav RIGHT — matches InventoryListClient.tsx's
-          title/description-left, control-right shape. Toggle styling mirrors
-          ToggleGroup's active/inactive classes (shared.tsx) for visual
-          consistency with the rest of the module's toggle affordances. */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">จองงานจัดเลี้ยง</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1">
-            <button
-              onClick={() => switchView("month")}
-              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                view === "month" ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              เดือน
-            </button>
-            <button
-              onClick={() => switchView("year")}
-              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                view === "year" ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              ปี
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => (view === "year" ? goYear(-1) : goMonth(-1))} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">←</button>
-            <span className="min-w-[150px] text-center text-sm font-medium">
-              {view === "year" ? year + 543 : `${MONTHS_TH[month - 1]} ${year + 543}`}
-            </span>
-            <button onClick={() => (view === "year" ? goYear(1) : goMonth(1))} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">→</button>
-          </div>
-        </div>
-      </div>
+      {/* The shared page header (components/ui/page.tsx): the title LEFT,
+          the page's one main action RIGHT. The one screen, not a modal:
+          /owner/catering/new (BookingScreen.tsx). */}
+      <PageHeader
+        title="จองงานจัดเลี้ยง"
+        actions={
+          <Link href="/owner/catering/new" className={buttonClass("primary")}>
+            + บันทึกการจอง
+          </Link>
+        }
+      />
 
-      {/* Action buttons */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {/* The one screen, not a modal: /owner/catering/new (BookingScreen.tsx). */}
-        <Link href="/owner/catering/new" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
-          + บันทึกการจอง
-        </Link>
+      {/* The period: เดือน / ปี, then back and forward through it; kept with
+          the table it drives. */}
+      <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented
+          label="ช่วงเวลา"
+          value={view}
+          options={[{ value: "month", label: "เดือน" }, { value: "year", label: "ปี" }]}
+          onChange={switchView}
+        />
+        <div className="flex items-center gap-2">
+          <Button kind="secondary" size="sm" aria-label={view === "year" ? "ปีก่อนหน้า" : "เดือนก่อนหน้า"} onClick={() => (view === "year" ? goYear(-1) : goMonth(-1))}>←</Button>
+          <span className="min-w-[150px] text-center font-heading text-sm font-medium text-neutral-900">
+            {view === "year" ? year + 543 : `${MONTHS_TH[month - 1]} ${year + 543}`}
+          </span>
+          <Button kind="secondary" size="sm" aria-label={view === "year" ? "ปีถัดไป" : "เดือนถัดไป"} onClick={() => (view === "year" ? goYear(1) : goMonth(1))}>→</Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -150,7 +142,7 @@ export function CateringClient({
           <tbody>
             {initialEvents.length === 0 && (
               <tr>
-                <td colSpan={11} className="py-10 text-center text-neutral-400">
+                <td colSpan={11} className="py-10 text-center text-neutral-500">
                   {view === "year" ? "ไม่มีการจองในปีนี้" : "ไม่มีการจองในเดือนนี้"}
                 </td>
               </tr>
@@ -162,7 +154,7 @@ export function CateringClient({
                 // break while scrolling, not just a thin divider line.
                 <tr key={`h-${i}`}>
                   <td colSpan={11} className="border-b border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100">
-                    {r.label} <span className="font-normal text-neutral-400">({r.count})</span>
+                    {r.label} <span className="font-normal text-neutral-300">({r.count})</span>
                   </td>
                 </tr>
               ) : (
@@ -171,14 +163,13 @@ export function CateringClient({
                   <td className="px-3 py-2 whitespace-nowrap text-neutral-600 tabular-nums">{timeRange(r.event.start_time, r.event.end_time)}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium text-neutral-900">{r.event.customer_name ?? "–"}</div>
-                    {r.event.customer_phone && <div className="text-xs text-neutral-400 tabular-nums">{r.event.customer_phone}</div>}
+                    {r.event.customer_phone && <div className="text-xs text-neutral-500 tabular-nums">{r.event.customer_phone}</div>}
                   </td>
                   <td className="px-3 py-2 text-xs">
+                    {/* An accent, not a role: off-site is told apart, not judged
+                        (gold is the waiting role now, so it cannot be this). */}
                     {r.event.location_type === "offsite" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                        {locationLabel(r.event)}
-                      </span>
+                      <AccentTag accent="teal">{locationLabel(r.event)}</AccentTag>
                     ) : (
                       <span className="text-neutral-600">{locationLabel(r.event)}</span>
                     )}
@@ -187,11 +178,11 @@ export function CateringClient({
                   <td className="px-3 py-2 text-xs text-neutral-600">{r.event.food_format ? FOOD_FORMAT_LABEL[r.event.food_format] ?? r.event.food_format : "–"}</td>
                   <td className="px-3 py-2 text-center text-xs tabular-nums text-neutral-600">
                     {r.event.table_count ?? (r.event.table_label ? "" : "–")}
-                    {r.event.reserve_tables ? <span className="text-neutral-400"> +{r.event.reserve_tables}</span> : null}
-                    {r.event.table_label && <div className="text-[10px] text-neutral-400">{r.event.table_label}</div>}
+                    {r.event.reserve_tables ? <span className="text-neutral-500"> +{r.event.reserve_tables}</span> : null}
+                    {r.event.table_label && <div className="text-[10px] text-neutral-500">{r.event.table_label}</div>}
                   </td>
                   <td className="px-3 py-2 text-center text-xs tabular-nums text-neutral-600">{r.event.guest_count ?? "–"}</td>
-                  <td className="px-3 py-2"><StatusBadge status={r.event.status} /></td>
+                  <td className="px-3 py-2"><BookingStatusBadge status={r.event.status} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-600">
                     {r.event.staff_ids.length === 0
                       ? "–"
@@ -202,8 +193,8 @@ export function CateringClient({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <div className="flex items-center gap-4">
-                      <Link href={`/owner/catering/${r.event.id}`} className="text-xs text-blue-600 hover:underline">ดู</Link>
-                      <button onClick={() => setConfirmDelete(r.event)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                      <Link href={`/owner/catering/${r.event.id}`} className={buttonClass("link", { size: "sm" })}>ดู</Link>
+                      <Button kind="link" size="sm" danger onClick={() => setConfirmDelete(r.event)}>ลบ</Button>
                     </div>
                   </td>
                 </tr>
@@ -212,27 +203,27 @@ export function CateringClient({
           </tbody>
         </table>
       </div>
+      </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* Delete confirm */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-2 font-kanit text-base font-semibold text-neutral-900">ลบการจอง?</h3>
-            <p className="mb-4 text-sm text-neutral-500">
+            <h3 className="mb-2 font-heading text-base font-semibold text-neutral-900">ลบการจอง?</h3>
+            <p className="mb-4 text-sm text-neutral-600">
               {confirmDelete.customer_name ?? "ไม่ระบุลูกค้า"} · {thDate(confirmDelete.event_date)}
               <br />
               ข้อมูลจะถูกลบถาวร ไม่สามารถกู้คืนได้
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(null)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">
+              <Button kind="secondary" onClick={() => setConfirmDelete(null)}>
                 ยกเลิก
-              </button>
-              <button onClick={handleDelete} disabled={isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+              </Button>
+              <Button kind="primary" danger onClick={handleDelete} disabled={isPending}>
                 {isPending ? "กำลังลบ…" : "ลบถาวร"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

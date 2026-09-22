@@ -38,6 +38,23 @@ export const STATUS_COLOR: Record<string, string> = {
   cancelled:        "text-red-700 bg-red-50 border-red-200",
 };
 
+/**
+ * Each status's colour ROLE in the shared look (AGENTS.md, "The app's look"),
+ * for the pages already moved to it (step 1, 2026-09-22); STATUS_COLOR above
+ * stays for the rest until step 2. รอมัดจำ is the pending role, gold, as Nik
+ * asked. Both มัดจำแล้ว and คอนเฟิร์มแล้ว are success: the booking is secured.
+ * ยกเลิก is NOT danger: red is kept for deleting and for errors, and a
+ * cancelled booking is neither, so it is neutral and struck through.
+ */
+export const STATUS_TONE: Record<string, "primary" | "pending" | "success" | "info" | "neutral" | "danger"> = {
+  inquiry:          "info",
+  awaiting_deposit: "pending",
+  deposit_paid:     "success",
+  confirmed:        "success",
+  done:             "neutral",
+  cancelled:        "neutral",
+};
+
 /** True for a value that catering_events.status actually accepts — the
  *  column's CHECK constraint enforces this too, this just lets a caller
  *  fail with a readable message instead of a raw Postgres error. */

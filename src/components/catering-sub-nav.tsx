@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { TAB_ROW, tabClass } from "@/components/ui/tabs";
 
 type NavItem = { href: string; label: string; exact?: boolean };
 
@@ -43,8 +44,6 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     return exact ? pathname === href : pathname.startsWith(href);
   }
 
-  const activeCls = "border-b-2 border-neutral-900 pb-2 text-sm font-medium text-neutral-900 whitespace-nowrap";
-  const inactiveCls = "pb-2 text-sm font-medium text-neutral-500 hover:text-neutral-800 whitespace-nowrap";
 
   const navItems: NavItem[] = [
     { href: "/owner/catering", label: "การจอง", exact: true },
@@ -58,13 +57,15 @@ export function CateringSubNav({ isAdmin }: { isAdmin: boolean }) {
     ...(isAdmin ? [{ href: "/owner/catering/settings", label: "ตั้งค่า" }] : []),
   ];
 
+  // The shared tabs (components/ui/tabs.ts). mb-4 stays: the eight pages that
+  // show this nav space it by it.
   return (
-    <div className="flex gap-4 border-b border-neutral-200 mb-4 overflow-x-auto">
+    <nav aria-label="จัดเลี้ยง" className={`${TAB_ROW} mb-4`}>
       {navItems.map(({ href, label, exact }) => (
-        <Link key={href} href={href} className={isActive(href, exact) ? activeCls : inactiveCls}>
+        <Link key={href} href={href} aria-current={isActive(href, exact) ? "page" : undefined} className={tabClass(isActive(href, exact))}>
           {label}
         </Link>
       ))}
-    </div>
+    </nav>
   );
 }
