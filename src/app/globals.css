@@ -9,17 +9,26 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-geist-mono);
   --font-kanit: var(--font-kanit);
+  /* Headings and buttons: Montserrat takes the Latin letters and digits
+     (its file covers Latin only), Kanit the Thai. */
+  --font-heading: var(--font-montserrat), var(--font-kanit), sans-serif;
   --color-brand-green: #2F5A16;
   --color-brand-gold: #DFAF19;
 }
 
+/* Body text: Noto Sans Thai (layout.tsx). Until 2026-09-22 this was
+   Arial, which has no Thai, so every Thai character fell to whatever the
+   device had: Leelawadee UI on Windows, Thonburi on an iPhone, Noto Sans Thai
+   on Android. The fallbacks below are only for the moment before the font
+   file arrives. The printed documents set Sarabun on their own wrapper
+   (catering/[id]/print-font.ts) and are not affected. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), "Leelawadee UI", "Thonburi", "Noto Sans Thai", Tahoma, sans-serif;
 }
 
 @media print {
