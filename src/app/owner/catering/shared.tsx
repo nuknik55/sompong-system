@@ -198,6 +198,13 @@ export function SearchSelect({
   );
 }
 
+/**
+ * The customer name box with its list. A pick calls `onPick` ALONE, and the
+ * caller sets the id and the name shown in one update (pickCustomer,
+ * booking-form.ts); `onQueryChange` is typing, which clears a pick. The pick
+ * used to call onQueryChange with the name right after onPick, which cleared
+ * the id it had just set, so no pick was ever kept (queue item 50).
+ */
 export function CustomerCombobox({
   customers,
   customerId,
@@ -208,7 +215,9 @@ export function CustomerCombobox({
   customers: CateringCustomer[];
   customerId: string | null;
   query: string;
+  /** The person picked `c`, or cleared the pick (null): set the id AND the name shown. */
   onPick: (c: CateringCustomer | null) => void;
+  /** The person typed: no longer a pick. */
   onQueryChange: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -242,7 +251,7 @@ export function CustomerCombobox({
       {customerId && (
         <button
           type="button"
-          onClick={() => { onPick(null); onQueryChange(""); setOpen(false); }}
+          onClick={() => { onPick(null); setOpen(false); }}
           className="absolute right-2 top-1.5 text-xs text-neutral-400 hover:text-neutral-700"
         >
           ล้าง
@@ -254,7 +263,7 @@ export function CustomerCombobox({
             <li key={c.id}>
               <button
                 type="button"
-                onClick={() => { onPick(c); onQueryChange(c.name); setOpen(false); }}
+                onClick={() => { onPick(c); setOpen(false); }}
                 className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-neutral-50 ${c.id === customerId ? "bg-blue-50" : ""}`}
               >
                 <span className="text-neutral-800">

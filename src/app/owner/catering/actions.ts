@@ -12,6 +12,7 @@ import { setCountUnit, weightSoldMenuIds } from "@/lib/kitchen-sheet";
 import { fetchAllRows } from "@/lib/data";
 import { isSetLine, resolveDishes, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
 import { bookingLinesProblem, menuLineQuantityError } from "./booking-lines";
+import { ambiguousCustomerMessage, matchTypedCustomer, type CustomerForMatch } from "./customer-match";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1559,19 +1560,16 @@ export async function deleteCateringEventLabor(id: string, eventId: string): Pro
 
 async function upsertCateringEvent(data: {
   id?: string;
-  /** Existing customer. Mutually exclusive with new_customer. */
+  /** The customer picked from the list: the booking is exactly theirs. */
   customer_id?: string | null;
-  /** Created inline so the person on the phone never has to leave the form. */
-  new_customer?: {
-    name: string;
-    phone?: string | null;
-    line_id?: string | null;
-    company_name?: string | null;
-    address?: string | null;
-    contact_person?: string | null;
-  } | null;
-  /** Address/contact edits to an EXISTING customer, saved alongside the event. */
-  customer_edits?: { address: string | null; contact_person: string | null } | null;
+  /**
+   * A customer TYPED, not picked: the name and phone the screen asks for. The
+   * save attaches the one customer they mean, adds a new one, or refuses
+   * (matchTypedCustomer, customer-match.ts). Anything more an older screen
+   * sends, here or as customer_edits, is ignored: a booking save never
+   * changes a customer's details (queue item 49).
+   */
+  new_customer?: { name: string; phone?: string | null } | null;
   event_date: string;
   start_time: string | null;
   end_time: string | null;
@@ -1603,63 +1601,48 @@ async function upsertCateringEvent(data: {
   detail_note: string | null;
   kitchen_note: string | null;
   staff_ids: string[];
-}, expectedUpdatedAt?: string | null, onRowWritten?: (eventId: string) => void): Promise<string> {
+}, expectedUpdatedAt?: string | null, onRowWritten?: (eventId: string) => void,
+  onCustomer?: (customerId: string, added: boolean) => void): Promise<string> {
   const profile = await requireSales();
   const supabase = await createClient();
 
   let customerId = data.customer_id ?? null;
-  if (!customerId && data.new_customer && data.new_customer.name.trim()) {
+  // A new customer is DECIDED here and ADDED only after the room check, right
+  // before the booking row: a save refused before then adds nobody (review,
+  // 2026-09-22 — a customer left by a refused save made the retry refuse).
+  let toAdd: { name: string; phone: string | null } | null = null;
+  if (customerId) {
+    // THE PICK: exactly this customer (queue item 50). Their details stay as
+    // they are — the customer page's to change, never a booking save's
+    // (item 49: every save used to write back the address and contact person
+    // this screen had loaded, undoing the customer page).
+    const { data: picked, error: pickError } = await supabase
+      .from("catering_customers")
+      .select("id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (pickError) throw pickError;
+    if (!picked) throw new Error("ไม่พบลูกค้าที่เลือก — อาจถูกลบไปแล้ว เลือกจากรายการอีกครั้ง ยังไม่ได้บันทึกอะไร");
+  } else if (data.new_customer && data.new_customer.name.trim()) {
+    // A TYPED name: the one customer this name and phone mean, a new one, or
+    // a refusal — never a guess. This used to take the first customer of the
+    // name whatever the phone said, and every pick came through here as well,
+    // because the list's pick never kept its id (queue item 50).
     const trimmedName = data.new_customer.name.trim();
     const trimmedPhone = data.new_customer.phone?.trim() || null;
-
-    // Dedup safety net: this path runs any time customer_id is null when
-    // the form is saved — not just for a genuinely new name. Retyping the
-    // query box after picking a suggestion resets customerId to null (see
-    // CustomerCombobox's onQueryChange in shared.tsx), and staff can save
-    // without ever clicking a dropdown suggestion at all, so a name that
-    // already exists can reach here unselected. Match on name alone
-    // (case-insensitive) — a shared full name is far more likely the same
-    // person (with a new/updated phone) than two different customers, so
-    // phone is only a tie-breaker among multiple same-name matches, never
-    // a requirement.
-    const { data: nameMatches, error: matchError } = await supabase
-      .from("catering_customers")
-      .select("id, phone")
-      .ilike("name", trimmedName);
-    if (matchError) throw matchError;
-
-    const existing = nameMatches && nameMatches.length > 0
-      ? nameMatches.find((m) => (m.phone as string | null)?.trim() === trimmedPhone) ?? nameMatches[0]
-      : null;
-
-    if (existing) {
-      customerId = existing.id;
-    } else {
-      const { data: created, error: custError } = await supabase
-        .from("catering_customers")
-        .insert({
-          name: trimmedName,
-          phone: trimmedPhone,
-          line_id: data.new_customer.line_id?.trim() || null,
-          company_name: data.new_customer.company_name?.trim() || null,
-          address: data.new_customer.address?.trim() || null,
-          contact_person: data.new_customer.contact_person?.trim() || null,
-        })
-        .select("id")
-        .single();
-      if (custError) throw custError;
-      customerId = created.id;
+    // Against EVERY customer on file, by the rule's own comparison: no LIKE
+    // pattern, so no wildcard, space, mark or case subtlety can widen or
+    // narrow what it finds.
+    const everyone = await fetchAllRows<CustomerForMatch>(({ from, to }) =>
+      supabase.from("catering_customers").select("id, name, phone").order("id").range(from, to));
+    const match = matchTypedCustomer(trimmedName, trimmedPhone, everyone);
+    if (match.kind === "ambiguous") {
+      throw new Error(`${ambiguousCustomerMessage(trimmedName, match)} — ยังไม่ได้บันทึกอะไร`);
     }
-  } else if (customerId && data.customer_edits) {
-    const { error: custUpdateError } = await supabase
-      .from("catering_customers")
-      .update({
-        address: data.customer_edits.address?.trim() || null,
-        contact_person: data.customer_edits.contact_person?.trim() || null,
-      })
-      .eq("id", customerId);
-    if (custUpdateError) throw custUpdateError;
+    if (match.kind === "same") customerId = match.id;
+    else toAdd = { name: trimmedName, phone: trimmedPhone };
   }
+  if (customerId) onCustomer?.(customerId, false);
 
   // Deliberately no cost_locked_at key here — this function is
   // requireSales()-gated and reachable from the ordinary sales-facing edit
@@ -1669,7 +1652,6 @@ async function upsertCateringEvent(data: {
   // status: "done" here has no effect on cost_locked_at — the two are
   // deliberately decoupled (see COST_SNAPSHOT_DESIGN.md).
   const payload = {
-    customer_id: customerId,
     event_date: data.event_date,
     start_time: data.start_time || null,
     end_time: data.end_time || null,
@@ -1709,6 +1691,21 @@ async function upsertCateringEvent(data: {
     }
   }
 
+  // The new customer, now that nothing before the booking row refuses the
+  // save: what this screen asks for, the name and the phone. The caller hears
+  // of it at once, so that should the booking row still fail, the retry takes
+  // this customer as a pick instead of meeting a second of the name.
+  if (toAdd) {
+    const { data: added, error: custError } = await supabase
+      .from("catering_customers")
+      .insert({ name: toAdd.name, phone: toAdd.phone })
+      .select("id")
+      .single();
+    if (custError) throw custError;
+    customerId = added.id as string;
+    onCustomer?.(customerId, true);
+  }
+
   const isCreate = !data.id;
   let eventId = data.id;
   if (eventId) {
@@ -1717,7 +1714,7 @@ async function upsertCateringEvent(data: {
     // only while its updated_at is still what the screen took, so of two
     // saves racing, the second is refused rather than written over the first.
     // A zero-row answer is never taken as success: it used to pass in silence.
-    let update = supabase.from("catering_events").update(payload).eq("id", eventId);
+    let update = supabase.from("catering_events").update({ ...payload, customer_id: customerId }).eq("id", eventId);
     if (typeof expectedUpdatedAt === "string") update = update.eq("updated_at", expectedUpdatedAt);
     const { data: updatedRows, error } = await update.select("id");
     if (error) throw error;
@@ -1727,7 +1724,7 @@ async function upsertCateringEvent(data: {
   } else {
     const { data: created, error } = await supabase
       .from("catering_events")
-      .insert({ ...payload, created_by: profile.id })
+      .insert({ ...payload, customer_id: customerId, created_by: profile.id })
       .select("id")
       .single();
     if (error) throw error;
@@ -1802,6 +1799,13 @@ export type SaveBookingResult =
       id?: string;
       updatedAt?: string | null;
       /**
+       * The booking's customer once its row is written. A customer this save
+       * added from a typed name is the booking's from then on: the retry
+       * sends it as a pick, since matching the name again would find that
+       * very customer and refuse (queue item 50).
+       */
+      customerId?: string | null;
+      /**
        * Everything but the quotation landed: the booking's fields AND its
        * price box. The screen takes the saved booking as it does after a
        * successful save, so the lines this save created are the screen's own
@@ -1810,8 +1814,8 @@ export type SaveBookingResult =
       pricesSaved?: boolean;
     };
 
-const SAVE_CONFLICT =
-  "งานนี้ถูกบันทึกจากที่อื่นหลังจากเปิดหน้านี้ — กด “โหลดข้อมูลล่าสุด” แล้วแก้ไขอีกครั้ง ยังไม่ได้บันทึกอะไร";
+const SAVE_CONFLICT_WHY = "งานนี้ถูกบันทึกจากที่อื่นหลังจากเปิดหน้านี้ — กด “โหลดข้อมูลล่าสุด” แล้วแก้ไขอีกครั้ง";
+const SAVE_CONFLICT = `${SAVE_CONFLICT_WHY} ยังไม่ได้บันทึกอะไร`;
 const PRICES_NOT_READY =
   "ระบบบันทึกกล่องราคายังไม่พร้อม (ยังไม่ได้รัน migration catering_booking_prices_save_migration.sql) — ยังไม่ได้บันทึกอะไร";
 
@@ -1912,6 +1916,11 @@ export async function saveBooking(input: {
   // The booking row, once written: set by upsertCateringEvent the moment it
   // lands, so a failure in the rest of step 1 is reported like one in step 2.
   const written: { id: string | null } = { id: null };
+  // The customer this save attached, as upsertCateringEvent decided it, and
+  // whether the save ADDED that customer: every failure reports it, so the
+  // retry sends it as a pick rather than matching the typed name again —
+  // which would find that very customer and refuse (queue item 50).
+  const customer: { id: string | null; added: boolean } = { id: null, added: false };
   let eventDone = false;
   let pricesWritten = false;
   try {
@@ -1942,7 +1951,8 @@ export async function saveBooking(input: {
 
     // 1. The booking's own fields.
     const eventId = await upsertCateringEvent(input.event, existingId ? input.expectedUpdatedAt : undefined,
-      (id) => { written.id = id; });
+      (id) => { written.id = id; },
+      (id, added) => { customer.id = id; customer.added = added; });
     eventDone = true;
 
     // 2. The price box, one transaction.
@@ -1961,8 +1971,16 @@ export async function saveBooking(input: {
     return { ok: true, id: eventId, quoteNumber, updatedAt: await readUpdatedAt(supabase, eventId).catch(() => null) };
   } catch (err) {
     const message = err instanceof Error ? err.message : "บันทึกไม่สำเร็จ";
-    if (message === SAVE_CONFLICT) return { ok: false, conflict: true, error: SAVE_CONFLICT };
-    if (!written.id) return { ok: false, error: message };
+    const customerId = customer.id;
+    // A customer this save added stays, whatever failed after it: say so,
+    // rather than "nothing saved", and hand it to the retry.
+    const added = customer.added
+      ? `ข้อมูลงานยังไม่ได้บันทึก แต่เพิ่มลูกค้า “${input.event.new_customer?.name.trim() ?? ""}” ไว้แล้ว — บันทึกอีกครั้งจะใช้ลูกค้าคนนี้`
+      : null;
+    if (message === SAVE_CONFLICT) {
+      return { ok: false, conflict: true, error: added ? `${SAVE_CONFLICT_WHY} — ${added}` : SAVE_CONFLICT, customerId };
+    }
+    if (!written.id) return { ok: false, error: added ? `${message} — ${added}` : message, customerId };
     const updatedAt = await readUpdatedAt(supabase, written.id).catch(() => undefined);
     return {
       ok: false,
@@ -1973,6 +1991,7 @@ export async function saveBooking(input: {
           : `บันทึกข้อมูลงานได้ไม่ครบ (ผู้รับงานอาจยังไม่ถูกบันทึก) และกล่องราคายังไม่ได้บันทึก — กดบันทึกอีกครั้ง: ${message}`,
       id: written.id,
       updatedAt,
+      customerId,
       pricesSaved: pricesWritten,
     };
   }

@@ -29,11 +29,12 @@ import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
   LOCATION_TYPE_OPTIONS, VENUE_OPTIONS, BOOKING_TYPE_OPTIONS, FOOD_FORMAT_OPTIONS, STATUS_OPTIONS,
-  VENUE_LABEL, RATE_TYPE_TO_CHARGE_TYPE, blankForm, formFromEvent, formToUpsertPayload, conflictTimeLabel, thDate,
+  VENUE_LABEL, RATE_TYPE_TO_CHARGE_TYPE, blankForm, formFromEvent, formToUpsertPayload, pickCustomer, typeCustomerName, conflictTimeLabel, thDate,
   fmtBaht, toNum, staffLabel, Field,
 } from "./shared-utils";
 import type { FormState } from "./shared-utils";
 import { CustomerCombobox, SearchSelect, Time24Input, ToggleGroup } from "./shared";
+import { ambiguousCustomerMessage, matchTypedCustomer, typedCustomerHint } from "./customer-match";
 
 // ─── Price box model ─────────────────────────────────────────────────────────
 
@@ -182,6 +183,13 @@ export function BookingScreen({
   const busy = isPending || landing;
   // What a set counts on THIS booking — โต๊ะ, กล่อง or ชุด, the kitchen sheet's word.
   const countUnit = setCountUnit(form.food_format || null);
+  // A name TYPED rather than picked: which customer the save will take it for
+  // (customer-match.ts, the save's own rule), said under the name box before
+  // the save, and refused here when it is ambiguous (queue item 50).
+  const typedMatch = !form.customerId && form.customerQuery.trim() !== ""
+    ? matchTypedCustomer(form.customerQuery, form.newPhone, customers)
+    : null;
+  const typedHint = typedMatch ? typedCustomerHint(typedMatch, form.customerQuery.trim(), event?.customer_id ?? null) : null;
 
   // The landing's own safety: if the saved data never arrives (the refresh
   // failed), unlock after a while and say so, rather than leave the form
@@ -385,6 +393,12 @@ export function BookingScreen({
     // would refuse.
     const problem = priceBoxProblem(lines, countUnit);
     if (problem) { setError(problem); return; }
+    // A typed name that is already a customer's is never guessed: the person
+    // picks, or gives the new customer's phone. The save refuses it as well.
+    if (typedMatch?.kind === "ambiguous") {
+      setError(ambiguousCustomerMessage(form.customerQuery.trim(), typedMatch));
+      return;
+    }
     // Fields the screen no longer shows are derived from the price box, so
     // the columns keep meaning: room_portion from the chosen room rate,
     // music from the chosen music line.
@@ -430,6 +444,8 @@ export function BookingScreen({
         setError(result.error);
         setCleanAt(bookingSnapshot(form, lines));
         setLanding(true);
+        // A NEW booking is this one from now on, as after a successful save.
+        if (!event) setCreatedId(result.id);
         if (!event) router.push(`/owner/catering/${result.id}`);
         router.refresh();
         return;
@@ -444,6 +460,12 @@ export function BookingScreen({
           if (!event) setCreatedId(result.id);
           if (result.updatedAt !== undefined) setAckAt(result.updatedAt ?? null);
         }
+        // The customer this save attached, or ADDED from the typed name, even
+        // when nothing else landed: the retry sends it as a pick. Matching the
+        // name again would find that very customer and be refused (queue item
+        // 50). The form was locked since the click, so the name is the saved one.
+        const saved = result.customerId;
+        if (saved) setForm((f) => (f.customerId ? f : { ...f, customerId: saved }));
         // Only a conflict fetches on its own: the database has just answered,
         // and the newest data lets the screen show what moved, or, when
         // nothing it shows did, lets the next save through. After any other
@@ -523,13 +545,19 @@ export function BookingScreen({
               customers={customers}
               customerId={form.customerId}
               query={form.customerQuery}
-              onPick={(c) => setForm((f) => ({ ...f, customerId: c?.id ?? null, customerAddress: c?.address ?? "", customerContactPerson: c?.contact_person ?? "" }))}
-              onQueryChange={(t) => setForm((f) => ({ ...f, customerQuery: t, customerId: null }))}
+              onPick={(c) => setForm((f) => pickCustomer(f, c))}
+              onQueryChange={(t) => setForm((f) => typeCustomerName(f, t))}
             />
+            {typedHint && <p className="mt-1 text-xs text-amber-800">{typedHint}</p>}
           </Field>
           <Field label="เบอร์โทร">
-            {pickedCustomer ? (
-              <input className="input-base" value={pickedCustomer.phone ?? ""} readOnly title="เบอร์ที่บันทึกไว้ของลูกค้ารายนี้" />
+            {/* Read-only whenever the booking has its customer, in the page's
+                list or not (one a failed save just added is not): a phone
+                typed here then would be sent nowhere (review, 2026-09-22).
+                The customer page edits a customer's phone. */}
+            {form.customerId ? (
+              <input className="input-base" readOnly title="เบอร์ที่บันทึกไว้ของลูกค้ารายนี้ (แก้ได้ที่หน้าลูกค้า)"
+                value={pickedCustomer ? (pickedCustomer.phone ?? "") : form.customerId === event?.customer_id ? (event?.customer_phone ?? "") : form.newPhone} />
             ) : (
               <input className="input-base" value={form.newPhone} onChange={(e) => set("newPhone", e.target.value)} placeholder="ลูกค้าใหม่" />
             )}

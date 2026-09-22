@@ -10,32 +10,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bookingSnapshot, seenAfter, serverViewAction, type DirtyLine } from "./booking-dirty.ts";
-import type { FormState } from "./shared-utils.tsx";
-
-/**
- * blankForm's output, written out rather than imported: shared-utils is a
- * .tsx and the test runner loads .ts only.
- *
- * TypeScript checks this against FormState, so a field added to the form
- * fails the TYPECHECK here until this copy is updated. Note what that does
- * and does not buy: the snapshot itself enumerates the form's own keys, so
- * production watches a new field the moment it exists; and the typecheck is
- * a gate the build runs, not one `npm test` or CI runs. The per-field list
- * below is `Partial<FormState>[]`, so a new field would silently go
- * untested here even though it is watched in production.
- */
-const blankForm = (defaultStaffId?: string | null): FormState => ({
-  customerId: null, customerQuery: "", newPhone: "", newLineId: "", newCompany: "",
-  customerAddress: "", customerContactPerson: "",
-  event_date: "", start_time: "", end_time: "",
-  location_type: "in_house", venue: "room_v2", room_portion: "",
-  offsite_address: "", offsite_distance_km: "", floor_level: "",
-  booking_type: "table", event_type_id: "", food_format: "",
-  table_count: "", reserve_tables: "", table_label: "", guest_count: "",
-  music_type: "none", music_note: "",
-  status: "inquiry", deposit_amount: "", deposit_percent: "30", deposit_paid_at: "",
-  detail_note: "", kitchen_note: "", staff_ids: defaultStaffId ? [defaultStaffId] : [],
-});
+// The REAL blankForm, since the form moved to booking-form.ts (2026-09-22);
+// this file used to carry a copy, because shared-utils is a .tsx and the test
+// runner loads .ts only.
+import { blankForm, type FormState } from "./booking-form.ts";
 
 const line = (over: Partial<DirtyLine> = {}): DirtyLine => ({
   kind: "set", section: "menu", refId: "s1", eventMenuId: "L1",
@@ -68,8 +46,7 @@ test("HOW THE FORM WAS BUILT CANNOT MAKE IT DIRTY: key order never shows", () =>
 test("EVERY FIELD OF THE FORM IS WATCHED — a missed edit is lost typing", () => {
   const base = blankForm("emp-1");
   const edits: Partial<FormState>[] = [
-    { customerQuery: "คุณสมชาย" }, { customerId: "c1" }, { newPhone: "081" }, { newLineId: "line" },
-    { newCompany: "บริษัท" }, { customerAddress: "ที่อยู่" }, { customerContactPerson: "ผู้ติดต่อ" },
+    { customerQuery: "คุณสมชาย" }, { customerId: "c1" }, { newPhone: "081" },
     { event_date: "2026-10-01" }, { start_time: "18:00" }, { end_time: "22:00" },
     { location_type: "offsite" }, { venue: "room_v1" }, { room_portion: "half" },
     { offsite_address: "นอกสถานที่" }, { offsite_distance_km: "12" }, { floor_level: "2" },

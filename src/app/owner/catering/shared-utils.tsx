@@ -18,8 +18,9 @@ import type { CateringEvent, StaffOption } from "./actions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR } from "./event-status";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 import { toNum } from "./to-num";
+import { toTimeInput } from "./booking-form";
 
-export { toNum };
+export { toNum, toTimeInput };
 
 export const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -178,11 +179,6 @@ export function thFullDate(d: string): string {
   return `${DAYS_SHORT[dow]} ${day} ${MONTHS_TH[(m ?? 1) - 1]} ${(y ?? 2500) + 543}`;
 }
 
-/** Postgres TIME comes back as HH:MM:SS; <input type="time"> wants HH:MM. */
-export function toTimeInput(t: string | null): string {
-  return t ? t.slice(0, 5) : "";
-}
-
 export function timeRange(start: string | null, end: string | null): string {
   const s = toTimeInput(start);
   const e = toTimeInput(end);
@@ -214,151 +210,11 @@ export function conflictTimeLabel(start: string | null, end: string | null): str
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
+// Moved to booking-form.ts (2026-09-22), where the tests import it; re-exported
+// here so every importer stays as it was.
 
-export type FormState = {
-  customerId: string | null;
-  customerQuery: string;
-  newPhone: string;
-  newLineId: string;
-  newCompany: string;
-  customerAddress: string;
-  customerContactPerson: string;
-  event_date: string;
-  start_time: string;
-  end_time: string;
-  location_type: string;
-  venue: string;
-  room_portion: string;
-  offsite_address: string;
-  offsite_distance_km: string;
-  floor_level: string;
-  booking_type: string;
-  /** ประเภทงาน. "" = not chosen, which is normal and saves as NULL. */
-  event_type_id: string;
-  food_format: string;
-  table_count: string;
-  reserve_tables: string;
-  table_label: string;
-  guest_count: string;
-  music_type: string;
-  music_note: string;
-  status: string;
-  deposit_amount: string;
-  deposit_percent: string;
-  deposit_paid_at: string;
-  detail_note: string;
-  kitchen_note: string;
-  staff_ids: string[];
-};
-
-/**
- * defaultStaffId pre-selects whoever is creating the booking, resolved from
- * their profiles.employee_id. Only applies to new bookings — an existing event
- * always loads its own saved staff list via formFromEvent(). Fully editable
- * either way; the creator can remove themselves.
- */
-export function blankForm(defaultStaffId?: string | null): FormState {
-  return {
-    customerId: null, customerQuery: "", newPhone: "", newLineId: "", newCompany: "",
-    customerAddress: "", customerContactPerson: "",
-    event_date: "", start_time: "", end_time: "",
-    location_type: "in_house", venue: "room_v2", room_portion: "",
-    offsite_address: "", offsite_distance_km: "", floor_level: "",
-    booking_type: "table", event_type_id: "", food_format: "",
-    table_count: "", reserve_tables: "", table_label: "", guest_count: "",
-    music_type: "none", music_note: "",
-    // deposit_percent pre-fills 30 on a NEW booking only — Nik's starting
-    // point, editable, clearable to blank (NULL = not yet discussed) and
-    // settable to 0 (agreed: no deposit). A FORM default, deliberately not a
-    // column default: existing bookings keep NULL and are never handed terms
-    // retroactively. formFromEvent below reads the stored value untouched.
-    status: "inquiry", deposit_amount: "", deposit_percent: "30", deposit_paid_at: "",
-    detail_note: "", kitchen_note: "", staff_ids: defaultStaffId ? [defaultStaffId] : [],
-  };
-}
-
-export function formFromEvent(e: CateringEvent): FormState {
-  return {
-    customerId: e.customer_id,
-    customerQuery: e.customer_name ?? "",
-    newPhone: "", newLineId: "", newCompany: "",
-    customerAddress: e.customer_address ?? "",
-    customerContactPerson: e.customer_contact_person ?? "",
-    event_date: e.event_date,
-    start_time: toTimeInput(e.start_time),
-    end_time: toTimeInput(e.end_time),
-    location_type: e.location_type,
-    venue: e.venue ?? "",
-    room_portion: e.room_portion ?? "",
-    offsite_address: e.offsite_address ?? "",
-    offsite_distance_km: e.offsite_distance_km?.toString() ?? "",
-    floor_level: e.floor_level?.toString() ?? "",
-    booking_type: e.booking_type,
-    event_type_id: e.event_type_id ?? "",
-    food_format: e.food_format ?? "",
-    table_count: e.table_count?.toString() ?? "",
-    reserve_tables: e.reserve_tables?.toString() ?? "",
-    table_label: e.table_label ?? "",
-    guest_count: e.guest_count?.toString() ?? "",
-    music_type: e.music_type,
-    music_note: e.music_note ?? "",
-    status: e.status,
-    deposit_amount: e.deposit_amount?.toString() ?? "",
-    deposit_percent: e.deposit_percent?.toString() ?? "",
-    deposit_paid_at: e.deposit_paid_at ?? "",
-    detail_note: e.detail_note ?? "",
-    kitchen_note: e.kitchen_note ?? "",
-    staff_ids: e.staff_ids,
-  };
-}
-
-/** Builds upsertCateringEvent's payload from form state. id omitted = create. */
-export function formToUpsertPayload(form: FormState, id?: string) {
-  const venue = form.location_type === "in_house" ? form.venue : null;
-  const roomPortionApplies = venue === "room_v1" || venue === "room_v2";
-  return {
-    id,
-    customer_id: form.customerId,
-    new_customer: form.customerId
-      ? null
-      : {
-          name: form.customerQuery,
-          phone: form.newPhone,
-          line_id: form.newLineId,
-          company_name: form.newCompany,
-          address: form.customerAddress,
-          contact_person: form.customerContactPerson,
-        },
-    customer_edits: form.customerId
-      ? { address: form.customerAddress, contact_person: form.customerContactPerson }
-      : null,
-    event_date: form.event_date,
-    start_time: form.start_time || null,
-    end_time: form.end_time || null,
-    location_type: form.location_type,
-    venue,
-    room_portion: roomPortionApplies ? (form.room_portion || null) : null,
-    offsite_address: form.location_type === "offsite" ? form.offsite_address : null,
-    offsite_distance_km: form.location_type === "offsite" ? toNum(form.offsite_distance_km) : null,
-    floor_level: form.location_type === "offsite" ? toNum(form.floor_level) : null,
-    booking_type: form.booking_type,
-    event_type_id: form.event_type_id || null,
-    food_format: form.food_format || null,
-    table_count: toNum(form.table_count),
-    reserve_tables: toNum(form.reserve_tables),
-    table_label: form.table_label,
-    guest_count: toNum(form.guest_count),
-    music_type: form.music_type,
-    music_note: form.music_note,
-    status: form.status,
-    deposit_amount: toNum(form.deposit_amount),
-    deposit_percent: toNum(form.deposit_percent),
-    deposit_paid_at: form.deposit_paid_at || null,
-    detail_note: form.detail_note,
-    kitchen_note: form.kitchen_note,
-    staff_ids: form.staff_ids,
-  };
-}
+export { blankForm, formFromEvent, formToUpsertPayload, pickCustomer, typeCustomerName } from "./booking-form";
+export type { FormState } from "./booking-form";
 
 // ─── Presentational components (no hooks, safe to render from a server
 // component tree) ──────────────────────────────────────────────────────────
