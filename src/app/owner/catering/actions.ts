@@ -333,12 +333,15 @@ export async function getCateringCustomers(): Promise<CateringCustomer[]> {
   return data ?? [];
 }
 
-export async function getCateringCustomer(id: string): Promise<CateringCustomer | null> {
+/** The customer page's customer: with the updated_at its save compares against (queue item 51). */
+export type CateringCustomerDetail = CateringCustomer & { updated_at: string };
+
+export async function getCateringCustomer(id: string): Promise<CateringCustomerDetail | null> {
   await requireSales();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_customers")
-    .select("id,name,phone,line_id,company_name,address,contact_person,tax_id,note")
+    .select("id,name,phone,line_id,company_name,address,contact_person,tax_id,note,updated_at")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -418,6 +421,30 @@ export async function getCateringCustomerEvents(customerId: string): Promise<Cat
   return (data ?? []) as CateringCustomerEventSummary[];
 }
 
+export type CustomerSaveResult =
+  | { ok: true; updatedAt: string | null }
+  | {
+      ok: false;
+      error: string;
+      /** Someone saved this customer after the edit began. Nothing was written. */
+      conflict?: boolean;
+    };
+
+const CUSTOMER_CONFLICT =
+  "ลูกค้ารายนี้ถูกแก้ไขจากที่อื่นหลังจากเริ่มแก้ไขในหน้านี้ — ยังไม่ได้บันทึกอะไร กด “โหลดข้อมูลล่าสุด” แล้วแก้ไขอีกครั้ง";
+
+/**
+ * The customer page's save — the one place a customer's details change
+ * (queue items 49 and 51). A COMPARE-AND-SET on `expectedUpdatedAt`, the
+ * customer's updated_at when the edit began: the row is written only while it
+ * is still as the page took it, so an older copy of the page (a second tab, a
+ * second login, one the Back button brought back) is refused instead of
+ * written over a newer edit. It used to write all eight fields with no check,
+ * and a zero-row answer passed as success. Every refusal is RETURNED, never
+ * thrown: production redacts a thrown Server Action message. The one
+ * exception is requireSales(), which redirects a caller no longer allowed in
+ * (a changed role, a missing profile), and that navigation leaves the page.
+ */
 export async function updateCateringCustomer(
   id: string,
   data: {
@@ -430,10 +457,20 @@ export async function updateCateringCustomer(
     tax_id: string | null;
     note: string | null;
   },
-): Promise<void> {
+  expectedUpdatedAt: string,
+): Promise<CustomerSaveResult> {
   await requireSales();
+  // A caller that sends no token (a direct call, or a copy of the page from
+  // before this rule, should one still reach this action) cannot be told
+  // apart from a stale one, so it is refused like one.
+  if (typeof expectedUpdatedAt !== "string" || expectedUpdatedAt === "") {
+    return { ok: false, error: "หน้านี้เปิดค้างไว้ก่อนระบบอัปเดต — รีเฟรชหน้านี้ แล้วแก้ไขอีกครั้ง ยังไม่ได้บันทึกอะไร" };
+  }
+  if (typeof data.name !== "string" || data.name.trim() === "") {
+    return { ok: false, error: "ต้องมีชื่อลูกค้า — ยังไม่ได้บันทึกอะไร" };
+  }
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: rows, error } = await supabase
     .from("catering_customers")
     .update({
       name: data.name.trim(),
@@ -445,10 +482,22 @@ export async function updateCateringCustomer(
       tax_id: data.tax_id?.trim() || null,
       note: data.note?.trim() || null,
     })
-    .eq("id", id);
-  if (error) throw error;
+    .eq("id", id)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("id, updated_at");
+  if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message} — ยังไม่ได้บันทึกอะไร` };
+  if (!rows || rows.length === 0) {
+    // Nothing was written: someone saved this customer since, or it is gone.
+    const { data: still, error: readError } = await supabase
+      .from("catering_customers").select("id").eq("id", id).maybeSingle();
+    if (readError) return { ok: false, error: `บันทึกไม่สำเร็จ: ${readError.message} — ยังไม่ได้บันทึกอะไร` };
+    return still
+      ? { ok: false, conflict: true, error: CUSTOMER_CONFLICT }
+      : { ok: false, error: "ไม่พบลูกค้ารายนี้ — อาจถูกลบไปแล้ว ยังไม่ได้บันทึกอะไร" };
+  }
   revalidatePath(`/owner/catering/customers/${id}`);
   revalidatePath("/owner/catering/customers");
+  return { ok: true, updatedAt: (rows[0].updated_at as string | null) ?? null };
 }
 
 /**

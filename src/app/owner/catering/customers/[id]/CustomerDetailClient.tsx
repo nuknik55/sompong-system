@@ -4,123 +4,144 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { updateCateringCustomer } from "../../actions";
-import type { CateringCustomer, CateringCustomerEventSummary } from "../../actions";
+import type { CateringCustomerDetail, CateringCustomerEventSummary } from "../../actions";
 import { Field, thDate, locationLabel, fmtBaht, StatusBadge } from "../../shared-utils";
+import { customerFormDirty, customerPayload, formFromCustomer, type CustomerFormState } from "../../customer-form";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
 
-type CustomerFormState = {
-  name: string;
-  phone: string;
-  line_id: string;
-  company_name: string;
-  address: string;
-  contact_person: string;
-  tax_id: string;
-  note: string;
-};
+const DISCARD_MSG = "ทิ้งการแก้ไขที่ยังไม่ได้บันทึกหรือไม่?";
+const RELOAD_MSG = "ทิ้งการแก้ไขที่ยังไม่ได้บันทึก แล้วโหลดข้อมูลล่าสุดของลูกค้ารายนี้หรือไม่?";
+/** A save that brought no answer at all: the connection, the server, a deploy mid-session. (A sign-in the server no longer admits may redirect instead.) */
+const RESULT_LOST =
+  "ไม่ได้รับคำตอบจากระบบ — ข้อมูลที่แก้ไขยังอยู่ในหน้านี้ ลองกดบันทึกอีกครั้ง (ถ้าบันทึกไปแล้ว ระบบจะแจ้งว่าถูกแก้ไขจากที่อื่น ให้กด “โหลดข้อมูลล่าสุด”)";
 
-function formFromCustomer(c: CateringCustomer): CustomerFormState {
-  return {
-    name: c.name,
-    phone: c.phone ?? "",
-    line_id: c.line_id ?? "",
-    company_name: c.company_name ?? "",
-    address: c.address ?? "",
-    contact_person: c.contact_person ?? "",
-    tax_id: c.tax_id ?? "",
-    note: c.note ?? "",
-  };
-}
-
+/**
+ * One customer: the details, and the booking history. Editing is where edits
+ * used to be lost (queue item 51, Nik 2026-09-22):
+ *   - an edit starts from the customer as the page shows it NOW, and its save
+ *     carries the updated_at it started from, so a save over someone else's
+ *     is refused, with nothing written (customer-form.ts, updateCateringCustomer);
+ *   - leaving with an unsaved edit asks first — in-app links, closing or
+ *     reloading the tab, and ออกจากระบบ (useLeaveGuard); the browser's Back
+ *     button stays uncaught, as everywhere else;
+ *   - the form is locked from the click until the save has landed, so nothing
+ *     typed in between is dropped.
+ */
 export function CustomerDetailClient({
   customer,
   events,
 }: {
-  customer: CateringCustomer;
+  customer: CateringCustomerDetail;
   events: CateringCustomerEventSummary[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [isEditing, setIsEditing] = useState(false);
-  const [form, setForm] = useState<CustomerFormState>(() => formFromCustomer(customer));
-  const [error, setError] = useState<string | null>(null);
+  // The open edit: the form, what it started from, and the customer's
+  // updated_at at that moment — the token its save sends.
+  const [edit, setEdit] = useState<{ form: CustomerFormState; start: CustomerFormState; token: string } | null>(null);
+  const [error, setError] = useState<{ text: string; conflict: boolean } | null>(null);
+  const dirty = edit !== null && customerFormDirty(edit.form, edit.start);
+  useLeaveGuard(dirty);
 
   function set<K extends keyof CustomerFormState>(k: K, v: string) {
-    setForm((f) => ({ ...f, [k]: v }));
+    setEdit((e) => (e ? { ...e, form: { ...e.form, [k]: v } } : e));
   }
 
-  function handleSave() {
+  /** From the customer as the page shows it now, never as it showed it when the page opened. */
+  function startEdit() {
+    const start = formFromCustomer(customer);
+    setEdit({ form: start, start, token: customer.updated_at });
     setError(null);
-    startTransition(async () => {
-      try {
-        await updateCateringCustomer(customer.id, {
-          name: form.name,
-          phone: form.phone || null,
-          line_id: form.line_id || null,
-          company_name: form.company_name || null,
-          address: form.address || null,
-          contact_person: form.contact_person || null,
-          tax_id: form.tax_id || null,
-          note: form.note || null,
-        });
-        setIsEditing(false);
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
-      }
-    });
   }
 
   function cancelEdit() {
-    setForm(formFromCustomer(customer));
-    setIsEditing(false);
+    if (dirty && window.confirm(DISCARD_MSG) === false) return;
+    setEdit(null);
     setError(null);
+  }
+
+  function handleSave() {
+    if (!edit) return;
+    const sending = edit;
+    setError(null);
+    // The refresh after a save runs inside this transition, so the form stays
+    // locked, and แก้ไข disabled, until the saved customer is on the page.
+    startTransition(async () => {
+      const res = await updateCateringCustomer(customer.id, customerPayload(sending.form), sending.token).catch(() => null);
+      if (!res) { setError({ text: RESULT_LOST, conflict: false }); return; }
+      if (!res.ok) { setError({ text: res.error, conflict: res.conflict === true }); return; }
+      setEdit(null);
+      router.refresh();
+    });
+  }
+
+  /** After a refusal: drop the draft (asking first) and fetch the latest; the next edit starts from it. */
+  function reloadLatest() {
+    if (dirty && window.confirm(RELOAD_MSG) === false) return;
+    setEdit(null);
+    setError(null);
+    startTransition(() => { router.refresh(); });
   }
 
   const totalEvents = events.length;
   const totalQuoted = events.reduce((s, e) => s + (e.quoted_total ?? 0), 0);
+  const form = edit?.form;
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <Link href="/owner/catering/customers" className="text-sm text-neutral-500 hover:text-neutral-800">← กลับ</Link>
-        {!isEditing && (
-          <button onClick={() => setIsEditing(true)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-            แก้ไข
+        {!edit && (
+          <button onClick={startEdit} disabled={isPending} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+            {isPending ? "กำลังโหลด…" : "แก้ไข"}
           </button>
         )}
       </div>
 
-      {isEditing ? (
+      {edit && form ? (
         <div className="space-y-4 rounded-xl border border-neutral-200 bg-white p-6">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="ชื่อ *">
-              <input className="input-base" value={form.name} onChange={(e) => set("name", e.target.value)} />
-            </Field>
-            <Field label="เบอร์โทร">
-              <input className="input-base" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
-            </Field>
-            <Field label="LINE ID">
-              <input className="input-base" value={form.line_id} onChange={(e) => set("line_id", e.target.value)} />
-            </Field>
-            <Field label="บริษัท">
-              <input className="input-base" value={form.company_name} onChange={(e) => set("company_name", e.target.value)} />
-            </Field>
-            <Field label="เลขผู้เสียภาษี">
-              <input className="input-base" value={form.tax_id} onChange={(e) => set("tax_id", e.target.value)} />
-            </Field>
-            <Field label="ที่อยู่" className="col-span-2">
-              <input className="input-base" value={form.address} onChange={(e) => set("address", e.target.value)} />
-            </Field>
-            <Field label="ผู้ติดต่อ (ถ้าต่างจากชื่อ)" className="col-span-2">
-              <input className="input-base" value={form.contact_person} onChange={(e) => set("contact_person", e.target.value)} />
-            </Field>
-            <Field label="หมายเหตุ" className="col-span-2">
-              <textarea className="input-base h-20 resize-none" value={form.note} onChange={(e) => set("note", e.target.value)} />
-            </Field>
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {/* ONE lock for the whole form while a save is in flight. */}
+          <fieldset disabled={isPending} className="m-0 min-w-0 border-0 p-0">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="ชื่อ *">
+                <input className="input-base" value={form.name} onChange={(e) => set("name", e.target.value)} />
+              </Field>
+              <Field label="เบอร์โทร">
+                <input className="input-base" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+              </Field>
+              <Field label="LINE ID">
+                <input className="input-base" value={form.line_id} onChange={(e) => set("line_id", e.target.value)} />
+              </Field>
+              <Field label="บริษัท">
+                <input className="input-base" value={form.company_name} onChange={(e) => set("company_name", e.target.value)} />
+              </Field>
+              <Field label="เลขผู้เสียภาษี">
+                <input className="input-base" value={form.tax_id} onChange={(e) => set("tax_id", e.target.value)} />
+              </Field>
+              <Field label="ที่อยู่" className="col-span-2">
+                <input className="input-base" value={form.address} onChange={(e) => set("address", e.target.value)} />
+              </Field>
+              <Field label="ผู้ติดต่อ (ถ้าต่างจากชื่อ)" className="col-span-2">
+                <input className="input-base" value={form.contact_person} onChange={(e) => set("contact_person", e.target.value)} />
+              </Field>
+              <Field label="หมายเหตุ" className="col-span-2">
+                <textarea className="input-base h-20 resize-none" value={form.note} onChange={(e) => set("note", e.target.value)} />
+              </Field>
+            </div>
+          </fieldset>
+          {error && (
+            <p className="text-sm text-red-600">
+              {error.text}
+              {error.conflict && (
+                <button type="button" onClick={reloadLatest} disabled={isPending} className="ml-2 font-medium underline hover:text-red-800 disabled:opacity-50">
+                  โหลดข้อมูลล่าสุด
+                </button>
+              )}
+            </p>
+          )}
+          {dirty && <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>}
           <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-            <button onClick={cancelEdit} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">
+            <button onClick={cancelEdit} disabled={isPending} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-50">
               ยกเลิก
             </button>
             <button
