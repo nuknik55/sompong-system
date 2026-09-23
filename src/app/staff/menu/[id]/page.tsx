@@ -7,6 +7,7 @@ import { RecipeEditor } from "@/components/recipe-editor";
 import { DuplicateButton } from "@/components/duplicate-button";
 import { DeleteRecipeButton } from "@/components/delete-recipe-button";
 import { duplicateMenu, deleteMenu, updateMenuSellingPrice, toggleMenuStaffVisible } from "@/app/staff/menu/actions";
+import { PageHeader, PageShell } from "@/components/ui/page";
 import { RecipeHistory } from "@/components/recipe-history";
 
 export default async function StaffMenuEditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -49,25 +50,31 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-neutral-900">{menu.name}</h1>
+    <PageShell>
+      <PageHeader
+        title={menu.name}
+        subtitle={
+          <>
             {!staffVisible && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+              <span className="rounded-full bg-pending-soft px-2 py-0.5 text-xs font-medium text-pending-ink">
                 ซ่อนจาก staff
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-2">
+            {!canEdit && (
+              <span>ราคาขาย {menu.selling_price.toLocaleString("th-TH")} บาท · หมวด {menu.category ?? "-"}</span>
+            )}
+            {canEdit && <span>หมวด {menu.category ?? "-"}{isAdmin ? " (แก้ราคาขายได้ในกล่องสรุปด้านล่าง)" : ""}</span>}
+          </>
+        }
+        actions={
+          <>
             {isAdmin && (
               <form action={toggleMenuStaffVisible.bind(null, menu.id, !staffVisible)}>
                 <button
                   type="submit"
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`h-8 rounded-lg border px-3 font-heading text-sm font-medium shadow-btn-soft transition-colors ${
                     staffVisible
-                      ? "border-neutral-300 text-neutral-600 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+                      ? "border-neutral-300 text-neutral-600 hover:border-pending/60 hover:bg-pending-soft hover:text-pending-ink"
                       : "border-brand-green bg-brand-green/10 text-brand-green hover:bg-brand-green/20"
                   }`}
                 >
@@ -84,27 +91,19 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
                 redirectTo="/staff"
               />
             )}
-          </div>
-        </div>
-        {!canEdit && (
-          <p className="text-sm text-neutral-500">
-            ราคาขาย {menu.selling_price.toLocaleString("th-TH")} บาท · หมวด {menu.category ?? "-"}
-          </p>
-        )}
-        {canEdit && <p className="text-sm text-neutral-400">หมวด {menu.category ?? "-"}{isAdmin ? " (แก้ราคาขายได้ในกล่องสรุปด้านล่าง)" : ""}</p>}
-        {canEdit && (
-          <div className="mt-2">
-            <DuplicateButton
-              id={menu.id}
-              originalName={menu.name}
-              originalCategory={menu.category}
-              categories={categories}
-              duplicateAction={duplicateMenu}
-              hrefPrefix="/staff/menu"
-            />
-          </div>
-        )}
-      </div>
+            {canEdit && (
+              <DuplicateButton
+                id={menu.id}
+                originalName={menu.name}
+                originalCategory={menu.category}
+                categories={categories}
+                duplicateAction={duplicateMenu}
+                hrefPrefix="/staff/menu"
+              />
+            )}
+          </>
+        }
+      />
       <RecipeEditor
         target="menu"
         parentId={menu.id}
@@ -121,6 +120,6 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
         showCosts={canEdit}
       />
       <RecipeHistory target="menu" parentId={menu.id} />
-    </div>
+    </PageShell>
   );
 }

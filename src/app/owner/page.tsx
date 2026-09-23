@@ -9,6 +9,8 @@ import { CapexThresholdSetting } from "@/components/capex-threshold-setting";
 import { PosSalesImport } from "@/components/pos-sales-import";
 import { CategoryTabs } from "@/components/category-tabs";
 import { getPosImportMeta } from "./sales-import-actions";
+import { PageHeader, PageShell } from "@/components/ui/page";
+import { StatTile } from "@/components/ui/stat-tile";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -83,17 +85,18 @@ export default async function OwnerDashboardPage({
   const avgFoodCostPct = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 sm:px-6">
-      {/* Header row */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">ภาพรวมต้นทุนและ Menu Engineering</h1>
-        <div className="no-print flex flex-wrap items-center gap-2">
-          <QFactorSetting initial={qFactorPct} isOwner={profile.role === "owner"} />
-          {/* The other owner-set number, on the only settings surface the app
-              has (queue item 9). It governs บันทึกรายวัน, not this page. */}
-          <CapexThresholdSetting initial={capexThreshold} isOwner={profile.role === "owner"} />
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="ภาพรวมต้นทุนและ Menu Engineering"
+        actions={
+          <div className="no-print flex flex-wrap items-center gap-2">
+            <QFactorSetting initial={qFactorPct} isOwner={profile.role === "owner"} />
+            {/* The other owner-set number, on the only settings surface the app
+                has (queue item 9). It governs บันทึกรายวัน, not this page. */}
+            <CapexThresholdSetting initial={capexThreshold} isOwner={profile.role === "owner"} />
+          </div>
+        }
+      />
 
       {/* Toolbar zone: POS import + category filter — subtle green tint to visually separate from content */}
       <div className="no-print rounded-xl bg-brand-green/5 px-4 py-3 space-y-3">
@@ -101,16 +104,16 @@ export default async function OwnerDashboardPage({
         <div className="space-y-1.5">
           <CategoryTabs categories={allCategories} selected={selectedCategory} />
           {selectedCategory === "all" ? (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-500">
               Star/Horse/Puzzle/Dog เทียบกับเมนูในหมวดเดียวกันเท่านั้น — หมวดที่มีเมนูที่มียอดขายน้อยกว่า {MIN_RANKABLE_GROUP} รายการจะยังไม่จัดอันดับ
             </p>
           ) : (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-500">
               แสดงเฉพาะหมวด &quot;{selectedCategory}&quot; — Star/Horse/Puzzle/Dog คำนวณจากเมนูในหมวดนี้เท่านั้น
             </p>
           )}
           {smallGroup && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="rounded-md border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
               ยังจัดอันดับหมวดนี้ไม่ได้: {unrankedReasonText(smallGroup)}
             </p>
           )}
@@ -128,14 +131,16 @@ export default async function OwnerDashboardPage({
           </span>
         </p>
       )}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <SummaryCard label="ยอดขายรวม (รอบล่าสุด)" value={`${formatBaht(totalRevenue)} บาท`} />
-        <SummaryCard label="ต้นทุนรวม (รอบล่าสุด)" value={`${formatBaht(totalCost)} บาท`} />
-        <SummaryCard
+      {/* The page's four summary numbers, as the shared look's coloured tiles. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile accent="green" label="ยอดขายรวม (รอบล่าสุด)" value={`${formatBaht(totalRevenue)} บาท`} />
+        <StatTile accent="navy" label="ต้นทุนรวม (รอบล่าสุด)" value={`${formatBaht(totalCost)} บาท`} />
+        <StatTile
+          accent="gold"
           label="% Food Cost เฉลี่ย"
           value={avgFoodCostPct != null ? `${avgFoodCostPct.toFixed(1)}%` : "-"}
         />
-        <SummaryCard
+        <StatTile
           label={selectedCategory === "all" ? "จำนวนเมนูทั้งหมด" : `เมนูในหมวด "${selectedCategory}"`}
           value={`${ranked.length} เมนู`}
         />
@@ -171,15 +176,6 @@ export default async function OwnerDashboardPage({
           isPremium: r.menu.selling_price >= premiumThreshold,
         }))}
       />
-    </div>
-  );
-}
-
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4">
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="text-lg font-semibold text-neutral-900">{value}</p>
-    </div>
+    </PageShell>
   );
 }

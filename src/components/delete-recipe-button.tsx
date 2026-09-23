@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
 
 export function DeleteRecipeButton({
   id,
@@ -39,11 +40,11 @@ export function DeleteRecipeButton({
             }
           });
         }}
-        className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+        className={buttonClass("secondary", { danger: true })}
       >
         {isPending ? "กำลังลบ..." : label}
       </button>
-      {error && <p className="mt-1 max-w-xs text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 max-w-xs text-xs text-danger">{error}</p>}
     </div>
   );
 }

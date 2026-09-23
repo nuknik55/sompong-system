@@ -7,6 +7,8 @@ import { recipeQtyInput, recipeQtyText } from "@/lib/decimal-input";
 import { saveRecipeItems, type SavedItem } from "@/app/staff/actions";
 import { IngredientCombobox } from "@/components/ingredient-combobox";
 import { Plus, Save } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 export type IngredientOption = {
   id: string;
@@ -178,7 +180,7 @@ export function RecipeEditor({
         <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+              <tr className={TH_ROW}>
                 <th className="px-3 py-2">วัตถุดิบ / ของเตรียม</th>
                 <th className="px-3 py-2">ปริมาณ</th>
                 <th className="px-3 py-2">หน่วย</th>
@@ -198,7 +200,7 @@ export function RecipeEditor({
                 );
               })}
               {items.length === 0 && (
-                <tr><td colSpan={colSpan} className="px-3 py-6 text-center text-neutral-400">ยังไม่มีวัตถุดิบในสูตรนี้</td></tr>
+                <tr><td colSpan={colSpan} className="px-3 py-6 text-center text-neutral-500">ยังไม่มีวัตถุดิบในสูตรนี้</td></tr>
               )}
             </tbody>
           </table>
@@ -234,7 +236,7 @@ export function RecipeEditor({
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2">วัตถุดิบ / ของเตรียม</th>
               <th className="px-3 py-2">ปริมาณ</th>
               <th className="px-3 py-2">หน่วย</th>
@@ -257,7 +259,7 @@ export function RecipeEditor({
                         patchLocal(item.id, { ingredient_id, unit });
                       }}
                     />
-                    {missing && <p className="mt-1 text-xs text-amber-600">ยังไม่มีราคาสำหรับวัตถุดิบนี้ — แจ้ง Admin ให้ตั้งราคา</p>}
+                    {missing && <p className="mt-1 text-xs text-pending-ink">ยังไม่มีราคาสำหรับวัตถุดิบนี้ — แจ้ง Admin ให้ตั้งราคา</p>}
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -277,7 +279,7 @@ export function RecipeEditor({
                   <td className="px-3 py-2 text-neutral-500">{ing?.usage_unit ?? item.unit ?? "-"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatBaht(lineCost(item))}</td>
                   <td className="px-3 py-2 text-right">
-                    <button type="button" className="text-red-500 hover:text-red-700" onClick={() => removeRow(item.id)}>ลบ</button>
+                    <button type="button" className={buttonClass("link", { dangerHover: true })} onClick={() => removeRow(item.id)}>ลบ</button>
                   </td>
                 </tr>
               );
@@ -291,7 +293,7 @@ export function RecipeEditor({
         <button
           type="button"
           disabled={isPending}
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+          className={buttonClass("secondary")}
           onClick={addRow}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -301,16 +303,16 @@ export function RecipeEditor({
           type="button"
           disabled={!overallDirty || isPending}
           onClick={handleSave}
-          className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
+          className={buttonClass("primary")}
         >
           <Save className="h-3.5 w-3.5" />
           {isPending ? "กำลังบันทึก..." : isPendingMode ? "ส่งขออนุมัติ" : "บันทึกการเปลี่ยนแปลง"}
         </button>
-        {overallDirty && !isPending && <span className="text-xs text-amber-600">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>}
-        {saveStatus === "saved" && <span className="text-xs text-green-600">✓ บันทึกสำเร็จ</span>}
-        {saveStatus === "pending" && <span className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
+        {overallDirty && !isPending && <span className="text-xs text-pending-ink">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>}
+        {saveStatus === "saved" && <span className="text-xs text-success-ink">✓ บันทึกสำเร็จ</span>}
+        {saveStatus === "pending" && <span className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
       </div>
-      {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+      {saveError && <p className="text-sm text-danger">{saveError}</p>}
 
       <CostSummary
         ingredientCost={ingredientCost}
@@ -398,13 +400,13 @@ function CostSummary({
       {sellingPrice != null && (
         <div className="flex justify-between py-1">
           <span className="text-neutral-500">กำไรต่อจาน</span>
-          <span className={`tabular-nums font-medium ${sellingPrice - totalCost < 0 ? "text-red-600" : "text-green-700"}`}>
+          <span className={`tabular-nums font-medium ${sellingPrice - totalCost < 0 ? "text-danger" : "text-success-ink"}`}>
             {formatBaht(sellingPrice - totalCost)} บาท
           </span>
         </div>
       )}
-      {hasMissingCost && <p className="mt-2 text-xs text-amber-600">* ยอดนี้ยังไม่รวมรายการที่ยังไม่มีราคา ต้นทุนจริงจะสูงกว่านี้</p>}
-      {hasIncompleteRow && <p className="mt-2 text-xs text-neutral-400">* แถวที่ยังไม่เลือกวัตถุดิบจะไม่ถูกบันทึก — ถ้าเป็นแถวที่เคยบันทึกไว้แล้ว จะถูกลบออกจากสูตรเมื่อกดบันทึก</p>}
+      {hasMissingCost && <p className="mt-2 text-xs text-pending-ink">* ยอดนี้ยังไม่รวมรายการที่ยังไม่มีราคา ต้นทุนจริงจะสูงกว่านี้</p>}
+      {hasIncompleteRow && <p className="mt-2 text-xs text-neutral-500">* แถวที่ยังไม่เลือกวัตถุดิบจะไม่ถูกบันทึก — ถ้าเป็นแถวที่เคยบันทึกไว้แล้ว จะถูกลบออกจากสูตรเมื่อกดบันทึก</p>}
     </div>
   );
 }

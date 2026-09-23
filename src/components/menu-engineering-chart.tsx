@@ -99,14 +99,14 @@ export function MenuEngineeringChart({ data, note }: { data: Point[]; note?: str
             {label}
           </span>
         ))}
-        <span className="flex items-center gap-1.5 text-xs text-neutral-400">
+        <span className="flex items-center gap-1.5 text-xs text-neutral-500">
           <span className="inline-block h-3 w-3 flex-shrink-0 rounded-full border border-neutral-300" style={{ backgroundColor: COLOR.Unranked }} />
           ยังจัดอันดับไม่ได้
         </span>
       </div>
 
       {note && <p className="mb-1 text-xs text-neutral-500">{note}</p>}
-      <p className="mb-2 text-xs text-neutral-400">
+      <p className="mb-2 text-xs text-neutral-500">
         * แกนครอบคลุมทุกเมนู เมนูขายดีมากๆ อาจทำให้จุดอื่นกระจุกกันที่มุมซ้าย — ดูตัวเลขจริงในตารางด้านล่าง หรือชี้ที่จุดเพื่อดูรายละเอียด
       </p>
 

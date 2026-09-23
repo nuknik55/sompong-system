@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CategorySelect } from "@/components/category-select";
 import { confirmDiscardUnsaved } from "@/lib/unsaved-changes";
+import { buttonClass } from "@/components/ui/button";
 
 const DUPLICATE_UNSAVED_MSG =
   "หน้านี้มีการแก้ไขที่ยังไม่ได้บันทึก — สำเนาจะทำจากสูตรที่บันทึกไว้ล่าสุด (ไม่รวมการแก้ไขนี้) และอาจเปิดหน้าสูตรใหม่ทันที ดำเนินการต่อหรือไม่?";
@@ -47,14 +48,14 @@ export function DuplicateButton({
         <button
           type="button"
           onClick={() => { setOpen(true); setPendingMsg(null); }}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          className={buttonClass("secondary")}
         >
           คัดลอกสูตรนี้
         </button>
         {/* Boxed for the same reason as CreateRecipeForm's notice: bare
             coloured text under a button reads as an error. */}
         {pendingMsg && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{pendingMsg}</p>
+          <p className="rounded-md border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">{pendingMsg}</p>
         )}
       </div>
     );
@@ -112,14 +113,14 @@ export function DuplicateButton({
             }
           });
         }}
-        className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+        className={buttonClass("primary")}
       >
         {isPending ? "กำลังคัดลอก..." : "ยืนยันคัดลอก"}
       </button>
-      <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100">
+      <button type="button" onClick={() => setOpen(false)} className={buttonClass("secondary")}>
         ยกเลิก
       </button>
-      {error && <p className="w-full text-xs text-red-600">{error}</p>}
+      {error && <p className="w-full text-xs text-danger">{error}</p>}
     </div>
   );
 }

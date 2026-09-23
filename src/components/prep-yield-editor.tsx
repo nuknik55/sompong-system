@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { updatePrepYield } from "@/app/staff/prep/actions";
+import { buttonClass } from "@/components/ui/button";
 
 export function PrepYieldEditor({
   prepId,
@@ -58,14 +59,14 @@ export function PrepYieldEditor({
               }
             })
           }
-          className="rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+          className={buttonClass("primary", { size: "sm" })}
         >
           {submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก"}
         </button>
       )}
-      {error && <span className="text-red-600">{error}</span>}
-      {saveStatus === "saved" && !dirty && <span className="text-xs text-green-600">✓ บันทึกสำเร็จ</span>}
-      {saveStatus === "pending" && <span className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว</span>}
+      {error && <span className="text-danger">{error}</span>}
+      {saveStatus === "saved" && !dirty && <span className="text-xs text-success-ink">✓ บันทึกสำเร็จ</span>}
+      {saveStatus === "pending" && <span className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว</span>}
     </div>
   );
 }

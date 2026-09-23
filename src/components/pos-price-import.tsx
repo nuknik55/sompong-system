@@ -12,6 +12,8 @@ import {
   type PosImportRow,
   type PriceAliasRow,
 } from "@/app/owner/ingredients/pos-import-actions";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 /** Rows per request. ~180 KB of JSON; a full history is ~12 sequential calls. */
 const CHUNK_SIZE = 2000;
@@ -376,15 +378,15 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           <b>&quot;รายงานตามสินค้า&quot;</b>, ช่วงวันที่ <b>ย้อนหลัง 3 เดือน</b> จากวันนี้, เลือก All สำหรับกลุ่ม/หมวด/วัตถุดิบ/คลัง/ผู้จัดจำหน่าย
           ทั้งหมด, ลักษณะรายงานเลือก &quot;แสดงข้อมูลทั้งหมด&quot; แล้วกด &quot;Export to Excel&quot;
         </p>
-        <p className="mb-3 text-xs text-neutral-400">
+        <p className="mb-3 text-xs text-neutral-500">
           ระบบจะใช้ราคาของ <b>วันที่รับล่าสุด</b> เท่านั้น (TotalCost(Inc.Vat) ÷ Qty ของวันนั้น) ไม่ใช่ค่าเฉลี่ยทั้ง 3 เดือน — วัตถุดิบที่ไม่มีการซื้อในช่วงนี้จะไม่ถูกแก้ไข (ใช้ราคาเดิม)
         </p>
-        <p className="mb-3 text-xs text-amber-700">
+        <p className="mb-3 text-xs text-pending-ink">
           ถ้าหน่วยซื้อล่าสุดจาก POS ไม่ตรงกับหน่วยที่ตั้งไว้ในระบบ (เช่น เดิมซื้อเป็นกล่อง 4 แกลลอน แต่ล่าสุดซื้อทีละ 1 แกลลอน) ระบบจะ
           <b>ไม่ติ๊กเลือกให้อัตโนมัติ</b> เพราะคำนวณราคาต่อหน่วยผิดได้ — ให้ตรวจสอบ แก้หน่วยซื้อ/จำนวนตัดแต่งในหน้านี้ให้ตรงกับหน่วยใหม่ก่อน
           แล้วจึงนำเข้าราคาอีกครั้ง
         </p>
-        <p className="mb-3 text-xs text-neutral-400">
+        <p className="mb-3 text-xs text-neutral-500">
           สามขั้น: เลือกไฟล์ → <b>อ่านไฟล์</b> (ยังไม่เขียนอะไร แสดงช่วงวันที่ที่ไฟล์ครอบคลุม) → <b>บันทึกประวัติรับของ</b>
           (เก็บรายการรับของจากไฟล์นี้ไว้ก่อนยืนยันราคา เพราะรายงาน POS ย้อนหลังได้จำกัด — ข้อมูลที่ไม่เก็บจะหายไปถาวร)
           → ตรวจราคา → ยืนยัน การกดยืนยันด้านล่างมีผลเฉพาะ<b>การอัปเดตราคาวัตถุดิบ</b>เท่านั้น
@@ -401,7 +403,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
             type="button"
             onClick={handleRead}
             disabled={isPending || !file}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending && !parsed && !progress ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
@@ -433,7 +435,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                 type="button"
                 onClick={() => handleStore()}
                 disabled={isPending}
-                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                className={buttonClass("primary")}
               >
                 {progress ? "กำลังบันทึก..." : `บันทึกประวัติรับของ ${parsed.rows.length.toLocaleString("th-TH")} แถว แล้วดูราคา`}
               </button>
@@ -443,7 +445,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                 ingest writes each delivery once however often it is sent. */}
             {!preview && resume && (
               <div className="space-y-2">
-                <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <p className="rounded-md border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
                   {resume.fromRow >= parsed.rows.length
                     ? `เก็บประวัติครบ ${parsed.rows.length.toLocaleString("th-TH")} แถวแล้ว — ค้างตอนดึงราคามาเทียบ`
                     : `ส่งไปแล้ว ${resume.fromRow.toLocaleString("th-TH")} จาก ${parsed.rows.length.toLocaleString("th-TH")} แถว — เหลืออีก ${(parsed.rows.length - resume.fromRow).toLocaleString("th-TH")} แถว ไม่ต้องเริ่มใหม่`}
@@ -453,7 +455,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                     type="button"
                     onClick={() => handleStore(resume)}
                     disabled={isPending}
-                    className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                    className={buttonClass("primary")}
                   >
                     {progress
                       ? "กำลังบันทึก..."
@@ -465,7 +467,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                     type="button"
                     onClick={() => { setResume(null); handleStore(); }}
                     disabled={isPending}
-                    className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                    className={buttonClass("secondary")}
                   >
                     เริ่มส่งใหม่ทั้งไฟล์
                   </button>
@@ -495,7 +497,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
           className="flex w-full items-center justify-between px-4 py-3 text-left font-medium text-neutral-700 hover:bg-neutral-50"
         >
           <span>ตั้งค่า alias ราคา ({aliases.length})</span>
-          <span className="text-neutral-400">{showAliases ? "▲" : "▼"}</span>
+          <span className="text-neutral-500">{showAliases ? "▲" : "▼"}</span>
         </button>
 
         {showAliases && (
@@ -511,13 +513,13 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                 {aliases.map((a) => (
                   <div key={a.id} className="flex items-center gap-2 px-3 py-2">
                     <span className="font-medium text-neutral-700">{a.posIngredientName}</span>
-                    <span className="text-neutral-400">→</span>
+                    <span className="text-neutral-500">→</span>
                     <span className="flex-1 text-neutral-600">{a.ingredientName}</span>
                     <button
                       type="button"
                       onClick={() => handleDeleteAlias(a.id)}
                       disabled={aliasIsPending}
-                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                      className={buttonClass("link", { size: "sm", danger: true })}
                     >
                       ลบ
                     </button>
@@ -525,7 +527,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                 ))}
               </div>
             )}
-            {aliases.length === 0 && <p className="text-xs text-neutral-400">ยังไม่มี alias</p>}
+            {aliases.length === 0 && <p className="text-xs text-neutral-500">ยังไม่มี alias</p>}
 
             <div className="flex flex-wrap gap-2">
               <input
@@ -549,19 +551,19 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                 type="button"
                 onClick={handleAddAlias}
                 disabled={aliasIsPending || !newPosName.trim() || !newIngredientId}
-                className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                className={buttonClass("primary")}
               >
                 เพิ่ม
               </button>
             </div>
-            {aliasError && <p className="text-xs text-red-600">{aliasError}</p>}
+            {aliasError && <p className="text-xs text-danger">{aliasError}</p>}
           </div>
         )}
       </div>
 
       {isPending && !preview && <p className="text-sm text-neutral-500">กำลังอ่านไฟล์...</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {doneCount != null && <p className="text-sm text-green-700">อัปเดตราคาสำเร็จ {doneCount} รายการ</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
+      {doneCount != null && <p className="text-sm text-success-ink">อัปเดตราคาสำเร็จ {doneCount} รายการ</p>}
 
       {preview && (
         <div className="space-y-3">
@@ -611,8 +613,8 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
 
           <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-neutral-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-neutral-50">
-                <tr className="border-b border-neutral-200 text-left text-neutral-500">
+              <thead className="sticky top-0">
+                <tr className={TH_ROW}>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2">ชื่อ</th>
                   <th className="px-2 py-2 text-right">ราคาเดิม</th>
@@ -635,7 +637,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                     <>
                     <tr
                       key={r.ingredientId}
-                      className={`border-b border-neutral-100 last:border-0 ${isBlocked ? "bg-red-50" : r.mixedUnits ? "bg-orange-50" : bigChange ? "bg-amber-50" : r.aliasSource ? "bg-blue-50" : ""}`}
+                      className={`border-b border-neutral-100 last:border-0 ${isBlocked ? "bg-danger-soft" : r.mixedUnits ? "bg-orange-50" : bigChange ? "bg-pending-soft" : r.aliasSource ? "bg-info-soft" : ""}`}
                     >
                       <td className="px-2 py-1.5">
                         <input
@@ -649,23 +651,23 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                       <td className="px-2 py-1.5">
                         {r.name}
                         {r.aliasSource && (
-                          <span className="ml-1.5 rounded bg-blue-100 px-1 py-0.5 text-xs text-blue-700">
+                          <span className="ml-1.5 rounded bg-info-soft px-1 py-0.5 text-xs text-info">
                             alias จาก {r.aliasSource}
                           </span>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">{formatBaht(r.oldCost)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium">{formatBaht(r.newCost)}</td>
-                      <td className={`px-2 py-1.5 text-right tabular-nums ${bigChange ? "font-medium text-amber-700" : "text-neutral-500"}`}>
+                      <td className={`px-2 py-1.5 text-right tabular-nums ${bigChange ? "font-medium text-pending-ink" : "text-neutral-500"}`}>
                         {r.pctChange != null ? `${r.pctChange > 0 ? "+" : ""}${r.pctChange.toFixed(0)}%` : "ใหม่"}
                       </td>
                       <td className="px-2 py-1.5 text-neutral-500">
                         {RULE_LABEL[r.rule] ?? r.rule}
-                        <span className="ml-1 text-neutral-400">
+                        <span className="ml-1 text-neutral-500">
                           ({r.poolSize === 1 ? "ครั้งเดียว" : `${r.poolSize} ครั้ง`})
                         </span>
                         {r.vendorUnsettled && (
-                          <span className="ml-1 text-amber-700" title="ผู้ขายหลักยังไม่ชัดเจน — อาจสลับในรอบถัดไป">⚠</span>
+                          <span className="ml-1 text-pending-ink" title="ผู้ขายหลักยังไม่ชัดเจน — อาจสลับในรอบถัดไป">⚠</span>
                         )}
                         {r.monthPrecisionSeen > 0 && (
                           <span
@@ -676,7 +678,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                           </span>
                         )}
                         {r.outliersDropped > 0 && (
-                          <span className="ml-1 text-neutral-400" title={`ตัดรายการผิดปกติออก ${r.outliersDropped} รายการ`}>
+                          <span className="ml-1 text-neutral-500" title={`ตัดรายการผิดปกติออก ${r.outliersDropped} รายการ`}>
                             ↯{r.outliersDropped}
                           </span>
                         )}
@@ -685,16 +687,16 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                             now means "% of the quantity bought", and a percentage
                             that changes meaning without saying so is worse than
                             no percentage. */}
-                        <div className="text-[10px] text-neutral-400">
+                        <div className="text-[10px] text-neutral-500">
                           {r.vendorName || "(ไม่ระบุผู้ขาย)"}
                           {r.vendorShare > 0 && ` · ส่งของ ${Math.round(r.vendorShare * 100)}% ของปริมาณ`}
                         </div>
                       </td>
-                      <td className={`px-2 py-1.5 ${r.unitState === "changed" ? "font-medium text-red-700" : "text-neutral-500"}`}>
+                      <td className={`px-2 py-1.5 ${r.unitState === "changed" ? "font-medium text-danger" : "text-neutral-500"}`}>
                         {r.oldUnit ?? "—"} → {r.newUnit || "—"}
                         {r.unitState === "changed" && " ⚠"}
                         {r.unitRedefinitionSuspected && (
-                          <div className="text-[10px] font-medium text-red-700">
+                          <div className="text-[10px] font-medium text-danger">
                             หน่วยเดิมกับ POS ชื่อเหมือนกัน แต่ราคาต่างกัน {r.suspectedPackCount}× พอดี — น่าจะเป็นคนละขนาดบรรจุ ต้องแก้ราคา+หน่วย+ปริมาณพร้อมกัน
                           </div>
                         )}
@@ -703,7 +705,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                       <td className="px-2 py-1.5 text-neutral-500">{r.latestDateLabel}</td>
                     </tr>
                     {r.unitState === "changed" && (
-                      <tr key={`${r.ingredientId}-resolve`} className={isBlocked ? "bg-red-50" : "bg-green-50"}>
+                      <tr key={`${r.ingredientId}-resolve`} className={isBlocked ? "bg-danger-soft" : "bg-success-soft"}>
                         <td />
                         <td colSpan={6} className="px-2 pb-2 text-xs">
                           <div className="rounded border border-neutral-200 bg-white p-2">
@@ -726,7 +728,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
                               />
                               <button
                                 type="button"
-                                className="rounded bg-neutral-900 px-2.5 py-1 font-medium text-white hover:bg-neutral-700"
+                                className={buttonClass("primary", { size: "sm" })}
                                 onClick={() => {
                                   setResolved((p) => ({ ...p, [r.ingredientId]: true }));
                                   setChecked((p) => ({ ...p, [r.ingredientId]: true }));
@@ -776,7 +778,7 @@ export function PosPriceImport({ ingredientOptions }: { ingredientOptions: { id:
             type="button"
             disabled={isPending || checkedCount === 0}
             onClick={confirmApply}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending ? "กำลังอัปเดต..." : `ยืนยันอัปเดตราคา ${checkedCount} รายการ`}
           </button>

@@ -11,6 +11,8 @@ import {
 } from "@/app/owner/sales-import-actions";
 import { divisibleSource, sourcesQty, validDivisor, withSessionChanges, type SalesSource } from "@/lib/pos-sales-divisor";
 import { unstable_rethrow, useRouter } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 function formatNum(n: number) {
   return n.toLocaleString("th-TH");
@@ -200,7 +202,7 @@ export function PosSalesImport() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
+          className={buttonClass("secondary")}
         >
           นำเข้ายอดขายจาก POS
         </button>
@@ -219,7 +221,7 @@ export function PosSalesImport() {
             to Excel — เมื่อยืนยัน ยอดขายเดิมของทุกเมนูจะถูกล้างเป็น 0 ก่อน แล้วใส่ยอดจากไฟล์นี้ เมนูที่ไม่อยู่ในไฟล์
             หรือไม่ได้เลือกไว้ จะมียอดขายเป็น 0
           </p>
-          <p className="mb-3 text-xs text-neutral-400">
+          <p className="mb-3 text-xs text-neutral-500">
             ถ้าชื่อสินค้าใน POS ไม่ตรงกับเมนูเลย (อยู่ในรายการ &quot;ไม่พบในระบบ&quot; ด้านล่าง เช่น ขายตามน้ำหนักเป็นขีด) ใช้ปุ่ม
             &quot;ผูกเข้าเมนู&quot; เพื่อรวมยอดเข้ากับเมนูที่มีอยู่ และใส่ตัวหารในช่อง ÷ — POS นับเป็นขีด แต่เมนูในแอป 1 หน่วย = 1 กก.
             ให้ใส่ 10 (เว้นว่าง = ÷1) — ผูกครั้งเดียว ครั้งต่อไปนำเข้าใหม่จะรวมให้อัตโนมัติเลย ตัวหาร ÷10 ยังทำให้ใบฟังก์ชั่นงานจัดเลี้ยง
@@ -237,7 +239,7 @@ export function PosSalesImport() {
               type="button"
               onClick={handleRead}
               disabled={isPending || !file}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className={buttonClass("primary")}
             >
               {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
             </button>
@@ -257,20 +259,20 @@ export function PosSalesImport() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {doneCount != null && <p className="text-sm text-green-700">อัปเดตยอดขายสำเร็จ {doneCount} เมนู</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
+      {doneCount != null && <p className="text-sm text-success-ink">อัปเดตยอดขายสำเร็จ {doneCount} เมนู</p>}
 
       {preview && (
         <div className="space-y-3">
           {preview.dateFrom && (
-            <p className="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <p className="rounded-md bg-info-soft px-3 py-2 text-sm text-info">
               📅 {preview.dateTo && preview.dateTo !== preview.dateFrom ? "ช่วงวันที่" : "วันที่"}ในรายงาน:{" "}
               <strong>
                 {preview.dateTo && preview.dateTo !== preview.dateFrom
                   ? `${preview.dateFrom} – ${preview.dateTo}`
                   : preview.dateFrom}
               </strong>
-              <span className="ml-2 text-xs text-blue-600">(ยอดขายเดิมทั้งหมดจะถูกล้าง แล้วแทนด้วยข้อมูลใหม่จากไฟล์นี้)</span>
+              <span className="ml-2 text-xs text-info">(ยอดขายเดิมทั้งหมดจะถูกล้าง แล้วแทนด้วยข้อมูลใหม่จากไฟล์นี้)</span>
             </p>
           )}
           <div className="flex items-center justify-between">
@@ -293,8 +295,8 @@ export function PosSalesImport() {
 
           <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-neutral-200">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-neutral-50">
-                <tr className="border-b border-neutral-200 text-left text-neutral-500">
+              <thead className="sticky top-0">
+                <tr className={TH_ROW}>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2">เมนู</th>
                   <th className="px-2 py-2 text-right">ยอดขายเดิม</th>
@@ -325,7 +327,7 @@ export function PosSalesImport() {
                       <td className="px-2 py-1.5">
                         {r.name}
                         {showSources && (
-                          <div className="mt-0.5 text-xs text-neutral-400">
+                          <div className="mt-0.5 text-xs text-neutral-500">
                             {sources
                               .map((s) => `${s.productName} (${formatNum(s.qtySold)}) ${s.saved ? `÷${formatDivisor(s.divisor)}` : "ยังไม่มีตัวหาร"}`)
                               .join(" · ")}
@@ -335,16 +337,16 @@ export function PosSalesImport() {
                       <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">{formatNum(r.oldQty)}</td>
                       <td className="px-2 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <span className={`tabular-nums ${adjusted ? "font-medium text-amber-700" : "font-medium"}`}>
+                          <span className={`tabular-nums ${adjusted ? "font-medium text-pending-ink" : "font-medium"}`}>
                             {formatNum(finalQty)}
                           </span>
                           {!divisible ? (
-                            <span className="text-xs text-green-700" title="ตั้งตัวหารไว้แล้ว — แก้หรือลบได้ที่หน้า ตัวหารยอดขาย POS">
+                            <span className="text-xs text-success-ink" title="ตั้งตัวหารไว้แล้ว — แก้หรือลบได้ที่หน้า ตัวหารยอดขาย POS">
                               ({inEffect.map((d) => `÷${formatDivisor(d)}`).join(" · ")} ✓)
                             </span>
                           ) : (
                             <>
-                              <span className="text-xs text-neutral-400">÷</span>
+                              <span className="text-xs text-neutral-500">÷</span>
                               <input
                                 type="text"
                                 inputMode="decimal"
@@ -360,7 +362,7 @@ export function PosSalesImport() {
                                 disabled={!rowDivisorInput[r.menuId] || isPending}
                                 onClick={() => divideRow(r)}
                                 title={`หารยอดของ "${divisible.productName}" ใน POS ถาวร (เช่น POS นับเป็นขีด แต่ในแอป 1 หน่วย = 1 กก. ให้หาร 10) — บันทึกไว้ใช้ครั้งหน้าด้วย ÷10 ยังทำให้ใบฟังก์ชั่นงานจัดเลี้ยงพิมพ์เมนูนี้เป็น กก.`}
-                                className="rounded border border-neutral-300 px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40"
+                                className={buttonClass("secondary", { size: "sm" })}
                               >
                                 หาร
                               </button>
@@ -395,7 +397,7 @@ export function PosSalesImport() {
                         {u.productName} — ขาย {formatNum(u.qtySold)}
                       </span>
                       {merged ? (
-                        <span className="text-xs text-green-700">✓ ผูกแล้ว (จำไว้ใช้ครั้งหน้าด้วย)</span>
+                        <span className="text-xs text-success-ink">✓ ผูกแล้ว (จำไว้ใช้ครั้งหน้าด้วย)</span>
                       ) : (
                         <>
                           <select
@@ -410,7 +412,7 @@ export function PosSalesImport() {
                               </option>
                             ))}
                           </select>
-                          <span className="text-xs text-neutral-400">÷</span>
+                          <span className="text-xs text-neutral-500">÷</span>
                           <input
                             type="text"
                             inputMode="decimal"
@@ -425,7 +427,7 @@ export function PosSalesImport() {
                             type="button"
                             disabled={!mergeTarget[u.productName] || isPending}
                             onClick={() => mergeUnmatched(u.productName, u.qtySold)}
-                            className="rounded border border-neutral-300 px-1.5 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
+                            className={buttonClass("secondary", { size: "sm" })}
                           >
                             ผูกเข้าเมนู
                           </button>
@@ -441,9 +443,9 @@ export function PosSalesImport() {
           <p className="text-xs text-neutral-500">
             เมื่อยืนยัน ยอดขายของทุกเมนูจะถูกล้างเป็น 0 ก่อน — เมนูที่ไม่ได้เลือก และเมนูที่ไม่อยู่ในไฟล์นี้ จะมียอดขายเป็น 0
           </p>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           {stale && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="rounded-md border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
               บันทึกตัวหารไม่สำเร็จ ตัวเลขในตารางนี้อาจไม่ตรงกับตัวหารที่บันทึกไว้จริง — กด &quot;อ่านไฟล์&quot; อีกครั้งก่อนยืนยัน
             </p>
           )}
@@ -451,7 +453,7 @@ export function PosSalesImport() {
             type="button"
             disabled={isPending || checkedCount === 0 || stale}
             onClick={confirmApply}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending ? "กำลังอัปเดต..." : `ยืนยันอัปเดตยอดขาย ${checkedCount} เมนู`}
           </button>

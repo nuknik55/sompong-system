@@ -16,10 +16,10 @@ const CLASS_ICON: Record<MenuEngineeringClass, IconComponent | null> = {
 };
 
 const CLASS_ICON_COLOR: Record<MenuEngineeringClass, string> = {
-  Star:     "text-green-600",
-  Horse:    "text-blue-600",
+  Star:     "text-success-ink",
+  Horse:    "text-info",
   Puzzle:   "text-amber-500",
-  Dog:      "text-neutral-400",
+  Dog:      "text-neutral-500",
   Unranked: "text-neutral-300",
 };
 
@@ -105,7 +105,7 @@ export function MenuEngineeringSection({ rows, classCounts }: Props) {
           <button
             type="button"
             onClick={() => setHideUnranked((p) => !p)}
-            className="ml-auto text-xs text-neutral-400 underline hover:text-neutral-700"
+            className="ml-auto text-xs text-neutral-500 underline hover:text-neutral-700"
           >
             {hideUnranked ? `แสดงเมนูที่ยังจัดอันดับไม่ได้ (${unrankedCount})` : `ซ่อนเมนูที่ยังจัดอันดับไม่ได้ (${unrankedCount})`}
           </button>

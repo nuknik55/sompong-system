@@ -9,6 +9,7 @@ import { PrepYieldEditor } from "@/components/prep-yield-editor";
 import { DuplicateButton } from "@/components/duplicate-button";
 import { DeleteRecipeButton } from "@/components/delete-recipe-button";
 import { duplicatePrep, deletePrep } from "@/app/staff/prep/actions";
+import { PageHeader, PageShell } from "@/components/ui/page";
 import { RecipeHistory } from "@/components/recipe-history";
 
 export default async function StaffPrepEditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -48,11 +49,11 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
   const canEdit = access !== "view";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">{prep.name}</h1>
-          {canEdit ? (
+    <PageShell>
+      <PageHeader
+        title={prep.name}
+        subtitle={
+          canEdit ? (
             <PrepYieldEditor
               prepId={prep.id}
               prepName={prep.name}
@@ -61,13 +62,14 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
               submitMode={isEditor ? "pending" : "save"}
             />
           ) : (
-            <p className="text-sm text-neutral-500">
+            <span>
               ทำได้ {prep.batch_yield_qty.toLocaleString("th-TH")} {prep.batch_yield_unit} ต่อรอบ
-            </p>
-          )}
-        </div>
-        {canEdit && (
-          <div className="flex flex-wrap gap-2">
+            </span>
+          )
+        }
+        actions={
+          canEdit && (
+          <>
             <DuplicateButton
               id={prep.id}
               originalName={prep.name}
@@ -85,9 +87,10 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
                 redirectTo="/owner/ingredients"
               />
             )}
-          </div>
-        )}
-      </div>
+          </>
+          )
+        }
+      />
       <RecipeEditor
         target="prep"
         parentId={prep.id}
@@ -102,12 +105,12 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
         showCosts={canEdit}
       />
       {canEdit && (
-        <p className="text-xs text-neutral-400">
+        <p className="text-xs text-neutral-500">
           ต้นทุนรวมข้างบน คือต้นทุนของเตรียม 1 รอบ ({prep.batch_yield_qty} {prep.batch_yield_unit}) — ต้นทุนต่อหน่วยที่เมนูอื่นใช้
           จะถูกหารด้วยจำนวนนี้โดยอัตโนมัติ
         </p>
       )}
       <RecipeHistory target="prep" parentId={prep.id} />
-    </div>
+    </PageShell>
   );
 }

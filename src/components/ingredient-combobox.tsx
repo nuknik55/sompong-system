@@ -83,11 +83,11 @@ export function IngredientCombobox({
             setOpen(false);
             setQuery("");
           }}
-          className="block w-full px-3 py-1.5 text-left text-sm text-neutral-400 hover:bg-neutral-100"
+          className="block w-full px-3 py-1.5 text-left text-sm text-neutral-500 hover:bg-neutral-100"
         >
           — ไม่เลือก —
         </button>
-        {filtered.length === 0 && <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบวัตถุดิบที่ค้นหา</p>}
+        {filtered.length === 0 && <p className="px-3 py-2 text-sm text-neutral-500">ไม่พบวัตถุดิบที่ค้นหา</p>}
         {filtered.map(([category, opts]) => (
           <div key={category}>
             <p className="bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-500">{category}</p>

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CategorySelect } from "@/components/category-select";
 import { Plus, Save } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 
 // Item 12: the action returns its outcome as a value (ok/pending/error), so
 // the Thai message reaches the user in production — a thrown Server Action
@@ -82,7 +83,7 @@ export function CreateRecipeForm(props: Props) {
         <button
           type="button"
           onClick={() => { setOpen(true); setNotice(null); }}
-          className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
+          className={buttonClass("primary")}
         >
           <Plus className="h-4 w-4" />
           {props.kind === "menu" ? "สร้างเมนูใหม่" : "สร้างของ prep ใหม่"}
@@ -92,7 +93,7 @@ export function CreateRecipeForm(props: Props) {
             (Nik, 2026-09-16) — a success in error colours teaches people to
             distrust the colour. Same shape as the app's other amber notices. */}
         {notice && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{notice}</p>
+          <p className="rounded-md border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">{notice}</p>
         )}
       </div>
     );
@@ -134,18 +135,18 @@ export function CreateRecipeForm(props: Props) {
           />
         </div>
       )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="button"
           disabled={isPending}
           onClick={submit}
-          className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+          className={buttonClass("primary")}
         >
           <Save className="h-3.5 w-3.5" />
           {isPending ? "กำลังสร้าง..." : props.pendingMode ? "ส่งขออนุมัติ" : "สร้างและไปดูสูตร"}
         </button>
-        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100">
+        <button type="button" onClick={() => setOpen(false)} className={buttonClass("secondary")}>
           ยกเลิก
         </button>
       </div>

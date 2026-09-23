@@ -6,6 +6,7 @@ import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
 import { createPrep } from "@/app/staff/prep/actions";
 import { Tabs } from "@/components/tabs";
+import { PageHeader, PageShell } from "@/components/ui/page";
 import { PosPriceImport } from "@/components/pos-price-import";
 
 export default async function OwnerIngredientsPage() {
@@ -51,16 +52,18 @@ export default async function OwnerIngredientsPage() {
   const isAdmin = profile.role === "admin" || profile.role === "owner";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900">จัดการวัตถุดิบ</h1>
-        <p className="text-sm text-neutral-500">
-          แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบ — ของ prep คำนวณต้นทุนจากสูตรอัตโนมัติ
-          {submitMode === "pending" && (
-            <span className="ml-1 text-amber-600">· การเปลี่ยนแปลงต้องรอ Admin อนุมัติ</span>
-          )}
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="จัดการวัตถุดิบ"
+        subtitle={
+          <span>
+            แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบ — ของ prep คำนวณต้นทุนจากสูตรอัตโนมัติ
+            {submitMode === "pending" && (
+              <span className="ml-1 text-pending-ink">· การเปลี่ยนแปลงต้องรอ Admin อนุมัติ</span>
+            )}
+          </span>
+        }
+      />
       <Tabs
         tabs={[
           {
@@ -113,6 +116,6 @@ export default async function OwnerIngredientsPage() {
             : []),
         ]}
       />
-    </div>
+    </PageShell>
   );
 }

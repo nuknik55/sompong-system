@@ -5,6 +5,7 @@ import { editAccess } from "@/lib/edit-access";
 import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
 import { createMenu } from "@/app/staff/menu/actions";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function StaffHomePage() {
   const [{ menus, menuItems, unitCosts, qFactorPct }, profile] = await Promise.all([
@@ -44,26 +45,26 @@ export default async function StaffHomePage() {
   const canCreate = profile?.role === "admin" || profile?.role === "owner" || profile?.role === "editor";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-kanit text-xl font-semibold text-neutral-900">สูตรอาหาร</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {profile?.role === "staff"
-              ? "ดูสูตรวัตถุดิบแต่ละเมนู — ไม่สามารถแก้ไขได้"
-              : "เลือกวัตถุดิบจากรายการ ห้ามพิมพ์ชื่อเอง ระบบจะคำนวณต้นทุนให้อัตโนมัติ"}
-          </p>
-        </div>
-        {canCreate && (
-          <CreateRecipeForm
-            kind="menu"
-            createAction={createMenu}
-            hrefPrefix="/staff/menu"
-            categories={categories}
-            pendingMode={profile?.role === "editor"}
-          />
-        )}
-      </div>
+    <PageShell>
+      <PageHeader
+        title="สูตรอาหาร"
+        subtitle={
+          profile?.role === "staff"
+            ? "ดูสูตรวัตถุดิบแต่ละเมนู — ไม่สามารถแก้ไขได้"
+            : "เลือกวัตถุดิบจากรายการ ห้ามพิมพ์ชื่อเอง ระบบจะคำนวณต้นทุนให้อัตโนมัติ"
+        }
+        actions={
+          canCreate && (
+            <CreateRecipeForm
+              kind="menu"
+              createAction={createMenu}
+              hrefPrefix="/staff/menu"
+              categories={categories}
+              pendingMode={profile?.role === "editor"}
+            />
+          )
+        }
+      />
       <CategoryFilterList
         items={visibleMenus.map((m) => ({
           id: m.id,
@@ -75,6 +76,6 @@ export default async function StaffHomePage() {
         hrefPrefix="/staff/menu"
         placeholder="พิมพ์ค้นหาชื่อเมนู..."
       />
-    </div>
+    </PageShell>
   );
 }

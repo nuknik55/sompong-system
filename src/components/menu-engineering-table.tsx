@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { IconStar, IconHorse, IconPuzzle, IconDog } from "@tabler/icons-react";
 import type { MenuEngineeringClass } from "@/lib/costing";
 import { bangkokToday } from "@/lib/bangkok-date";
+import { TH_ROW } from "@/components/ui/table";
+import { buttonClass } from "@/components/ui/button";
 
 export type MenuTableRow = {
   id: string;
@@ -21,11 +23,11 @@ export type MenuTableRow = {
 };
 
 const CLASS_COLOR: Record<MenuEngineeringClass, string> = {
-  Star: "bg-green-100 text-green-800",
-  Horse: "bg-blue-100 text-blue-800",
-  Puzzle: "bg-amber-100 text-amber-800",
+  Star: "bg-success-soft text-success-ink",
+  Horse: "bg-info-soft text-info",
+  Puzzle: "bg-pending-soft text-pending-ink",
   Dog: "bg-neutral-200 text-neutral-700",
-  Unranked: "bg-neutral-100 text-neutral-400",
+  Unranked: "bg-neutral-100 text-neutral-500",
 };
 
 const CLASS_ICON: Partial<Record<MenuEngineeringClass, React.ComponentType<{ className?: string; size?: number; stroke?: number }>>> = {
@@ -161,14 +163,14 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
           <button
             type="button"
             onClick={() => exportCsv(sorted)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            className={buttonClass("secondary")}
           >
             ดาวน์โหลด CSV (Excel)
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            className={buttonClass("secondary")}
           >
             พิมพ์ / บันทึกเป็น PDF
           </button>
@@ -179,7 +181,7 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
       <div className="hidden md:block overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+            <tr className={TH_ROW}>
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
@@ -199,12 +201,12 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
                   <span className="inline-flex flex-wrap items-center gap-1">
                     {r.name}
                     {r.isPremium && (
-                      <span className="rounded bg-brand-gold/20 px-1.5 py-0.5 text-xs font-medium text-amber-900">
+                      <span className="rounded bg-brand-gold/20 px-1.5 py-0.5 text-xs font-medium text-pending-ink">
                         พรีเมียม
                       </span>
                     )}
                     {r.hasUnknownCost && (
-                      <span className="text-xs text-amber-600" title="มีวัตถุดิบที่ยังไม่มีราคา">⚠</span>
+                      <span className="text-xs text-pending-ink" title="มีวัตถุดิบที่ยังไม่มีราคา">⚠</span>
                     )}
                   </span>
                 </td>
@@ -239,12 +241,12 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
               <div className="flex min-w-0 flex-wrap items-center gap-1">
                 <span className="font-medium text-neutral-900">{r.name}</span>
                 {r.isPremium && (
-                  <span className="rounded bg-brand-gold/20 px-1.5 py-0.5 text-xs font-medium text-amber-900">
+                  <span className="rounded bg-brand-gold/20 px-1.5 py-0.5 text-xs font-medium text-pending-ink">
                     พรีเมียม
                   </span>
                 )}
                 {r.hasUnknownCost && (
-                  <span className="text-xs text-amber-600" title="มีวัตถุดิบที่ยังไม่มีราคา">⚠</span>
+                  <span className="text-xs text-pending-ink" title="มีวัตถุดิบที่ยังไม่มีราคา">⚠</span>
                 )}
               </div>
               <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${CLASS_COLOR[r.menuClass]}`}>
@@ -265,14 +267,14 @@ export function MenuEngineeringTable({ rows }: { rows: MenuTableRow[] }) {
                 {r.foodCostPct != null ? `${(r.foodCostPct * 100).toFixed(1)}%` : "-"}
               </span>
               <span className="text-neutral-500">กำไร/จาน</span>
-              <span className={`text-right tabular-nums font-medium ${r.profitPerUnit < 0 ? "text-red-600" : "text-green-700"}`}>
+              <span className={`text-right tabular-nums font-medium ${r.profitPerUnit < 0 ? "text-danger" : "text-success-ink"}`}>
                 {formatBaht(r.profitPerUnit)} บาท
               </span>
             </div>
           </div>
         ))}
         {sorted.length === 0 && (
-          <p className="py-8 text-center text-sm text-neutral-400">ไม่พบรายการ</p>
+          <p className="py-8 text-center text-sm text-neutral-500">ไม่พบรายการ</p>
         )}
       </div>
     </div>

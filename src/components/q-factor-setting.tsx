@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { updateQFactor } from "@/app/owner/settings/actions";
+import { buttonClass } from "@/components/ui/button";
 
 export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner: boolean }) {
   const [value, setValue] = useState(String(initial));
@@ -21,7 +22,7 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
           setValue(e.target.value.replace(/[^0-9.]/g, ""));
           setSaved(false);
         } : undefined}
-        className={`w-16 rounded border border-neutral-300 px-2 py-1 text-right ${!isOwner ? "bg-neutral-50 text-neutral-400 cursor-default" : ""}`}
+        className={`w-16 rounded border border-neutral-300 px-2 py-1 text-right ${!isOwner ? "bg-neutral-50 text-neutral-500 cursor-default" : ""}`}
       />
       <span className="text-neutral-500">%</span>
       {isOwner && !saved && (
@@ -45,12 +46,12 @@ export function QFactorSetting({ initial, isOwner }: { initial: number; isOwner:
               }
             })
           }
-          className="rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+          className={buttonClass("primary", { size: "sm" })}
         >
           บันทึก
         </button>
       )}
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-danger">{error}</span>}
     </div>
   );
 }

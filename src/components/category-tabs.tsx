@@ -19,10 +19,11 @@ export function CategoryTabs({ categories, selected }: Props) {
           <Link
             key={tab.value}
             href={href}
-            className={`whitespace-nowrap rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+            // The selected tab is the primary tint (a selection, not an action).
+            className={`whitespace-nowrap rounded-full border px-3 py-1 font-heading text-sm font-medium transition-colors ${
               isActive
-                ? "bg-brand-green text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                ? "border-primary/30 bg-primary-soft text-primary"
+                : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
             }`}
           >
             {tab.label}

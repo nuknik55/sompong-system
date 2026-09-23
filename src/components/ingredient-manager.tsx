@@ -17,6 +17,8 @@ import {
 import { CategorySelect } from "@/components/category-select";
 import { decimalBoxInput, decimalBoxText } from "@/lib/decimal-input";
 import { Plus, Save, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 export type UsageMap = Record<string, { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] }>;
 
@@ -246,7 +248,7 @@ export function IngredientManager({
           type="button"
           disabled={page === 0}
           onClick={() => setPage((p) => p - 1)}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+          className={buttonClass("secondary")}
         >
           <ChevronLeft className="h-4 w-4" />
           ก่อนหน้า
@@ -258,7 +260,7 @@ export function IngredientManager({
           type="button"
           disabled={page >= totalPages - 1}
           onClick={() => setPage((p) => p + 1)}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+          className={buttonClass("secondary")}
         >
           ถัดไป
           <ChevronRight className="h-4 w-4" />
@@ -272,7 +274,7 @@ export function IngredientManager({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-1">
           <div className="relative sm:w-64">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500 pointer-events-none" />
             <input
               type="text"
               value={search}
@@ -321,25 +323,25 @@ export function IngredientManager({
                     }
                   });
                 }}
-                className="shrink-0 rounded-md border border-red-300 px-2.5 py-2 text-sm text-red-600 hover:bg-red-50"
+                className={buttonClass("secondary", { danger: true, className: "shrink-0" })}
               >
                 ลบหมวดนี้
               </button>
             )}
           </div>
-          {categoryDeletePending && <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
+          {categoryDeletePending && <p className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
           <button
             type="button"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-green px-3 py-2 text-sm font-medium text-white hover:bg-brand-green/90"
+            className={buttonClass("primary", { className: "shrink-0" })}
             onClick={() => { setShowNewForm((v) => !v); setNewFormPending(false); }}
           >
             {showNewForm ? "ยกเลิก" : <><Plus className="h-4 w-4" />เพิ่มวัตถุดิบใหม่</>}
           </button>
         </div>
-        {newFormPending && <p className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
+        {newFormPending && <p className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</p>}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* New ingredient form */}
       {showNewForm && (
@@ -398,7 +400,7 @@ export function IngredientManager({
               type="button"
               disabled={isPending}
               onClick={submitNew}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-brand-green px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+              className={buttonClass("primary", { className: "w-full justify-center" })}
             >
               <Save className="h-3.5 w-3.5" />
               {submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึกวัตถุดิบใหม่"}
@@ -407,7 +409,7 @@ export function IngredientManager({
         </div>
       )}
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         พบ {filtered.length} รายการ (จากทั้งหมด {rows.length})
         {totalPages > 1 && ` — หน้า ${page + 1} / ${totalPages}`}
       </p>
@@ -416,7 +418,7 @@ export function IngredientManager({
       <div className="hidden md:block overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+            <tr className={TH_ROW}>
               <th className="px-2 py-2">ชื่อ</th>
               <th className="px-2 py-2">หมวด</th>
               <th className="px-2 py-2">หน่วยซื้อ</th>
@@ -440,7 +442,7 @@ export function IngredientManager({
                 <>
                   <tr
                     key={row.id}
-                    className={`border-b border-neutral-100 last:border-0 transition-colors ${isIncomplete ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-brand-green/5"}`}
+                    className={`border-b border-neutral-100 last:border-0 transition-colors ${isIncomplete ? "bg-pending-soft hover:bg-pending-soft" : "hover:bg-brand-green/5"}`}
                   >
                     <td className="px-2 py-1.5">
                       <input
@@ -518,13 +520,13 @@ export function IngredientManager({
                           type="button"
                           disabled={isPending}
                           onClick={() => saveRow(row.id)}
-                          className="inline-flex items-center gap-1 rounded bg-brand-green px-2 py-1 text-xs text-white hover:bg-brand-green/90 disabled:opacity-50"
+                          className={buttonClass("primary", { size: "sm" })}
                         >
                           <Save className="h-3 w-3" />
                           {submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก"}
                         </button>
-                        {rowStatus[row.id] === "saved" && <span className="text-xs text-green-600">✓ บันทึกสำเร็จ</span>}
-                        {rowStatus[row.id] === "pending" && <span className="text-xs text-amber-600">⏳ ส่งแล้ว</span>}
+                        {rowStatus[row.id] === "saved" && <span className="text-xs text-success-ink">✓ บันทึกสำเร็จ</span>}
+                        {rowStatus[row.id] === "pending" && <span className="text-xs text-pending-ink">⏳ ส่งแล้ว</span>}
                       </div>
                     </td>
                     <td className="px-2 py-1.5 text-right">
@@ -541,7 +543,7 @@ export function IngredientManager({
                         type="button"
                         disabled={isPending}
                         onClick={() => removeRow(row.id, row.name)}
-                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                        className={buttonClass("link", { size: "sm", dangerHover: true })}
                       >
                         ลบ
                       </button>
@@ -570,7 +572,7 @@ export function IngredientManager({
           return (
             <div
               key={row.id}
-              className={`rounded-lg border border-neutral-200 p-3 shadow-sm ${isIncomplete ? "bg-amber-50" : "bg-white"}`}
+              className={`rounded-lg border border-neutral-200 p-3 shadow-sm ${isIncomplete ? "bg-pending-soft" : "bg-white"}`}
             >
               {/* Row 1: Name + Category */}
               <div className="mb-2 flex gap-2">
@@ -661,13 +663,13 @@ export function IngredientManager({
                   type="button"
                   disabled={isPending}
                   onClick={() => saveRow(row.id)}
-                  className="inline-flex items-center gap-1 rounded-md bg-brand-green px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+                  className={buttonClass("primary")}
                 >
                   <Save className="h-3.5 w-3.5" />
                   {submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก"}
                 </button>
-                {rowStatus[row.id] === "saved" && <span className="text-xs text-green-600">✓ บันทึกสำเร็จ</span>}
-                {rowStatus[row.id] === "pending" && <span className="text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว</span>}
+                {rowStatus[row.id] === "saved" && <span className="text-xs text-success-ink">✓ บันทึกสำเร็จ</span>}
+                {rowStatus[row.id] === "pending" && <span className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว</span>}
                 <button
                   type="button"
                   onClick={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
@@ -679,7 +681,7 @@ export function IngredientManager({
                   type="button"
                   disabled={isPending}
                   onClick={() => removeRow(row.id, row.name)}
-                  className="ml-auto text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                  className={buttonClass("link", { size: "sm", dangerHover: true, className: "ml-auto" })}
                 >
                   ลบ
                 </button>
@@ -751,8 +753,8 @@ function UsageItem({
 
   return (
     <li className="flex flex-wrap items-center gap-2 text-sm">
-      <Link href={href} className="min-w-0 flex-1 truncate text-blue-600 hover:underline">{name}</Link>
-      {saveError && <span className="w-full text-xs text-red-600">{saveError}</span>}
+      <Link href={href} className="min-w-0 flex-1 truncate text-neutral-800 underline decoration-neutral-400 underline-offset-2 hover:text-neutral-950 hover:decoration-neutral-800">{name}</Link>
+      {saveError && <span className="w-full text-xs text-danger">{saveError}</span>}
       {editing ? (
         <input
           type="text"
@@ -796,7 +798,7 @@ function IngredientDetail({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div>
-        <p className="mb-1 text-xs font-medium text-neutral-500">ใช้ในเมนู ({usage?.menus.length ?? 0}) <span className="font-normal text-neutral-400">— คลิกตัวเลขเพื่อแก้</span></p>
+        <p className="mb-1 text-xs font-medium text-neutral-500">ใช้ในเมนู ({usage?.menus.length ?? 0}) <span className="font-normal text-neutral-500">— คลิกตัวเลขเพื่อแก้</span></p>
         <ul className="space-y-0.5">
           {(usage?.menus ?? []).map((m) => (
             <UsageItem
@@ -809,7 +811,7 @@ function IngredientDetail({
               onSave={updateMenuItemQty}
             />
           ))}
-          {!usage?.menus.length && <li className="text-sm text-neutral-400">ไม่มี</li>}
+          {!usage?.menus.length && <li className="text-sm text-neutral-500">ไม่มี</li>}
         </ul>
         <p className="mt-3 mb-1 text-xs font-medium text-neutral-500">ใช้ในของ prep ({usage?.preps.length ?? 0})</p>
         <ul className="space-y-0.5">
@@ -824,20 +826,20 @@ function IngredientDetail({
               onSave={updatePrepItemQty}
             />
           ))}
-          {!usage?.preps.length && <li className="text-sm text-neutral-400">ไม่มี</li>}
+          {!usage?.preps.length && <li className="text-sm text-neutral-500">ไม่มี</li>}
         </ul>
       </div>
       <div>
         <p className="mb-1 text-xs font-medium text-neutral-500">ประวัติการแก้ราคา (ล่าสุด 20 ครั้ง)</p>
         {history == null ? (
-          <p className="text-sm text-neutral-400">กำลังโหลด...</p>
+          <p className="text-sm text-neutral-500">กำลังโหลด...</p>
         ) : history.length === 0 ? (
-          <p className="text-sm text-neutral-400">ยังไม่มีประวัติการแก้ไข</p>
+          <p className="text-sm text-neutral-500">ยังไม่มีประวัติการแก้ไข</p>
         ) : (
           <ul className="space-y-1.5 text-sm">
             {history.map((h) => (
               <li key={h.id} className="border-b border-neutral-200 pb-1 last:border-0">
-                <span className="text-neutral-400">{formatDate(h.changedAt)}</span> โดย{" "}
+                <span className="text-neutral-500">{formatDate(h.changedAt)}</span> โดย{" "}
                 <span className="font-medium">{h.changedByName}</span>
                 <div className="text-neutral-600">
                   ราคาซื้อ: {h.oldPurchaseCost ?? "-"} → {h.newPurchaseCost ?? "-"} บาท

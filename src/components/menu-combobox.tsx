@@ -60,7 +60,7 @@ export function MenuCombobox({
       {open && (
         <div className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-md border border-neutral-200 bg-white shadow-lg">
           {totalFiltered === 0 && (
-            <p className="px-3 py-3 text-sm text-neutral-400">ไม่พบเมนูที่ค้นหา</p>
+            <p className="px-3 py-3 text-sm text-neutral-500">ไม่พบเมนูที่ค้นหา</p>
           )}
           {filtered.map(([category, opts]) => (
             <div key={category}>

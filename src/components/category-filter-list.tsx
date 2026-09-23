@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { AccentTag, accentFor } from "@/components/ui/badge";
 
 export type FilterableItem = {
   id: string;
@@ -13,24 +15,9 @@ export type FilterableItem = {
   hiddenFromStaff?: boolean;
 };
 
-// Soft palette for category badges — color is picked by hashing the category name
-// so the same category always gets the same color across the list.
-const BADGE_COLORS = [
-  "bg-sky-100 text-sky-700",
-  "bg-amber-100 text-amber-700",
-  "bg-emerald-100 text-emerald-700",
-  "bg-violet-100 text-violet-700",
-  "bg-rose-100 text-rose-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-orange-100 text-orange-700",
-  "bg-teal-100 text-teal-700",
-];
-
-function categoryBadgeColor(cat: string): string {
-  let hash = 0;
-  for (let i = 0; i < cat.length; i++) hash = (hash * 31 + cat.charCodeAt(i)) & 0xffffff;
-  return BADGE_COLORS[Math.abs(hash) % BADGE_COLORS.length];
-}
+// A category's tag is one of the brand accents (AGENTS.md, "The app's look"):
+// accentFor(name) hashes the name, so the same category always gets the same
+// accent across the list. An accent tells categories apart; it judges nothing.
 
 const ME_ORDER: Record<string, number> = { Star: 0, Horse: 1, Puzzle: 2, Dog: 3, Unranked: 4 };
 
@@ -103,7 +90,7 @@ export function CategoryFilterList({
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500 pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -134,7 +121,7 @@ export function CategoryFilterList({
         </select>
       </div>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         พบ {filtered.length} รายการ
         {totalPages > 1 && ` — หน้า ${page + 1} / ${totalPages}`}
       </p>
@@ -142,26 +129,25 @@ export function CategoryFilterList({
       <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white">
         {pageItems.map((item) => {
           const cat = item.category ?? "ไม่มีหมวด";
-          const badgeColor = categoryBadgeColor(cat);
           return (
             <li key={item.id}>
               <Link href={`${hrefPrefix}/${item.id}`} className="flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-neutral-50">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate">{item.name}</span>
-                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${badgeColor}`}>{cat}</span>
+                  <span className="shrink-0"><AccentTag accent={accentFor(cat)}>{cat}</AccentTag></span>
                   {item.hiddenFromStaff && (
-                    <span className="shrink-0 rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700">🔒 ซ่อน</span>
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-xs bg-pending-soft text-pending-ink">🔒 ซ่อน</span>
                   )}
                 </div>
                 {item.subtitle && (
-                  <span className="shrink-0 text-sm text-neutral-400">{item.subtitle}</span>
+                  <span className="shrink-0 text-sm text-neutral-500">{item.subtitle}</span>
                 )}
               </Link>
             </li>
           );
         })}
         {pageItems.length === 0 && (
-          <li className="px-4 py-6 text-center text-sm text-neutral-400">ไม่พบรายการ</li>
+          <li className="px-4 py-6 text-center text-sm text-neutral-500">ไม่พบรายการ</li>
         )}
       </ul>
 
@@ -171,7 +157,7 @@ export function CategoryFilterList({
             type="button"
             disabled={page === 0}
             onClick={() => setPage((p) => p - 1)}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+            className={buttonClass("secondary")}
           >
             <ChevronLeft className="h-4 w-4" />
             ก่อนหน้า
@@ -183,7 +169,7 @@ export function CategoryFilterList({
             type="button"
             disabled={page >= totalPages - 1}
             onClick={() => setPage((p) => p + 1)}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+            className={buttonClass("secondary")}
           >
             ถัดไป
             <ChevronRight className="h-4 w-4" />
