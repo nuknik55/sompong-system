@@ -22,6 +22,8 @@ type DateInput = string | Date | null | undefined;
 type Parts = { y: number; m: number; d: number; dow: number; hh: number; mi: number };
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** An ISO timestamp: a date, then a time. No other text is read as one. */
+const ISO_STAMP = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
 
 const BANGKOK = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Bangkok",
@@ -45,6 +47,10 @@ function partsOf(v: DateInput): Parts | null {
       return { y, m: mo, d, dow, hh: 0, mi: 0 };
     }
   }
+  // Only ISO text is a date here. The POS report's own period text
+  // ("มิถุนายน 2569", "12 สิงหาคม 2567") once went through new Date() and came
+  // out as "1/1/3112"; text that is not ISO is shown as it came.
+  if (typeof v === "string" && !ISO_STAMP.test(v)) return null;
   const at = typeof v === "string" ? new Date(v) : v;
   if (Number.isNaN(at.getTime())) return null;
   const p: Record<string, number> = {};

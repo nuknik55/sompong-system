@@ -41,4 +41,8 @@ test("empty shows a dash; an unreadable value shows as it came", () => {
   assert.equal(thaiDate(""), "–");
   assert.equal(thaiDate("not a date"), "not a date");
   assert.equal(thaiDate("2026-13-40"), "2026-13-40");
+  // Thai text that new Date() misreads (it once gave "1/1/3112")
+  assert.equal(thaiDate("มิถุนายน 2569"), "มิถุนายน 2569");
+  assert.equal(thaiDate("12 สิงหาคม 2567"), "12 สิงหาคม 2567");
+  assert.equal(thaiDate("2569"), "2569");
 });

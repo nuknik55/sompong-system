@@ -13,7 +13,6 @@ import { divisibleSource, sourcesQty, validDivisor, withSessionChanges, type Sal
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
-import { thaiDate } from "@/lib/thai-date";
 
 function formatNum(n: number) {
   return n.toLocaleString("th-TH");
@@ -270,8 +269,8 @@ export function PosSalesImport() {
               📅 {preview.dateTo && preview.dateTo !== preview.dateFrom ? "ช่วงวันที่" : "วันที่"}ในรายงาน:{" "}
               <strong>
                 {preview.dateTo && preview.dateTo !== preview.dateFrom
-                  ? `${thaiDate(preview.dateFrom)} – ${thaiDate(preview.dateTo)}`
-                  : thaiDate(preview.dateFrom)}
+                  ? `${preview.dateFrom} – ${preview.dateTo}`
+                  : preview.dateFrom}
               </strong>
               <span className="ml-2 text-xs text-info">(ยอดขายเดิมทั้งหมดจะถูกล้าง แล้วแทนด้วยข้อมูลใหม่จากไฟล์นี้)</span>
             </p>
