@@ -11,7 +11,7 @@
 // quote his staff hand customers today; when it arrives the rows are
 // adjusted to match it before this commit is finalised.
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getRoomConflictCandidates, saveBooking } from "./actions";
@@ -132,6 +132,32 @@ export function BookingScreen({
     bookingSnapshot(event ? formFromEvent(event) : blankForm(defaultStaffId), linesFromCharges(initialCharges)));
   const [cleanAt, setCleanAt] = useState<string>(initialClean);
   const dirty = bookingSnapshot(form, lines) !== cleanAt;
+
+  // ── The floating save bar (Nik, 2026-09-23) ─────────────────────────────
+  //
+  // The form is long and its save buttons sit at the very bottom, so while
+  // (and only while) there are unsaved changes a bar is fixed to the foot of
+  // the screen with the same two saves: the same handlers, the same disabled
+  // states, the same labels. The buttons below the price box stay.
+  //
+  // The bar must never cover the page: while it shows, the page gets bottom
+  // padding equal to the bar's own height, measured, so the last thing on
+  // the page (ดูข้อมูลเพิ่ม, the history) can always be scrolled clear of it.
+  // On the body, not in this screen: the booking page renders more below
+  // this component, and that is what the bar would otherwise sit on.
+  const saveBarRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const bar = saveBarRef.current;
+    if (!dirty || !bar) return;
+    const reserve = () => { document.body.style.paddingBottom = `${bar.offsetHeight}px`; };
+    reserve();
+    const observer = new ResizeObserver(reserve);
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      document.body.style.paddingBottom = "";
+    };
+  }, [dirty]);
 
   // ── The server's view, decided INSIDE the screen (queue item 41, Nik 2026-09-21) ──
   //
@@ -877,6 +903,31 @@ export function BookingScreen({
         <p className="text-right text-xs text-neutral-500">
           กรอก {missingForSave.join(" และ ")} ก่อนบันทึก
         </p>
+      )}
+
+      {/* The floating save bar: see saveBarRef above. The two buttons are
+          the ones below the price box, verbatim: the same onClick, disabled
+          and title. Beside the desktop sidebar (lg:left-52), not over it.
+          m-0: this screen's space-y gives each child a bottom margin, which
+          would lift a fixed bar 20px off the bottom edge. */}
+      {dirty && (
+        <div
+          ref={saveBarRef}
+          role="region"
+          aria-label="บันทึกการแก้ไข"
+          className="no-print fixed inset-x-0 bottom-0 z-30 m-0 border-t border-neutral-300 bg-white/95 px-4 py-3 shadow-[0_-2px_8px_rgb(23_23_23/0.08)] backdrop-blur-sm lg:left-52"
+        >
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-2 sm:px-6">
+            <span className="mr-auto text-xs text-pending-ink">มีการแก้ไขที่ยังไม่ได้บันทึก</span>
+            <Button kind="secondary" onClick={() => save(false)} disabled={!canSave}>
+              {busy ? "กำลังบันทึก…" : "บันทึกอย่างเดียว"}
+            </Button>
+            <Button kind="primary" onClick={() => save(true)} disabled={!canSave || (lines.length === 0 && !event?.quote_number)}
+              title={lines.length === 0 && !event?.quote_number ? "ยังไม่มีรายการราคา" : undefined}>
+              {busy ? "กำลังบันทึก…" : event?.quote_number ? `บันทึกและออกใบเสนอราคาใหม่ (R${event.quote_revision + 1})` : "บันทึกและออกใบเสนอราคา"}
+            </Button>
+          </div>
+        </div>
       )}
       {duplicateRateLabels.length > 0 && (
         <p className="rounded-md bg-pending-soft px-3 py-2 text-sm text-pending-ink">
