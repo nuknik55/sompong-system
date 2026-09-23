@@ -98,16 +98,29 @@ body {
    and white cards lift off it, keeping their border and gaining a faint
    shadow. Written against the card shapes the pages use (a bordered white
    box, and the bordered box around every table), so a page gets it without
-   markup of its own. Screen only: on paper everything stays as it was. */
+   markup of its own. Screen only: on paper everything stays as it was.
+   The body rule is unlayered, to beat the bg-neutral-50 on <body>. The card
+   rule is in @layer components, so a utility on the element still wins: a
+   secondary button is also a rounded, bordered white box, and an unlayered
+   rule here took its hover background, its shadow and its focus ring. It
+   is also kept off controls outright; a button or a field is not a card. */
 @media screen {
   body {
     background: #f4f6f2;
   }
-  .rounded-xl.border.bg-white,
-  .rounded-lg.border.bg-white,
-  .overflow-x-auto.rounded-lg.border {
-    background-color: #ffffff;
-    box-shadow: 0 1px 2px rgb(23 23 23 / 0.06), 0 1px 3px rgb(23 23 23 / 0.05);
+}
+@layer components {
+  @media screen {
+    :is(.rounded-xl.border.bg-white, .rounded-lg.border.bg-white, .overflow-x-auto.rounded-lg.border):not(
+        button,
+        a,
+        input,
+        select,
+        textarea
+      ) {
+      background-color: #ffffff;
+      box-shadow: 0 1px 2px rgb(23 23 23 / 0.06), 0 1px 3px rgb(23 23 23 / 0.05);
+    }
   }
 }
 
