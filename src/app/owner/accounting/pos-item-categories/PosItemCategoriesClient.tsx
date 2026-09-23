@@ -317,7 +317,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
             accept=".xls,.xlsx"
             disabled={isPending}
             onChange={handleSelect}
-            className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-sm file:text-white"
+            className="text-sm file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border-0 file:bg-primary file:px-4 file:font-heading file:text-sm file:font-medium file:text-white file:shadow-btn hover:file:bg-primary-hover"
           />
           <button
             type="button"
