@@ -1,6 +1,6 @@
 import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
 import { isOrderHead } from "@/lib/order-rules";
-import { getOrderSessions, getTemplates } from "@/lib/inventory-data";
+import { getOrderSessions, getTemplates, getOrderCounts } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { InventoryListClient } from "./InventoryListClient";
 import { PageShell } from "@/components/ui/page";
@@ -17,7 +17,7 @@ export default async function InventoryListPage() {
 
   return (
     <PageShell>
-      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} />
+      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} counts={await getOrderCounts(profile)} />
       <InventoryListClient
         sessions={allSessions}
         currentUserId={profile.id}

@@ -153,6 +153,9 @@ export function OrderForm({ stations, allIngredients, templateItems, prefillFrom
         const result = await createOrderSession(stationId || null, note.trim() || null, items);
         if (result.error) { setError(result.error); return; }
         router.push(`/staff/inventory/${result.sessionId}`);
+        // The sidebar and tab counts live in the layout, which a push keeps:
+        // refresh re-renders it, so "waiting for you" moves at once.
+        router.refresh();
       } catch {
         setError("สร้างใบสั่งของไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
       }

@@ -31,6 +31,8 @@ type NavItem = {
   exact: boolean;
   icon: React.ReactNode;
   badge?: number;
+  /** Where the link goes when it is not `href` (สั่งของ opens the tab with pending work); `href` still decides "active". */
+  target?: string;
 };
 
 // OWNER_NAV carries one entry the admin navs deliberately do not:
@@ -176,7 +178,7 @@ function SidebarContent({
               return (
                 <Link
                   key={link.href}
-                  href={link.href}
+                  href={link.target ?? link.href}
                   onClick={onNavigate}
                   className={[
                     "relative mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
@@ -244,14 +246,17 @@ export function AppHeader({
   profile,
   pendingCount = 0,
   openRepairCount = 0,
-  orderReviewCount = 0,
+  orderCount = 0,
+  orderHref,
 }: {
   profile: Profile;
   pendingCount?: number;
   /** Open maintenance reports. The layouts pass 0 for roles that cannot act, so reporters never see a count — the badge is for the people who act. */
   openRepairCount?: number;
-  /** Supply orders waiting for a head. The layouts pass 0 for anyone who is not a head (item 35, decision 11). */
-  orderReviewCount?: number;
+  /** Supply orders waiting for this person: the sum of the counts on the สั่งของ tabs (order-rules.ts, OrderCounts). */
+  orderCount?: number;
+  /** Where สั่งของ opens: the tab with pending work, earliest step first (pendingHref). */
+  orderHref?: string;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -269,8 +274,8 @@ export function AppHeader({
       ? { ...item, badge: pendingCount }
       : item.href === "/maintenance" && openRepairCount > 0
       ? { ...item, badge: openRepairCount }
-      : item.href === "/staff/inventory" && orderReviewCount > 0
-      ? { ...item, badge: orderReviewCount }
+      : item.href === "/staff/inventory"
+      ? { ...item, badge: orderCount > 0 ? orderCount : undefined, target: orderHref }
       : item
   );
 

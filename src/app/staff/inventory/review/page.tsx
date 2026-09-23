@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
 import { isOrderHead } from "@/lib/order-rules";
-import { getOrderSessions } from "@/lib/inventory-data";
+import { getOrderSessions, getOrderCounts } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 import { PageHeader, PageShell } from "@/components/ui/page";
@@ -18,7 +18,7 @@ export default async function ReviewQueuePage() {
 
   return (
     <PageShell>
-      <InventorySubNav showTemplate={true} canReview={true} canSend={canSend} />
+      <InventorySubNav showTemplate={true} canReview={true} canSend={canSend} counts={await getOrderCounts(profile)} />
 
       <PageHeader title="รอตรวจสอบ" subtitle={<span className="text-xs">ใบสั่งของที่ส่งมา รอหัวหน้าอนุมัติ</span>} />
 

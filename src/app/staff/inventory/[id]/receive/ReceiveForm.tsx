@@ -51,6 +51,8 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
         if (result.error) { setError(result.error); return; }
         // Let detail page decide if session closed — redirect there
         router.push(`/staff/inventory/${session.id}`);
+        // The counts live in the layout, which a push keeps; refresh re-renders it.
+        router.refresh();
       } catch {
         setError("บันทึกรับของไม่สำเร็จ — หน้าจออาจค้างจากเวอร์ชันก่อนหน้า กรุณารีเฟรช (F5) แล้วลองใหม่");
       }

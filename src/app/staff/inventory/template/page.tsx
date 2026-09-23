@@ -1,5 +1,5 @@
 import { requireAdminOrEditor, isAdminOrAbove } from "@/lib/auth";
-import { getTemplates, getTemplateItems, getIngredientsForOrder } from "@/lib/inventory-data";
+import { getTemplates, getTemplateItems, getIngredientsForOrder, getOrderCounts } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { TemplateClient } from "./TemplateClient";
 import { PageShell } from "@/components/ui/page";
@@ -24,7 +24,7 @@ export default async function TemplatePage({
 
   return (
     <PageShell>
-      <InventorySubNav showTemplate canReview={true} canSend={isAdminOrAbove(profile.role)} />
+      <InventorySubNav showTemplate canReview={true} canSend={isAdminOrAbove(profile.role)} counts={await getOrderCounts(profile)} />
       <TemplateClient
         key={selectedId ?? "none"}
         templates={templates}

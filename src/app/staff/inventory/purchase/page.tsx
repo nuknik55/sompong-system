@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
-import { getOrderSessions } from "@/lib/inventory-data";
+import { getOrderSessions, getOrderCounts } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 import { PageHeader, PageShell } from "@/components/ui/page";
@@ -16,7 +16,7 @@ export default async function PurchaseQueuePage() {
 
   return (
     <PageShell>
-      <InventorySubNav showTemplate={true} canReview={true} canSend={true} />
+      <InventorySubNav showTemplate={true} canReview={true} canSend={true} counts={await getOrderCounts(profile)} />
 
       <PageHeader title="รอสั่งซื้อ" subtitle={<span className="text-xs">ตรวจสอบแล้ว รอโทรสั่งซัพพลายเออร์</span>} />
 

@@ -47,6 +47,45 @@ export function effectiveQty(item: { reviewerQtyOrdered: number | null; qtyOrder
   return item.reviewerQtyOrdered ?? item.qtyOrdered;
 }
 
+/**
+ * "Waiting for you" (Nik, 2026-09-23): the paper sheet's hand-off, as counts.
+ * Each count lives on the tab that holds its orders.
+ *   mine      งานของฉัน   staff: their own returned orders, to fix
+ *   review    ตรวจสอบ    heads: orders waiting for review
+ *   purchase  สั่งซื้อ     admin and owner: reviewed orders, to mark sent
+ *   receive   รับของ     staff: their own orders marked sent, to receive
+ */
+export type OrderCounts = { mine: number; review: number; purchase: number; receive: number };
+
+export const NO_COUNTS: OrderCounts = { mine: 0, review: 0, purchase: 0, receive: 0 };
+
+/** Which counts a role has at all (the rest stay 0 for it). */
+export function countsFor(role: string): Record<keyof OrderCounts, boolean> {
+  return {
+    mine: role === "staff",
+    review: isOrderHead(role),
+    purchase: canMarkSent(role),
+    receive: role === "staff",
+  };
+}
+
+export function totalCount(c: OrderCounts): number {
+  return c.mine + c.review + c.purchase + c.receive;
+}
+
+/**
+ * Where สั่งของ in the sidebar opens: the tab holding pending work, the
+ * earliest step of the flow first (fix a returned order, review, mark sent,
+ * receive); the order list when nothing waits.
+ */
+export function pendingHref(c: OrderCounts): string {
+  if (c.mine > 0) return "/staff/inventory";
+  if (c.review > 0) return "/staff/inventory/review";
+  if (c.purchase > 0) return "/staff/inventory/purchase";
+  if (c.receive > 0) return "/staff/inventory/receive-queue";
+  return "/staff/inventory";
+}
+
 /** Open: still moving through the flow (not received, not cancelled). */
 export function isOpenStatus(status: OrderStatus): boolean {
   return status !== "received" && status !== "cancelled";

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ORDER_STATUSES, STATUS_LABEL, STATUS_CLASS, canApprove, canCancel, canEditLines, canOrder, canReceive, canReturn,
-  canSend, canSetHeadQty, isOpenStatus, isOrderHead, type OrderStatus,
+  canSend, canSetHeadQty, countsFor, isOpenStatus, isOrderHead, NO_COUNTS, pendingHref, totalCount, type OrderStatus,
 } from "./order-rules.ts";
 
 const ROLES = ["owner", "admin", "editor", "staff", "hr", "sales"] as const;
@@ -76,4 +76,23 @@ test("decision 10: who may cancel, and when", () => {
   assert.equal(canCancel(view("admin", "received")), false);
   assert.equal(canCancel(view("owner", "cancelled")), false);
   assert.equal(canCancel(view("sales", "submitted", true)), false);
+});
+
+test("waiting for you: which counts each role has", () => {
+  assert.deepEqual(countsFor("staff"), { mine: true, review: false, purchase: false, receive: true });
+  assert.deepEqual(countsFor("editor"), { mine: false, review: true, purchase: false, receive: false });
+  assert.deepEqual(countsFor("admin"), { mine: false, review: true, purchase: true, receive: false });
+  assert.deepEqual(countsFor("owner"), { mine: false, review: true, purchase: true, receive: false });
+  for (const r of ["hr", "sales"]) assert.deepEqual(countsFor(r), { mine: false, review: false, purchase: false, receive: false });
+});
+
+test("waiting for you: the sidebar opens the earliest step with work", () => {
+  const c = (mine: number, review: number, purchase: number, receive: number) => ({ mine, review, purchase, receive });
+  assert.equal(pendingHref(c(0, 0, 0, 0)), "/staff/inventory");
+  assert.equal(pendingHref(c(1, 0, 0, 2)), "/staff/inventory");
+  assert.equal(pendingHref(c(0, 0, 0, 2)), "/staff/inventory/receive-queue");
+  assert.equal(pendingHref(c(0, 3, 1, 0)), "/staff/inventory/review");
+  assert.equal(pendingHref(c(0, 0, 1, 0)), "/staff/inventory/purchase");
+  assert.equal(totalCount(c(1, 2, 3, 4)), 10);
+  assert.equal(totalCount(NO_COUNTS), 0);
 });

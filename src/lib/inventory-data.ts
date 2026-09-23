@@ -2,7 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllRows } from "@/lib/data";
-import type { OrderStatus } from "@/lib/order-rules";
+import { NO_COUNTS, countsFor, type OrderCounts, type OrderStatus } from "@/lib/order-rules";
 
 export type Station = { id: string; name: string; sortOrder: number };
 
@@ -471,14 +471,28 @@ export async function getOrderChanges(sessionId: string): Promise<OrderItemChang
   });
 }
 
-/** Orders waiting for a head: the badge on สั่งของ (item 35, decision 11). */
-export async function getReviewQueueCount(): Promise<number> {
+/**
+ * "Waiting for you" for this person (order-rules.ts, OrderCounts): each count
+ * the role has, read as a head-only count; the rest are 0. A failed read
+ * counts 0, so the badge never blocks a page.
+ */
+export async function getOrderCounts(profile: { id: string; role: string }): Promise<OrderCounts> {
+  const has = countsFor(profile.role);
+  if (!has.mine && !has.review && !has.purchase && !has.receive) return NO_COUNTS;
   const supabase = await createClient();
-  const { count } = await supabase
-    .from("order_sessions")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "submitted");
-  return count ?? 0;
+  const count = async (status: OrderStatus, mine: boolean) => {
+    let q = supabase.from("order_sessions").select("id", { count: "exact", head: true }).eq("status", status);
+    if (mine) q = q.eq("created_by", profile.id);
+    const { count: n } = await q;
+    return n ?? 0;
+  };
+  const [mine, review, purchase, receive] = await Promise.all([
+    has.mine ? count("returned", true) : 0,
+    has.review ? count("submitted", false) : 0,
+    has.purchase ? count("reviewed", false) : 0,
+    has.receive ? count("sent", true) : 0,
+  ]);
+  return { mine, review, purchase, receive };
 }
 
 export async function getLastQtyPerPack(ingredientId: string): Promise<number | null> {

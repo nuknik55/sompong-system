@@ -1,5 +1,5 @@
 import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
-import { getOrderSessions } from "@/lib/inventory-data";
+import { getOrderSessions, getOrderCounts } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 import { STATUS_CLASS, STATUS_LABEL, isOrderHead } from "@/lib/order-rules";
@@ -21,7 +21,7 @@ export default async function HistoryPage() {
 
   return (
     <PageShell>
-      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} />
+      <InventorySubNav showTemplate={canReview} canReview={canReview} canSend={canSend} counts={await getOrderCounts(profile)} />
 
       <PageHeader title="ประวัติ" subtitle={<span className="text-xs">ใบสั่งของที่รับของเสร็จแล้วทั้งหมด</span>} />
 
