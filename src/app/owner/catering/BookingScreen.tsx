@@ -909,13 +909,16 @@ export function BookingScreen({
           the ones below the price box, verbatim: the same onClick, disabled
           and title. Beside the desktop sidebar (lg:left-52), not over it.
           m-0: this screen's space-y gives each child a bottom margin, which
-          would lift a fixed bar 20px off the bottom edge. */}
+          would lift a fixed bar 20px off the bottom edge. z-10: under the
+          open lists of the SearchSelect and the customer box (z-30, z-20),
+          so a list opened near the bottom is drawn over the bar, not under
+          it; the phone menu and the dialogs (z-40, z-50) stay above. */}
       {dirty && (
         <div
           ref={saveBarRef}
           role="region"
           aria-label="บันทึกการแก้ไข"
-          className="no-print fixed inset-x-0 bottom-0 z-30 m-0 border-t border-neutral-300 bg-white/95 px-4 py-3 shadow-[0_-2px_8px_rgb(23_23_23/0.08)] backdrop-blur-sm lg:left-52"
+          className="no-print fixed inset-x-0 bottom-0 z-10 m-0 border-t border-neutral-300 bg-white/95 px-4 py-3 shadow-[0_-2px_8px_rgb(23_23_23/0.08)] backdrop-blur-sm lg:left-52"
         >
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-2 sm:px-6">
             <span className="mr-auto text-xs text-pending-ink">มีการแก้ไขที่ยังไม่ได้บันทึก</span>
