@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { CateringCustomerListItem } from "../actions";
 import { thDate } from "../shared-utils";
-import { RowLink } from "@/components/ui/row-link";
+import { RecordLink, RowLink } from "@/components/ui/row-link";
 import { TH_ROW } from "@/components/ui/table";
 
 export function CustomerListClient({ customers }: { customers: CateringCustomerListItem[] }) {
@@ -41,9 +41,9 @@ export function CustomerListClient({ customers }: { customers: CateringCustomerL
               </tr>
             )}
             {filtered.map((c, i) => (
-              // The whole row opens the customer (no link inside it: one tab stop per row).
+              // The whole row opens the customer; the name is its URL (RecordLink).
               <RowLink key={c.id} href={`/owner/catering/customers/${c.id}`} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-                <td className="px-3 py-2 font-medium whitespace-nowrap text-neutral-900">{c.name}</td>
+                <td className="px-3 py-2 font-medium whitespace-nowrap text-neutral-900"><RecordLink href={`/owner/catering/customers/${c.id}`}>{c.name}</RecordLink></td>
                 <td className="px-3 py-2 text-neutral-600 tabular-nums">{c.phone ?? "–"}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-neutral-600">{c.company_name ?? "–"}</td>
                 <td className="px-3 py-2 text-center tabular-nums text-neutral-600">{c.event_count}</td>

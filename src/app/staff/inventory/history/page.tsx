@@ -4,7 +4,7 @@ import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderStatus, OrderSessionSummary } from "@/lib/inventory-data";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
-import { RowLink } from "@/components/ui/row-link";
+import { RecordLink, RowLink } from "@/components/ui/row-link";
 import { thaiDate } from "@/lib/thai-date";
 
 function formatDate(iso: string) {
@@ -59,7 +59,7 @@ export default async function HistoryPage() {
               {sessions.map((s: OrderSessionSummary) => (
                 // The whole row opens the order.
                 <RowLink key={s.id} href={`/staff/inventory/${s.id}`} className="border-b border-neutral-100 last:border-0">
-                  <td className="px-3 py-2 whitespace-nowrap font-medium text-neutral-900">{formatDate(s.createdAt)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap font-medium text-neutral-900"><RecordLink href={`/staff/inventory/${s.id}`}>{formatDate(s.createdAt)}</RecordLink></td>
                   <td className="px-3 py-2 text-neutral-600">{s.stationName ?? "—"}</td>
                   <td className="px-3 py-2">
                     <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[s.status]}`}>

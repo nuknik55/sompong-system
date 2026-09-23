@@ -14,7 +14,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { Segmented } from "@/components/ui/segmented";
 import { AccentTag } from "@/components/ui/badge";
-import { RowLink } from "@/components/ui/row-link";
+import { RecordLink, RowLink } from "@/components/ui/row-link";
 import { TH_ROW } from "@/components/ui/table";
 
 export function CateringClient({
@@ -163,7 +163,7 @@ export function CateringClient({
                 // The whole row opens the booking; the actions cell is its own
                 // (data-row-stop), so ลบ opens the confirmation and nothing else.
                 <RowLink key={r.event.id} href={`/owner/catering/${r.event.id}`} className={`border-b border-neutral-100 last:border-0 ${r.zebra % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-                  <td className="px-3 py-2 whitespace-nowrap text-neutral-700">{thDate(r.event.event_date)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-neutral-700"><RecordLink href={`/owner/catering/${r.event.id}`}>{thDate(r.event.event_date)}</RecordLink></td>
                   <td className="px-3 py-2 whitespace-nowrap text-neutral-600 tabular-nums">{timeRange(r.event.start_time, r.event.end_time)}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium text-neutral-900">{r.event.customer_name ?? "–"}</div>

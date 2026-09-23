@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
@@ -26,6 +27,13 @@ const OWN_ACTION = "a, button, input, select, textarea, label, summary, [data-ro
  *
  * It navigates with router.push, so it must not be used on a page with an
  * unsaved-changes guard: the guard sees link clicks, not this.
+ *
+ * The row is not a link, so it has no URL to open in a new tab or copy.
+ * `RecordLink` in the first cell is that URL (Nik, 2026-09-23): a real
+ * link, so middle-click, Ctrl-click, right-click and a phone's long-press
+ * work on it. A click on it is the link's own (the row ignores clicks inside
+ * an `a`), so nothing fires twice; it is out of the tab order, so a row
+ * stays one tab stop and Enter on the row is the keyboard way in.
  */
 export function RowLink({
   href,
@@ -74,5 +82,15 @@ export function RowLink({
     >
       {children}
     </tr>
+  );
+}
+
+/** The record's URL, in the row's first cell: see RowLink. Looks like the
+ *  cell's text (it inherits the colour) and underlines under the pointer. */
+export function RecordLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  return (
+    <Link href={href} tabIndex={-1} className={["hover:underline underline-offset-2", className].filter(Boolean).join(" ")}>
+      {children}
+    </Link>
   );
 }
