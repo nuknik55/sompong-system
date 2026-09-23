@@ -75,6 +75,18 @@
   --shadow-tile: 0 1px 2px rgb(23 23 23 / 0.08), 0 1px 3px rgb(23 23 23 / 0.06);
 }
 
+/* neutral-500, the app's secondary text grey, one step darker than
+   Tailwind's #737373 (step 2, 2026-09-23). #737373 is 4.74:1 on white but
+   4.36:1 on the off-white page (#F4F6F2), so once the page gained depth
+   every subtitle, tab label and hint sitting on it failed AA. #6B6B6B is
+   5.33:1 on white, 4.90:1 on the page, 5.11:1 on the neutral-50 zebra row,
+   4.89:1 on neutral-100 and 4.57:1 on the primary tint. A plain @theme (not
+   inline), so it replaces Tailwind's own variable, which every neutral-500
+   utility reads. */
+@theme {
+  --color-neutral-500: #6b6b6b;
+}
+
 /* Body text: Noto Sans Thai (layout.tsx). Until 2026-09-22 this was
    Arial, which has no Thai, so every Thai character fell to whatever the
    device had: Leelawadee UI on Windows, Thonburi on an iPhone, Noto Sans Thai
