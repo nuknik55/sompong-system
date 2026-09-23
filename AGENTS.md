@@ -207,9 +207,10 @@ check exists because a file got past without it:
   (`src/lib/sqlcheck.test.ts`). It checks every tracked migration and applies
   `scripts/sqlcheck-exceptions.json`.
 
-**The exceptions are the history, recorded rather than skipped.** 84 files
+**The exceptions are the history, recorded rather than skipped.** 87 files
 were written and applied before check F existed (2026-09-19) and declare no
-row count. Two trip check C on top-level DDL that ran cleanly: a `DROP
+row count (three of them, applied by 2026-08-31, were only committed on
+2026-09-23). Two trip check C on top-level DDL that ran cleanly: a `DROP
 FUNCTION IF EXISTS` of an old signature before its re-CREATE, and one column
 name added to two tables. Each entry names a file and a check letter, with
 its reason. **Never add a new file to it: fix the file.** When a check stops

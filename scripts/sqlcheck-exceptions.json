@@ -2,7 +2,7 @@
   "_": "Historical exceptions for `node scripts/sqlcheck.mjs --all` (AGENTS.md, \"The SQL checker\"). Each names a file and a check letter. Never add a new file here: fix the file. When a check stops flagging a file, --all fails until its entry is deleted, so this list can only shrink.",
   "checks": {
     "F": {
-      "why": "Written and applied before check F existed. F was added on 2026-09-19, after catering_event_menu_items_migration.sql printed 8 of its 31 result rows and passed; every file below was first committed before it. None declares an expected row count, and adding one to a file that has already run would prove nothing.",
+      "why": "Written and applied before check F existed. F was added on 2026-09-19, after catering_event_menu_items_migration.sql printed 8 of its 31 result rows and passed; every file below was first committed before it, except three written on 2026-08-30, applied in production by 2026-08-31 and left untracked until 2026-09-23 (delete_inactive_food_set_rates, drop_fuel_cost_migration, purchase_cost_4dp_migration): applied before F existed all the same. None declares an expected row count, and adding one to a file that has already run would prove nothing.",
       "files": [
         "supabase/accounting_migration.sql",
         "supabase/attendance_daily_migration.sql",
@@ -33,7 +33,9 @@
         "supabase/coa_document_ui_created_accounts.sql",
         "supabase/costing_tables_rls_migration.sql",
         "supabase/day_swap_migration.sql",
+        "supabase/delete_inactive_food_set_rates.sql",
         "supabase/drop_catering_task_completions_migration.sql",
+        "supabase/drop_fuel_cost_migration.sql",
         "supabase/drop_pos_coffee_items_migration.sql",
         "supabase/employee_dates_wage_migration.sql",
         "supabase/employees_takes_bookings_migration.sql",
@@ -78,6 +80,7 @@
         "supabase/prep_recipe_access_rls_migration.sql",
         "supabase/profile_employee_link_migration.sql",
         "supabase/provenance_triggers_migration.sql",
+        "supabase/purchase_cost_4dp_migration.sql",
         "supabase/q_factor_owner_only_migration.sql",
         "supabase/recode_vacuum_sealer_to_capex.sql",
         "supabase/reset_catering_test_data.sql",
