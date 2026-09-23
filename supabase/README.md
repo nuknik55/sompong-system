@@ -3859,6 +3859,16 @@ and after Nik's import.
       `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. Sales reloads open tabs after
       each deploy either way.
 
+**`/owner/stations` stays, unlinked, on purpose (Nik, 2026-09-23).** The
+station order-template editor (`station_ingredients`, and its child
+`/owner/stations/[id]/template`) has been off the nav since 2026-07-03, when
+order templates moved to `/staff/inventory/template`. Listed for Nik on
+2026-09-22 as "to delete or to relink"; he decided to keep it as it is and wait
+for item 35 (supply ordering), which may reuse the station data. So it is
+neither deleted nor linked, it is left out of the shared look's rollout, and
+`src/lib/route-links.test.ts` lists it in NO_WAY_IN with that reason. Do not
+delete it, its table or its data without asking.
+
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
 `/owner/hr/schedule/print`, is opened through a computed `printUrl` in

@@ -851,9 +851,33 @@ the back link sat top-left on one page and top-right on another; every button
 looked alike. The shared look below comes from the restaurant's brand
 guideline (Krua Sompong, "Always Delicious"). **Step 1 (2026-09-22) moved four
 pages to it:** the booking list, the booking screen (with the new-booking
-page), the customer page and the SOP list, plus the catering sub-nav. Every
-other page moves in step 2, after Nik approves step 1. **New work uses these,
-and invents none of its own.**
+page), the customer page and the SOP list, plus the catering sub-nav. **Step 2
+(2026-09-23) moved every other page**, after Nik chose design-preview-b from
+five samples, **except**: HR (paused for its rebuild: it has only what comes
+globally — fonts, tokens, fields, the sidebar), the printed documents (the
+quotation, the function sheets, the P&L print, the schedule print, the
+receipt, the daily sheet's and the orders' print layouts, the SOP print) and
+the Excel exports, which keep their own look, and `/owner/stations`, kept as
+it is until item 35. **New work uses these, and invents none of its own.**
+
+## The shell (step 2)
+
+- **Sidebar**: dark green (#2F5A16), the menu under four headings (ครัว,
+  งานขาย, บริหาร, ตั้งค่า) grouped by label over each role's own list; the
+  active item a gold pill with near-black text (8.8:1; gold TEXT on green is
+  4.0:1 and fails). `app-header.tsx`.
+- **Page**: off-white #F4F6F2; a bordered white box (a card, a table's box)
+  gains a faint shadow on screen only. `<main>` is `min-w-0`: a long
+  unbroken row scrolls inside its box instead of widening the page.
+- **Fields, app-wide in CSS** (`globals.css`, the end): white; border
+  #8A8A8A (3.45:1 on white, 3.17:1 on the page; WCAG 1.4.11 asks 3:1) for
+  .input-base, .line-input and every field carrying border-neutral-200/300;
+  placeholder #737373 (4.74:1); focus is .input-base's blue border and ring.
+  A select is never :read-only-grey (it always matches :read-only).
+- **neutral-500 is #6B6B6B**, not Tailwind's #737373, which fell to 4.36:1
+  on the off-white page (redefined in a plain `@theme`, so every
+  neutral-500 utility follows). `neutral-400` text is gone outside HR and
+  the prints.
 
 ## Palette (tokens in `src/app/globals.css`)
 
@@ -876,7 +900,8 @@ also the green the sidebar badge and active nav item have used all along.
 |---|---|---|---|
 | primary | the one main action, the active tab, the selected option | #2F5A16 on #EAEFE8 | 6.9:1 |
 | pending | waiting on someone (รอมัดจำ), highlight | #5C4300 on #F9F1D6 | 8.2:1 |
-| success | confirmed, secured (มัดจำแล้ว, คอนเฟิร์มแล้ว) | #2B6600 on #EBF2E6 | 6.1:1 |
+| success | confirmed, secured (มัดจำแล้ว) | #2B6600 on #EBF2E6 | 6.1:1 |
+| primary-strong | secured, the end of the road (คอนเฟิร์มแล้ว): solid | white on #2F5A16 | 8.1:1 |
 | info | a neutral fact worth a colour (สอบถาม) | #00365B on #E6EBEF | 10.4:1 |
 | neutral | nothing to flag (เสร็จสิ้น; ยกเลิก struck through) | #404040 on #F5F5F5 | 9.5:1 |
 | danger | deleting, errors | #B42318 on #FEF3F2 | 6.1:1 |
@@ -892,15 +917,21 @@ on them. They are fills, with near-black text (8.8:1 on gold, 8.1:1 on teal)
 or their `-ink` colour on their `-soft` tint. The brand's own green-on-gold
 is 4.0:1: large text only. **Every text/background pair must reach WCAG AA,
 4.5:1** (3:1 for text 24px and up). `neutral-400` text (2.5:1) fails and is
-out of the moved pages. **Still failing, app-wide, for step 2:** input
-placeholders (#A3A3A3, 2.5:1) and input borders (#D4D4D4, 1.5:1).
+gone outside HR and the prints; the field placeholders and borders that
+failed after step 1 are fixed in CSS (see "The shell").
+
+**Booking statuses (Nik, 2026-09-23)**, light to dark as a booking
+progresses, through BookingStatusBadge and STATUS_TONE only: สอบถาม navy
+(info), รอมัดจำ gold (pending), มัดจำแล้ว LIGHT green (success tint),
+คอนเฟิร์มแล้ว DARK green (primary-strong), เสร็จสิ้น grey, ยกเลิก grey
+struck through.
 
 Pairs checked (2026-09-22): white on dark green 8.1 and on its hover
 #234311 11.2; white on navy 12.5, on bright green 5.0 (AA, just), on red 6.6
 and its hover 8.7; dark green on white 8.1; navy on white 12.5; bright green
 on white 5.0; red on white 6.6; navy on teal 5.7; neutral-900 on white 17.9,
--700 10.4, -600 7.8, -500 4.7 (4.5 on the neutral-50 zebra row); neutral-100
-on the neutral-800 table header 13.9.
+-700 10.4, -600 7.8, -500 5.3 (#6B6B6B since step 2: 5.1 on the neutral-50
+zebra row, 4.9 on the page); neutral-700 on the neutral-200 table header 8.6.
 
 ## Fonts (`src/app/layout.tsx`, loaded by next/font, no font CDN)
 
@@ -923,9 +954,13 @@ on the neutral-800 table header 13.9.
 - **primary**: the ONE main action of an area. Filled dark green, a faint
   shadow, darker on hover, sinks 1px when pressed.
 - **secondary**: every other action. White, outlined, a lighter shadow.
-- **link**: quiet actions and navigation (back links, ดู). Plain grey text.
-- **danger** turns any kind red, for ลบ. **Disabled** is the same for all:
-  half opacity, no shadow, no hover, never sinks.
+- **link**: quiet actions and navigation (back links). Plain grey text.
+- **danger** turns any kind red, for ลบ. **dangerHover** (link only): ลบ in
+  a row of data, grey at rest and red only under the pointer. **Disabled**
+  is the same for all: half opacity, no shadow, no hover, never sinks.
+- Not every control is one of the three: an underlined link inside a
+  sentence (โหลดข้อมูลล่าสุด in a notice) and small icon controls (✕, ▲▼)
+  keep their own look.
 
 `<Button kind>` for a `<button>` (type defaults to "button"); `buttonClass(kind)`
 for a Link that is an action. Each (kind, danger) pair is ONE complete class
@@ -940,7 +975,27 @@ other by their order in the string, so never add a colour class on top of
   every page, forms included. A narrower column for forms was tried and
   dropped: the header's actions floated beyond the content.
 - **`PageHeader`**: the back link top LEFT, above the title; the title and a
-  subtitle; the page's actions top RIGHT.
+  subtitle; the page's actions top RIGHT. `back.reload` draws the back link
+  as a plain `<a>` (a full page load) for the pages whose back link always
+  was one (accounting), so moving them to the header changed nothing.
+- **Tables** (`ui/table.tsx`, `ui/row-link.tsx`): every header row is
+  `TH_ROW` (neutral-200, neutral-700 semibold, a neutral-400 line, 8.6:1).
+  Where a row opens a record, the row is a `RowLink`: click anywhere
+  (Ctrl/⌘ and middle click open a new tab), the row is focusable and Enter
+  opens it with a visible ring, and a button, link or field inside the row
+  (or anything under `data-row-stop`) is its own action. No ดู link. It
+  navigates with router.push, which a leave guard does not see: never on a
+  page with unsaved-changes protection.
+- **Dates** (`src/lib/thai-date.ts`): every date shown on a screen, "18/9/2569"
+  (thaiDate), "ศ 18/9/2569" (thaiDateWithDay), "18/9/2569 14:05"
+  (thaiDateTime), "18/9" (thaiDayMonth). A calendar date is shown as
+  written; a timestamp is read in Asia/Bangkok. Not for stored values,
+  native date inputs, prints or exports.
+- **A floating save bar** (the booking screen): only while there are
+  unsaved changes; the same buttons as below the form, verbatim; the body
+  gets bottom padding equal to the bar's measured height, so it never
+  covers the page; `lg:left-52`, beside the sidebar. The SOP editor's bar
+  also sits beside the sidebar.
 - **`ButtonGroup`**: a labelled row of buttons (the booking screen's พิมพ์ and
   ดูข้อมูลเพิ่ม).
 - **Tabs** (`ui/tabs.ts`): the sub-navs. The active tab is dark green with a
