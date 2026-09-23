@@ -331,7 +331,7 @@ export function TransferSlipClient({
         </div>
 
         {/* Source account */}
-        <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-info-soft/60 px-4 py-2.5 text-sm">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-100 bg-info-soft/60 px-4 py-2.5 text-sm">
           <span className="text-neutral-600 font-medium">บัญชีต้นทาง:</span>
           <input type="text" value={sourceAccount} onChange={(e) => setSourceAccount(e.target.value)}
             className="rounded border border-neutral-300 bg-white px-3 py-1 text-sm focus:border-info/30 focus:outline-none w-48" />
