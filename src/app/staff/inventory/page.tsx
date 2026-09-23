@@ -1,4 +1,5 @@
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
+import { isOrderHead } from "@/lib/order-rules";
 import { getOrderSessions, getTemplates } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { InventoryListClient } from "./InventoryListClient";
@@ -6,12 +7,12 @@ import { PageShell } from "@/components/ui/page";
 
 export default async function InventoryListPage() {
   const [profile, allSessions, templates] = await Promise.all([
-    requireProfile(),
+    requireOrdering(),
     getOrderSessions(),
     getTemplates(),
   ]);
 
-  const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const canReview = isOrderHead(profile.role);
   const canSend = isAdminOrAbove(profile.role);
 
   return (

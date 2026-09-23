@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { FromTemplateButton } from "./FromTemplateButton";
-import type { OrderStatus, OrderSessionSummary, Template } from "@/lib/inventory-data";
+import type { OrderSessionSummary, Template } from "@/lib/inventory-data";
+import { STATUS_CLASS, STATUS_LABEL, isOpenStatus } from "@/lib/order-rules";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { RecordLink, RowLink } from "@/components/ui/row-link";
@@ -13,22 +14,6 @@ import { thaiDate } from "@/lib/thai-date";
 function formatDate(iso: string) {
   return thaiDate(iso);
 }
-
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  submitted: "รอตรวจสอบ",
-  returned:  "ตีกลับ",
-  reviewed:  "รอสั่งซื้อ",
-  sent:      "สั่งแล้ว",
-  received:  "รับของแล้ว",
-};
-
-const STATUS_CLASS: Record<OrderStatus, string> = {
-  submitted: "bg-pending-soft text-pending-ink",
-  returned:  "bg-danger-soft text-danger",
-  reviewed:  "bg-info-soft text-info",
-  sent:      "bg-primary-soft text-primary",
-  received:  "bg-success-soft text-success-ink",
-};
 
 function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
   if (sessions.length === 0) return null;
@@ -79,9 +64,8 @@ export function InventoryListClient({
   const mineSessions = sessions.filter(
     (s) => s.createdBy === currentUserId || s.status === "sent"
   );
-  const active = (showAll ? sessions : mineSessions).filter(
-    (s) => s.status !== "received"
-  );
+  // Received and cancelled orders are history (ประวัติ), not active work.
+  const active = (showAll ? sessions : mineSessions).filter((s) => isOpenStatus(s.status));
 
   return (
     <div className="space-y-3">

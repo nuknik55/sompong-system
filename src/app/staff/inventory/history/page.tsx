@@ -1,7 +1,8 @@
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
-import type { OrderStatus, OrderSessionSummary } from "@/lib/inventory-data";
+import type { OrderSessionSummary } from "@/lib/inventory-data";
+import { STATUS_CLASS, STATUS_LABEL, isOrderHead } from "@/lib/order-rules";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { RecordLink, RowLink } from "@/components/ui/row-link";
@@ -11,27 +12,12 @@ function formatDate(iso: string) {
   return thaiDate(iso);
 }
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  submitted: "รอตรวจสอบ",
-  returned:  "ตีกลับ",
-  reviewed:  "รอสั่งซื้อ",
-  sent:      "สั่งแล้ว",
-  received:  "รับของแล้ว",
-};
-
-const STATUS_CLASS: Record<OrderStatus, string> = {
-  submitted: "bg-pending-soft text-pending-ink",
-  returned:  "bg-danger-soft text-danger",
-  reviewed:  "bg-info-soft text-info",
-  sent:      "bg-primary-soft text-primary",
-  received:  "bg-success-soft text-success-ink",
-};
-
 export default async function HistoryPage() {
-  const profile = await requireProfile();
-  const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const profile = await requireOrdering();
+  const canReview = isOrderHead(profile.role);
   const canSend = isAdminOrAbove(profile.role);
-  const sessions = await getOrderSessions({ status: "received" });
+  // Received and cancelled: the 22 trial orders closed on 2026-09-23 show here.
+  const sessions = await getOrderSessions({ status: ["received", "cancelled"] });
 
   return (
     <PageShell>

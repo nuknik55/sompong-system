@@ -1,8 +1,9 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { canOrder } from "@/lib/order-rules";
 
-export type Role = "owner" | "admin" | "editor" | "staff" | "hr" | "sales";
+export type Role ="owner" | "admin" | "editor" | "staff" | "hr" | "sales";
 
 export type Profile = {
   id: string;
@@ -90,4 +91,15 @@ export async function requireSales(): Promise<Profile> {
 
 export function isAdminOrAbove(role: Role): boolean {
   return role === "admin" || role === "owner";
+}
+
+/**
+ * Supply ordering (README item 35, decision 9): owner, admin, editor and
+ * staff. hr and sales are sent home; the database's can_order() refuses
+ * them as well, so the menu is not the only thing keeping them out.
+ */
+export async function requireOrdering(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (!canOrder(profile.role)) redirect("/");
+  return profile;
 }

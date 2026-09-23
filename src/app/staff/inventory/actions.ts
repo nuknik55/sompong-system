@@ -1,9 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireProfile, requireAdminOrEditor, requireAdmin, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+
+/**
+ * Supply orders (README item 35). EVERY write goes through a database
+ * function of supply_order_approval_migration.sql, under the caller's own
+ * session: the function checks the role, the status and the creator itself
+ * and refuses with a message the screen shows as it is. Direct table writes
+ * are closed for every app role, and nothing here uses the service role.
+ * requireOrdering() keeps hr and sales out at the route as well (decision 9).
+ */
 
 export type ActionResult = { error?: string; sessionId?: string };
 
@@ -21,42 +29,35 @@ export type OrderItemInput = {
   note: string | null;
 };
 
+function revalidateOrders(sessionId?: string) {
+  revalidatePath("/staff/inventory");
+  revalidatePath("/staff/inventory/review");
+  revalidatePath("/staff/inventory/purchase");
+  revalidatePath("/staff/inventory/receive-queue");
+  revalidatePath("/staff/inventory/history");
+  if (sessionId) revalidatePath(`/staff/inventory/${sessionId}`);
+}
+
+/** Staff (or any orderer) places an order: the caller is its creator. */
 export async function createOrderSession(
   stationId: string | null,
   note: string | null,
   items: OrderItemInput[]
 ): Promise<ActionResult> {
-  const profile = await requireProfile();
+  await requireOrdering();
   const supabase = await createClient();
 
   const filtered = items.filter(
-    (i) =>
-      i.qtyOrdered > 0 ||
-      i.remainingKitchenQty !== null ||
-      i.remainingFreezerQty !== null
+    (i) => i.qtyOrdered > 0 || i.remainingKitchenQty !== null || i.remainingFreezerQty !== null
   );
   if (filtered.length === 0) {
     return { error: "กรุณากรอกข้อมูลอย่างน้อย 1 รายการ (คงเหลือ หรือ จำนวนสั่ง)" };
   }
 
-  const { data: session, error: sessionErr } = await supabase
-    .from("order_sessions")
-    .insert({
-      station_id: stationId || null,
-      note: note || null,
-      created_by: profile.id,
-      submitted_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (sessionErr || !session) {
-    return { error: sessionErr?.message ?? "สร้างรายการไม่สำเร็จ" };
-  }
-
-  const { error: itemsErr } = await supabase.from("order_items").insert(
-    filtered.map((item, idx) => ({
-      session_id: session.id,
+  const { data, error } = await supabase.rpc("order_create", {
+    p_station_id: stationId || null,
+    p_note: note || null,
+    p_items: filtered.map((item) => ({
       ingredient_id: item.ingredientId,
       ingredient_name: item.ingredientName,
       remaining_kitchen_qty: item.remainingKitchenQty,
@@ -68,78 +69,36 @@ export async function createOrderSession(
       qty_ordered: item.qtyOrdered,
       order_unit: item.orderUnit,
       note: item.note,
-      sort_order: idx,
-    }))
-  );
+    })),
+  });
+  if (error) return { error: error.message };
+  if (typeof data !== "string" || !data) return { error: "สร้างรายการไม่สำเร็จ" };
 
-  if (itemsErr) {
-    // Compensating delete for the session we just created. It can fail too —
-    // and if it does, silently swallowing it strands an empty order session
-    // that nobody knows to clean up. Say so in the message rather than
-    // reporting only the original failure.
-    const { error: rollbackErr } = await supabase.from("order_sessions").delete().eq("id", session.id);
-    if (rollbackErr) {
-      return { error: `${itemsErr.message} (และลบรอบสั่งซื้อที่ค้างไม่สำเร็จ: ${rollbackErr.message})` };
-    }
-    return { error: itemsErr.message };
-  }
-
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${session.id}`);
-  return { sessionId: session.id };
+  revalidateOrders(data);
+  return { sessionId: data };
 }
 
-/** Editor+ ตรวจสอบใบสั่งของ: submitted → reviewed */
-export async function reviewOrderSession(sessionId: string): Promise<ActionResult> {
-  const profile = await requireAdminOrEditor();
+/**
+ * A head approves (decisions 2–4). `version` is the order as the head's
+ * screen read it; the database refuses a stale one, so the head reloads and
+ * approves what is there now.
+ */
+export async function approveOrderSession(sessionId: string, version: number): Promise<ActionResult> {
+  await requireOrdering();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({
-      status: "reviewed",
-      reviewed_by: profile.id,
-      reviewed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId)
-    .eq("status", "submitted");
+  const { error } = await supabase.rpc("order_approve", { p_session: sessionId, p_seen_version: version });
   if (error) return { error: error.message };
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+  revalidateOrders(sessionId);
   return {};
 }
 
-/** Editor+ ตีกลับ — ใช้ได้จากทั้ง submitted และ reviewed */
-export async function returnOrderSession(
-  sessionId: string,
-  note?: string
-): Promise<ActionResult> {
-  await requireAdminOrEditor();
+/** A head returns the order to its creator, until it is sent (decision 7). Both notes are kept. */
+export async function returnOrderSession(sessionId: string, note?: string): Promise<ActionResult> {
+  await requireOrdering();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({
-      status: "returned",
-      ...(note ? { note } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId)
-    .in("status", ["submitted", "reviewed"]);
+  const { error } = await supabase.rpc("order_return", { p_session: sessionId, p_note: note?.trim() || null });
   if (error) return { error: error.message };
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+  revalidateOrders(sessionId);
   return {};
 }
 
@@ -153,181 +112,84 @@ export type OrderItemUpdate = {
   orderUnit: string | null;
 };
 
-/** Creator or editor+ edits items in a returned session and resubmits */
-export async function updateItemsAndResubmit(
+/**
+ * The creator edits the lines while the order waits for review or after a
+ * return (decision 6); with `resubmit`, a returned order goes back to
+ * waiting. Only the creator: the database checks it (decision 14).
+ */
+export async function updateOrderItems(
   sessionId: string,
-  items: OrderItemUpdate[]
+  items: OrderItemUpdate[],
+  resubmit: boolean
 ): Promise<ActionResult> {
-  const profile = await requireProfile();
-
-  // NOTE: createAdminClient() is the SERVICE ROLE client and bypasses RLS
-  // entirely. The permission check below is therefore the ONLY thing
-  // protecting these writes — there is no database-level backstop behind it.
-  // If you refactor this function, that check is not optional cleanup.
-  const supabase = createAdminClient();
-
-  const { data: session } = await supabase
-    .from("order_sessions")
-    .select("created_by, status")
-    .eq("id", sessionId)
-    .single();
-
-  if (!session || session.status !== "returned") {
-    return { error: "ไม่สามารถแก้ไขได้ (สถานะไม่ใช่ 'ตีกลับ')" };
-  }
-
-  // Creator, or an admin/owner overriding.
-  //
-  // This function previously selected created_by and never compared it, so any
-  // authenticated user could rewrite and resubmit anyone's returned order. The
-  // rule did exist — it was written and enforced in resubmitOrderSession(),
-  // which nothing ever called. That function has been deleted and its rule
-  // lives here now.
-  //
-  // The admin override is a DELIBERATE RELAXATION of the original written
-  // intent, not an oversight — do not "restore" creator-only. resubmitOrderSession
-  // admitted nobody but the creator. Nik's call: a restaurant supply order has a
-  // same-day deadline, so creator-only leaves a returned order blocked until that
-  // staff member's next shift. He judged the operational cost higher than the
-  // accountability gain, and admins are already trusted with cost data and pricing.
-  if (session.created_by !== profile.id && !isAdminOrAbove(profile.role)) {
-    return { error: "เฉพาะผู้กรอกเดิมหรือผู้ดูแลระบบเท่านั้นที่แก้ไขและส่งใหม่ได้" };
-  }
-
-  for (const item of items) {
-    const { error } = await supabase
-      .from("order_items")
-      .update({
-        remaining_kitchen_qty: item.remainingKitchenQty,
-        remaining_kitchen_unit: item.remainingKitchenUnit,
-        remaining_freezer_qty: item.remainingFreezerQty,
-        remaining_freezer_unit: item.remainingFreezerUnit,
-        qty_ordered: item.qtyOrdered,
-        order_unit: item.orderUnit,
-      })
-      .eq("id", item.itemId)
-      .eq("session_id", sessionId);
-    if (error) return { error: error.message };
-  }
-
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({ status: "submitted", submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", sessionId);
-  if (error) return { error: error.message };
-
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
-  return {};
-}
-
-/** Admin+ บันทึกว่าส่งสั่งของแล้ว: reviewed → sent */
-export async function markOrderSent(sessionId: string): Promise<ActionResult> {
-  const profile = await requireAdmin();
+  await requireOrdering();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("order_sessions")
-    .update({
-      status: "sent",
-      sent_at: new Date().toISOString(),
-      sent_by: profile.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId)
-    .eq("status", "reviewed");
+  const { error } = await supabase.rpc("order_edit", {
+    p_session: sessionId,
+    p_items: items.map((item) => ({
+      id: item.itemId,
+      remaining_kitchen_qty: item.remainingKitchenQty,
+      remaining_kitchen_unit: item.remainingKitchenUnit,
+      remaining_freezer_qty: item.remainingFreezerQty,
+      remaining_freezer_unit: item.remainingFreezerUnit,
+      qty_ordered: item.qtyOrdered,
+      order_unit: item.orderUnit,
+    })),
+    p_resubmit: resubmit,
+  });
   if (error) return { error: error.message };
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+  revalidateOrders(sessionId);
   return {};
 }
 
-/** Reviewer แก้จำนวนตอน review (reviewer_qty_ordered) */
-export async function saveReviewerItemEdit(
-  itemId: string,
-  reviewerQtyOrdered: number | null,
-  sessionId: string
-): Promise<ActionResult> {
-  await requireAdminOrEditor();
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("order_items")
-    .update({ reviewer_qty_ordered: reviewerQtyOrdered })
-    .eq("id", itemId)
-    // Scoped to the session in the URL, not just the item id: the admin client
-    // bypasses RLS, so without this any item in the database could be edited by
-    // passing its id. saveEditorItemEdit below had the identical hole.
-    .eq("session_id", sessionId);
+/** Admin or owner records that the supplier was called (decision 5). */
+export async function markOrderSent(sessionId: string): Promise<ActionResult> {
+  await requireOrdering();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("order_mark_sent", { p_session: sessionId });
   if (error) return { error: error.message };
-  revalidatePath("/staff/inventory");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+  revalidateOrders(sessionId);
   return {};
 }
 
-/** Purchaser แก้จำนวนตอนโทรซัพ (editor_qty_ordered) — any authenticated */
-export async function saveEditorItemEdit(
-  itemId: string,
-  editorQtyOrdered: number | null,
-  sessionId: string
-): Promise<ActionResult> {
-  await requireProfile();
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("order_items")
-    .update({ editor_qty_ordered: editorQtyOrdered })
-    .eq("id", itemId)
-    // See saveReviewerItemEdit above — same scoping, same reason. This one is
-    // only requireProfile(), so ANY authenticated user could reach it.
-    .eq("session_id", sessionId);
+/** A head's quantity, while the order waits for review — before approving (decision 3). NULL clears it. */
+export async function saveHeadQty(itemId: string, qty: number | null, sessionId: string): Promise<ActionResult> {
+  await requireOrdering();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("order_set_head_qty", { p_item: itemId, p_qty: qty });
   if (error) return { error: error.message };
-  revalidatePath("/staff/inventory");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+  revalidateOrders(sessionId);
   return {};
 }
 
+/**
+ * Receiving, line by line (decision 8). The database records who received
+ * each line and closes the order itself when every line has a quantity; a
+ * refused line stops here with its message and nothing is marked received
+ * behind it.
+ */
 export async function receiveOrderItems(
   sessionId: string,
   received: { itemId: string; qtyReceived: number | null }[]
 ): Promise<ActionResult> {
-  await requireProfile();
+  await requireOrdering();
   const supabase = await createClient();
 
   for (const { itemId, qtyReceived } of received) {
-    const { error } = await supabase.rpc("receive_order_item", {
-      item_id: itemId,
-      qty: qtyReceived,
-    });
+    const { error } = await supabase.rpc("receive_order_item", { item_id: itemId, qty: qtyReceived });
     if (error) return { error: error.message };
   }
 
-  const { data: allItems } = await supabase
-    .from("order_items")
-    .select("qty_received")
-    .eq("session_id", sessionId);
+  revalidateOrders(sessionId);
+  return {};
+}
 
-  const allReceived = (allItems ?? []).every((i) => i.qty_received !== null);
-
-  if (allReceived) {
-    const { error } = await supabase
-      .from("order_sessions")
-      .update({ status: "received", received_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("id", sessionId)
-      .eq("status", "sent");
-    if (error) return { error: error.message };
-  }
-
-  revalidatePath("/staff/inventory");
-  revalidatePath("/staff/inventory/review");
-  revalidatePath("/staff/inventory/purchase");
-  revalidatePath("/staff/inventory/receive-queue");
-  revalidatePath("/staff/inventory/history");
-  revalidatePath(`/staff/inventory/${sessionId}`);
+/** Cancel instead of delete (decision 10); the database decides who may, and when. */
+export async function cancelOrderSession(sessionId: string, note?: string): Promise<ActionResult> {
+  await requireOrdering();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("order_cancel", { p_session: sessionId, p_note: note?.trim() || null });
+  if (error) return { error: error.message };
+  revalidateOrders(sessionId);
   return {};
 }

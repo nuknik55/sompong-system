@@ -1,4 +1,4 @@
-import { requireProfile } from "@/lib/auth";
+import { requireOrdering } from "@/lib/auth";
 import { getStations, getIngredientsForOrder, getTemplateItems } from "@/lib/inventory-data";
 import { OrderForm } from "./OrderForm";
 import { PageShell } from "@/components/ui/page";
@@ -8,7 +8,7 @@ export default async function NewOrderPage({
 }: {
   searchParams: Promise<{ template?: string; prefill?: string }>;
 }) {
-  await requireProfile();
+  await requireOrdering();
   const { template: templateId, prefill } = await searchParams;
 
   const [stations, allIngredients] = await Promise.all([

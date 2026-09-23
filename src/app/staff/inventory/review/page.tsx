@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
+import { isOrderHead } from "@/lib/order-rules";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
@@ -9,8 +10,8 @@ import { buttonClass } from "@/components/ui/button";
 import { thaiDate } from "@/lib/thai-date";
 
 export default async function ReviewQueuePage() {
-  const profile = await requireProfile();
-  if (!["owner", "admin", "editor"].includes(profile.role)) redirect("/staff/inventory");
+  const profile = await requireOrdering();
+  if (!isOrderHead(profile.role)) redirect("/staff/inventory");
   const canSend = isAdminOrAbove(profile.role);
 
   const sessions = await getOrderSessions({ status: "submitted" });
@@ -19,7 +20,7 @@ export default async function ReviewQueuePage() {
     <PageShell>
       <InventorySubNav showTemplate={true} canReview={true} canSend={canSend} />
 
-      <PageHeader title="รอตรวจสอบ" subtitle={<span className="text-xs">ใบสั่งของที่ staff ส่งมา รอ editor+ ตรวจสอบ</span>} />
+      <PageHeader title="รอตรวจสอบ" subtitle={<span className="text-xs">ใบสั่งของที่ส่งมา รอหัวหน้าอนุมัติ</span>} />
 
       {sessions.length === 0 ? (
         <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">

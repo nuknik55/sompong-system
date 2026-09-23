@@ -1,10 +1,12 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllRows } from "@/lib/data";
+import type { OrderStatus } from "@/lib/order-rules";
 
 export type Station = { id: string; name: string; sortOrder: number };
 
-export type OrderStatus = "submitted" | "returned" | "reviewed" | "sent" | "received";
+export type { OrderStatus };
 
 export type OrderSessionSummary = {
   id: string;
@@ -41,8 +43,24 @@ export type OrderItem = {
   editorQtyOrdered: number | null;
   orderUnit: string | null;
   qtyReceived: number | null;
+  /** Who received the line, and when: stored per line (item 35, decision 8). */
+  receivedBy: string | null;
+  receivedByName: string | null;
+  receivedAt: string | null;
   note: string | null;
   sortOrder: number;
+};
+
+/** One quantity change: by the creator, a head or a receiver (item 35, decision 3). */
+export type OrderItemChange = {
+  id: string;
+  itemId: string;
+  itemName: string;
+  field: "qty_ordered" | "reviewer_qty_ordered" | "qty_received";
+  oldValue: number | null;
+  newValue: number | null;
+  changedByName: string;
+  changedAt: string;
 };
 
 export type OrderSessionDetail = {
@@ -64,6 +82,14 @@ export type OrderSessionDetail = {
   sentBy: string | null;
   receivedAt: string | null;
   createdAt: string;
+  /** The head's conflict token: counted up by every edit; order_approve refuses a stale one. */
+  version: number;
+  returnNote: string | null;
+  returnedByName: string | null;
+  returnedAt: string | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancelNote: string | null;
   items: OrderItem[];
 };
 
@@ -265,9 +291,13 @@ export async function getOrderSessions(opts?: {
     query = query.in("status", statuses);
   }
 
-  const [{ data: sessions, error }, { data: itemCounts }] = await Promise.all([
+  // Every line's order id, paged: an unpaged read stops at 1,000 rows and
+  // the counts beyond it silently read 0 (item 35, the smaller findings).
+  const [{ data: sessions, error }, itemCounts] = await Promise.all([
     query,
-    supabase.from("order_items").select("session_id"),
+    fetchAllRows<{ session_id: string }>(({ from, to }) =>
+      supabase.from("order_items").select("session_id").order("id").range(from, to)
+    ),
   ]);
 
   if (error) throw new Error(error.message);
@@ -315,6 +345,7 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
       id, station_id, status, note, created_by, submitted_at,
       reviewed_by, reviewed_at,
       approved_by, approved_at, sent_at, sent_by, received_at, created_at,
+      version, return_note, returned_by, returned_at, cancelled_by, cancelled_at, cancel_note,
       stations(name),
       order_items(
         id, session_id, ingredient_id, ingredient_name,
@@ -322,20 +353,13 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
         remaining_freezer_qty, remaining_freezer_unit,
         pack_count, qty_per_pack, qty_ordered,
         reviewer_qty_ordered, editor_qty_ordered,
-        order_unit, qty_received, note, sort_order
+        order_unit, qty_received, received_by, received_at, note, sort_order
       )
     `)
     .eq("id", id)
     .single();
 
   if (error || !session) return null;
-
-  const allIds = [session.created_by, session.reviewed_by, session.approved_by, session.sent_by].filter(Boolean) as string[];
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .in("id", allIds);
-  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
 
   type RawItem = {
     id: string; session_id: string; ingredient_id: string | null;
@@ -345,9 +369,21 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
     pack_count: number | null; qty_per_pack: number | null;
     qty_ordered: number; reviewer_qty_ordered: number | null; editor_qty_ordered: number | null;
     order_unit: string | null; qty_received: number | null;
+    received_by: string | null; received_at: string | null;
     note: string | null; sort_order: number;
   };
   const rawItems = (Array.isArray(session.order_items) ? session.order_items : []) as RawItem[];
+
+  const allIds = [...new Set([
+    session.created_by, session.reviewed_by, session.approved_by, session.sent_by,
+    session.returned_by, session.cancelled_by, ...rawItems.map((i) => i.received_by),
+  ].filter(Boolean) as string[])];
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", allIds);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+  const nameOf = (id: string | null) => (id ? (nameById.get(id) ?? "ไม่ทราบ") : null);
 
   return {
     id: session.id,
@@ -368,6 +404,13 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
     sentBy: session.sent_by,
     receivedAt: session.received_at,
     createdAt: session.created_at,
+    version: session.version,
+    returnNote: session.return_note,
+    returnedByName: nameOf(session.returned_by),
+    returnedAt: session.returned_at,
+    cancelledByName: nameOf(session.cancelled_by),
+    cancelledAt: session.cancelled_at,
+    cancelNote: session.cancel_note,
     items: rawItems
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((item) => ({
@@ -386,10 +429,56 @@ export async function getOrderSessionDetail(id: string): Promise<OrderSessionDet
         editorQtyOrdered: item.editor_qty_ordered,
         orderUnit: item.order_unit,
         qtyReceived: item.qty_received,
+        receivedBy: item.received_by,
+        receivedByName: nameOf(item.received_by),
+        receivedAt: item.received_at,
         note: item.note,
         sortOrder: item.sort_order,
       })),
   };
+}
+
+/** The order's quantity changes, oldest first, with the names (item 35, decision 3). */
+export async function getOrderChanges(sessionId: string): Promise<OrderItemChange[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("order_item_changes")
+    .select("id, item_id, field, old_value, new_value, changed_by, changed_at, order_items(ingredient_name)")
+    .eq("session_id", sessionId)
+    .order("changed_at")
+    .order("id")
+    .limit(500);
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+  const ids = [...new Set(rows.map((r) => r.changed_by as string))];
+  const { data: profiles } = ids.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", ids)
+    : { data: [] as { id: string; full_name: string }[] };
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+  return rows.map((r) => {
+    const item = r.order_items as unknown as { ingredient_name: string } | { ingredient_name: string }[] | null;
+    const name = Array.isArray(item) ? item[0]?.ingredient_name : item?.ingredient_name;
+    return {
+      id: r.id as string,
+      itemId: r.item_id as string,
+      itemName: name ?? "",
+      field: r.field as OrderItemChange["field"],
+      oldValue: r.old_value as number | null,
+      newValue: r.new_value as number | null,
+      changedByName: nameById.get(r.changed_by as string) ?? "ไม่ทราบ",
+      changedAt: r.changed_at as string,
+    };
+  });
+}
+
+/** Orders waiting for a head: the badge on สั่งของ (item 35, decision 11). */
+export async function getReviewQueueCount(): Promise<number> {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("order_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "submitted");
+  return count ?? 0;
 }
 
 export async function getLastQtyPerPack(ingredientId: string): Promise<number | null> {

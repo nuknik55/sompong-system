@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
-import { getOrderSessionDetail } from "@/lib/inventory-data";
-import { SessionActions } from "./SessionActions";
+import { requireOrdering } from "@/lib/auth";
+import { getOrderChanges, getOrderSessionDetail } from "@/lib/inventory-data";
+import { STATUS_CLASS, STATUS_LABEL, isOrderHead } from "@/lib/order-rules";
+import { SessionActions, effectiveQty } from "./SessionActions";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { thaiDateTime } from "@/lib/thai-date";
@@ -15,21 +16,11 @@ function formatDate(iso: string) {
   });
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  submitted: "รอตรวจสอบ",
-  returned:  "ตีกลับ",
-  reviewed:  "รอสั่งซื้อ",
-  sent:      "ส่งแล้ว",
-  received:  "รับของแล้ว",
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  submitted: "bg-pending-soft text-pending-ink",
-  returned:  "bg-danger-soft text-danger",
-  reviewed:  "bg-info-soft text-info",
-  sent:      "bg-primary-soft text-primary",
-  received:  "bg-success-soft text-success-ink",
-};
+const FIELD_LABEL = {
+  qty_ordered: "จำนวนสั่ง",
+  reviewer_qty_ordered: "จำนวนที่หัวหน้าแก้",
+  qty_received: "รับจริง",
+} as const;
 
 export default async function SessionDetailPage({
   params,
@@ -37,16 +28,13 @@ export default async function SessionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [profile, session] = await Promise.all([requireProfile(), getOrderSessionDetail(id)]);
+  // hr and sales are refused at the route (item 35, decision 9).
+  const [profile, session] = await Promise.all([requireOrdering(), getOrderSessionDetail(id)]);
   if (!session) notFound();
+  const changes = await getOrderChanges(session.id);
 
-  const canReview = ["owner", "admin", "editor"].includes(profile.role);
-  const canSend = isAdminOrAbove(profile.role);
-  // Same value as canSend today, deliberately a separate prop: "may mark an
-  // order sent" and "may override creator-only on a returned order" are
-  // different rules that currently coincide.
-  const canOverrideCreator = isAdminOrAbove(profile.role);
   const isCreator = profile.id === session.createdBy;
+  const selfApproved = session.reviewedBy !== null && session.reviewedBy === session.createdBy;
   const shortId = session.id.slice(0, 8).toUpperCase();
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
 
@@ -59,8 +47,8 @@ export default async function SessionDetailPage({
         back={{ href: "/staff/inventory", label: "กลับ" }}
         title={<>ใบสั่งของ #{shortId}</>}
         subtitle={
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[session.status] ?? ""}`}>
-            {STATUS_LABEL[session.status] ?? session.status}
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[session.status]}`}>
+            {STATUS_LABEL[session.status]}
           </span>
         }
       />
@@ -82,8 +70,14 @@ export default async function SessionDetailPage({
         </div>
         {session.reviewedAt && (
           <div className="flex gap-2">
-            <span className="w-24 shrink-0 text-neutral-500">ตรวจโดย</span>
-            <span>{session.reviewedByName} · {thaiDateTime(session.reviewedAt)}</span>
+            <span className="w-24 shrink-0 text-neutral-500">อนุมัติโดย</span>
+            <span>{session.reviewedByName}{selfApproved ? " (อนุมัติเอง)" : ""} · {thaiDateTime(session.reviewedAt)}</span>
+          </div>
+        )}
+        {session.returnedAt && session.status === "returned" && (
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0 text-neutral-500">ตีกลับโดย</span>
+            <span>{session.returnedByName} · {thaiDateTime(session.returnedAt)}</span>
           </div>
         )}
         {session.sentAt && (
@@ -98,15 +92,30 @@ export default async function SessionDetailPage({
             <span>{thaiDateTime(session.receivedAt)}</span>
           </div>
         )}
+        {session.cancelledAt && (
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0 text-neutral-500">ยกเลิกเมื่อ</span>
+            <span>{session.cancelledByName ?? "ระบบ"} · {thaiDateTime(session.cancelledAt)}</span>
+          </div>
+        )}
         {session.note && session.status !== "returned" && (
           <div className="flex gap-2">
             <span className="w-24 shrink-0 text-neutral-500">หมายเหตุ</span>
             <span>{session.note}</span>
           </div>
         )}
+        {session.returnNote && session.status !== "returned" && (
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0 text-neutral-500">หมายเหตุหัวหน้า</span>
+            <span>{session.returnNote}</span>
+          </div>
+        )}
       </div>
 
-      {session.status !== "sent" && session.status !== "reviewed" && (
+      {/* The plain table: for the creator while it waits, and for everyone once
+          the order is returned, received or cancelled. A head waiting to
+          review, and the reviewed and sent stages, use SessionActions' table. */}
+      {!(session.status === "sent" || session.status === "reviewed" || (session.status === "submitted" && isOrderHead(profile.role))) && (
         <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden print:hidden">
           <div className="px-4 py-3 border-b border-neutral-100">
             <h2 className="text-sm font-medium text-neutral-800">รายการ ({session.items.length})</h2>
@@ -124,9 +133,8 @@ export default async function SessionDetailPage({
               </thead>
               <tbody>
                 {session.items.map((item) => {
-                  const effectiveQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
-                  const wasEdited = (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered)
-                                 || (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
+                  const eqty = effectiveQty(item);
+                  const wasEdited = item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered;
                   return (
                     <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-pending-soft" : ""}`}>
                       <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
@@ -137,7 +145,7 @@ export default async function SessionDetailPage({
                         {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-neutral-800">
-                        {effectiveQty > 0 ? `${effectiveQty} ${item.orderUnit ?? ""}`.trim() : "—"}
+                        {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
                         {wasEdited && (
                           <div className="text-xs font-normal text-pending-ink">แก้จาก {item.qtyOrdered}</div>
                         )}
@@ -145,7 +153,10 @@ export default async function SessionDetailPage({
                       {showReceived && (
                         <td className="px-3 py-2 text-right text-success-ink">
                           {item.qtyReceived !== null
-                            ? `${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()
+                            ? <>
+                                {`${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()}
+                                {item.receivedByName && <div className="text-xs font-normal text-neutral-500">โดย {item.receivedByName}</div>}
+                              </>
                             : <span className="text-neutral-500">ยังไม่มา</span>}
                         </td>
                       )}
@@ -173,13 +184,13 @@ export default async function SessionDetailPage({
             </thead>
             <tbody>
               {session.items
-                .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
+                .filter((i) => effectiveQty(i) > 0)
                 .map((item) => (
                   <tr key={item.id}>
                     <td className="border border-gray-400 px-2 py-1">□</td>
                     <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
                     <td className="border border-gray-400 px-2 py-1 text-right font-medium">
-                      {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
+                      {effectiveQty(item)} {item.orderUnit ?? ""}
                     </td>
                   </tr>
                 ))}
@@ -203,12 +214,12 @@ export default async function SessionDetailPage({
             </thead>
             <tbody>
               {session.items
-                .filter((i) => (i.editorQtyOrdered ?? i.reviewerQtyOrdered ?? i.qtyOrdered) > 0)
+                .filter((i) => effectiveQty(i) > 0)
                 .map((item) => (
                   <tr key={item.id}>
                     <td className="border border-gray-400 px-2 py-1">{item.ingredientName}</td>
                     <td className="border border-gray-400 px-2 py-1 text-right">
-                      {item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered} {item.orderUnit ?? ""}
+                      {effectiveQty(item)} {item.orderUnit ?? ""}
                     </td>
                     <td className="border border-gray-400 px-2 py-1 text-right font-medium">
                       {item.qtyReceived !== null ? `${item.qtyReceived} ${item.orderUnit ?? ""}` : "—"}
@@ -220,7 +231,42 @@ export default async function SessionDetailPage({
         </div>
       )}
 
-      <SessionActions session={session} canReview={canReview} canSend={canSend} isCreator={isCreator} canOverrideCreator={canOverrideCreator} />
+      <SessionActions session={session} role={profile.role} isCreator={isCreator} />
+
+      {/* Every quantity change: who, old, new, when (item 35, decision 3) */}
+      {changes.length > 0 && (
+        <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden print:hidden">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h2 className="text-sm font-medium text-neutral-800">ประวัติการแก้จำนวน ({changes.length})</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={TH_ROW}>
+                  <th className="px-3 py-2 text-left">เมื่อ</th>
+                  <th className="px-3 py-2 text-left">วัตถุดิบ</th>
+                  <th className="px-3 py-2 text-left">ช่อง</th>
+                  <th className="px-3 py-2 text-right">จาก</th>
+                  <th className="px-3 py-2 text-right">เป็น</th>
+                  <th className="px-3 py-2 text-left">โดย</th>
+                </tr>
+              </thead>
+              <tbody>
+                {changes.map((c) => (
+                  <tr key={c.id} className="border-b border-neutral-100 last:border-0">
+                    <td className="px-3 py-2 whitespace-nowrap text-neutral-600">{thaiDateTime(c.changedAt)}</td>
+                    <td className="px-3 py-2 text-neutral-800">{c.itemName}</td>
+                    <td className="px-3 py-2 text-neutral-600">{FIELD_LABEL[c.field]}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-neutral-500">{c.oldValue ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-neutral-800">{c.newValue ?? "—"}</td>
+                    <td className="px-3 py-2 text-neutral-600">{c.changedByName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

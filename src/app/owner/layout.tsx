@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getPendingCount } from "@/lib/pending-data";
 import { canManageMaintenance, getOpenRepairCount } from "@/lib/maintenance-data";
+import { getReviewQueueCount } from "@/lib/inventory-data";
+import { isOrderHead } from "@/lib/order-rules";
 import { AppHeader } from "@/components/app-header";
 
 export default async function OwnerLayout({ children }: { children: React.ReactNode }) {
@@ -17,9 +19,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   if (profile.role === "staff") redirect("/staff");
   const pendingCount = isAdminOrAbove(profile.role) ? await getPendingCount() : 0;
   const openRepairCount = canManageMaintenance(profile.role) ? await getOpenRepairCount() : 0;
+  const orderReviewCount = isOrderHead(profile.role) ? await getReviewQueueCount() : 0;
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <AppHeader profile={profile} pendingCount={pendingCount} openRepairCount={openRepairCount} />
+      <AppHeader profile={profile} pendingCount={pendingCount} openRepairCount={openRepairCount} orderReviewCount={orderReviewCount} />
       {/* min-w-0: a flex item defaults to min-width:auto, so one long
           unbroken row (the category tabs on /owner) widened the whole page
           past the screen instead of scrolling inside its own box. */}

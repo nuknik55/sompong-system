@@ -90,7 +90,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
         </div>
 
         {session.items.map((item) => {
-          const orderedQty = item.editorQtyOrdered ?? item.reviewerQtyOrdered ?? item.qtyOrdered;
+          const orderedQty = item.reviewerQtyOrdered ?? item.qtyOrdered;
           const inputVal = inputs[item.id] ?? "";
           const receivedNum = inputVal.trim() !== "" ? parseFloat(inputVal) : null;
           const variance = isHighVariance(orderedQty, receivedNum);
@@ -106,7 +106,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
               <div>
                 <span className="text-sm text-neutral-800">{item.ingredientName}</span>
                 {alreadyReceived && (
-                  <div className="text-xs text-success-ink">✓ รับแล้ว {item.qtyReceived} {item.orderUnit ?? ""} — แก้ได้ถ้าพิมพ์ผิด</div>
+                  <div className="text-xs text-success-ink">✓ รับแล้ว {item.qtyReceived} {item.orderUnit ?? ""}{item.receivedByName ? ` โดย ${item.receivedByName}` : ""} — แก้ได้ถ้าพิมพ์ผิด</div>
                 )}
                 {!alreadyReceived && variance && (
                   <div className="text-xs text-pending-ink">ต่างจากที่สั่งเกิน 30%</div>

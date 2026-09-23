@@ -202,6 +202,29 @@ export async function changePassword(userId: string, newPassword: string): Promi
   return {};
 }
 
+/**
+ * Whether the account appears anywhere in the supply-order history (item 35,
+ * decision 15). The order tables' foreign keys refuse the deletion of such
+ * an account; this read is what turns that refusal into an offer to disable
+ * instead of a raw constraint error. A failed read counts as history: the
+ * deletion is refused, never let through on an unknown.
+ */
+async function hasOrderHistory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<boolean> {
+  const reads = await Promise.all([
+    supabase.from("order_sessions").select("id", { count: "exact", head: true })
+      .or(`created_by.eq.${userId},reviewed_by.eq.${userId},sent_by.eq.${userId},approved_by.eq.${userId},returned_by.eq.${userId},cancelled_by.eq.${userId}`),
+    supabase.from("order_items").select("id", { count: "exact", head: true }).eq("received_by", userId),
+    supabase.from("order_item_changes").select("id", { count: "exact", head: true }).eq("changed_by", userId),
+  ]);
+  return reads.some((r) => r.error !== null || (r.count ?? 1) > 0);
+}
+
+// Not exported: a "use server" module may export only async functions.
+const DISABLE_INSTEAD = "บัญชีนี้มีประวัติในใบสั่งของ จึงลบไม่ได้ — ใช้ ระงับการใช้งาน แทน";
+
 export async function deleteUser(userId: string): Promise<ActionResult> {
   const me = await requireAdmin();
   const supabase = await createClient();
@@ -214,6 +237,10 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   const current = found.target;
   const refusal = teamRefusal(me, current, { kind: "delete" });
   if (refusal) return { error: refusal };
+  // An account with order history is disabled, not deleted (item 35,
+  // decision 15). The database refuses the deletion as well; this check is
+  // what the person sees instead of the constraint's message.
+  if (await hasOrderHistory(supabase, userId)) return { error: DISABLE_INSTEAD };
   // Last-owner guard
   if (current.role === "owner" && (await countOwners(supabase)) <= 1) {
     return { error: "ต้องมี Owner อย่างน้อย 1 คนในระบบ ไม่สามารถลบ Owner คนสุดท้ายได้" };
@@ -240,6 +267,36 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   if ((count ?? 0) === 0) return { error: "ลบไม่สำเร็จ: กรุณารัน SQL policy ใน Supabase ก่อน (ดูใน actions.ts)" };
 
   // Profile deleted — user is locked out even if auth.users entry remains.
+  revalidatePath("/owner/team");
+  return {};
+}
+
+/**
+ * Disable or re-enable a login (item 35, decision 15): the account keeps
+ * its profile and its place in every order's history, and can no longer
+ * sign in (a ban through the auth admin API; a session it already holds
+ * ends when its token expires, within the hour). Who may: the same rule as
+ * deleting (teamRefusal "delete"), with the same last-owner and last-admin
+ * guards, since a disabled account is one that cannot act.
+ */
+export async function setUserDisabled(userId: string, disabled: boolean): Promise<ActionResult> {
+  const me = await requireAdmin();
+  const supabase = await createClient();
+  const found = await readTarget(supabase, userId);
+  if (found.error !== undefined) return { error: found.error };
+  const current = found.target;
+  const refusal = teamRefusal(me, current, { kind: "delete" });
+  if (refusal) return { error: refusal };
+  if (disabled && current.role === "owner" && (await countOwners(supabase)) <= 1) {
+    return { error: "ต้องมี Owner อย่างน้อย 1 คนในระบบ ไม่สามารถระงับ Owner คนสุดท้ายได้" };
+  }
+  if (disabled && current.role === "admin" && (await countAdmins(supabase)) <= 1) {
+    return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถระงับ Admin คนสุดท้ายได้" };
+  }
+  const admin = createAdminClient();
+  // 100 years, or "none" to lift it: what the auth API calls a ban.
+  const { error } = await admin.auth.admin.updateUserById(userId, { ban_duration: disabled ? "876000h" : "none" });
+  if (error) return { error: `${disabled ? "ระงับ" : "เปิดใช้งาน"}ไม่สำเร็จ: ${error.message}` };
   revalidatePath("/owner/team");
   return {};
 }

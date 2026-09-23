@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
@@ -9,7 +9,7 @@ import { buttonClass } from "@/components/ui/button";
 import { thaiDate } from "@/lib/thai-date";
 
 export default async function PurchaseQueuePage() {
-  const profile = await requireProfile();
+  const profile = await requireOrdering();
   if (!isAdminOrAbove(profile.role)) redirect("/staff/inventory");
 
   const sessions = await getOrderSessions({ status: "reviewed" });

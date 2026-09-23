@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createUser, deleteUser, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
+import { createUser, deleteUser, setUserDisabled, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
 import type { Role } from "@/lib/auth";
 import { assignableRoles, teamRefusal } from "@/lib/team-rules";
 import { buttonClass } from "@/components/ui/button";
@@ -14,6 +14,8 @@ export type TeamUser = {
   username: string;
   employee_id: string | null;
   holds_prep_grants: boolean;
+  /** The login is banned: it keeps its profile and its order history, and cannot sign in. */
+  disabled: boolean;
 };
 
 export type EmployeeOption = { id: string; label: string };
@@ -198,6 +200,18 @@ export function TeamManager({
     );
   }
 
+  // Disable instead of delete (item 35, decision 15): an account with order
+  // history cannot be deleted; this keeps the profile and ends the login.
+  function setDisabled(id: string, disabled: boolean) {
+    if (disabled && !confirm("ระงับการใช้งานบัญชีนี้? จะ login ไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง")) return;
+    clearRowErr(id);
+    runWrite(
+      () => setUserDisabled(id, disabled),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      { onOk: () => setList((prev) => prev.map((u) => (u.id === id ? { ...u, disabled } : u))) },
+    );
+  }
+
   function remove(id: string) {
     if (!confirm("ลบบัญชีนี้แน่ใจหรือไม่? จะไม่สามารถ login ได้อีก")) return;
     clearRowErr(id);
@@ -360,6 +374,9 @@ export function TeamManager({
                     <>
                       <td className="px-3 py-2">
                         {u.full_name}
+                        {u.disabled && (
+                          <span className="ml-2 rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">ระงับแล้ว</span>
+                        )}
                         {u.employee_id && (
                           <div className="text-xs text-neutral-500">
                             HR: {employeeLabelById.get(u.employee_id) ?? "ไม่พบพนักงาน"}
@@ -431,6 +448,15 @@ export function TeamManager({
                               </button>
                             )}
 
+                            {canDelete && (
+                              <button
+                                type="button"
+                                className={buttonClass("link", { dangerHover: !u.disabled })}
+                                onClick={() => setDisabled(u.id, !u.disabled)}
+                              >
+                                {u.disabled ? "เปิดใช้งาน" : "ระงับการใช้งาน"}
+                              </button>
+                            )}
                             {canDelete && (
                               <button
                                 type="button"

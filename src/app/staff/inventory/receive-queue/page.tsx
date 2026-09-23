@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireProfile, isAdminOrAbove } from "@/lib/auth";
+import { requireOrdering, isAdminOrAbove } from "@/lib/auth";
+import { isOrderHead } from "@/lib/order-rules";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
@@ -8,8 +9,8 @@ import { buttonClass } from "@/components/ui/button";
 import { thaiDate } from "@/lib/thai-date";
 
 export default async function ReceiveQueuePage() {
-  const profile = await requireProfile();
-  const canReview = ["owner", "admin", "editor"].includes(profile.role);
+  const profile = await requireOrdering();
+  const canReview = isOrderHead(profile.role);
   const canSend = isAdminOrAbove(profile.role);
   const sessions = await getOrderSessions({ status: "sent" });
 

@@ -5,6 +5,11 @@ import { displayIdentity } from "@/lib/identity";
 import { TeamManager } from "@/components/team-manager";
 import { PageHeader, PageShell } from "@/components/ui/page";
 
+/** A disabled login is a ban that has not run out (item 35, decision 15). */
+function isBanned(bannedUntil: string | undefined): boolean {
+  return !!bannedUntil && new Date(bannedUntil).getTime() > Date.now();
+}
+
 export default async function OwnerTeamPage() {
   const me = await requireAdmin();
   const supabase = await createClient();
@@ -31,6 +36,7 @@ export default async function OwnerTeamPage() {
   const grantHolders = grantsComplete ? new Set((grants.data ?? []).map((g) => g.profile_id as string)) : null;
 
   const emailById = new Map(usersList?.users.map((u) => [u.id, u.email ?? "-"]) ?? []);
+  const disabledIds = new Set((usersList?.users ?? []).filter((u) => isBanned(u.banned_until)).map((u) => u.id));
   const users = (profiles ?? []).map((p) => ({
     id: p.id,
     full_name: p.full_name,
@@ -38,6 +44,7 @@ export default async function OwnerTeamPage() {
     username: displayIdentity(emailById.get(p.id) ?? "-"),
     employee_id: p.employee_id as string | null,
     holds_prep_grants: grantHolders ? grantHolders.has(p.id) : true,
+    disabled: disabledIds.has(p.id),
   }));
 
   const employeeOptions = (employees ?? []).map((e) => ({
