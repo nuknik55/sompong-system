@@ -60,6 +60,14 @@
   --color-danger-hover: #912018;
   --color-danger-soft: #FEF3F2;
 
+  /* Form fields (step 2, 2026-09-23). A field's border must reach 3:1
+     against what it sits on (WCAG 1.4.11): #8A8A8A is 3.45:1 on a white
+     card and 3.17:1 on the off-white page; the old #D4D4D4 was 1.5:1.
+     Placeholder text is text, so 4.5:1: #737373 is 4.74:1 on the white
+     field; the old #A3A3A3 was 2.5:1. */
+  --color-field-border: #8A8A8A;
+  --color-field-placeholder: #737373;
+
   /* Depth: a button sits slightly above the page and sinks when pressed. */
   --shadow-btn: 0 1px 2px rgb(24 45 12 / 0.24), 0 1px 1px rgb(24 45 12 / 0.12);
   --shadow-btn-danger: 0 1px 2px rgb(90 16 10 / 0.24), 0 1px 1px rgb(90 16 10 / 0.12);
@@ -109,8 +117,10 @@ body {
    Nik asked for stronger borders on the booking screen; the finding was that
    the faint styling WAS the shared one — #e5e7eb, the lightest weight,
    against 184 input-shaped uses of #d4d4d4 elsewhere, which is what the daily
-   accounting screen uses without complaint. This is that weight, with the
-   same screen's blue-400 focus.
+   accounting screen uses without complaint. This was that weight, with the
+   same screen's blue-400 focus. Step 2 (2026-09-23) darkened the border to
+   the field border colour (#8A8A8A) and the placeholder to #737373, for
+   contrast; see the tokens above and the app-wide rules at the end.
 
    .line-input is the compact variant for dense rows (the booking screen's
    price box and the SearchSelect inside it, which live in two files and so
@@ -124,7 +134,7 @@ body {
 */
 .input-base {
   width: 100%;
-  border: 1px solid #d4d4d4;
+  border: 1px solid #8a8a8a;
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 0.875rem;
@@ -142,11 +152,11 @@ body {
 input.input-base:read-only,
 textarea.input-base:read-only { background: #f5f5f5; color: #525252; }
 .input-base:disabled { background: #f5f5f5; color: #737373; }
-.input-base::placeholder { color: #a3a3a3; }
+.input-base::placeholder { color: #737373; }
 
 .line-input {
   width: 100%;
-  border: 1px solid #d4d4d4;
+  border: 1px solid #8a8a8a;
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.8125rem;
@@ -156,4 +166,43 @@ textarea.input-base:read-only { background: #f5f5f5; color: #525252; }
 }
 .line-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25); }
 .line-input:disabled { background: #f5f5f5; color: #737373; }
-.line-input::placeholder { color: #a3a3a3; }
+.line-input::placeholder { color: #737373; }
+
+/* ── Every form field, app-wide (step 2, 2026-09-23) ───────────────────────
+   Most fields are styled with Tailwind classes on the element, not with
+   .input-base: 136 carry border-neutral-300 and 40 border-neutral-200, and
+   263 have no background of their own, so on the off-white page they would
+   be off-white too. These rules reach every one of them, HR included,
+   without touching a page:
+   - a field is white (layer base: any bg- class on the field still wins,
+     so a disabled or coloured field keeps its own);
+   - placeholder text is #737373 (layer base, after Tailwind's own);
+   - a field whose border is the neutral 200 or 300 draws it in the field
+     border colour instead. This one is in the utilities layer, one class
+     more specific than the plain border utility, so hover borders and
+     every coloured border (amber, red, green: states) still win;
+   - and such a field, focused, shows the shared field focus (.input-base's
+     blue border and ring). With the darker resting border, the old focus
+     classes stopped showing focus: focus:border-neutral-400 is now LIGHTER
+     than the field at rest, -500 barely darker, and 22 fields had
+     focus:outline-none with no focus style at all. */
+@layer base {
+  input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="submit"], [type="button"], [type="reset"], [type="image"], [type="hidden"])),
+  select,
+  textarea {
+    background-color: #ffffff;
+  }
+  ::placeholder {
+    color: var(--color-field-placeholder);
+  }
+}
+@layer utilities {
+  :is(input, select, textarea):is(.border-neutral-200, .border-neutral-300) {
+    border-color: var(--color-field-border);
+  }
+  :is(input, select, textarea):is(.border-neutral-200, .border-neutral-300):focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+  }
+}
