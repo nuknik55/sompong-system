@@ -143,6 +143,20 @@ test("disabling: the last owner or admin who can still sign in cannot be disable
   assert.equal(lastActiveRefusal(a("s1", "staff"), [a("s1", "staff")]), null);
 });
 
+test("demoting: the last admin who can still sign in keeps the role; a disabled admin does not count", () => {
+  const a = (id: string, role: string, disabled = false) => ({ id, role, disabled });
+  // THE DEFECT: two admin profiles, the other one disabled. Counting profiles
+  // (2) allowed the demotion; only one of them can sign in.
+  const refusal = lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("a2", "admin", true)], "ลดสิทธิ์");
+  assert.equal(refusal, "ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน ไม่สามารถลดสิทธิ์ Admin คนสุดท้ายที่ใช้งานได้");
+  // An owner is not an admin: it does not keep the last admin demotable.
+  assert.notEqual(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("o1", "owner")], "ลดสิทธิ์"), null);
+  // Another admin who can sign in: allowed.
+  assert.equal(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("a2", "admin")], "ลดสิทธิ์"), null);
+  // Without a verb the refusal still reads as disabling.
+  assert.match(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner")]) ?? "", /ไม่สามารถระงับ Owner/);
+});
+
 test("disabling: a ban counts until it runs out", () => {
   const now = Date.parse("2026-09-23T12:00:00Z");
   assert.equal(isBanned("2126-09-23T12:00:00Z", now), true);

@@ -53,22 +53,23 @@ export function isBanned(bannedUntil: string | null | undefined, now: number = D
 }
 
 /**
- * Disabling the last owner, or the last admin, who can still sign in is
- * refused. "Can sign in" means an account of that role whose login is not
- * banned; one with no login at all counts as unable. Counting profiles
- * instead let an owner disable the only other owner while the first was
- * already disabled (its open session outlives the ban by up to an hour).
+ * Disabling, deleting or demoting the last owner, or the last admin, who can
+ * still sign in is refused. "Can sign in" means an account of that role
+ * whose login is not banned; one with no login at all counts as unable.
+ * Counting profiles instead let an owner disable the only other owner while
+ * the first was already disabled (its open session outlives the ban by up
+ * to an hour). `verb` names the action in the refusal (ระงับ, ลบ, ลดสิทธิ์).
  */
 export function lastActiveRefusal(
   target: { id: string; role: string },
   accounts: { id: string; role: string; disabled: boolean }[],
+  verb = "ระงับ",
 ): string | null {
   if (target.role !== "owner" && target.role !== "admin") return null;
   const others = accounts.filter((a) => a.role === target.role && a.id !== target.id && !a.disabled);
   if (others.length > 0) return null;
-  return target.role === "owner"
-    ? "ต้องมี Owner ที่ใช้งานได้อย่างน้อย 1 คน ไม่สามารถระงับ Owner คนสุดท้ายที่ใช้งานได้"
-    : "ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน ไม่สามารถระงับ Admin คนสุดท้ายที่ใช้งานได้";
+  const who = target.role === "owner" ? "Owner" : "Admin";
+  return `ต้องมี ${who} ที่ใช้งานได้อย่างน้อย 1 คน ไม่สามารถ${verb} ${who} คนสุดท้ายที่ใช้งานได้`;
 }
 
 /** The roles this actor may give an account, in the screen's order. */

@@ -103,14 +103,6 @@ export async function createUser(
 
 export type ActionResult = { error?: string };
 
-async function countAdmins(supabase: Awaited<ReturnType<typeof createClient>>): Promise<number> {
-  const { count } = await supabase
-    .from("profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "admin");
-  return count ?? 0;
-}
-
 export async function updateUserRole(userId: string, role: Role): Promise<ActionResult> {
   const me = await requireAdmin();
   const supabase = await createClient();
@@ -122,9 +114,12 @@ export async function updateUserRole(userId: string, role: Role): Promise<Action
   // changed (teamRefusal), by the owner or anyone else.
   const refusal = teamRefusal(me, current, { kind: "role", role });
   if (refusal) return { error: refusal };
-  // Last-admin guard
-  if (role !== "admin" && current.role === "admin" && (await countAdmins(supabase)) <= 1) {
-    return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถลดสิทธิ์ Admin คนสุดท้ายได้" };
+  // Demoting the last admin who can still sign in: the same rule as
+  // deleting and disabling. Counting admin profiles let a disabled admin
+  // count as one, so the only admin who could sign in could be demoted.
+  if (role !== "admin" && current.role === "admin") {
+    const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่เปลี่ยนสิทธิ์", "ลดสิทธิ์");
+    if (lastActive) return { error: lastActive };
   }
 
   // Counted: a write the table's policy refuses updates 0 rows and no error.
@@ -270,8 +265,8 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
  */
 /**
  * The last owner, or admin, who can still SIGN IN may not be removed —
- * disabled or deleted (not "the last profile of that role": a disabled owner
- * is still a profile). Reads the role's profiles and EVERY login fresh; a
+ * disabled, deleted or demoted (not "the last profile of that role": a
+ * disabled owner is still a profile). Reads the role's profiles and EVERY login fresh; a
  * failed or incomplete read refuses rather than guesses. Returns the refusal,
  * or null.
  */
@@ -279,6 +274,7 @@ async function lastActiveCheck(
   supabase: Awaited<ReturnType<typeof createClient>>,
   target: { id: string; role: string },
   refusedRead: string,
+  verb?: string,
 ): Promise<string | null> {
   if (target.role !== "owner" && target.role !== "admin") return null;
   const { data: sameRole, error } = await supabase.from("profiles").select("id, role").eq("role", target.role);
@@ -289,6 +285,7 @@ async function lastActiveCheck(
   return lastActiveRefusal(
     target,
     sameRole.map((p) => ({ id: p.id as string, role: p.role as string, disabled: banned.get(p.id as string) ?? true })),
+    verb,
   );
 }
 
