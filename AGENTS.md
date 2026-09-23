@@ -182,6 +182,36 @@ So, in any migration:
   The same trap catches a `LANGUAGE sql` function body, which IS resolved at
   CREATE time; a `LANGUAGE plpgsql` body is not.
 
+# The server/client boundary: `scripts/rsc-boundary.mjs`
+
+tsc, lint, the tests and `next build` all pass two defects that only a
+render shows, and the second kind shipped: the order page crashed in
+production for every order (`2d4c10f`, fixed in `28f7807`).
+- **A server file may import only React components from a "use client"
+  module.** Anything else arrives as a client reference: a constant is not
+  its value (TH_ROW, 2026-09-23, caught before commit) and a function cannot
+  be called ("Attempted to call effectiveQty() from the server"). Put shared
+  constants and helpers in a plain module (`ui/table.tsx`,
+  `lib/order-rules.ts`) and import them from there on both sides.
+- **A "use server" file exports only async functions** (types are fine).
+  "Only async functions are allowed to be exported in a 'use server'
+  file" (the team page's message constant, 2026-09-23, caught before
+  commit): keep constants unexported.
+
+`src/lib/rsc-boundary.test.ts` runs the checker in `npm test`, so the gate
+and CI fail on either. It builds the server graph (every page, layout,
+template, default, not-found, loading and route file that is not "use
+client", every `server-only` file and every "use server" file, then what
+they import through relative or `@/` paths, stopping at "use client") and
+checks each import that crosses into a "use client" module. **The
+heuristic for "a component":** a PascalCase name (upper-case first letter,
+a lower-case letter, no underscore) that the module exports as a function
+or const; a default import counts as a component. It can miss a PascalCase
+export that is not a component, a non-component default export, dynamic
+`import()`, and package imports. Its fixtures reproduce all three
+incidents; `RSC_SCAN_ROOT=<a tree's src>` runs it on another tree (on
+`2d4c10f` it reports the effectiveQty import and fails).
+
 # The SQL checker: `scripts/sqlcheck.mjs`
 
 Every migration is run by hand in the Supabase SQL editor and nothing deploys
