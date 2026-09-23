@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toAuthEmail } from "@/lib/identity";
 import { createRefusal, isBanned, lastActiveRefusal, teamRefusal, type TeamAccount } from "@/lib/team-rules";
+import { listAllAuthUsers } from "@/lib/auth-users";
 import type { Role } from "@/lib/auth";
 
 export type CreateUserResult = { error?: string };
@@ -107,14 +108,6 @@ async function countAdmins(supabase: Awaited<ReturnType<typeof createClient>>): 
     .from("profiles")
     .select("id", { count: "exact", head: true })
     .eq("role", "admin");
-  return count ?? 0;
-}
-
-async function countOwners(supabase: Awaited<ReturnType<typeof createClient>>): Promise<number> {
-  const { count } = await supabase
-    .from("profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "owner");
   return count ?? 0;
 }
 
@@ -241,14 +234,10 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   // decision 15). The database refuses the deletion as well; this check is
   // what the person sees instead of the constraint's message.
   if (await hasOrderHistory(supabase, userId)) return { error: DISABLE_INSTEAD };
-  // Last-owner guard
-  if (current.role === "owner" && (await countOwners(supabase)) <= 1) {
-    return { error: "ต้องมี Owner อย่างน้อย 1 คนในระบบ ไม่สามารถลบ Owner คนสุดท้ายได้" };
-  }
-  // Last-admin guard
-  if (current.role === "admin" && (await countAdmins(supabase)) <= 1) {
-    return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถลบ Admin คนสุดท้ายได้" };
-  }
+  // The last owner or admin who can still sign in: the same rule as
+  // disabling (counting profiles let a disabled owner count as one).
+  const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ลบ");
+  if (lastActive) return { error: lastActive };
 
   // Best-effort: remove auth.users entry (needs SUPABASE_SERVICE_ROLE_KEY in Vercel)
   const adminClient = createAdminClient();
@@ -279,6 +268,30 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
  * deleting (teamRefusal "delete"), with the same last-owner and last-admin
  * guards, since a disabled account is one that cannot act.
  */
+/**
+ * The last owner, or admin, who can still SIGN IN may not be removed —
+ * disabled or deleted (not "the last profile of that role": a disabled owner
+ * is still a profile). Reads the role's profiles and EVERY login fresh; a
+ * failed or incomplete read refuses rather than guesses. Returns the refusal,
+ * or null.
+ */
+async function lastActiveCheck(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  target: { id: string; role: string },
+  refusedRead: string,
+): Promise<string | null> {
+  if (target.role !== "owner" && target.role !== "admin") return null;
+  const { data: sameRole, error } = await supabase.from("profiles").select("id, role").eq("role", target.role);
+  if (error || !sameRole) return refusedRead;
+  const logins = await listAllAuthUsers(createAdminClient());
+  if (!logins) return refusedRead;
+  const banned = new Map(logins.map((u) => [u.id, isBanned(u.banned_until)]));
+  return lastActiveRefusal(
+    target,
+    sameRole.map((p) => ({ id: p.id as string, role: p.role as string, disabled: banned.get(p.id as string) ?? true })),
+  );
+}
+
 export async function setUserDisabled(userId: string, disabled: boolean): Promise<ActionResult> {
   const me = await requireAdmin();
   const supabase = await createClient();
@@ -288,24 +301,9 @@ export async function setUserDisabled(userId: string, disabled: boolean): Promis
   const refusal = teamRefusal(me, current, { kind: "delete" });
   if (refusal) return { error: refusal };
   const admin = createAdminClient();
-  // The last owner, or admin, who can still SIGN IN (not the last profile of
-  // that role: a disabled owner is still a profile). Read fresh; a failed or
-  // incomplete read refuses rather than guesses.
-  if (disabled && (current.role === "owner" || current.role === "admin")) {
-    const { data: sameRole, error: roleError } = await supabase.from("profiles").select("id, role").eq("role", current.role);
-    if (roleError || !sameRole) return { error: "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ" };
-    const banned = new Map<string, boolean>();
-    for (let page = 1; ; page++) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error || !data) return { error: "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ" };
-      for (const u of data.users) banned.set(u.id, isBanned(u.banned_until));
-      if (data.users.length < 1000) break;
-    }
-    const refusal = lastActiveRefusal(
-      current,
-      sameRole.map((p) => ({ id: p.id as string, role: p.role as string, disabled: banned.get(p.id as string) ?? true })),
-    );
-    if (refusal) return { error: refusal };
+  if (disabled) {
+    const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ");
+    if (lastActive) return { error: lastActive };
   }
   // 100 years, or "none" to lift it: what the auth API calls a ban.
   const { error } = await admin.auth.admin.updateUserById(userId, { ban_duration: disabled ? "876000h" : "none" });

@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { displayIdentity } from "@/lib/identity";
 import { TeamManager } from "@/components/team-manager";
 import { isBanned } from "@/lib/team-rules";
+import { listAllAuthUsers } from "@/lib/auth-users";
 import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function OwnerTeamPage() {
@@ -17,9 +18,11 @@ export default async function OwnerTeamPage() {
   // with the service role: an admin's session sees only its own grants. A
   // failed read marks EVERY account as a holder, so the screen offers less,
   // never more; the server checks again either way.
-  const [{ data: profiles }, { data: usersList }, { data: employees }, grants] = await Promise.all([
+  // EVERY login (listUsers() alone returns the first 50). A failed read
+  // leaves the user names blank and shows nobody as disabled, as before.
+  const [{ data: profiles }, logins, { data: employees }, grants] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, employee_id"),
-    admin.auth.admin.listUsers(),
+    listAllAuthUsers(admin),
     supabase
       .from("employees")
       .select("id, full_name, nickname")
@@ -31,8 +34,8 @@ export default async function OwnerTeamPage() {
   const grantsComplete = !grants.error && grants.count != null && (grants.data ?? []).length === grants.count;
   const grantHolders = grantsComplete ? new Set((grants.data ?? []).map((g) => g.profile_id as string)) : null;
 
-  const emailById = new Map(usersList?.users.map((u) => [u.id, u.email ?? "-"]) ?? []);
-  const disabledIds = new Set((usersList?.users ?? []).filter((u) => isBanned(u.banned_until)).map((u) => u.id));
+  const emailById = new Map((logins ?? []).map((u) => [u.id, u.email ?? "-"]));
+  const disabledIds = new Set((logins ?? []).filter((u) => isBanned(u.banned_until)).map((u) => u.id));
   const users = (profiles ?? []).map((p) => ({
     id: p.id,
     full_name: p.full_name,
