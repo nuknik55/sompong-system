@@ -2,6 +2,7 @@
 
 import { ChevronUp, ChevronDown, Trash2, Plus } from "lucide-react";
 import { SopPhotoUpload } from "@/components/sop-photo-upload";
+import { buttonClass } from "@/components/ui/button";
 
 export type StepItem = {
   tempId: string;
@@ -71,7 +72,7 @@ export function SopStepList({
           {/* ── Step card ── */}
           <div className="rounded-lg border border-neutral-200 bg-white p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-neutral-400">
+              <span className="text-xs font-medium text-neutral-500">
                 {sectionLabel} ขั้นตอนที่ {i + 1}
               </span>
               <div className="flex items-center gap-1">
@@ -79,7 +80,7 @@ export function SopStepList({
                   type="button"
                   disabled={i === 0}
                   onClick={() => move(i, "up")}
-                  className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30"
+                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30"
                   title="เลื่อนขึ้น"
                 >
                   <ChevronUp className="h-4 w-4" />
@@ -88,7 +89,7 @@ export function SopStepList({
                   type="button"
                   disabled={i === steps.length - 1}
                   onClick={() => move(i, "down")}
-                  className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30"
+                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30"
                   title="เลื่อนลง"
                 >
                   <ChevronDown className="h-4 w-4" />
@@ -96,7 +97,7 @@ export function SopStepList({
                 <button
                   type="button"
                   onClick={() => remove(i)}
-                  className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+                  className="rounded p-1 text-neutral-500 hover:bg-danger-soft hover:text-danger"
                   title="ลบขั้นตอน"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -132,7 +133,7 @@ export function SopStepList({
             <button
               type="button"
               onClick={() => insert(i)}
-              className="flex items-center gap-1 rounded border border-dashed border-neutral-300 px-2 py-0.5 text-xs text-neutral-400 hover:border-brand-green hover:text-brand-green"
+              className={buttonClass("secondary", { size: "sm" })}
             >
               <Plus className="h-3 w-3" />
               แทรกที่นี่
@@ -145,7 +146,7 @@ export function SopStepList({
       <button
         type="button"
         onClick={append}
-        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:border-brand-green hover:text-brand-green"
+        className={buttonClass("secondary")}
       >
         <Plus className="h-4 w-4" />
         เพิ่มขั้นตอน{sectionLabel ? ` (${sectionLabel})` : ""}
@@ -195,7 +196,7 @@ export function SopChecklistEditor({
       {items.map((item, i) => (
         <div key={item.tempId}>
           <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
-            <span className="shrink-0 text-sm text-neutral-400">☐</span>
+            <span className="shrink-0 text-sm text-neutral-500">☐</span>
             <input
               type="text"
               value={item.text}
@@ -207,7 +208,7 @@ export function SopChecklistEditor({
               type="button"
               disabled={i === 0}
               onClick={() => move(i, "up")}
-              className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-30"
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
             >
               <ChevronUp className="h-3.5 w-3.5" />
             </button>
@@ -215,14 +216,14 @@ export function SopChecklistEditor({
               type="button"
               disabled={i === items.length - 1}
               onClick={() => move(i, "down")}
-              className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-30"
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
             >
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={() => remove(i)}
-              className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+              className="rounded p-1 text-neutral-500 hover:bg-danger-soft hover:text-danger"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -234,7 +235,7 @@ export function SopChecklistEditor({
             <button
               type="button"
               onClick={() => insert(i)}
-              className="flex items-center gap-1 rounded border border-dashed border-neutral-300 px-2 py-0.5 text-xs text-neutral-400 hover:border-brand-green hover:text-brand-green"
+              className={buttonClass("secondary", { size: "sm" })}
             >
               <Plus className="h-3 w-3" />
               แทรก
@@ -247,7 +248,7 @@ export function SopChecklistEditor({
       <button
         type="button"
         onClick={append}
-        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:border-brand-green hover:text-brand-green"
+        className={buttonClass("secondary")}
       >
         <Plus className="h-4 w-4" />
         เพิ่มรายการตรวจสอบ

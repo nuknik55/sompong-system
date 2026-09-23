@@ -1,9 +1,8 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { requireAdminOrEditor } from "@/lib/auth";
 import { getSopByMenuId, getMenuOption, getMenuIngredientsForSop } from "@/lib/sop-data";
 import { SopForm } from "@/components/sop-form";
-import { ChevronLeft } from "lucide-react";
+import { PageShell } from "@/components/ui/page";
 
 export default async function SopEditPage({
   params,
@@ -20,16 +19,9 @@ export default async function SopEditPage({
   const ingredients = await getMenuIngredientsForSop(menuId, existing?.sopId);
 
   return (
-    <div className="px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <Link
-          href="/sop"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          รายการ SOP
-        </Link>
-      </div>
+    // The page header (← รายการ SOP, the menu, ดู SOP and the save) is in
+    // SopForm: its save state lives there.
+    <PageShell>
       <SopForm
         menuId={menuId}
         menuName={menu.name}
@@ -38,6 +30,6 @@ export default async function SopEditPage({
         existing={existing}
         submitMode={profile.role === "owner" || profile.role === "admin" ? "save" : "pending"}
       />
-    </div>
+    </PageShell>
   );
 }

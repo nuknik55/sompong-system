@@ -5,6 +5,7 @@ import { editAccess } from "@/lib/edit-access";
 import { getSopByMenuId, getMenuOption } from "@/lib/sop-data";
 import { SopPlayer } from "@/components/sop-player";
 import { Pencil } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 
 export default async function SopViewPage({
   params,
@@ -31,7 +32,7 @@ export default async function SopViewPage({
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
         <p className="text-neutral-500">เมนู &ldquo;{menu?.name ?? menuId}&rdquo; ยังไม่มี SOP</p>
-        <Link href="/sop" className="text-sm text-brand-green underline">
+        <Link href="/sop" className={buttonClass("link")}>
           กลับหน้ารายการ
         </Link>
       </div>
@@ -44,7 +45,7 @@ export default async function SopViewPage({
         <div className="no-print absolute right-4 top-3 z-30">
           <Link
             href={`/sop/${menuId}/edit`}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-600 shadow-sm hover:bg-neutral-100"
+            className={buttonClass("secondary", { size: "sm" })}
           >
             <Pencil className="h-3 w-3" />
             แก้ไข

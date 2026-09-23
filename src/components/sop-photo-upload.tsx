@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Camera, X } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 
 /** Resize to longest-side ≤ 1200px and compress to JPEG 80% client-side. */
 async function resizeAndCompress(file: File): Promise<Blob> {
@@ -114,12 +115,12 @@ export function SopPhotoUpload({
         type="button"
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
-        className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-neutral-300 px-3 py-1.5 text-sm text-neutral-500 hover:border-brand-green hover:text-brand-green disabled:opacity-50"
+        className={buttonClass("secondary")}
       >
         <Camera className="h-4 w-4" />
         {uploading ? "กำลังอัปโหลด..." : "เพิ่มรูป"}
       </button>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
 }

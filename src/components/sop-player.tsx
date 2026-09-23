@@ -29,9 +29,9 @@ const SECTION_LABEL: Record<"prep" | "cook" | "plating", string> = {
 };
 
 const SECTION_COLOR: Record<"prep" | "cook" | "plating", string> = {
-  prep: "bg-sky-100 text-sky-700",
-  cook: "bg-amber-100 text-amber-700",
-  plating: "bg-green-100 text-green-700",
+  prep: "bg-brand-teal-soft text-brand-teal-ink",
+  cook: "bg-pending-soft text-pending-ink",
+  plating: "bg-success-soft text-success-ink",
 };
 
 // ── Print layout (hidden during normal view, shown when printing) ─
@@ -190,14 +190,14 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
         {/* ── Top bar ── */}
         <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-2 no-print">
           <div className="min-w-0 flex-1">
-            <p className="truncate font-kanit font-semibold text-neutral-800">{sop.menuName}</p>
+            <p className="truncate font-heading font-semibold text-neutral-800">{sop.menuName}</p>
             {sop.menuCategory && (
-              <p className="text-xs text-neutral-400">{sop.menuCategory}</p>
+              <p className="text-xs text-neutral-500">{sop.menuCategory}</p>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {/* Progress text */}
-            <span className="text-xs text-neutral-400">
+            <span className="text-xs text-neutral-500">
               {currentIndex + 1} / {total}
             </span>
             {/* Video toggle */}
@@ -206,7 +206,7 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
                 type="button"
                 onClick={() => setShowVideo((v) => !v)}
                 className={`rounded-full p-1.5 ${
-                  showVideo ? "bg-brand-gold/20 text-amber-700" : "text-neutral-500 hover:bg-neutral-100"
+                  showVideo ? "bg-brand-gold/20 text-pending-ink" : "text-neutral-500 hover:bg-neutral-100"
                 }`}
                 title="วิดีโอสาธิต"
               >
@@ -275,13 +275,13 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
           {card.kind === "ingredients" && (
             <div className="flex flex-1 flex-col">
               <div className="mb-3 inline-flex items-center gap-1.5">
-                <span className="rounded bg-sky-100 px-2.5 py-0.5 text-sm font-medium text-sky-700">
+                <span className="rounded bg-brand-teal-soft px-2.5 py-0.5 text-sm font-medium text-brand-teal-ink">
                   เตรียมวัตถุดิบให้ครบก่อนเริ่ม
                 </span>
               </div>
               <div className="flex-1 space-y-2 overflow-auto">
                 {sop.ingredients.length === 0 ? (
-                  <p className="text-neutral-400">ไม่มีข้อมูลวัตถุดิบในระบบ</p>
+                  <p className="text-neutral-500">ไม่มีข้อมูลวัตถุดิบในระบบ</p>
                 ) : (
                   sop.ingredients.map((ing) => (
                     <div
@@ -294,7 +294,7 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
                           {ing.quantity} {ing.unit ?? ""}
                         </p>
                         {ing.note && (
-                          <p className="text-xs text-neutral-400">{ing.note}</p>
+                          <p className="text-xs text-neutral-500">{ing.note}</p>
                         )}
                       </div>
                     </div>
@@ -310,7 +310,7 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
                 <span className={`rounded px-2.5 py-0.5 text-sm font-medium ${SECTION_COLOR[card.section]}`}>
                   {SECTION_LABEL[card.section]}
                 </span>
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs text-neutral-500">
                   {card.stepIndex + 1} / {card.totalInSection}
                 </span>
               </div>
@@ -347,7 +347,7 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
                       onClick={() => toggleChecked(item.id)}
                       className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-base transition-colors ${
                         checked
-                          ? "border-green-200 bg-green-50 text-green-800"
+                          ? "border-success/30 bg-success-soft text-success-ink"
                           : "border-neutral-200 bg-white text-neutral-800"
                       }`}
                     >

@@ -11,6 +11,8 @@ import { bangkokToday } from "@/lib/bangkok-date";
 import { SopStepList, SopChecklistEditor } from "@/components/sop-step-list";
 import type { StepItem, ChecklistItem } from "@/components/sop-step-list";
 import type { MenuIngredientForSop, SopFullData } from "@/lib/sop-data";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 
 function tempId() {
   return `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -151,58 +153,55 @@ export function SopForm({
   const videoUrlInvalid = demoVideoUrl.trim() && !isValidVideoUrl(demoVideoUrl);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 pb-24">
-      {/* ── Header + inline save ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-kanit text-xl font-semibold text-neutral-900">{menuName}</h1>
+    <div className="space-y-8 pb-24">
+      {/* ── Header + inline save (the shared page header) ── */}
+      {/* The back link and ดู SOP are LINKS, not buttons calling
+          router.push: navigation that is a real anchor is what the leave
+          guard can see and ask about. As a button ดู SOP left with the edits
+          and asked nothing (review, 2026-09-21). */}
+      <PageHeader
+        back={{ href: "/sop", label: "รายการ SOP" }}
+        title={menuName}
+        subtitle={
+          <>
             {menuCategory && (
               <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
                 {menuCategory}
               </span>
             )}
-          </div>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {existing ? "แก้ไข SOP" : "สร้าง SOP ใหม่"}
-          </p>
-          {dirty && (
-            <p className="mt-1 text-xs text-amber-600">● มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
-          )}
-          {saveSuccess && <p className="mt-1 text-xs text-green-600">✓ บันทึกสำเร็จ</p>}
-          {savePending && <p className="mt-1 text-xs text-amber-600">⏳ ส่งขออนุมัติแล้ว</p>}
-        </div>
-        {/* Save button at top — always visible on desktop */}
-        <div className="flex gap-2">
-          {/* A LINK, not a button calling router.push: navigation that is
-              a real anchor is what the leave guard can see and ask about.
-              As a button it left with the edits and asked nothing (review,
-              2026-09-21). */}
-          <Link
-            href={`/sop/${menuId}`}
-            className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
-          >
-            ดู SOP
-          </Link>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={handleSave}
-            className="inline-flex items-center gap-1.5 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
-          </button>
-        </div>
-      </div>
+            <span>{existing ? "แก้ไข SOP" : "สร้าง SOP ใหม่"}</span>
+            {dirty && (
+              <span className="text-xs text-pending-ink">● มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
+            )}
+            {saveSuccess && <span className="text-xs text-success-ink">✓ บันทึกสำเร็จ</span>}
+            {savePending && <span className="text-xs text-pending-ink">⏳ ส่งขออนุมัติแล้ว</span>}
+          </>
+        }
+        actions={
+          <>
+            <Link href={`/sop/${menuId}`} className={buttonClass("secondary")}>
+              ดู SOP
+            </Link>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={handleSave}
+              className={buttonClass("primary")}
+            >
+              <Save className="h-4 w-4" />
+              {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
+            </button>
+          </>
+        }
+      />
 
-      {error && <p className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-md bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger">{error}</p>}
 
       {/* ── Ingredients (read-only names + notes) ── */}
       <section>
-        <h2 className="mb-3 font-kanit font-medium text-brand-green">วัตถุดิบ</h2>
+        <h2 className="mb-3 font-heading font-medium text-brand-green">วัตถุดิบ</h2>
         {ingredients.length === 0 ? (
-          <p className="text-sm text-neutral-400">เมนูนี้ยังไม่มีสูตรวัตถุดิบในระบบ</p>
+          <p className="text-sm text-neutral-500">เมนูนี้ยังไม่มีสูตรวัตถุดิบในระบบ</p>
         ) : (
           <div className="space-y-2">
             {ingredients.map((ing) => (
@@ -229,7 +228,7 @@ export function SopForm({
                       }));
                     }}
                     placeholder="หมายเหตุ..."
-                    className="w-40 rounded-md border border-neutral-200 py-1 pl-7 pr-2 text-xs placeholder:text-neutral-300"
+                    className="w-40 rounded-md border border-neutral-200 py-1 pl-7 pr-2 text-xs"
                   />
                 </div>
               </div>
@@ -240,7 +239,7 @@ export function SopForm({
 
       {/* ── Prep steps ── */}
       <section>
-        <h2 className="mb-3 font-kanit font-medium text-brand-green">ขั้นตอนการเตรียมวัตถุดิบ</h2>
+        <h2 className="mb-3 font-heading font-medium text-brand-green">ขั้นตอนการเตรียมวัตถุดิบ</h2>
         <SopStepList
           steps={prepSteps}
           sectionLabel={SECTION_LABEL.prep}
@@ -251,7 +250,7 @@ export function SopForm({
 
       {/* ── Cook steps ── */}
       <section>
-        <h2 className="mb-3 font-kanit font-medium text-brand-green">ขั้นตอนการปรุง</h2>
+        <h2 className="mb-3 font-heading font-medium text-brand-green">ขั้นตอนการปรุง</h2>
         <SopStepList
           steps={cookSteps}
           sectionLabel={SECTION_LABEL.cook}
@@ -262,7 +261,7 @@ export function SopForm({
 
       {/* ── Plating steps ── */}
       <section>
-        <h2 className="mb-3 font-kanit font-medium text-brand-green">การจัดจาน</h2>
+        <h2 className="mb-3 font-heading font-medium text-brand-green">การจัดจาน</h2>
         <SopStepList
           steps={platingSteps}
           sectionLabel={SECTION_LABEL.plating}
@@ -273,7 +272,7 @@ export function SopForm({
 
       {/* ── Quality checklist ── */}
       <section>
-        <h2 className="mb-3 font-kanit font-medium text-brand-green">จุดตรวจสอบมาตรฐาน</h2>
+        <h2 className="mb-3 font-heading font-medium text-brand-green">จุดตรวจสอบมาตรฐาน</h2>
         <SopChecklistEditor
           items={checklist}
           onChange={(items) => { onEdit(); setChecklist(items); }}
@@ -282,20 +281,20 @@ export function SopForm({
 
       {/* ── Video URL ── */}
       <section>
-        <h2 className="mb-2 font-kanit font-medium text-brand-green">วิดีโอสาธิต</h2>
+        <h2 className="mb-2 font-heading font-medium text-brand-green">วิดีโอสาธิต</h2>
         <input
           type="url"
           value={demoVideoUrl}
           onChange={(e) => { onEdit(); setDemoVideoUrl(e.target.value); }}
           placeholder="https://youtube.com/... หรือ https://drive.google.com/..."
           className={`w-full rounded-md border px-3 py-2 text-sm ${
-            videoUrlInvalid ? "border-red-400" : "border-neutral-300"
+            videoUrlInvalid ? "border-danger/40" : "border-neutral-300"
           }`}
         />
         {videoUrlInvalid && (
-          <p className="mt-1 text-xs text-red-500">URL ไม่ถูกต้อง — ต้องขึ้นต้นด้วย https://</p>
+          <p className="mt-1 text-xs text-danger">URL ไม่ถูกต้อง — ต้องขึ้นต้นด้วย https://</p>
         )}
-        <p className="mt-1 text-xs text-neutral-400">
+        <p className="mt-1 text-xs text-neutral-500">
           รองรับทุก URL วิดีโอ เช่น YouTube, Google Drive, TikTok, Facebook
         </p>
       </section>
@@ -326,21 +325,23 @@ export function SopForm({
       </section>
 
       {/* ── Fixed save bar (visible on mobile scroll / bottom of long page) ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-neutral-200 bg-white/95 backdrop-blur-sm px-4 py-3 shadow-lg no-print">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+      {/* lg:left-52: beside the desktop sidebar, not over its footer (the
+          user name and ออกจากระบบ). */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-neutral-200 bg-white/95 backdrop-blur-sm px-4 py-3 shadow-lg no-print lg:left-52">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="text-sm">
-            {error && <span className="text-red-600">{error}</span>}
-            {saveSuccess && <span className="text-green-600">✓ บันทึกสำเร็จ</span>}
-            {savePending && <span className="text-amber-600">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
+            {error && <span className="text-danger">{error}</span>}
+            {saveSuccess && <span className="text-success-ink">✓ บันทึกสำเร็จ</span>}
+            {savePending && <span className="text-pending-ink">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
             {!error && !saveSuccess && !savePending && dirty && (
-              <span className="text-xs text-neutral-400">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
+              <span className="text-xs text-neutral-500">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
             )}
           </div>
           <button
             type="button"
             disabled={isPending}
             onClick={handleSave}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+            className={buttonClass("primary", { className: "shrink-0" })}
           >
             <Save className="h-4 w-4" />
             {isPending ? "กำลังบันทึก..." : submitMode === "pending" ? "ส่งขออนุมัติ" : "บันทึก SOP"}
