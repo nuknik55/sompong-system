@@ -867,8 +867,12 @@ it is until item 35. **New work uses these, and invents none of its own.**
   active item a gold pill with near-black text (8.8:1; gold TEXT on green is
   4.0:1 and fails). `app-header.tsx`.
 - **Page**: off-white #F4F6F2; a bordered white box (a card, a table's box)
-  gains a faint shadow on screen only. `<main>` is `min-w-0`: a long
-  unbroken row scrolls inside its box instead of widening the page.
+  gains a faint shadow on screen only. That rule is in `@layer components`
+  and skips button, a and fields: unlayered, it took a secondary button's
+  hover, shadow and focus ring, and the dialogs' and dropdowns' own shadows.
+  A utility on the element (`shadow-xl`, `hover:bg-*`) wins over it.
+  `<main>` is `min-w-0`: a long unbroken row scrolls inside its box
+  instead of widening the page.
 - **Fields, app-wide in CSS** (`globals.css`, the end): white; border
   #8A8A8A (3.45:1 on white, 3.17:1 on the page; WCAG 1.4.11 asks 3:1) for
   .input-base, .line-input and every field carrying border-neutral-200/300;
@@ -989,13 +993,17 @@ other by their order in the string, so never add a colour class on top of
 - **Dates** (`src/lib/thai-date.ts`): every date shown on a screen, "18/9/2569"
   (thaiDate), "ศ 18/9/2569" (thaiDateWithDay), "18/9/2569 14:05"
   (thaiDateTime), "18/9" (thaiDayMonth). A calendar date is shown as
-  written; a timestamp is read in Asia/Bangkok. Not for stored values,
-  native date inputs, prints or exports.
+  written; a timestamp is read in Asia/Bangkok. Only ISO text is read as a
+  date; other text is shown as it came. Text that only looks like a date
+  never goes through it: the POS report's period ("สิงหาคม 2569") is the
+  report's own words, and new Date() once turned it into "1/1/3112". Not
+  for stored values, native date inputs, prints or exports.
 - **A floating save bar** (the booking screen): only while there are
   unsaved changes; the same buttons as below the form, verbatim; the body
   gets bottom padding equal to the bar's measured height, so it never
-  covers the page; `lg:left-52`, beside the sidebar. The SOP editor's bar
-  also sits beside the sidebar.
+  covers the page; `lg:left-52`, beside the sidebar; z-10, under an open
+  list (SearchSelect z-30, the customer box z-20) and the phone menu and
+  dialogs (z-40, z-50). The SOP editor's bar also sits beside the sidebar.
 - **`ButtonGroup`**: a labelled row of buttons (the booking screen's พิมพ์ and
   ดูข้อมูลเพิ่ม).
 - **Tabs** (`ui/tabs.ts`): the sub-navs. The active tab is dark green with a
