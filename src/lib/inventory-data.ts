@@ -82,7 +82,7 @@ export type OrderSessionDetail = {
   sentBy: string | null;
   receivedAt: string | null;
   createdAt: string;
-  /** The head's conflict token: counted up by every edit; order_approve refuses a stale one. */
+  /** The head's conflict token: counted up by every edit; order_review_approve refuses a stale one. */
   version: number;
   returnNote: string | null;
   returnedByName: string | null;

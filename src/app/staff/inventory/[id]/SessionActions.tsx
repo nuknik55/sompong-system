@@ -25,6 +25,11 @@ type EditRow = {
   unit: string;
 };
 
+/** The figure each line's head field starts from: what stands, as text. */
+function shownFigures(items: OrderItem[]): Record<string, string> {
+  return Object.fromEntries(items.map((i) => [i.id, String(effectiveQty(i))]));
+}
+
 function initEditRows(items: OrderItem[]): Record<string, EditRow> {
   return Object.fromEntries(
     items.map((i) => [
@@ -66,11 +71,30 @@ export function SessionActions({
   const [error, setError] = useState<string | null>(null);
   const [editRows, setEditRows] = useState<Record<string, EditRow>>(() => initEditRows(session.items));
   // The head's figures, one field per line, pre-filled with what stands
-  // (staff's quantity, or a head's earlier one). The page keys this component
-  // on the order's version, so a reload after a refusal starts from the data.
-  const [headQty, setHeadQty] = useState<Record<string, string>>(() =>
-    Object.fromEntries(session.items.map((i) => [i.id, String(effectiveQty(i))])),
-  );
+  // (staff's quantity, or a head's earlier one). They survive a reload: when
+  // the order comes back changed (a refused approval, then โหลดข้อมูลล่าสุด),
+  // a figure the head typed stays; a line he did not touch takes the new
+  // figure; a line whose figure moved underneath him is marked (moved).
+  const [head, setHead] = useState(() => ({
+    version: session.version,
+    shown: shownFigures(session.items),
+    values: shownFigures(session.items),
+    moved: new Set<string>(),
+  }));
+  if (head.version !== session.version) {
+    const shown = shownFigures(session.items);
+    const values: Record<string, string> = {};
+    const moved = new Set<string>();
+    for (const i of session.items) {
+      const typed = head.values[i.id];
+      const typedByHead = typed !== undefined && typed !== head.shown[i.id];
+      values[i.id] = typedByHead ? typed : shown[i.id];
+      if (head.shown[i.id] !== undefined && head.shown[i.id] !== shown[i.id]) moved.add(i.id);
+    }
+    setHead({ version: session.version, shown, values, moved });
+  }
+  const headQty = head.values;
+  const setHeadQtyFor = (id: string, v: string) => setHead((h) => ({ ...h, values: { ...h.values, [id]: v } }));
   const [approveFailed, setApproveFailed] = useState(false);
 
   const view: OrderView = { role, isCreator, status: session.status };
@@ -130,7 +154,12 @@ export function SessionActions({
     startTransition(async () => {
       try {
         const result = await approveOrderSession(session.id, session.version, lines);
-        if (result.error) { setError(result.error); setApproveFailed(true); return; }
+        if (result.error) {
+          // Nothing was saved: say so, and keep the head's figures on screen.
+          setError(`${result.error} — ยังไม่ได้อนุมัติ และจำนวนที่แก้ยังไม่ได้บันทึก (ยังอยู่ในช่อง)`);
+          setApproveFailed(true);
+          return;
+        }
         router.refresh();
       } catch {
         setError(RETRY_MESSAGE);
@@ -184,8 +213,7 @@ export function SessionActions({
   const totalItems = session.items.length;
   const selfApproved = session.reviewedBy !== null && session.reviewedBy === session.createdBy;
 
-  // The head's table (waiting, for a head) and the purchaser's checklist
-  // (reviewed) share one table; it is shown even when every quantity is 0,
+  // The purchaser's checklist (reviewed); shown even when every quantity is 0,
   // so an all-zero order still has its lines and its buttons (item 35).
   const showReviewTable = session.status === "reviewed";
   // A head reviewing a waiting order corrects it like the paper sheet: a
@@ -282,7 +310,7 @@ export function SessionActions({
 
   return (
     <div className="space-y-4 pb-8 no-print">
-      {error && <p className="text-sm text-danger">{error}</p>}
+      {error && !showHeadReview && <p className="text-sm text-danger">{error}</p>}
 
       {/* Cancelled: who, when, why (decision 10) */}
       {session.status === "cancelled" && (
@@ -344,6 +372,7 @@ export function SessionActions({
                       เหลือ ครัว {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
                       {" · "}ตู้แช่ {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
                       {(changed || item.reviewerQtyOrdered !== null) && <span className="text-pending-ink"> · ผู้สั่งขอ {item.qtyOrdered}</span>}
+                      {head.moved.has(item.id) && <span className="font-medium text-danger"> · เปลี่ยนเป็น {effectiveQty(item)} หลังคุณเปิด</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -352,13 +381,13 @@ export function SessionActions({
                         type="number" min="0" step="any" inputMode="decimal"
                         aria-label={`จำนวนสั่ง ${item.ingredientName}`}
                         value={headQty[item.id] ?? ""}
-                        onChange={(e) => setHeadQty((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                        onChange={(e) => setHeadQtyFor(item.id, e.target.value)}
                         className={`w-20 rounded-md border px-2 py-1.5 text-right text-sm ${bad ? "border-danger" : changed ? "border-pending" : "border-neutral-300"}`}
                       />
                     ) : (
                       <span className="text-sm font-medium text-neutral-800">{effectiveQty(item)}</span>
                     )}
-                    <span className="w-10 truncate text-xs text-neutral-500">{item.orderUnit ?? ""}</span>
+                    <span className="min-w-8 whitespace-nowrap text-xs text-neutral-500">{item.orderUnit ?? ""}</span>
                   </div>
                 </div>
               );
@@ -384,6 +413,8 @@ export function SessionActions({
                   </button>
                 )}
               </div>
+              {/* Beside the buttons, so the head sees why on a phone too. */}
+              {error && <p role="alert" className="text-sm text-danger">{error}</p>}
               {returnForm}
             </div>
           )}
@@ -399,7 +430,7 @@ export function SessionActions({
               <p className="text-xs text-neutral-500">
                 {session.status === "reviewed"
                   ? `ตรวจสอบโดย ${session.reviewedByName ?? ""}${selfApproved ? " (อนุมัติเอง)" : ""}`
-                  : mayHeadQty ? "แก้จำนวนได้ก่อนอนุมัติ — หลังอนุมัติจะล็อก" : "รอตรวจสอบ"}
+                  : "รอตรวจสอบ"}
               </p>
             </div>
             {session.status === "reviewed" && checkedItems.size > 0 && (
