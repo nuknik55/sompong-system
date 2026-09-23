@@ -358,7 +358,7 @@ export function OrderForm({ stations, allIngredients, templateItems, prefillFrom
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
-      <div className="flex justify-end gap-3 pb-8">
+      <div className="flex flex-wrap justify-end gap-3 pb-8">
         <button type="button" onClick={() => router.push("/staff/inventory")}
           className={buttonClass("secondary")}>
           ยกเลิก

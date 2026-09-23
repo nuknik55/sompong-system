@@ -78,12 +78,14 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
       )}
 
       <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
-        {/* Column headers */}
+        {/* Column headers. The two number columns are narrower on a phone
+            (w-20/w-28, sm: as before): the page's shell pads the sides, and
+            at the old widths the ingredient name had no room left. */}
         <div className="border-b border-neutral-100 bg-neutral-50 px-3 py-2">
           <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs text-neutral-500">
             <span>วัตถุดิบ</span>
-            <span className="w-28 text-right">สั่งไป</span>
-            <span className="w-32 text-right">รับจริง</span>
+            <span className="w-20 text-right sm:w-28">สั่งไป</span>
+            <span className="w-28 text-right sm:w-32">รับจริง</span>
           </div>
         </div>
 
@@ -111,7 +113,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
                 )}
               </div>
 
-              <span className="w-28 text-right text-sm text-neutral-500">
+              <span className="w-20 text-right text-sm text-neutral-500 sm:w-28">
                 {orderedQty > 0 ? `${orderedQty} ${item.orderUnit ?? ""}`.trim() : "—"}
               </span>
 
@@ -121,7 +123,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
                   value={inputVal}
                   onChange={(e) => setInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
                   placeholder="เว้นว่าง = ยังไม่มา"
-                  className={`w-24 rounded border px-2 py-1 text-right text-sm ${
+                  className={`w-20 rounded border px-2 py-1 text-right text-sm sm:w-24 ${
                     alreadyReceived && inputVal !== "" ? "border-success/30 bg-success-soft"
                     : variance ? "border-pending/60"
                     : "border-neutral-300"

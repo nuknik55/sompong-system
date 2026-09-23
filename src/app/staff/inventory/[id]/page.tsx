@@ -49,7 +49,10 @@ export default async function SessionDetailPage({
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
 
   return (
-    <PageShell>
+    // On paper the page keeps the box it printed in before the shared look
+    // (max-w-2xl, space-y-4, no padding of its own): the order and receive
+    // sheets below are printed documents and keep their layout.
+    <PageShell className="print:max-w-2xl print:space-y-4 print:p-0">
       <PageHeader
         back={{ href: "/staff/inventory", label: "กลับ" }}
         title={<>ใบสั่งของ #{shortId}</>}
@@ -161,9 +164,9 @@ export default async function SessionDetailPage({
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="border px-2 py-1 w-6">✓</th>
-                <th className="border px-2 py-1 text-left">วัตถุดิบ</th>
-                <th className="border px-2 py-1 text-right">สั่ง</th>
+                <th className="border border-gray-400 px-2 py-1 w-6">✓</th>
+                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
               </tr>
             </thead>
             <tbody>
@@ -191,9 +194,9 @@ export default async function SessionDetailPage({
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="border px-2 py-1 text-left">วัตถุดิบ</th>
-                <th className="border px-2 py-1 text-right">สั่ง</th>
-                <th className="border px-2 py-1 text-right">รับจริง</th>
+                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
+                <th className="border border-gray-400 px-2 py-1 text-right">รับจริง</th>
               </tr>
             </thead>
             <tbody>
