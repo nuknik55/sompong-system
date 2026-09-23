@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireOrdering } from "@/lib/auth";
 import { getOrderChanges, getOrderSessionDetail } from "@/lib/inventory-data";
-import { STATUS_CLASS, STATUS_LABEL, isOrderHead } from "@/lib/order-rules";
-import { SessionActions, effectiveQty } from "./SessionActions";
+import { STATUS_CLASS, STATUS_LABEL, effectiveQty, isOrderHead } from "@/lib/order-rules";
+import { SessionActions } from "./SessionActions";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { thaiDateTime } from "@/lib/thai-date";

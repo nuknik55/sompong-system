@@ -12,7 +12,7 @@ import {
 } from "../actions";
 import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
 import {
-  canApprove, canCancel, canEditLines, canReceive, canReturn, canSend, canSetHeadQty, type OrderView,
+  canApprove, canCancel, canEditLines, canReceive, canReturn, canSend, canSetHeadQty, effectiveQty, type OrderView,
 } from "@/lib/order-rules";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
@@ -40,11 +40,6 @@ function initEditRows(items: OrderItem[]): Record<string, EditRow> {
       },
     ])
   );
-}
-
-/** The quantity that stands: the head's, else the creator's (the purchaser stage is gone, decision 5). */
-export function effectiveQty(item: OrderItem): number {
-  return item.reviewerQtyOrdered ?? item.qtyOrdered;
 }
 
 /**

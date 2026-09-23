@@ -37,6 +37,16 @@ export const STATUS_CLASS: Record<OrderStatus, string> = {
   cancelled: "bg-neutral-200 text-neutral-700 line-through",
 };
 
+/**
+ * The quantity that stands on a line: the head's, else the creator's (the
+ * purchaser stage is gone, decision 5). Here, in a plain module, because the
+ * server page and the client component both need it: a function exported
+ * from a "use client" file cannot be called on the server.
+ */
+export function effectiveQty(item: { reviewerQtyOrdered: number | null; qtyOrdered: number }): number {
+  return item.reviewerQtyOrdered ?? item.qtyOrdered;
+}
+
 /** Open: still moving through the flow (not received, not cancelled). */
 export function isOpenStatus(status: OrderStatus): boolean {
   return status !== "received" && status !== "cancelled";
