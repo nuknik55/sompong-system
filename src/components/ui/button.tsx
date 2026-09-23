@@ -27,7 +27,7 @@ const BASE =
 
 const BOX = "rounded-lg active:translate-y-px active:shadow-none disabled:translate-y-0 disabled:shadow-none";
 
-const KINDS: Record<ButtonKind, { plain: string; danger: string }> = {
+const KINDS: Record<ButtonKind, { plain: string; danger: string; dangerHover?: string }> = {
   primary: {
     plain: `${BOX} bg-primary text-white shadow-btn hover:bg-primary-hover disabled:hover:bg-primary`,
     danger: `${BOX} bg-danger text-white shadow-btn-danger hover:bg-danger-hover disabled:hover:bg-danger`,
@@ -39,6 +39,9 @@ const KINDS: Record<ButtonKind, { plain: string; danger: string }> = {
   link: {
     plain: "rounded text-neutral-600 underline-offset-2 hover:text-neutral-900 hover:underline disabled:hover:text-neutral-600 disabled:hover:no-underline",
     danger: "rounded text-danger underline-offset-2 hover:text-danger-hover hover:underline disabled:hover:text-danger disabled:hover:no-underline",
+    // ลบ in a row of data: quiet until you mean it, grey at rest and red
+    // only under the pointer (Nik, from the preview samples, 2026-09-23).
+    dangerHover: "rounded text-neutral-500 underline-offset-2 hover:text-danger hover:underline disabled:hover:text-neutral-500 disabled:hover:no-underline",
   },
 };
 
@@ -51,18 +54,20 @@ const SIZES: Record<ButtonKind, Record<ButtonSize, string>> = {
 /** The classes for a button, or for a Link that should look like one. */
 export function buttonClass(
   kind: ButtonKind,
-  { size = "md", danger = false, className }: { size?: ButtonSize; danger?: boolean; className?: string } = {},
+  { size = "md", danger = false, dangerHover = false, className }: { size?: ButtonSize; danger?: boolean; dangerHover?: boolean; className?: string } = {},
 ): string {
-  return [BASE, KINDS[kind][danger ? "danger" : "plain"], SIZES[kind][size], className].filter(Boolean).join(" ");
+  const variant = (dangerHover && KINDS[kind].dangerHover) || (danger || dangerHover ? KINDS[kind].danger : KINDS[kind].plain);
+  return [BASE, variant, SIZES[kind][size], className].filter(Boolean).join(" ");
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   kind: ButtonKind;
   size?: ButtonSize;
   danger?: boolean;
+  dangerHover?: boolean;
 };
 
 /** A <button>. `type` defaults to "button": no button here submits a form by accident. */
-export function Button({ kind, size, danger, className, type = "button", ...rest }: ButtonProps) {
-  return <button type={type} className={buttonClass(kind, { size, danger, className })} {...rest} />;
+export function Button({ kind, size, danger, dangerHover, className, type = "button", ...rest }: ButtonProps) {
+  return <button type={type} className={buttonClass(kind, { size, danger, dangerHover, className })} {...rest} />;
 }

@@ -14,6 +14,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { Segmented } from "@/components/ui/segmented";
 import { AccentTag } from "@/components/ui/badge";
+import { RowLink, TH_ROW } from "@/components/ui/table";
 
 export function CateringClient({
   initialEvents,
@@ -125,7 +126,7 @@ export function CateringClient({
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-400 bg-neutral-200 text-left text-xs font-semibold text-neutral-700">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2 whitespace-nowrap">วันที่</th>
               <th className="px-3 py-2 whitespace-nowrap">เวลา</th>
               <th className="px-3 py-2">ลูกค้า</th>
@@ -158,7 +159,9 @@ export function CateringClient({
                   </td>
                 </tr>
               ) : (
-                <tr key={r.event.id} className={`border-b border-neutral-100 last:border-0 ${r.zebra % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
+                // The whole row opens the booking; the actions cell is its own
+                // (data-row-stop), so ลบ opens the confirmation and nothing else.
+                <RowLink key={r.event.id} href={`/owner/catering/${r.event.id}`} className={`border-b border-neutral-100 last:border-0 ${r.zebra % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
                   <td className="px-3 py-2 whitespace-nowrap text-neutral-700">{thDate(r.event.event_date)}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-neutral-600 tabular-nums">{timeRange(r.event.start_time, r.event.end_time)}</td>
                   <td className="px-3 py-2">
@@ -191,13 +194,10 @@ export function CateringClient({
                           return s ? staffLabel(s) : "?";
                         }).join(", ")}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="flex items-center gap-4">
-                      <Link href={`/owner/catering/${r.event.id}`} className={buttonClass("link", { size: "sm" })}>ดู</Link>
-                      <Button kind="link" size="sm" danger onClick={() => setConfirmDelete(r.event)}>ลบ</Button>
-                    </div>
+                  <td className="px-3 py-2 whitespace-nowrap" data-row-stop>
+                    <Button kind="link" size="sm" dangerHover onClick={() => setConfirmDelete(r.event)}>ลบ</Button>
                   </td>
-                </tr>
+                </RowLink>
               ),
             )}
           </tbody>

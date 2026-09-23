@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import type { CateringCustomerListItem } from "../actions";
 import { thDate } from "../shared-utils";
+import { RowLink, TH_ROW } from "@/components/ui/table";
 
 export function CustomerListClient({ customers }: { customers: CateringCustomerListItem[] }) {
   const [query, setQuery] = useState("");
@@ -25,7 +25,7 @@ export function CustomerListClient({ customers }: { customers: CateringCustomerL
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-400 bg-neutral-200 text-left text-xs font-semibold text-neutral-700">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2">ชื่อ</th>
               <th className="px-3 py-2">เบอร์โทร</th>
               <th className="px-3 py-2">บริษัท</th>
@@ -40,17 +40,14 @@ export function CustomerListClient({ customers }: { customers: CateringCustomerL
               </tr>
             )}
             {filtered.map((c, i) => (
-              <tr key={c.id} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-                <td className="px-3 py-2">
-                  <Link href={`/owner/catering/customers/${c.id}`} className="font-medium text-neutral-900 hover:underline">
-                    {c.name}
-                  </Link>
-                </td>
+              // The whole row opens the customer (no link inside it: one tab stop per row).
+              <RowLink key={c.id} href={`/owner/catering/customers/${c.id}`} className={`border-b border-neutral-100 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
+                <td className="px-3 py-2 font-medium text-neutral-900">{c.name}</td>
                 <td className="px-3 py-2 text-neutral-600 tabular-nums">{c.phone ?? "–"}</td>
                 <td className="px-3 py-2 text-neutral-600">{c.company_name ?? "–"}</td>
                 <td className="px-3 py-2 text-center tabular-nums text-neutral-600">{c.event_count}</td>
                 <td className="px-3 py-2 text-neutral-600">{c.last_event_date ? thDate(c.last_event_date) : "–"}</td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>
