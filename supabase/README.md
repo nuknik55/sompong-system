@@ -90,6 +90,7 @@ and dated here.
 
 | file | ran | effect |
 |---|---|---|
+| `order_review_approve_migration.sql` | 2026-09-23 | **Item 54, the head reviews in one step.** `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH per-line quantities in one transaction, or nothing. Run by Nik in the SQL editor as committed in `c679e52`: **39 rows, every line ok, ending "row count verified: 38 evidence rows emitted, as expected (this line makes 39)"**, first run. Its "before" line read orders 43 (cancelled 22, received 21), lines 175, change-log rows 4 — Nik's test order had gone all the way to received. The app code that calls it (`bc6eb73`, `440fdcb`) was pushed after. `order_approve` and `order_set_head_qty` still exist and are still granted; see item 54's follow-ups. |
 | `supply_order_approval_migration.sql` | 2026-09-23 | **The supply-order approval flow (item 35).** Run by Nik in the SQL editor as committed in `abadb45`: **94 rows, every test line ok, ending "row count verified: 93 evidence rows emitted, as expected (this line makes 94)"**, first run. Step 2 cancelled the 22 open trial orders (5 submitted, 5 reviewed, 12 sent) with the note; the 20 received orders untouched. Six account columns of `order_sessions` are ON DELETE RESTRICT. 4 open template policies (`auth_write_*`, `auth_read_*`) dropped. Adds `cancelled`, `version`, the return and cancel columns, `order_items.received_by/at`, `order_item_changes`, `is_order_head()`, `can_order()` and the eight order functions; closes every direct write on the order tables. The app code that calls it, `2d4c10f`, was pushed after the result, the same day. |
 | `purchase_cost_4dp_migration.sql` | by 2026-08-31 | Widened `ingredients.purchase_cost` from numeric(12,2) to numeric(12,4). Written 2026-08-30 and left untracked until 2026-09-23, when Nik did not remember whether it had run. **Verified 2026-09-23 (read-only, service key):** the column comes back at scale 4 (`390.0000`), exactly as `receive_qty`, numeric(_,4), the control, does; and one stored price, 1399.9989, needs four decimals, which numeric(12,2) could not hold. The 2026-08-31 sweep above records the same widening. |
 | `drop_fuel_cost_migration.sql` | by 2026-08-31 | Dropped `menus.fuel_cost`. Written 2026-08-30, untracked until 2026-09-23. **Verified 2026-09-23 (read-only, service key):** selecting the column returns 42703 "column menus.fuel_cost does not exist", while a select of real columns on the same table returns 200 (the control). `9b74eeb` (2026-08-31) is the hotfix for code that still selected the column after this ran. |
@@ -258,7 +259,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
-| `order_review_approve_migration.sql` | Nik (written 2026-09-23; item 54) | One function, `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH the quantities, in one transaction — every line checked first, each head quantity that changes logged, then reviewed; a stale version refused before any write. Tests itself as the roles (26 tests), 39 result rows, re-runnable; run under PGlite on the item-35 schema, twice: 39 rows both times. The app code that calls it (the review screen) is on the local branch `review-approve`, NOT pushed: until Nik runs the file, the deployed review screen keeps working as before (it calls `order_approve` and `order_set_head_qty`, which stay). Order: the file, then the code. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -3993,16 +3993,18 @@ and after Nik's import.
       (รับของ); a head — orders to review (ตรวจสอบ); admin and owner — to
       review and to mark sent (สั่งซื้อ). Each on its tab; the sidebar badge
       is the sum and opens the earliest step with work.
-    - **The head reviews in one step, BUILT, waits for Nik:**
-      `order_review_approve_migration.sql` ("Not applied"), then the code
-      on the local branch `review-approve`. Before, the head's quantity
+    - **The head reviews in one step, DONE:**
+      `order_review_approve_migration.sql` applied 2026-09-23 (39 rows, see
+      "Applied since"), then the code pushed as `bc6eb73` + `440fdcb`.
+      Before, the head's quantity
       edit was a small grey "แก้" link per line, saved on its own, separate
       from approval; now every line has a quantity field and อนุมัติ saves
       them with the approval, or nothing. ตีกลับ requires a note.
-      **Follow-ups once it is live (the review of 2026-09-23):** revoke
+      **Follow-ups, now due (the review of 2026-09-23); they go into the
+      next migration file with the supplier work, so Nik runs one file:** revoke
       EXECUTE on `order_approve` and `order_set_head_qty` from
-      authenticated (still callable directly; the app no longer calls them,
-      but the deployed code does until then); require the note in
+      authenticated (still callable directly; since `440fdcb` the app no
+      longer calls them); require the note in
       `order_return` itself (today the screen and the server action do);
       both old functions lock the line before the order, the new one the
       order first, so a direct call racing an approval can deadlock (one
