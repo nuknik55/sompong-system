@@ -85,6 +85,24 @@ body {
   }
 }
 
+/* ── Depth (Nik chose it from the preview samples, 2026-09-23) ──────────────
+   The page is a soft off-white (#F4F6F2, a grey leaning to the brand green)
+   and white cards lift off it, keeping their border and gaining a faint
+   shadow. Written against the card shapes the pages use (a bordered white
+   box, and the bordered box around every table), so a page gets it without
+   markup of its own. Screen only: on paper everything stays as it was. */
+@media screen {
+  body {
+    background: #f4f6f2;
+  }
+  .rounded-xl.border.bg-white,
+  .rounded-lg.border.bg-white,
+  .overflow-x-auto.rounded-lg.border {
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px rgb(23 23 23 / 0.06), 0 1px 3px rgb(23 23 23 / 0.05);
+  }
+}
+
 /* ── Form controls: ONE definition ─────────────────────────────────────────
    Seven screens carried a byte-identical copy of .input-base in their own
    <style> block and an eighth carried the same rules as .set-menu-input.
@@ -115,7 +133,14 @@ body {
   color: #171717;
 }
 .input-base:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25); }
-.input-base:read-only { background: #f5f5f5; color: #525252; }
+/* An editable field is WHITE; only a field that cannot be edited is grey.
+   This rule used to be `.input-base:read-only`, and in CSS a <select> ALWAYS
+   matches :read-only (only an input or a textarea can be read-write), so
+   every select on the booking screen rendered in the read-only grey (#F5F5F5
+   with #525252 text, measured 2026-09-23) and read as disabled, next to the
+   genuinely read-only phone field. Disabled fields below keep the grey. */
+input.input-base:read-only,
+textarea.input-base:read-only { background: #f5f5f5; color: #525252; }
 .input-base:disabled { background: #f5f5f5; color: #737373; }
 .input-base::placeholder { color: #a3a3a3; }
 
