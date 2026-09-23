@@ -14,7 +14,8 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { Segmented } from "@/components/ui/segmented";
 import { AccentTag } from "@/components/ui/badge";
-import { RowLink, TH_ROW } from "@/components/ui/table";
+import { RowLink } from "@/components/ui/row-link";
+import { TH_ROW } from "@/components/ui/table";
 
 export function CateringClient({
   initialEvents,

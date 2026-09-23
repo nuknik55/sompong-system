@@ -3,7 +3,8 @@
 import { useState } from "react";
 import type { CateringCustomerListItem } from "../actions";
 import { thDate } from "../shared-utils";
-import { RowLink, TH_ROW } from "@/components/ui/table";
+import { RowLink } from "@/components/ui/row-link";
+import { TH_ROW } from "@/components/ui/table";
 
 export function CustomerListClient({ customers }: { customers: CateringCustomerListItem[] }) {
   const [query, setQuery] = useState("");
