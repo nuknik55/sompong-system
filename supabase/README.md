@@ -90,6 +90,7 @@ and dated here.
 
 | file | ran | effect |
 |---|---|---|
+| `supply_order_approval_migration.sql` | 2026-09-23 | **The supply-order approval flow (item 35).** Run by Nik in the SQL editor as committed in `abadb45`: **94 rows, every test line ok, ending "row count verified: 93 evidence rows emitted, as expected (this line makes 94)"**, first run. Step 2 cancelled the 22 open trial orders (5 submitted, 5 reviewed, 12 sent) with the note; the 20 received orders untouched. Six account columns of `order_sessions` are ON DELETE RESTRICT. 4 open template policies (`auth_write_*`, `auth_read_*`) dropped. Adds `cancelled`, `version`, the return and cancel columns, `order_items.received_by/at`, `order_item_changes`, `is_order_head()`, `can_order()` and the eight order functions; closes every direct write on the order tables. The app code that calls it, `2d4c10f`, was pushed after the result, the same day. |
 | `purchase_cost_4dp_migration.sql` | by 2026-08-31 | Widened `ingredients.purchase_cost` from numeric(12,2) to numeric(12,4). Written 2026-08-30 and left untracked until 2026-09-23, when Nik did not remember whether it had run. **Verified 2026-09-23 (read-only, service key):** the column comes back at scale 4 (`390.0000`), exactly as `receive_qty`, numeric(_,4), the control, does; and one stored price, 1399.9989, needs four decimals, which numeric(12,2) could not hold. The 2026-08-31 sweep above records the same widening. |
 | `drop_fuel_cost_migration.sql` | by 2026-08-31 | Dropped `menus.fuel_cost`. Written 2026-08-30, untracked until 2026-09-23. **Verified 2026-09-23 (read-only, service key):** selecting the column returns 42703 "column menus.fuel_cost does not exist", while a select of real columns on the same table returns 200 (the control). `9b74eeb` (2026-08-31) is the hotfix for code that still selected the column after this ran. |
 | `delete_inactive_food_set_rates.sql` | between 2026-08-30 and 2026-09-23 | Deleted the 8 inactive `food_set` rates (the old โต๊ะจีน/buffet package prices). Written 2026-08-30, untracked until 2026-09-23. **Verified 2026-09-23 by its effect (read-only, service key):** 0 `food_set` rows, and the other 20 rates exactly as the file's own verification expects (delivery 8, drink 3, music 3, room 3, staff_bonus 3, all active); a count of delivery (8) is the control that the filter works. What the table cannot show is whether this file or eight ลบ presses on the settings page removed them; the result is the same, and nothing else could have been deleted by it. |
@@ -257,7 +258,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
-| `supply_order_approval_migration.sql` | Nik (written 2026-09-23; item 35) | The supply-order approval flow. ONE transaction: adds `cancelled` and the version, return and cancel columns to `order_sessions`, `received_by/at` to `order_items`, the `order_item_changes` log, the functions `is_order_head`, `can_order`, `order_create`, `order_edit`, `order_set_head_qty`, `order_approve`, `order_return`, `order_mark_sent`, `receive_order_item` (rewritten) and `order_cancel`; closes every direct write on the order tables; turns the account foreign keys to ON DELETE RESTRICT; puts `templates`/`template_items` in the repo and drops their open policies; cancels the 22 trial orders (asserted 5/5/12). Tests itself as the six roles and a login with no profile (62 tests), 93 result rows, re-runnable while no order is open. **Run under PGlite (Postgres 18) against a stand-in of the live schema, twice: 94 rows both times, the second a re-run.** An independent adversarial review probed it under PGlite too; its three should-fix findings and the nits are in. The app code that calls it is on the local branch `item-35-approval`, NOT pushed: until Nik runs the file, the deployed code writes the tables directly, which the file closes — so the order is file first, then the code. In the gap (nobody orders yet) every ordering write fails and the reads still work. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -2305,8 +2305,10 @@ In order. Nothing here is started unless it says so.
     tables, and counts of orders by status, self-reviewed orders, orders
     with no station, order lines, and lines with each override set.
 
-    **BUILT 2026-09-23; the migration waits for Nik, the app code waits for
-    the migration.** Nik answered every question (his context: ordering is
+    **DONE 2026-09-23.** The migration ran first (Nik, 94 rows, see "Applied
+    since"), then the app code `2d4c10f` was pushed and deployed. Before
+    that it read: **BUILT 2026-09-23; the migration waits for Nik, the app
+    code waits for the migration.** Nik answered every question (his context: ordering is
     on paper, the app flow never went live, most staff get their own login,
     the generic accounts are his test logins, the real heads today are เฮง,
     อู๋, ธีรวัฒน์, เวช and แหงน). The decisions, and where each lives:
@@ -2368,7 +2370,15 @@ In order. Nothing here is started unless it says so.
     other column referencing profiles ON DELETE SET NULL without changing it.
 
     **The template tables:** `templates` and `template_items` were created
-    outside the repo (no file). Live they carried `auth_write_*` (ALL,
+    outside the repo (no file). **The live columns the migration printed
+    differed from its own definitions in two places, corrected in the file on
+    2026-09-23 (after it ran; CREATE TABLE IF NOT EXISTS made them no-ops
+    live):** `templates` has `created_by uuid` (a profile, ON DELETE SET
+    NULL, the migration's own listing says), and `template_items` has no
+    `created_at`. `information_schema` printed `default_qty` only as
+    `numeric`, which it does for any precision, so its precision is still
+    unread; the repo now says plain `numeric` rather than claiming (12,4).
+    Column defaults were not printed either. Live they carried `auth_write_*` (ALL,
     authenticated, USING true) beside the role-checked policies, so any
     signed-in account could write or delete a template directly. The
     migration puts their definitions in the repo (types read from the app;
@@ -2382,7 +2392,7 @@ In order. Nothing here is started unless it says so.
     sheet's two figures are both in the app.
 
     **Files:** `supabase/supply_order_approval_migration.sql` (the migration;
-    see "Not applied"); on the local branch `item-35-approval`:
+    applied, see "Applied since"); pushed as `2d4c10f`:
     `src/lib/order-rules.ts` (the screen's mirror of the rules, tested),
     `requireOrdering()` in `auth.ts`, `staff/inventory/actions.ts` (every
     write through the functions, no service role), `inventory-data.ts`
@@ -3950,6 +3960,31 @@ and after Nik's import.
       old, unchecked save. That depends on Vercel's Skew Protection and on
       `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. Sales reloads open tabs after
       each deploy either way.
+
+52. **Re-open a received order line (admin, owner).** OPEN — build only if
+    real use shows it is needed (Nik, 2026-09-23). Today a received order is
+    final: `receive_order_item` refuses any status but `sent`, and
+    `order_cancel` refuses `received`, so a typo on the LAST line (which
+    closes the order, including "nothing came", 0) cannot be corrected by
+    anyone. The screen says so. The shape the review suggested: a function that
+    lets admin or owner set one line of a received order back to open (or to
+    a new quantity), writes an `order_item_changes` row for it, and moves
+    the order back to `sent` while any line is open. Nik: received orders
+    stay final for now.
+
+53. **Should "no deleting an account with history" reach four more
+    columns?** OPEN, a question for Nik; nothing changed. Item 35 made the
+    order tables' account columns ON DELETE RESTRICT, so an account with
+    order history is disabled, not deleted. The migration listed four other
+    columns that reference `profiles` ON DELETE SET NULL, where deleting an
+    account today silently blanks who did it:
+    `expense_entries.created_by`, `pending_changes.editor_id`,
+    `pending_changes.resolved_by`, `templates.created_by`. (The repo's
+    files show `pending_changes.editor_id` as ON DELETE CASCADE; live it is
+    SET NULL — another change made outside the repo.) Extending the rule
+    means RESTRICT on these four and, on the team page, counting them in
+    `hasOrderHistory`'s check. Decide per column: an expense entry's author
+    and an approval's resolver are the ones an audit would miss.
 
 **`/owner/stations` stays, unlinked, on purpose (Nik, 2026-09-23).** The
 station order-template editor (`station_ingredients`, and its child

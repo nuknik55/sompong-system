@@ -470,9 +470,15 @@ $do$;
 -- duplicate auth_read_* policies added nothing. Both kinds go. The
 -- role-checked *_insert / *_update / *_delete policies stay as they are.
 
+-- Corrected on 2026-09-23 AFTER the file ran, to the live columns it
+-- printed (the CREATEs were no-ops live, so the run is unaffected):
+-- templates has created_by (ON DELETE SET NULL live); template_items has no
+-- created_at; default_qty printed only as "numeric", which information_schema
+-- shows for any precision, so none is claimed; defaults were not printed.
 CREATE TABLE IF NOT EXISTS public.templates (
   id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   name       text        NOT NULL,
+  created_by uuid        REFERENCES public.profiles(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -481,12 +487,11 @@ CREATE TABLE IF NOT EXISTS public.template_items (
   template_id   uuid          NOT NULL REFERENCES public.templates(id) ON DELETE CASCADE,
   ingredient_id uuid          NOT NULL REFERENCES public.ingredients(id) ON DELETE CASCADE,
   order_unit    text,
-  default_qty   numeric(12,4),
+  default_qty   numeric,
   kitchen_unit  text,
   freezer_unit  text,
   custom_group  text,
-  sort_order    int           NOT NULL DEFAULT 0,
-  created_at    timestamptz   NOT NULL DEFAULT now()
+  sort_order    int           NOT NULL DEFAULT 0
 );
 
 ALTER TABLE public.templates      ENABLE ROW LEVEL SECURITY;
