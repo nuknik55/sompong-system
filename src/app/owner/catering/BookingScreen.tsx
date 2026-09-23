@@ -528,12 +528,12 @@ export function BookingScreen({
   return (
     <div className="space-y-5">
       {serverMoved && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-2 text-sm text-pending-ink">
           ข้อมูลของงานนี้ถูกแก้ไขจากที่อื่นหลังจากเปิดหน้านี้ — การแก้ไขของคุณยังอยู่ บันทึกต่อได้ (ถ้ามีคนบันทึกงานนี้จากหน้าจองอื่น ระบบจะไม่ให้บันทึกทับ)
           <button type="button" onClick={reloadLatest} disabled={busy} className="ml-2 font-medium underline hover:text-amber-950 disabled:opacity-50">โหลดข้อมูลล่าสุด</button>
         </div>
       )}
-      {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>}
+      {notice && <p className="rounded-md bg-pending-soft px-3 py-2 text-sm text-pending-ink">{notice}</p>}
 
       {/* ONE lock for the whole form while a save is in flight and until it
           lands: a disabled fieldset disables every control inside it,
@@ -550,7 +550,7 @@ export function BookingScreen({
               onPick={(c) => setForm((f) => pickCustomer(f, c))}
               onQueryChange={(t) => setForm((f) => typeCustomerName(f, t))}
             />
-            {typedHint && <p className="mt-1 text-xs text-amber-800">{typedHint}</p>}
+            {typedHint && <p className="mt-1 text-xs text-pending-ink">{typedHint}</p>}
           </Field>
           <Field label="เบอร์โทร">
             {/* Read-only whenever the booking has its customer, in the page's
@@ -566,8 +566,10 @@ export function BookingScreen({
           </Field>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="วันที่จัดงาน *">
+        {/* On a phone the date takes the row and the two times share the
+            next: three columns in 290px overlapped the time pickers. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Field label="วันที่จัดงาน *" className="col-span-2 sm:col-span-1">
             <input type="date" className="input-base" value={form.event_date} onChange={(e) => set("event_date", e.target.value)} />
             {/* The native input renders in the BROWSER's locale — measured:
                 lang="th" at page, wrapper and input level all still print
@@ -609,7 +611,7 @@ export function BookingScreen({
         </div>
 
         {conflict && (
-          <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger">
             <p className="font-medium">⚠ ไม่สามารถบันทึกได้ — ห้องชนกับการจองอื่น</p>
             <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
           </div>
@@ -670,7 +672,7 @@ export function BookingScreen({
               <option value="">– เลือก –</option>
               {takers.map((s) => <option key={s.id} value={s.id}>{staffLabel(s)}</option>)}
             </select>
-            {takers.length === 0 && <p className="mt-1 text-xs text-amber-700">ยังไม่มีใครถูกตั้งเป็นผู้รับงานจอง — ติ๊ก &quot;รับงานจองจัดเลี้ยง&quot; ในหน้าพนักงาน (HR)</p>}
+            {takers.length === 0 && <p className="mt-1 text-xs text-pending-ink">ยังไม่มีใครถูกตั้งเป็นผู้รับงานจอง — ติ๊ก &quot;รับงานจองจัดเลี้ยง&quot; ในหน้าพนักงาน (HR)</p>}
           </Field>
           {/* The agreed TERM, beside the amount actually RECEIVED. Two fields
               on purpose: a customer may round, or pay in two parts, so the
@@ -716,7 +718,7 @@ export function BookingScreen({
       {/* ── The price box: the quote ── */}
       <section className="rounded-xl border border-neutral-300 bg-white p-5">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-kanit text-base font-semibold text-neutral-900">ราคา / ใบเสนอราคา</h2>
+          <h2 className="font-heading text-base font-semibold text-neutral-900">ราคา / ใบเสนอราคา</h2>
           <p className="text-xs text-neutral-500">
             {event?.quote_number
               ? <>เลขที่ <span className="font-medium tabular-nums text-neutral-700">{event.quote_number}</span>{event.quote_revision > 0 && ` (แก้ไขครั้งที่ ${event.quote_revision})`}</>
@@ -766,7 +768,7 @@ export function BookingScreen({
                         min={l.kind === "dish" ? 0 : 1} step={l.kind === "dish" ? "any" : undefined}
                         title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${countUnit} — จำนวนเต็ม` : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
-                      <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-red-700" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
+                      <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-danger" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
                       <Button kind="link" size="sm" onClick={() => removeLine(l.key)} disabled={busy} aria-label="เอาบรรทัดนี้ออก">✕</Button>
                     </div>
                   ))}
@@ -825,7 +827,7 @@ export function BookingScreen({
       </fieldset>
 
       {error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
           {/* Beside every refused or lost save of an existing booking, so a
               message that says "โหลดข้อมูลล่าสุด" always has the button
@@ -860,10 +862,10 @@ export function BookingScreen({
           registers with the shell — so what the screen SAYS and what it
           WARNS about can never disagree (review, 2026-09-20). */}
       {dirty && (
-        <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>
+        <p className="text-right text-xs text-pending-ink">มีการแก้ไขที่ยังไม่ได้บันทึก</p>
       )}
       {serverMoved && (
-        <p className="text-right text-xs text-amber-800">
+        <p className="text-right text-xs text-pending-ink">
           ข้อมูลของงานนี้ถูกแก้ไขจากที่อื่น — <button type="button" onClick={reloadLatest} disabled={busy} className="underline disabled:opacity-50">โหลดข้อมูลล่าสุด</button>
         </p>
       )}
@@ -873,7 +875,7 @@ export function BookingScreen({
         </p>
       )}
       {duplicateRateLabels.length > 0 && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-md bg-pending-soft px-3 py-2 text-sm text-pending-ink">
           รายการซ้ำ: {duplicateRateLabels.join(", ")} ถูกเพิ่มไว้มากกว่า 1 บรรทัด — ตรวจสอบก่อนบันทึก (บันทึกได้ตามปกติ)
         </p>
       )}

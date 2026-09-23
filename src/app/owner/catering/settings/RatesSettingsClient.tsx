@@ -8,6 +8,7 @@ import {
 } from "../actions";
 import type { CateringRate } from "../actions";
 import { RATE_TYPE_OPTIONS, RATE_TYPE_LABEL, fmtBaht } from "../shared-utils";
+import { buttonClass } from "@/components/ui/button";
 
 type RateForm = {
   rate_type: string;
@@ -180,9 +181,9 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
         </div>
       )}
 
@@ -199,16 +200,16 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
                     visible/manageable for reference or reactivation; only
                     adding new ones is blocked. */}
                 {group.value === "food_set" ? (
-                  <span className="text-xs text-neutral-400">ปิดการเพิ่มรายการใหม่ — ใช้ชุดเมนู/เมนูจริงแทน</span>
+                  <span className="text-xs text-neutral-500">ปิดการเพิ่มรายการใหม่ — ใช้ชุดเมนู/เมนูจริงแทน</span>
                 ) : (
-                  <button onClick={() => openAdd(group.value)} className="text-xs text-green-700 hover:underline">
+                  <button onClick={() => openAdd(group.value)} className={buttonClass("link", { size: "sm" })}>
                     + เพิ่มรายการ
                   </button>
                 )}
               </div>
               <div>
                 {rows.length === 0 && (
-                  <div className="px-4 py-3 text-xs text-neutral-400">ยังไม่มีรายการ</div>
+                  <div className="px-4 py-3 text-xs text-neutral-500">ยังไม่มีรายการ</div>
                 )}
                 {rows.map((r, idx) => (
                   <div
@@ -218,16 +219,16 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
                     <div className="flex-1 text-sm text-neutral-700">
                       {r.label}
                       {r.rate_type === "delivery" && r.min_distance_km != null && (
-                        <span className="ml-1 text-xs text-neutral-400">({r.min_distance_km}-{r.max_distance_km} กม.)</span>
+                        <span className="ml-1 text-xs text-neutral-500">({r.min_distance_km}-{r.max_distance_km} กม.)</span>
                       )}
-                      {r.note && <span className="ml-1 text-xs text-neutral-400">— {r.note}</span>}
+                      {r.note && <span className="ml-1 text-xs text-neutral-500">— {r.note}</span>}
                       {/* Customer-facing name, inline and ALWAYS visible (not
                           hover-gated — phones have no hover). Empty shows the
                           fallback as placeholder, which doubles as the answer
                           to "what will the customer see?". Enter blurs, and
                           blur saves, so Enter saves exactly once. */}
                       <input
-                        className="mt-1 block w-full max-w-xs rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none"
+                        className="mt-1 block w-full max-w-xs rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none"
                         placeholder={`ลูกค้าเห็น: ${r.label}`}
                         value={labelDrafts[r.id] ?? r.display_label ?? ""}
                         disabled={isPending}
@@ -241,20 +242,20 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
                     </span>
                     <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                       <button onClick={() => handleReorder(r, "up")} disabled={isPending || idx === 0}
-                        className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนขึ้น">
+                        className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนขึ้น">
                         ▲
                       </button>
                       <button onClick={() => handleReorder(r, "down")} disabled={isPending || idx === rows.length - 1}
-                        className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนลง">
+                        className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนลง">
                         ▼
                       </button>
                       <span className="mx-1 text-neutral-200">|</span>
-                      <button onClick={() => openEdit(r)} className="text-xs text-neutral-400 hover:text-neutral-700">แก้ไข</button>
+                      <button onClick={() => openEdit(r)} className={buttonClass("link", { size: "sm" })}>แก้ไข</button>
                       <button onClick={() => handleToggleActive(r)} disabled={isPending}
-                        className={`text-xs ${r.is_active ? "text-neutral-400 hover:text-red-500" : "text-green-600 hover:text-green-800"}`}>
+                        className={`text-xs ${r.is_active ? "text-neutral-500 hover:text-danger" : "text-success-ink hover:text-success-ink"}`}>
                         {r.is_active ? "ปิดใช้" : "เปิดใช้"}
                       </button>
-                      <button onClick={() => handleDelete(r)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-500 disabled:opacity-30">
+                      <button onClick={() => handleDelete(r)} disabled={isPending} className={buttonClass("link", { size: "sm", dangerHover: true })}>
                         ลบ
                       </button>
                     </div>
@@ -270,10 +271,10 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h2 className="font-kanit text-base font-semibold">
+              <h2 className="font-heading text-base font-semibold">
                 {modal.editingId ? "แก้ไขอัตรา" : "เพิ่มอัตราใหม่"} — {RATE_TYPE_LABEL[modal.form.rate_type] ?? modal.form.rate_type}
               </h2>
-              <button onClick={() => setModal(null)} className="text-neutral-400 hover:text-neutral-700">✕</button>
+              <button onClick={() => setModal(null)} className={buttonClass("link")}>✕</button>
             </div>
             <div className="grid grid-cols-2 gap-3 px-5 py-4">
               <div className="col-span-2">
@@ -320,12 +321,12 @@ export function RatesSettingsClient({ rates }: { rates: CateringRate[] }) {
                 <input className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none" placeholder="ขั้นต่ำ 30 ท่าน ฯลฯ"
                   value={modal.form.note} onChange={(e) => setForm({ note: e.target.value })} />
               </div>
-              {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
+              {error && <p className="col-span-2 text-sm text-danger">{error}</p>}
             </div>
             <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
-              <button onClick={() => setModal(null)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">ยกเลิก</button>
+              <button onClick={() => setModal(null)} className={buttonClass("secondary")}>ยกเลิก</button>
               <button onClick={saveModal} disabled={isPending}
-                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+                className={buttonClass("primary")}>
                 {isPending ? "กำลังบันทึก…" : "บันทึก"}
               </button>
             </div>

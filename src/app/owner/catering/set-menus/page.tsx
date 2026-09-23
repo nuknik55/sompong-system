@@ -6,6 +6,7 @@ import { computeMenuCost } from "@/lib/costing";
 import { getCateringSetMenus } from "../actions";
 import { SetMenusClient, type DishCostOption } from "./SetMenusClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
+import { PageShell } from "@/components/ui/page";
 
 // ── One of three places in the catering module allowed to compute/render cost ─
 // (the others: [id]/cost/page.tsx, per-event food cost for the P&L page, and
@@ -46,11 +47,12 @@ export default async function SetMenusPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <CateringSubNav isAdmin={true} />
 
-      <h1 className="font-kanit text-lg font-semibold text-neutral-900">จัดการชุดเมนู</h1>
+      {/* The page header (title and + เพิ่มชุดเมนู) is in the client: the
+          button opens its dialog. */}
       <SetMenusClient setMenus={setMenus} dishOptions={dishOptions} />
-    </div>
+    </PageShell>
   );
 }

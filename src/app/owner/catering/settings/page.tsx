@@ -6,6 +6,7 @@ import { RatesSettingsClient } from "./RatesSettingsClient";
 import { EventTypesSettingsClient } from "./EventTypesSettingsClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
 import { Tabs } from "@/components/tabs";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 // Two editable lists, one page. ประเภทงาน joined the rates here on 2026-09-15
 // rather than taking a fifth sub-nav item: the sub-nav was deliberately cut
@@ -23,10 +24,10 @@ export default async function CateringSettingsPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <CateringSubNav isAdmin={true} />
 
-      <h1 className="font-kanit text-lg font-semibold text-neutral-900">ตั้งค่าจัดเลี้ยง</h1>
+      <PageHeader title="ตั้งค่าจัดเลี้ยง" />
 
       <Tabs
         tabs={[
@@ -34,6 +35,6 @@ export default async function CateringSettingsPage() {
           { label: `ประเภทงาน (${eventTypes.length})`, content: <EventTypesSettingsClient types={eventTypes} usage={eventTypeUsage} /> },
         ]}
       />
-    </div>
+    </PageShell>
   );
 }

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CateringDishOption, EventMenuActionResult, EventMenuSource, EventMenuSources } from "../../actions";
 import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus } from "../../actions";
-import { fmtBaht, toNum, StatusBadge, thDate, thFullDate } from "../../shared-utils";
+import { fmtBaht, toNum, BookingStatusBadge, thDate, thFullDate } from "../../shared-utils";
 import { menuLineQuantityOk } from "../../booking-lines";
 import { markUnsaved } from "@/lib/unsaved-changes";
 import {
@@ -15,6 +14,8 @@ import {
   EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
   type DraftDish, type EventMenuSection, type EventMenuView, type LineDraft,
 } from "../../event-menu";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 
 /**
  * The booking's own menu, one card per set line, EDITED AS A DRAFT (Nik):
@@ -253,15 +254,12 @@ function EventMenuEditor({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href={header.backHref} className="text-sm text-neutral-400 hover:text-neutral-700">{header.backLabel}</Link>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">รายการอาหารของงาน</h1>
-          <StatusBadge status={header.status} />
-          <span className="text-sm text-neutral-500">{thFullDate(header.date)}</span>
-        </div>
-        {dirty && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">มีการแก้ไขที่ยังไม่บันทึก</span>}
-      </div>
+      <PageHeader
+        back={{ href: header.backHref, label: header.backLabel }}
+        title="รายการอาหารของงาน"
+        subtitle={<><BookingStatusBadge status={header.status} /><span>{thFullDate(header.date)}</span></>}
+        actions={dirty ? <span className="rounded-full bg-pending-soft px-2.5 py-0.5 text-xs font-medium text-pending-ink">มีการแก้ไขที่ยังไม่บันทึก</span> : undefined}
+      />
 
       {view.locked && (
         <div className="rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-700">
@@ -279,20 +277,20 @@ function EventMenuEditor({
         </p>
       )}
       {serverMoved && dirty && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-2 text-sm text-pending-ink">
           ข้อมูลของงานนี้ถูกแก้ไขจากที่อื่นหลังจากเปิดหน้านี้ — กด <b>ยกเลิก</b> เพื่อโหลดข้อมูลล่าสุด (การแก้ไขที่ค้างอยู่จะหาย) หรือบันทึกต่อ ระบบจะปฏิเสธเฉพาะชุดที่ถูกแก้ไขชนกัน
         </div>
       )}
       {notice && !dirty && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
+        <div className="rounded-lg border border-success/30 bg-success-soft px-4 py-2 text-sm text-success-ink">
           ✓ {notice}
-          <button type="button" onClick={() => onNotice(null)} className="ml-2 text-green-500 hover:text-green-700">✕</button>
+          <button type="button" onClick={() => onNotice(null)} className="ml-2 text-success-ink/70 hover:text-success-ink">✕</button>
         </div>
       )}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button type="button" onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button type="button" onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
         </div>
       )}
 
@@ -331,16 +329,16 @@ function EventMenuEditor({
           {!creating && (
             <>
               <button type="button" disabled={busy} onClick={() => openChooser({ mode: "new" })}
-                className="rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                className={buttonClass("secondary")}>
                 + คัดลอกชุดจากที่อื่น
               </button>
               <button type="button" disabled={busy} onClick={() => { setChooserFor(null); setCreating(true); }}
-                className="rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                className={buttonClass("secondary")}>
                 + สร้างชุดเมนูเอง
               </button>
             </>
           )}
-          {sourceError && <span className="text-xs text-red-700">{sourceError}</span>}
+          {sourceError && <span className="text-xs text-danger">{sourceError}</span>}
         </div>
       )}
       {canEdit && creating && (
@@ -360,7 +358,7 @@ function EventMenuEditor({
           set is marked for deletion renders no card at all, and that is the
           save that moves the total most (review, 2026-09-20). */}
       {canEdit && quote && dirty && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+        <div className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-2 text-xs text-pending-ink">
           ใบเสนอราคา {quote.number}{quote.revision > 0 ? ` (แก้ไขครั้งที่ ${quote.revision})` : ""} ออกไว้แล้ว — เอกสารที่พิมพ์จะแสดงยอดใหม่ทันทีที่บันทึก
           แต่ยอดที่บันทึกไว้กับใบเสนอราคา ซึ่งหน้าต้นทุน-กำไรและการล็อกต้นทุนใช้ ยังเป็นยอดเดิมจนกว่าจะกด “บันทึกและออกใบเสนอราคาใหม่” ในหน้าจอง
           {pendingRemovals > 0 && " — ถ้าลบชุดออก ให้ออกใบเสนอราคาใหม่ก่อนล็อกต้นทุน มิฉะนั้นกำไรที่ล็อกไว้จะสูงกว่าความจริง"}
@@ -369,7 +367,7 @@ function EventMenuEditor({
 
       {canEdit && (
         <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-          <p className={`text-sm ${problem ? "text-red-700" : pendingRemovals > 0 ? "text-red-700" : dirty ? "text-amber-800" : "text-neutral-500"}`}>
+          <p className={`text-sm ${problem ? "text-danger" : pendingRemovals > 0 ? "text-danger" : dirty ? "text-pending-ink" : "text-neutral-500"}`}>
             {problem
               ?? (pendingRemovals > 0
                 ? `จะลบ ${pendingRemovals} ชุดเมื่อกดบันทึก (พร้อมรายการอาหารและบรรทัดราคาของชุดนั้น)`
@@ -381,11 +379,11 @@ function EventMenuEditor({
                 in flight dropped the copied line under a "saved" notice
                 (review, 2026-09-20). */}
             <button type="button" onClick={cancel} disabled={!dirty || busy}
-              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              className={buttonClass("secondary")}>
               ยกเลิก
             </button>
             <button type="button" onClick={save} disabled={!dirty || !!problem || busy}
-              className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+              className={buttonClass("primary")}>
               {isPending ? "กำลังบันทึก…" : "บันทึก"}
             </button>
           </div>
@@ -479,17 +477,17 @@ function LineCard({
 
   if (draft.removed) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/40 bg-danger-soft/60 px-4 py-3">
         <div className="min-w-0">
           <p className="font-medium text-neutral-500 line-through">{draft.name}</p>
-          <p className="text-xs text-red-700">
+          <p className="text-xs text-danger">
             {legacy
               ? "จะถูกลบเมื่อกดบันทึก — พร้อมบรรทัดราคาของชุดนี้ (ชุดเมนูกลางไม่ถูกแตะต้อง)"
               : `จะถูกลบเมื่อกดบันทึก — พร้อมรายการอาหาร ${draft.dishes.length} รายการ และบรรทัดราคาของชุดนี้`}
           </p>
         </div>
         <button type="button" onClick={toggleRemove} disabled={isPending}
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+          className={buttonClass("secondary")}>
           เลิกลบ
         </button>
       </div>
@@ -503,7 +501,7 @@ function LineCard({
           <p className="font-medium text-neutral-900">{draft.name}</p>
           <p className="text-xs text-neutral-500 tabular-nums">
             {fmtBaht(draft.tables)} โต๊ะ
-            {draft.eventMenuId == null && <span className="text-neutral-400"> · ตั้งจำนวนโต๊ะจริงในกล่องราคาของหน้าจองหลังบันทึก</span>}
+            {draft.eventMenuId == null && <span className="text-neutral-500"> · ตั้งจำนวนโต๊ะจริงในกล่องราคาของหน้าจองหลังบันทึก</span>}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -512,10 +510,10 @@ function LineCard({
             {/* A set that was never saved is simply dropped; a saved one is
                 marked and removed by บันทึก, with everything it carries. */}
             {canEdit && (draft.eventMenuId == null ? (
-              <button type="button" onClick={onRemoveNew} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50" title="เอาชุดที่ยังไม่บันทึกนี้ออก">✕</button>
+              <button type="button" onClick={onRemoveNew} disabled={isPending} className={buttonClass("link", { size: "sm", dangerHover: true })} title="เอาชุดที่ยังไม่บันทึกนี้ออก">✕</button>
             ) : (
               <button type="button" onClick={toggleRemove} disabled={isPending}
-                className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:border-danger/40 hover:bg-danger-soft hover:text-danger disabled:opacity-50"
                 title="ลบชุดนี้ออกจากงาน พร้อมรายการอาหารและบรรทัดราคาของชุดนี้">
                 ลบชุดนี้
               </button>
@@ -538,13 +536,13 @@ function LineCard({
       </div>
 
       {legacy && (
-        <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="mx-4 mt-3 rounded-lg border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
           รายการนี้ยังอ่านจากชุดเมนูกลาง (จองไว้ก่อนมีระบบสำเนา) — ถ้าชุดเมนูกลางเปลี่ยน รายการที่แสดงจะเปลี่ยนตาม
           {canEdit && (
             <>
               {" "}แก้ไขรายการใดก็ได้แล้วบันทึก จะเก็บเป็นของงานนี้ หรือ
               <button type="button" disabled={isPending} onClick={() => onChange((d) => ({ ...d, materialize: true }))}
-                className="ml-1 rounded bg-amber-700 px-2 py-0.5 text-white hover:bg-amber-800 disabled:opacity-50">
+                className={buttonClass("primary", { size: "sm", className: "ml-1" })}>
                 เก็บตามที่แสดงเป็นของงานนี้
               </button>
             </>
@@ -555,23 +553,23 @@ function LineCard({
       {canEdit && (
         <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 text-xs">
           <button type="button" disabled={isPending} onClick={onOpenChooser}
-            className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+            className={buttonClass("secondary", { size: "sm" })}>
             คัดลอกรายการอาหารจาก…
           </button>
           {draft.dishes.length > 0 && (
             <button type="button" disabled={isPending} onClick={startEmpty}
-              className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              className={buttonClass("secondary", { size: "sm" })}>
               ล้างรายการ แล้วเริ่มจากว่าง
             </button>
           )}
-          {localError && <span className="text-red-700">{localError}</span>}
+          {localError && <span className="text-danger">{localError}</span>}
         </div>
       )}
 
       {/* A2: one flat list, in the order the courses were added. */}
       <div className="px-4 py-3">
         {draft.dishes.length === 0 && (
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-neutral-500">
             {canEdit ? "ยังไม่มีรายการอาหารในชุดนี้ — เลือกเมนูด้านล่าง หรือคัดลอกจากชุดมาตรฐาน / การจองอื่น" : "ยังไม่มีรายการอาหารในชุดนี้"}
           </p>
         )}
@@ -596,19 +594,19 @@ function LineCard({
         </div>
         <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm">
           <p className="text-xs text-neutral-500">{COMPARISON_LABEL}</p>
-          <p className={`tabular-nums font-medium ${comparison?.direction === "below" ? "text-green-700" : "text-neutral-800"}`}>
+          <p className={`tabular-nums font-medium ${comparison?.direction === "below" ? "text-success-ink" : "text-neutral-800"}`}>
             {comparisonHeadline(comparison)}
           </p>
           <p className="mt-0.5 text-xs text-neutral-500">{comparisonText(comparison)}</p>
         </div>
         {cost && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm">
-            <p className="text-xs font-medium text-amber-800">ต้นทุนอาหาร (Admin/Owner เท่านั้น)</p>
+          <div className="rounded-lg border border-pending/60 bg-pending-soft/60 px-3 py-2 text-sm">
+            <p className="text-xs font-medium text-pending-ink">ต้นทุนอาหาร (Admin/Owner เท่านั้น)</p>
             <p className="tabular-nums font-medium text-neutral-800">
               ฿{fmtBaht(cost.costPerTable)} / โต๊ะ
               {foodCostFigure(cost.costPerTable, price).pct != null && <> · {foodCostFigure(cost.costPerTable, price).pct!.toFixed(2)}% ของราคาชุด</>}
             </p>
-            {cost.hasUnknownCost && <p className="mt-0.5 text-xs text-amber-700">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขอาจต่ำกว่าความจริง</p>}
+            {cost.hasUnknownCost && <p className="mt-0.5 text-xs text-pending-ink">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขอาจต่ำกว่าความจริง</p>}
           </div>
         )}
       </div>
@@ -618,11 +616,11 @@ function LineCard({
 
 function SourceBadge({ draft }: { draft: LineDraft }) {
   const cls = "rounded-full border px-2 py-0.5 text-xs";
-  if (draft.eventMenuId == null) return <span className={`${cls} border-blue-200 bg-blue-50 text-blue-700`}>ชุดใหม่ · ยังไม่บันทึก</span>;
-  if (draft.source === "shared" && draft.materialize) return <span className={`${cls} border-green-200 bg-green-50 text-green-700`}>จะเก็บเป็นของงานนี้เมื่อบันทึก</span>;
-  if (draft.source === "shared") return <span className={`${cls} border-amber-200 bg-amber-50 text-amber-700`}>ยังใช้ชุดเมนูกลาง</span>;
-  if (draft.source === "copy" && draft.sourceSetMenuId) return <span className={`${cls} border-green-200 bg-green-50 text-green-700`}>คัดลอกจากชุดเมนู · แก้ไขแยกจากชุดกลาง</span>;
-  if (draft.source === "copy") return <span className={`${cls} border-blue-200 bg-blue-50 text-blue-700`}>ชุดของงานนี้</span>;
+  if (draft.eventMenuId == null) return <span className={`${cls} border-info/30 bg-info-soft text-info`}>ชุดใหม่ · ยังไม่บันทึก</span>;
+  if (draft.source === "shared" && draft.materialize) return <span className={`${cls} border-success/30 bg-success-soft text-success-ink`}>จะเก็บเป็นของงานนี้เมื่อบันทึก</span>;
+  if (draft.source === "shared") return <span className={`${cls} border-pending/60 bg-pending-soft text-pending-ink`}>ยังใช้ชุดเมนูกลาง</span>;
+  if (draft.source === "copy" && draft.sourceSetMenuId) return <span className={`${cls} border-success/30 bg-success-soft text-success-ink`}>คัดลอกจากชุดเมนู · แก้ไขแยกจากชุดกลาง</span>;
+  if (draft.source === "copy") return <span className={`${cls} border-info/30 bg-info-soft text-info`}>ชุดของงานนี้</span>;
   return <span className={`${cls} border-neutral-200 bg-neutral-50 text-neutral-500`}>ยังไม่มีรายการ</span>;
 }
 
@@ -653,10 +651,10 @@ function SourceChooser({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 text-xs">
           {/* `loading` also covers a save in flight: nothing may change the draft while it is being written. */}
-          <button type="button" onClick={() => setTab("sets")} className={`rounded px-2.5 py-1 ${tab === "sets" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>ชุดเมนูมาตรฐาน</button>
-          <button type="button" onClick={() => setTab("bookings")} className={`rounded px-2.5 py-1 ${tab === "bookings" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>การจองอื่น</button>
+          <button type="button" onClick={() => setTab("sets")} className={`rounded px-2.5 py-1 ${tab === "sets" ? "border border-primary/30 bg-primary-soft text-primary" : "border border-neutral-300 bg-white text-neutral-700"}`}>ชุดเมนูมาตรฐาน</button>
+          <button type="button" onClick={() => setTab("bookings")} className={`rounded px-2.5 py-1 ${tab === "bookings" ? "border border-primary/30 bg-primary-soft text-primary" : "border border-neutral-300 bg-white text-neutral-700"}`}>การจองอื่น</button>
         </div>
-        <button type="button" onClick={onClose} className="text-xs text-neutral-500 hover:text-neutral-800">ปิด</button>
+        <button type="button" onClick={onClose} className={buttonClass("link", { size: "sm" })}>ปิด</button>
       </div>
       <p className="mb-2 text-xs text-neutral-500">
         {mode === "new"
@@ -666,7 +664,7 @@ function SourceChooser({
       {loading && !sources && <p className="text-xs text-neutral-500">กำลังโหลด…</p>}
       {sources && tab === "sets" && (
         <ul className="max-h-64 divide-y divide-neutral-200 overflow-y-auto rounded border border-neutral-200 bg-white">
-          {sources.sets.length === 0 && <li className="px-3 py-2 text-xs text-neutral-400">ไม่มีชุดเมนูมาตรฐานที่เปิดใช้</li>}
+          {sources.sets.length === 0 && <li className="px-3 py-2 text-xs text-neutral-500">ไม่มีชุดเมนูมาตรฐานที่เปิดใช้</li>}
           {sources.sets.map((s) => (
             <li key={s.id}>
               <button type="button" disabled={loading} onClick={() => onPick({ kind: "set", setMenuId: s.id })}
@@ -683,13 +681,13 @@ function SourceChooser({
           <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ค้นหาชื่อการจอง (ชื่อลูกค้า)…"
             className="w-full rounded border border-neutral-300 bg-white px-2 py-1 text-sm" />
           <ul className="max-h-72 divide-y divide-neutral-200 overflow-y-auto rounded border border-neutral-200 bg-white">
-            {bookings.length === 0 && <li className="px-3 py-2 text-xs text-neutral-400">{q ? "ไม่พบการจองที่ตรงกับคำค้น" : "ยังไม่มีการจองอื่นที่มีชุดเมนู"}</li>}
+            {bookings.length === 0 && <li className="px-3 py-2 text-xs text-neutral-500">{q ? "ไม่พบการจองที่ตรงกับคำค้น" : "ยังไม่มีการจองอื่นที่มีชุดเมนู"}</li>}
             {bookings.map((b) => (
               <li key={b.id} className="px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                   <span className="tabular-nums">{thDate(b.event_date)}</span>
                   <span className="font-medium text-neutral-800">{b.customer_name ?? "ไม่ระบุลูกค้า"}</span>
-                  <StatusBadge status={b.status} />
+                  <BookingStatusBadge status={b.status} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {b.lines.map((l) => (
@@ -733,7 +731,7 @@ function DishRow({
   return (
     <li className="py-1.5 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="w-5 text-right text-xs text-neutral-400 tabular-nums">{index}.</span>
+        <span className="w-5 text-right text-xs text-neutral-500 tabular-nums">{index}.</span>
         <span className="flex-1 text-neutral-800">{dish.menu_name}</span>
         {/* The group this course prints under on the kitchen sheet, the
             function sheet and the quotation. NOT a grouping of this screen
@@ -765,7 +763,7 @@ function DishRow({
               type="text" inputMode="decimal" value={dish.quantity} disabled={isPending}
               onChange={(e) => onQuantity(e.target.value.replace(/[^0-9.]/g, ""))}
               title="จำนวนต่อโต๊ะ"
-              className={`w-12 rounded border px-1.5 py-0.5 text-right text-xs tabular-nums ${qty != null && qty > 0 ? "border-neutral-300" : "border-red-400"}`}
+              className={`w-12 rounded border px-1.5 py-0.5 text-right text-xs tabular-nums ${qty != null && qty > 0 ? "border-neutral-300" : "border-danger/40"}`}
             />
           </label>
         ) : (
@@ -774,23 +772,23 @@ function DishRow({
         {editable && (
           <>
             <button type="button" disabled={isPending} onClick={() => { setSwapping((s) => !s); setPick(""); }}
-              className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              className={buttonClass("secondary", { size: "sm" })}>
               {swapping ? "ยกเลิก" : "เปลี่ยนเมนู"}
             </button>
             <button type="button" disabled={isPending} onClick={onRemove}
-              className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500 disabled:opacity-50">
+              className={buttonClass("secondary", { size: "sm" })}>
               ลบ
             </button>
           </>
         )}
       </div>
-      {dish.note && <p className="ml-7 text-xs text-neutral-400">{dish.note}</p>}
+      {dish.note && <p className="ml-7 text-xs text-neutral-500">{dish.note}</p>}
       {swapping && (
         <div className="ml-7 mt-1.5 space-y-1.5">
           <DishSelect value={pick} onChange={setPick} dishOptions={dishOptions} placeholder="เลือกเมนูที่จะใช้แทน…" />
           {/* The >10% rule (Nik): a warning, never a block. The confirm button stays. */}
           {picked && warning?.warn && (
-            <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+            <p className="rounded border border-pending/60 bg-pending-soft px-2 py-1.5 text-xs text-pending-ink">
               ⚠ {swapWarningText(dish.menu_name, dish.selling_price, picked.name, picked.selling_price)}
             </p>
           )}
@@ -801,7 +799,7 @@ function DishRow({
           )}
           <button type="button" disabled={isPending || !picked}
             onClick={() => { if (picked) onSwap(picked); setSwapping(false); setPick(""); }}
-            className="rounded bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+            className={buttonClass("primary", { size: "sm" })}>
             ยืนยันเปลี่ยนเป็นเมนูนี้
           </button>
         </div>
@@ -818,7 +816,7 @@ function AddDishRow({ isPending, dishOptions, onAdd }: { isPending: boolean; dis
       <DishSelect value={pick} onChange={setPick} dishOptions={dishOptions} placeholder="+ เลือกเมนูที่จะเพิ่ม…" />
       <button type="button" disabled={isPending || !pick}
         onClick={() => { const id = pick; setPick(""); onAdd(id); }}
-        className="rounded bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+        className={buttonClass("primary", { size: "sm" })}>
         เพิ่ม
       </button>
     </div>
@@ -860,18 +858,18 @@ function NewCustomSetForm({ existingNames, isPending, onAdd, onCancel }: { exist
       <p className="text-xs text-neutral-500">ตั้งชื่อและราคาต่อโต๊ะ ชุดจะเพิ่มเป็นการ์ดใหม่ว่างๆ ด้านบน — เลือกเมนูเอง หรือคัดลอกจากชุดมาตรฐาน/การจองอื่น แล้วกดบันทึก จำนวนโต๊ะเริ่มที่ 1 ตั้งจำนวนจริงในกล่องราคาของหน้าจอง</p>
       <div className="flex flex-wrap gap-2 text-sm">
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อชุด เช่น ชุดเจ 3,500"
-          className={`min-w-[12rem] flex-1 rounded border px-2 py-1 ${taken ? "border-red-400" : "border-neutral-300"}`} />
+          className={`min-w-[12rem] flex-1 rounded border px-2 py-1 ${taken ? "border-danger/40" : "border-neutral-300"}`} />
         <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="ราคา/โต๊ะ"
           className="w-28 rounded border border-neutral-300 px-2 py-1 text-right tabular-nums" />
       </div>
-      {taken && <p className="text-xs text-red-700">มีชุดชื่อ “{name.trim()}” อยู่ในงานนี้แล้ว — ตั้งชื่อชุดใหม่ให้ต่างกัน</p>}
+      {taken && <p className="text-xs text-danger">มีชุดชื่อ “{name.trim()}” อยู่ในงานนี้แล้ว — ตั้งชื่อชุดใหม่ให้ต่างกัน</p>}
       <div className="flex gap-2">
         <button type="button" disabled={isPending || !valid}
           onClick={() => onAdd(newCustomLineDraft(`new-${crypto.randomUUID()}`, name, priceN!))}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+          className={buttonClass("primary", { size: "sm" })}>
           เพิ่มชุด
         </button>
-        <button type="button" onClick={onCancel} className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:bg-neutral-50">ยกเลิก</button>
+        <button type="button" onClick={onCancel} className={buttonClass("secondary", { size: "sm" })}>ยกเลิก</button>
       </div>
     </div>
   );

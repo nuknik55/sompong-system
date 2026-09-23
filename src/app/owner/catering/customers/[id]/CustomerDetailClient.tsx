@@ -146,7 +146,7 @@ export function CustomerDetailClient({
               )}
             </p>
           )}
-          {dirty && <p className="text-right text-xs text-amber-800">มีการแก้ไขที่ยังไม่ได้บันทึก</p>}
+          {dirty && <p className="text-right text-xs text-pending-ink">มีการแก้ไขที่ยังไม่ได้บันทึก</p>}
           <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
             <Button kind="secondary" onClick={cancelEdit} disabled={isPending}>
               ยกเลิก

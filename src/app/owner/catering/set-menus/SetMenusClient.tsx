@@ -9,6 +9,9 @@ import type { CateringSetMenu } from "../actions";
 import { fmtBaht, toNum, SET_MENU_SECTIONS } from "../shared-utils";
 import { comparisonHeadline, comparisonText, COMPARISON_LABEL, setVsAlaCarte } from "../event-menu";
 import { menuLineQuantityError } from "../booking-lines";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
+import { TH_ROW } from "@/components/ui/table";
 
 /** Per-dish cost, computed once server-side in page.tsx — see the comment there. */
 export type DishCostOption = {
@@ -94,7 +97,7 @@ function DishPicker({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+        className={buttonClass("secondary")}
       >
         + เพิ่มเมนูในชุด
       </button>
@@ -102,8 +105,8 @@ function DishPicker({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
-              <h3 className="font-kanit text-sm font-semibold">เลือกเมนู</h3>
-              <button onClick={() => setOpen(false)} className="text-neutral-400 hover:text-neutral-700">✕</button>
+              <h3 className="font-heading text-sm font-semibold">เลือกเมนู</h3>
+              <button onClick={() => setOpen(false)} className={buttonClass("link")}>✕</button>
             </div>
             <div className="flex items-center gap-2 border-b border-neutral-100 px-5 py-3">
               <input
@@ -129,7 +132,7 @@ function DishPicker({
                   type="button"
                   onClick={() => setCategory(c)}
                   className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                    category === c ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                    category === c ? "border-primary/30 bg-primary-soft text-primary" : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
                   }`}
                 >
                   {c}
@@ -137,7 +140,7 @@ function DishPicker({
               ))}
             </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filtered.length === 0 && <p className="py-8 text-center text-sm text-neutral-400">ไม่พบเมนู</p>}
+              {filtered.length === 0 && <p className="py-8 text-center text-sm text-neutral-500">ไม่พบเมนู</p>}
               {filtered.map((d) => {
                 const already = excludeIds.has(d.id);
                 return (
@@ -149,7 +152,7 @@ function DishPicker({
                   >
                     <span className="text-neutral-800">
                       {d.name}
-                      {already && <span className="ml-1.5 text-[10px] text-neutral-400">(อยู่ในชุดแล้ว — เพิ่มจะรวมจำนวน)</span>}
+                      {already && <span className="ml-1.5 text-[10px] text-neutral-500">(อยู่ในชุดแล้ว — เพิ่มจะรวมจำนวน)</span>}
                     </span>
                     <span className="whitespace-nowrap text-xs tabular-nums text-neutral-500">
                       ขาย ฿{fmtBaht(d.selling_price)} · ต้นทุน ฿{fmtBaht(d.unit_cost)}
@@ -350,38 +353,41 @@ export function SetMenusClient({
 
   return (
     <div className="space-y-4">
+      <PageHeader
+        title="จัดการชุดเมนู"
+        actions={
+          <button type="button" onClick={openAdd} className={buttonClass("primary")}>
+            + เพิ่มชุดเมนู
+          </button>
+        }
+      />
+
       {error && !modal && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
         </div>
       )}
 
-      <div className="flex justify-end">
-        <button type="button" onClick={openAdd} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
-          + เพิ่มชุดเมนู
-        </button>
-      </div>
-
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {setMenus.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-400">ยังไม่มีชุดเมนู</p>}
+        {setMenus.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-500">ยังไม่มีชุดเมนู</p>}
         {setMenus.map((sm) => (
           <div key={sm.id} className={`flex items-center gap-3 border-b border-neutral-50 px-4 py-3 last:border-0 ${!sm.is_active ? "opacity-50" : ""}`}>
             <div className="flex-1">
               <span className="text-sm font-medium text-neutral-800">{sm.name}</span>
-              {sm.serves_guests != null && <span className="ml-2 text-xs text-neutral-400">เสิร์ฟ {sm.serves_guests} ท่าน</span>}
+              {sm.serves_guests != null && <span className="ml-2 text-xs text-neutral-500">เสิร์ฟ {sm.serves_guests} ท่าน</span>}
               {/* The whole breakdown, zeros included, so a package missing a
                   section is visible without opening it. Zero is shown rather
                   than hidden because "no dessert" is the fact worth seeing.
                   Only an empty รายการอาหาร is a warning — a package
                   legitimately may have no dessert, drink or free item, but one
                   with no dishes cannot print a kitchen sheet at all. */}
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-400">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-500">
                 {SET_MENU_SECTIONS.map((s, i) => {
                   const n = sm.section_counts[s.value] ?? 0;
                   const isEmptyDish = s.value === "dish" && n === 0;
                   return (
-                    <span key={s.value} className={isEmptyDish ? "font-medium text-amber-600" : undefined}>
+                    <span key={s.value} className={isEmptyDish ? "font-medium text-pending-ink" : undefined}>
                       {i > 0 && <span className="mr-1.5 text-neutral-300">·</span>}
                       {s.label} <span className="tabular-nums">{n}</span>
                       {isEmptyDish && " ⚠"}
@@ -392,16 +398,16 @@ export function SetMenusClient({
             </div>
             <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(sm.price_per_set)}</span>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => openEdit(sm)} className="text-xs text-neutral-400 hover:text-neutral-700">แก้ไข</button>
+              <button type="button" onClick={() => openEdit(sm)} className={buttonClass("link", { size: "sm" })}>แก้ไข</button>
               <button
                 type="button"
                 onClick={() => handleToggleActive(sm)}
                 disabled={isPending}
-                className={`text-xs ${sm.is_active ? "text-neutral-400 hover:text-red-500" : "text-green-600 hover:text-green-800"}`}
+                className={`text-xs ${sm.is_active ? "text-neutral-500 hover:text-danger" : "text-success-ink hover:text-success-ink"}`}
               >
                 {sm.is_active ? "ปิดใช้" : "เปิดใช้"}
               </button>
-              <button type="button" onClick={() => handleDelete(sm)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-500 disabled:opacity-30">
+              <button type="button" onClick={() => handleDelete(sm)} disabled={isPending} className={buttonClass("link", { size: "sm", dangerHover: true })}>
                 ลบ
               </button>
             </div>
@@ -413,8 +419,8 @@ export function SetMenusClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
             <div className="sticky top-0 flex items-center justify-between border-b border-neutral-100 bg-white px-5 py-4">
-              <h2 className="font-kanit text-base font-semibold">{modal.editingId ? "แก้ไขชุดเมนู" : "เพิ่มชุดเมนูใหม่"}</h2>
-              <button onClick={() => setModal(null)} className="text-neutral-400 hover:text-neutral-700">✕</button>
+              <h2 className="font-heading text-base font-semibold">{modal.editingId ? "แก้ไขชุดเมนู" : "เพิ่มชุดเมนูใหม่"}</h2>
+              <button onClick={() => setModal(null)} className={buttonClass("link")}>✕</button>
             </div>
 
             <div className="space-y-4 px-5 py-4">
@@ -443,7 +449,7 @@ export function SetMenusClient({
                   <DishPicker dishes={dishOptions} excludeIds={new Set(items.map((it) => it.menu_id))} onAdd={addDish} />
                 </div>
                 {items.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-400">ยังไม่มีเมนูในชุดนี้</p>
+                  <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-500">ยังไม่มีเมนูในชุดนี้</p>
                 ) : (
                   <div className="overflow-hidden rounded-lg border border-neutral-200">
                     <table className="w-full table-fixed text-sm">
@@ -456,7 +462,7 @@ export function SetMenusClient({
                         <col style={{ width: "7%" }} />
                       </colgroup>
                       <thead>
-                        <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
+                        <tr className={TH_ROW}>
                           <th className="px-2 py-1.5">เมนู</th>
                           <th className="px-2 py-1.5">หมวดในชุด</th>
                           <th className="px-2 py-1.5 text-right">จำนวน</th>
@@ -473,7 +479,7 @@ export function SetMenusClient({
                             <tr key={it._key} className="border-b border-neutral-100 last:border-0">
                               <td className="px-2 py-1.5 text-neutral-800">
                                 {it.menu_name}
-                                {dish?.has_unknown_cost && <span className="ml-1 text-amber-600" title="ต้นทุนไม่ทราบแน่ชัด">⚠</span>}
+                                {dish?.has_unknown_cost && <span className="ml-1 text-pending-ink" title="ต้นทุนไม่ทราบแน่ชัด">⚠</span>}
                               </td>
                               {/* Which group this row prints under on the three
                                   documents. Defaults to รายการอาหาร, so an
@@ -502,7 +508,7 @@ export function SetMenusClient({
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-neutral-600">฿{fmtBaht(lineCost)}</td>
                               <td className="px-2 py-1.5 text-center">
-                                <button type="button" onClick={() => removeItem(it._key)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                                <button type="button" onClick={() => removeItem(it._key)} className={buttonClass("link", { size: "sm", dangerHover: true })}>ลบ</button>
                               </td>
                             </tr>
                           );
@@ -522,7 +528,7 @@ export function SetMenusClient({
                   </div>
                   <div>
                     <p className="text-xs text-neutral-500">ราคาชุดอยู่ที่</p>
-                    <p className={`tabular-nums font-medium ${comparison?.direction === "below" ? "text-green-700" : "text-neutral-800"}`}>
+                    <p className={`tabular-nums font-medium ${comparison?.direction === "below" ? "text-success-ink" : "text-neutral-800"}`}>
                       {comparisonHeadline(comparison)}
                     </p>
                   </div>
@@ -531,8 +537,8 @@ export function SetMenusClient({
               </div>
 
               {/* Cost and margin — this screen and the per-event menu page (owner/admin) are the places in the catering module that show them; see the comment in page.tsx. */}
-              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-                <p className="mb-2 text-xs font-medium text-amber-800">สรุปต้นทุน (Admin/Owner เท่านั้น)</p>
+              <div className="rounded-lg border border-pending/60 bg-pending-soft/60 p-3">
+                <p className="mb-2 text-xs font-medium text-pending-ink">สรุปต้นทุน (Admin/Owner เท่านั้น)</p>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-neutral-500">ต้นทุนวัตถุดิบรวม</p>
@@ -544,23 +550,23 @@ export function SetMenusClient({
                   </div>
                   <div>
                     <p className="text-xs text-neutral-500">กำไรต่อชุด</p>
-                    <p className={`tabular-nums font-medium ${profit < 0 ? "text-red-600" : "text-green-700"}`}>฿{fmtBaht(profit)}</p>
+                    <p className={`tabular-nums font-medium ${profit < 0 ? "text-danger" : "text-success-ink"}`}>฿{fmtBaht(profit)}</p>
                   </div>
                 </div>
                 {hasUnknownCost && (
-                  <p className="mt-2 text-xs text-amber-700">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขด้านบนอาจต่ำกว่าความจริง</p>
+                  <p className="mt-2 text-xs text-pending-ink">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขด้านบนอาจต่ำกว่าความจริง</p>
                 )}
               </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-danger">{error}</p>}
             </div>
 
             <div className="sticky bottom-0 flex justify-end gap-2 border-t border-neutral-100 bg-white px-5 py-3">
-              <button onClick={() => setModal(null)} className="rounded-lg px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">ยกเลิก</button>
+              <button onClick={() => setModal(null)} className={buttonClass("secondary")}>ยกเลิก</button>
               <button
                 onClick={saveModal}
                 disabled={isPending}
-                className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                className={buttonClass("primary")}
               >
                 {isPending ? "กำลังบันทึก…" : "บันทึก"}
               </button>

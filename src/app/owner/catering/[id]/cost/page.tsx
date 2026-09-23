@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
@@ -12,6 +11,7 @@ import {
 } from "../../actions";
 import { getCateringEventCostSnapshot } from "./actions";
 import { CostSummaryClient } from "./CostSummaryClient";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 // ── One of two places in the catering module allowed to compute/render live
 // cost (the other is set-menus/page.tsx, per-dish cost for the set-menu
@@ -106,14 +106,8 @@ export default async function CateringEventCostPage({
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href={`/owner/catering/${id}`} className="text-sm text-neutral-400 hover:text-neutral-700">
-          ← {event.customer_name ?? "ไม่ระบุลูกค้า"}
-        </Link>
-        <span className="text-sm text-neutral-300">/</span>
-        <h1 className="font-kanit text-lg font-semibold text-neutral-900">ต้นทุน-กำไร</h1>
-      </div>
+    <PageShell>
+      <PageHeader back={{ href: `/owner/catering/${id}`, label: event.customer_name ?? "ไม่ระบุลูกค้า" }} title="ต้นทุน-กำไร" />
 
       <CostSummaryClient
         eventId={id}
@@ -129,6 +123,6 @@ export default async function CateringEventCostPage({
         costLockedAt={event.cost_locked_at}
         snapshot={snapshot}
       />
-    </div>
+    </PageShell>
   );
 }

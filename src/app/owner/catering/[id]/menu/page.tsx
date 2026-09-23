@@ -8,6 +8,7 @@ import { computeMenuCost } from "@/lib/costing";
 import { getCateringEvent, getCateringEventMenus, getCateringCharges, getCateringDishOptions, getEventMenuDishes } from "../../actions";
 import { buildEventMenuLines, buildEventMenuView, viewVersion, type DishCost } from "../../event-menu";
 import { EventMenuClient } from "./EventMenuClient";
+import { PageShell } from "@/components/ui/page";
 
 /**
  * รายการอาหารของงาน — a booking's OWN menu (catering per-event menus).
@@ -53,7 +54,7 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
   const view = buildEventMenuView({ access, locked: event.cost_locked_at != null, lines, dishCostById });
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+    <PageShell>
       {/* Keyed on the booking: the editor deliberately holds its draft
           across server refreshes, so without this a client navigation from
           one booking menu to another would carry the first ones drafts
@@ -62,13 +63,13 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
         key={id}
         eventId={id}
         version={viewVersion(view)}
-        header={{ backHref: `/owner/catering/${id}`, backLabel: `← ${event.customer_name ?? "การจอง"}`, status: event.status, date: event.event_date }}
+        header={{ backHref: `/owner/catering/${id}`, backLabel: event.customer_name ?? "การจอง", status: event.status, date: event.event_date }}
         tableCount={event.table_count}
         view={view}
         dishOptions={dishOptions}
         quote={event.quote_number ? { number: event.quote_number, revision: event.quote_revision } : null}
       />
-    </div>
+    </PageShell>
   );
 }
 

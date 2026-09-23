@@ -6,6 +6,7 @@ import type { CateringEvent } from "../actions";
 import { MONTHS_TH, VENUE_LABEL, toTimeInput } from "../shared-utils";
 import { buildCalendarGrid } from "../calendar-grid";
 import type { CalendarCell } from "../calendar-grid";
+import { buttonClass } from "@/components/ui/button";
 
 const DAYS_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"]; // Sun=0, matches Date.getDay()
 
@@ -71,11 +72,11 @@ export function CalendarClient({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <button onClick={() => goMonth(-1)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">←</button>
-          <span className="min-w-[150px] text-center text-sm font-medium">
+          <button onClick={() => goMonth(-1)} className={buttonClass("secondary", { size: "sm" })}>←</button>
+          <span className="min-w-[150px] text-center font-heading text-sm font-medium text-neutral-900">
             {MONTHS_TH[month - 1]} {year + 543}
           </span>
-          <button onClick={() => goMonth(1)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">→</button>
+          <button onClick={() => goMonth(1)} className={buttonClass("secondary", { size: "sm" })}>→</button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
           {LEGEND.map((l) => (
@@ -88,10 +89,10 @@ export function CalendarClient({
       </div>
 
       {/* Grid */}
-      <div className="overflow-hidden rounded-lg border border-neutral-200">
-        <div className="grid grid-cols-7 divide-x divide-neutral-700 bg-neutral-800 text-xs text-neutral-100">
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="grid grid-cols-7 divide-x divide-neutral-300 border-b border-neutral-400 bg-neutral-200 text-xs font-semibold text-neutral-700">
           {DAYS_SHORT.map((d) => (
-            <div key={d} className="px-2 py-2 text-center font-medium">{d}</div>
+            <div key={d} className="px-2 py-2 text-center">{d}</div>
           ))}
         </div>
         <div className="divide-y divide-neutral-100">
@@ -101,8 +102,8 @@ export function CalendarClient({
                 const isToday = cell.inMonth && cell.dateStr === todayStr;
                 const dayEvents = byDate.get(cell.dateStr) ?? [];
                 return (
-                  <div key={di} className={`min-h-[110px] space-y-1 p-1.5 ${isToday ? "bg-blue-50/60" : !cell.inMonth ? "bg-neutral-50/50" : ""}`}>
-                    <div className={`text-xs font-medium ${isToday ? "text-blue-700" : cell.inMonth ? "text-neutral-500" : "text-neutral-300"}`}>{cell.day}</div>
+                  <div key={di} className={`min-h-[110px] space-y-1 p-1.5 ${isToday ? "bg-info-soft/60" : !cell.inMonth ? "bg-neutral-50/50" : ""}`}>
+                    <div className={`text-xs font-medium ${isToday ? "text-info" : cell.inMonth ? "text-neutral-700" : "text-neutral-500"}`}>{cell.day}</div>
                     {dayEvents.map((e) => (
                       <Link
                         key={e.id}
@@ -112,7 +113,7 @@ export function CalendarClient({
                       >
                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LOCATION_DOT[locationKey(e)]}`} />
                         <span className="truncate text-neutral-700">{e.customer_name ?? "-"}</span>
-                        {e.start_time && <span className="shrink-0 text-neutral-400 tabular-nums">{toTimeInput(e.start_time)}</span>}
+                        {e.start_time && <span className="shrink-0 text-neutral-500 tabular-nums">{toTimeInput(e.start_time)}</span>}
                       </Link>
                     ))}
                   </div>

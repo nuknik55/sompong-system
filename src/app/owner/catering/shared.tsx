@@ -250,7 +250,7 @@ export function CustomerCombobox({
               <button
                 type="button"
                 onClick={() => { onPick(c); setOpen(false); }}
-                className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-neutral-50 ${c.id === customerId ? "bg-blue-50" : ""}`}
+                className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-neutral-50 ${c.id === customerId ? "bg-primary-soft" : ""}`}
               >
                 <span className="text-neutral-800">
                   {c.name}

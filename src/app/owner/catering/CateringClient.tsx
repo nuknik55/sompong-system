@@ -151,12 +151,12 @@ export function CateringClient({
             )}
             {rows.map((r, i) =>
               r.kind === "header" ? (
-                // Month-group separator in ปี view — same bg/text treatment
-                // as the table's own <thead>, so it reads as a real section
-                // break while scrolling, not just a thin divider line.
+                // Month-group separator in ปี view — the same treatment as the
+                // table's own header row (TH_ROW's colours), so it reads as a
+                // real section break while scrolling, not a thin divider line.
                 <tr key={`h-${i}`}>
-                  <td colSpan={11} className="border-b border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100">
-                    {r.label} <span className="font-normal text-neutral-300">({r.count})</span>
+                  <td colSpan={11} className="border-b border-neutral-400 bg-neutral-200 px-3 py-2 font-heading text-sm font-semibold text-neutral-800">
+                    {r.label} <span className="font-normal text-neutral-600">({r.count})</span>
                   </td>
                 </tr>
               ) : (

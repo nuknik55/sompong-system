@@ -9,6 +9,7 @@ import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum, thFullDate } from "../../shar
 import { lockCateringEventCost, unlockCateringEventCost } from "./actions";
 import { staleQuoteMessage } from "@/lib/quote-doc";
 import type { CateringEventCostSnapshot } from "./actions";
+import { buttonClass } from "@/components/ui/button";
 
 // ต้นทุนภายใน has no sub-nav entry (see catering-sub-nav.tsx), so the link
 // beside + เพิ่มต้นทุน below is the ONLY way to reach it without typing the
@@ -52,7 +53,7 @@ function CostRatePicker({
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
-        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+        className={buttonClass("secondary")}
       >
         + เพิ่มต้นทุน
       </button>
@@ -81,7 +82,7 @@ function CostRatePicker({
             );
           })}
           {activeRates.length === 0 && (
-            <p className="px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="px-3 py-4 text-center text-xs text-neutral-500">
               ยังไม่มีอัตราต้นทุน —{" "}
               <Link href={COST_SETTINGS_HREF} className="underline underline-offset-2 hover:text-neutral-700">ตั้งค่าที่หน้าต้นทุนภายใน</Link>
             </p>
@@ -253,9 +254,9 @@ export function CostSummaryClient({
 
       <section className="space-y-3 rounded-xl border border-neutral-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-kanit text-base font-semibold text-neutral-900">ต้นทุนแรงงาน/รถ</h3>
+          <h3 className="font-heading text-base font-semibold text-neutral-900">ต้นทุนแรงงาน/รถ</h3>
           <div className="flex flex-wrap items-center gap-3">
-            <Link href={COST_SETTINGS_HREF} className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline">
+            <Link href={COST_SETTINGS_HREF} className={buttonClass("link", { size: "sm" })}>
               ตั้งค่าต้นทุนภายใน
             </Link>
             <CostRatePicker rates={costRates} disabled={isPending || locked} onPick={pickRate} />
@@ -270,7 +271,7 @@ export function CostSummaryClient({
                   type="number" min={0} className="w-20 rounded border border-neutral-300 px-2 py-1.5 text-sm"
                   value={draft.quantity} onChange={(e) => updateDraftQuantity(e.target.value)}
                 />
-                {draft.rate.unit && <span className="text-xs text-neutral-400">{draft.rate.unit}</span>}
+                {draft.rate.unit && <span className="text-xs text-neutral-500">{draft.rate.unit}</span>}
               </div>
             </Field>
             <Field label="ยอดรวม (บาท)">
@@ -286,12 +287,12 @@ export function CostSummaryClient({
               />
             </Field>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setDraft(null)} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:bg-neutral-100">
+              <button type="button" onClick={() => setDraft(null)} className={buttonClass("secondary", { size: "sm" })}>
                 ยกเลิก
               </button>
               <button
                 type="button" onClick={confirmAdd} disabled={isPending}
-                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                className={buttonClass("primary", { size: "sm" })}
               >
                 เพิ่ม
               </button>
@@ -299,23 +300,23 @@ export function CostSummaryClient({
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
 
         {laborEntries.length === 0 ? (
-          <p className="py-3 text-center text-xs text-neutral-400">ยังไม่มีรายการต้นทุน</p>
+          <p className="py-3 text-center text-xs text-neutral-500">ยังไม่มีรายการต้นทุน</p>
         ) : (
           <div className="divide-y divide-neutral-100">
             {laborEntries.map((l) => (
               <div key={l.id} className="flex items-center justify-between gap-3 py-2">
                 <div className="text-sm text-neutral-800">
                   {l.label}
-                  {l.note && <span className="ml-1 text-xs text-neutral-400">— {l.note}</span>}
-                  <span className="ml-2 text-xs tabular-nums text-neutral-400">× {l.quantity}</span>
+                  {l.note && <span className="ml-1 text-xs text-neutral-500">— {l.note}</span>}
+                  <span className="ml-2 text-xs tabular-nums text-neutral-500">× {l.quantity}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(l.amount)}</span>
                   {!locked && (
-                    <button type="button" onClick={() => handleDelete(l.id)} disabled={isPending} className="text-xs text-neutral-400 hover:text-red-600">
+                    <button type="button" onClick={() => handleDelete(l.id)} disabled={isPending} className={buttonClass("link", { size: "sm", dangerHover: true })}>
                       ลบ
                     </button>
                   )}
@@ -327,7 +328,7 @@ export function CostSummaryClient({
       </section>
 
       <section className="rounded-xl border border-neutral-200 bg-white p-6">
-        <h3 className="mb-3 font-kanit text-base font-semibold text-neutral-900">สรุปกำไร/ขาดทุน</h3>
+        <h3 className="mb-3 font-heading text-base font-semibold text-neutral-900">สรุปกำไร/ขาดทุน</h3>
         <div className="space-y-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-neutral-500">รายรับ</span>
@@ -341,18 +342,18 @@ export function CostSummaryClient({
             <span className="text-neutral-500">ต้นทุนแรงงาน/รถ</span>
             <span className="tabular-nums text-neutral-800">−฿{fmtBaht(laborCost)}</span>
           </div>
-          <div className={`flex justify-between border-t border-neutral-100 pt-1.5 text-base font-semibold ${profit >= 0 ? "text-green-700" : "text-red-600"}`}>
+          <div className={`flex justify-between border-t border-neutral-100 pt-1.5 text-base font-semibold ${profit >= 0 ? "text-success-ink" : "text-danger"}`}>
             <span>กำไร/ขาดทุน</span>
             <span className="tabular-nums">฿{fmtBaht(profit)}{profitPct != null ? ` (${profitPct.toFixed(1)}%)` : ""}</span>
           </div>
         </div>
         {hasUnknownFoodCost && (
-          <p className="mt-2 text-xs text-amber-600">* มีเมนูบางรายการที่ยังไม่มีต้นทุนวัตถุดิบครบ ตัวเลขนี้อาจต่ำกว่าความจริง</p>
+          <p className="mt-2 text-xs text-pending-ink">* มีเมนูบางรายการที่ยังไม่มีต้นทุนวัตถุดิบครบ ตัวเลขนี้อาจต่ำกว่าความจริง</p>
         )}
 
         <div className="mt-4 border-t border-neutral-100 pt-3">
           {halfLocked && (
-            <p className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="mb-2 rounded-lg border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
               ⚠ การล็อกต้นทุนของงานนี้บันทึกไว้ไม่ครบ
               {stamped ? " (มีสถานะล็อกแต่ยังไม่มีตัวเลขที่บันทึกไว้)" : " (มีตัวเลขที่บันทึกไว้แต่ยังไม่ได้ตั้งสถานะล็อก)"}
               {" "}— กดปลดล็อกเพื่อล้างให้เรียบร้อย แล้วจึงล็อกใหม่อีกครั้ง
@@ -363,7 +364,7 @@ export function CostSummaryClient({
               type="button"
               onClick={() => setConfirmUnlock(true)}
               disabled={isPending}
-              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              className={buttonClass("secondary")}
             >
               ปลดล็อกเพื่อแก้ไข
             </button>
@@ -373,12 +374,12 @@ export function CostSummaryClient({
                 type="button"
                 onClick={() => setConfirmLock(true)}
                 disabled={isPending || !canLock}
-                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                className={buttonClass("primary")}
               >
                 ล็อกต้นทุนถาวร
               </button>
               {!canLock && (
-                <p className="mt-1.5 text-xs text-neutral-400">
+                <p className="mt-1.5 text-xs text-neutral-500">
                   {eventStatus !== "done"
                     ? "ล็อกต้นทุนได้เฉพาะงานที่มีสถานะ \"เสร็จสิ้น\" เท่านั้น"
                     : quoteNumber === null
@@ -394,17 +395,17 @@ export function CostSummaryClient({
       {confirmLock && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-2 font-kanit text-base font-semibold text-neutral-900">ล็อกต้นทุนถาวร?</h3>
+            <h3 className="mb-2 font-heading text-base font-semibold text-neutral-900">ล็อกต้นทุนถาวร?</h3>
             <p className="mb-4 text-sm text-neutral-500">
               จะบันทึกตัวเลขต้นทุน-กำไรปัจจุบันของงานนี้ไว้ถาวร และปิดการแก้ไขรายการเมนูในหน้าจองงาน
               จนกว่าจะปลดล็อก
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmLock(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">
+              <button onClick={() => setConfirmLock(false)} className={buttonClass("secondary")}>
                 ยกเลิก
               </button>
               <button onClick={handleLock} disabled={isPending}
-                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+                className={buttonClass("primary")}>
                 {isPending ? "กำลังล็อก…" : "ยืนยัน"}
               </button>
             </div>
@@ -415,16 +416,16 @@ export function CostSummaryClient({
       {confirmUnlock && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-2 font-kanit text-base font-semibold text-neutral-900">ปลดล็อกเพื่อแก้ไข?</h3>
+            <h3 className="mb-2 font-heading text-base font-semibold text-neutral-900">ปลดล็อกเพื่อแก้ไข?</h3>
             <p className="mb-4 text-sm text-neutral-500">
               ตัวเลขที่บันทึกไว้ถาวรจะถูกลบ และหน้านี้จะกลับไปคำนวณสดอีกครั้ง — แก้ไขแล้วต้องล็อกใหม่เพื่อบันทึกตัวเลขถาวรอีกครั้ง
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmUnlock(false)} className="rounded-lg px-4 py-2 text-sm hover:bg-neutral-100">
+              <button onClick={() => setConfirmUnlock(false)} className={buttonClass("secondary")}>
                 ยกเลิก
               </button>
               <button onClick={handleUnlock} disabled={isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                className={buttonClass("primary", { danger: true })}>
                 {isPending ? "กำลังปลดล็อก…" : "ปลดล็อก"}
               </button>
             </div>

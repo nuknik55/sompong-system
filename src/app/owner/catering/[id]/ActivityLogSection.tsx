@@ -123,7 +123,7 @@ export function ActivityLogSection({
                       type="button"
                       onClick={() => save(e.id)}
                       disabled={isPending}
-                      className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700 disabled:opacity-50"
+                      className={buttonClass("primary", { size: "sm" })}
                     >
                       {pendingId === e.id ? "กำลังบันทึก..." : "บันทึก"}
                     </button>
@@ -131,7 +131,7 @@ export function ActivityLogSection({
                       type="button"
                       onClick={() => { setEditingId(null); setError(null); }}
                       disabled={isPending}
-                      className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      className={buttonClass("secondary", { size: "sm" })}
                     >
                       ยกเลิก
                     </button>
@@ -148,7 +148,7 @@ export function ActivityLogSection({
                           type="button"
                           onClick={() => startEdit(e)}
                           disabled={isPending}
-                          className="text-neutral-500 underline hover:text-neutral-800 disabled:opacity-50"
+                          className={buttonClass("link")}
                         >
                           แก้ไข
                         </button>
@@ -156,7 +156,7 @@ export function ActivityLogSection({
                           type="button"
                           onClick={() => askDelete(e.id)}
                           disabled={isPending}
-                          className="text-red-600 underline hover:text-red-700 disabled:opacity-50"
+                          className={buttonClass("link", { danger: true })}
                         >
                           ลบ
                         </button>
@@ -166,12 +166,12 @@ export function ActivityLogSection({
                 )}
                 {confirmDeleteId === e.id && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-red-700">ลบบรรทัดนี้ออกจากประวัติ? ลบแล้วกู้คืนไม่ได้</span>
+                    <span className="text-danger">ลบบรรทัดนี้ออกจากประวัติ? ลบแล้วกู้คืนไม่ได้</span>
                     <button
                       type="button"
                       onClick={() => remove(e.id)}
                       disabled={isPending}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 disabled:opacity-50"
+                      className={buttonClass("primary", { danger: true })}
                     >
                       {pendingId === e.id ? "กำลังลบ..." : "ยืนยันลบ"}
                     </button>
@@ -179,13 +179,13 @@ export function ActivityLogSection({
                       type="button"
                       onClick={() => setConfirmDeleteId(null)}
                       disabled={isPending}
-                      className="rounded-lg border border-neutral-300 px-3 py-1.5 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      className={buttonClass("secondary")}
                     >
                       ยกเลิก
                     </button>
                   </div>
                 )}
-                {error?.id === e.id && <p className="mt-1 text-xs text-red-600">{error.message}</p>}
+                {error?.id === e.id && <p className="mt-1 text-xs text-danger">{error.message}</p>}
               </div>
             ))}
           </div>

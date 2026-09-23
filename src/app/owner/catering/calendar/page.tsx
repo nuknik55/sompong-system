@@ -4,6 +4,7 @@ import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import { getCateringEventsForCalendar } from "../actions";
 import { CalendarClient } from "./CalendarClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function CateringCalendarPage({
   searchParams,
@@ -19,11 +20,11 @@ export default async function CateringCalendarPage({
   const events = await getCateringEventsForCalendar(year, month);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <CateringSubNav isAdmin={isAdminOrAbove(profile.role)} />
 
-      <h1 className="font-kanit text-lg font-semibold text-neutral-900">ปฏิทินการจอง</h1>
+      <PageHeader title="ปฏิทินการจอง" />
       <CalendarClient initialEvents={events} year={year} month={month} />
-    </div>
+    </PageShell>
   );
 }

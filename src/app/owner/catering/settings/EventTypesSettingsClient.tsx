@@ -7,6 +7,7 @@ import {
   deleteCateringEventType, reorderCateringEventType,
 } from "../actions";
 import type { CateringEventType } from "../actions";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * ประเภทงาน — what the party is FOR, printed on both function sheets where a
@@ -72,9 +73,9 @@ export function EventTypesSettingsClient({
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
         </div>
       )}
 
@@ -90,14 +91,14 @@ export function EventTypesSettingsClient({
           type="button"
           disabled={isPending || !newLabel.trim()}
           onClick={() => run("add", () => addCateringEventType(newLabel), () => setNewLabel(""))}
-          className="shrink-0 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-40"
+          className={buttonClass("primary", { className: "shrink-0" })}
         >
           {busy === "add" ? "กำลังบันทึก…" : "เพิ่ม"}
         </button>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {types.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-400">ยังไม่มีประเภทงาน</p>}
+        {types.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-500">ยังไม่มีประเภทงาน</p>}
         {types.map((t, idx) => {
           const used = usage[t.id] ?? 0;
           return (
@@ -108,10 +109,10 @@ export function EventTypesSettingsClient({
               <div className="flex shrink-0 items-center gap-1">
                 <button type="button" disabled={isPending || idx === 0}
                   onClick={() => run(`ord:${t.id}`, () => reorderCateringEventType(t.id, "up"))}
-                  className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนขึ้น">▲</button>
+                  className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนขึ้น">▲</button>
                 <button type="button" disabled={isPending || idx === types.length - 1}
                   onClick={() => run(`ord:${t.id}`, () => reorderCateringEventType(t.id, "down"))}
-                  className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนลง">▼</button>
+                  className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20" title="เลื่อนลง">▼</button>
               </div>
 
               {/* Rename in place: blur or Enter saves, blank or unchanged
@@ -126,13 +127,13 @@ export function EventTypesSettingsClient({
                 onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
               />
 
-              <span className="shrink-0 text-xs text-neutral-400">
+              <span className="shrink-0 text-xs text-neutral-500">
                 {used === 0 ? "ยังไม่มีงานใช้" : `${used} งาน`}
               </span>
 
               <button type="button" disabled={isPending}
                 onClick={() => run(`act:${t.id}`, () => toggleCateringEventTypeActive(t.id, !t.is_active))}
-                className={`shrink-0 text-xs ${t.is_active ? "text-neutral-400 hover:text-red-500" : "text-green-600 hover:text-green-800"}`}>
+                className={`shrink-0 text-xs ${t.is_active ? "text-neutral-500 hover:text-danger" : "text-success-ink hover:text-success-ink"}`}>
                 {busy === `act:${t.id}` ? "…" : t.is_active ? "ปิดใช้" : "เปิดใช้"}
               </button>
 
@@ -142,7 +143,7 @@ export function EventTypesSettingsClient({
               {used === 0 && (
                 <button type="button" disabled={isPending}
                   onClick={() => { if (confirm(`ลบ "${t.label}" ใช่ไหม?`)) run(`del:${t.id}`, () => deleteCateringEventType(t.id)); }}
-                  className="shrink-0 text-xs text-neutral-400 hover:text-red-500">
+                  className={buttonClass("link", { size: "sm", dangerHover: true, className: "shrink-0" })}>
                   {busy === `del:${t.id}` ? "…" : "ลบ"}
                 </button>
               )}
@@ -151,7 +152,7 @@ export function EventTypesSettingsClient({
         })}
       </div>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         ประเภทที่มีงานใช้อยู่จะลบไม่ได้ — ให้กด &quot;ปิดใช้&quot; แทน งานเดิมจะยังพิมพ์ชื่อนี้บนใบงานได้ตามปกติ
         แต่จะไม่ขึ้นให้เลือกในการจองใหม่
       </p>
