@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toAuthEmail } from "@/lib/identity";
-import { createRefusal, teamRefusal, type TeamAccount } from "@/lib/team-rules";
+import { createRefusal, isBanned, lastActiveRefusal, teamRefusal, type TeamAccount } from "@/lib/team-rules";
 import type { Role } from "@/lib/auth";
 
 export type CreateUserResult = { error?: string };
@@ -287,13 +287,26 @@ export async function setUserDisabled(userId: string, disabled: boolean): Promis
   const current = found.target;
   const refusal = teamRefusal(me, current, { kind: "delete" });
   if (refusal) return { error: refusal };
-  if (disabled && current.role === "owner" && (await countOwners(supabase)) <= 1) {
-    return { error: "ต้องมี Owner อย่างน้อย 1 คนในระบบ ไม่สามารถระงับ Owner คนสุดท้ายได้" };
-  }
-  if (disabled && current.role === "admin" && (await countAdmins(supabase)) <= 1) {
-    return { error: "ต้องมี Admin อย่างน้อย 1 คนในระบบ ไม่สามารถระงับ Admin คนสุดท้ายได้" };
-  }
   const admin = createAdminClient();
+  // The last owner, or admin, who can still SIGN IN (not the last profile of
+  // that role: a disabled owner is still a profile). Read fresh; a failed or
+  // incomplete read refuses rather than guesses.
+  if (disabled && (current.role === "owner" || current.role === "admin")) {
+    const { data: sameRole, error: roleError } = await supabase.from("profiles").select("id, role").eq("role", current.role);
+    if (roleError || !sameRole) return { error: "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ" };
+    const banned = new Map<string, boolean>();
+    for (let page = 1; ; page++) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error || !data) return { error: "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ" };
+      for (const u of data.users) banned.set(u.id, isBanned(u.banned_until));
+      if (data.users.length < 1000) break;
+    }
+    const refusal = lastActiveRefusal(
+      current,
+      sameRole.map((p) => ({ id: p.id as string, role: p.role as string, disabled: banned.get(p.id as string) ?? true })),
+    );
+    if (refusal) return { error: refusal };
+  }
   // 100 years, or "none" to lift it: what the auth API calls a ban.
   const { error } = await admin.auth.admin.updateUserById(userId, { ban_duration: disabled ? "876000h" : "none" });
   if (error) return { error: `${disabled ? "ระงับ" : "เปิดใช้งาน"}ไม่สำเร็จ: ${error.message}` };

@@ -3,12 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { displayIdentity } from "@/lib/identity";
 import { TeamManager } from "@/components/team-manager";
+import { isBanned } from "@/lib/team-rules";
 import { PageHeader, PageShell } from "@/components/ui/page";
-
-/** A disabled login is a ban that has not run out (item 35, decision 15). */
-function isBanned(bannedUntil: string | undefined): boolean {
-  return !!bannedUntil && new Date(bannedUntil).getTime() > Date.now();
-}
 
 export default async function OwnerTeamPage() {
   const me = await requireAdmin();

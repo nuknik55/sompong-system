@@ -1,7 +1,7 @@
 /** Run with: npm test — who may do what on /owner/team (queue item 29, 1–3). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assignableRoles, createRefusal, teamRefusal, type TeamAccount, type TeamAction } from "./team-rules.ts";
+import { assignableRoles, createRefusal, isBanned, lastActiveRefusal, teamRefusal, type TeamAccount, type TeamAction } from "./team-rules.ts";
 
 const account = (id: string, role: string, holdsPrepGrants = false): TeamAccount => ({ id, role, holdsPrepGrants });
 const owner = account("owner-1", "owner");
@@ -123,4 +123,30 @@ test("roles below admin are refused everything, though requireAdmin stops them f
     assert.equal(allowed(actor, actor, DELETE), false);
     assert.notEqual(createRefusal(actor.role, "staff"), null);
   }
+});
+
+test("disabling: nobody disables their own account (the delete rule)", () => {
+  for (const actor of [owner, admin]) assert.notEqual(teamRefusal(actor, actor, DELETE), null);
+});
+
+test("disabling: the last owner or admin who can still sign in cannot be disabled", () => {
+  const a = (id: string, role: string, disabled = false) => ({ id, role, disabled });
+  // Two owners, both active: either may be disabled.
+  assert.equal(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner"), a("o2", "owner")]), null);
+  // Two owners, one already disabled: the other is the last active one.
+  assert.notEqual(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner"), a("o2", "owner", true)]), null);
+  // One owner.
+  assert.notEqual(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner")]), null);
+  // The same for admins; other roles are never "the last".
+  assert.notEqual(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("a2", "admin", true), a("o1", "owner")]), null);
+  assert.equal(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("a2", "admin")]), null);
+  assert.equal(lastActiveRefusal(a("s1", "staff"), [a("s1", "staff")]), null);
+});
+
+test("disabling: a ban counts until it runs out", () => {
+  const now = Date.parse("2026-09-23T12:00:00Z");
+  assert.equal(isBanned("2126-09-23T12:00:00Z", now), true);
+  assert.equal(isBanned("2026-09-23T11:00:00Z", now), false);
+  assert.equal(isBanned(null, now), false);
+  assert.equal(isBanned(undefined, now), false);
 });
