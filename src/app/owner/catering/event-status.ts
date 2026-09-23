@@ -29,28 +29,25 @@ export const STATUS_OPTIONS: { value: string; label: string }[] = [
 
 export const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map((o) => [o.value, o.label]));
 
-export const STATUS_COLOR: Record<string, string> = {
-  inquiry:          "text-neutral-600 bg-neutral-50 border-neutral-200",
-  awaiting_deposit: "text-amber-700 bg-amber-50 border-amber-200",
-  deposit_paid:     "text-blue-700 bg-blue-50 border-blue-200",
-  confirmed:        "text-green-700 bg-green-50 border-green-200",
-  done:             "text-neutral-500 bg-neutral-100 border-neutral-300",
-  cancelled:        "text-red-700 bg-red-50 border-red-200",
-};
-
 /**
- * Each status's colour ROLE in the shared look (AGENTS.md, "The app's look"),
- * for the pages already moved to it (step 1, 2026-09-22); STATUS_COLOR above
- * stays for the rest until step 2. รอมัดจำ is the pending role, gold, as Nik
- * asked. Both มัดจำแล้ว and คอนเฟิร์มแล้ว are success: the booking is secured.
- * ยกเลิก is NOT danger: red is kept for deleting and for errors, and a
- * cancelled booking is neither, so it is neutral and struck through.
+ * Each status's badge in the shared look's colour roles (AGENTS.md, "The
+ * app's look"), as Nik decided on 2026-09-23. Every screen shows a booking's
+ * status through BookingStatusBadge, which reads this; there is no other
+ * colour map for it.
+ *   สอบถาม       navy (info tint)             #00365B on #E6EBEF  10.4:1
+ *   รอมัดจำ       gold (pending tint)          #5C4300 on #F9F1D6   8.2:1
+ *   มัดจำแล้ว     LIGHT green (success tint)   #2B6600 on #EBF2E6   6.1:1
+ *   คอนเฟิร์มแล้ว  DARK green (solid primary)  white on #2F5A16     8.1:1
+ *   เสร็จสิ้น      grey (neutral)               #404040 on #F5F5F5   9.5:1
+ *   ยกเลิก       grey, struck through         #404040 on #F5F5F5   9.5:1
+ * So progress reads light to dark green. ยกเลิก is NOT danger: red is kept
+ * for deleting and for errors, and a cancelled booking is neither.
  */
-export const STATUS_TONE: Record<string, "primary" | "pending" | "success" | "info" | "neutral" | "danger"> = {
+export const STATUS_TONE: Record<string, "primary" | "primary-strong" | "pending" | "success" | "info" | "neutral" | "danger"> = {
   inquiry:          "info",
   awaiting_deposit: "pending",
   deposit_paid:     "success",
-  confirmed:        "success",
+  confirmed:        "primary-strong",
   done:             "neutral",
   cancelled:        "neutral",
 };

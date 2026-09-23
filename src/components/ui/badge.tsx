@@ -3,18 +3,21 @@ import type { ReactNode } from "react";
 /**
  * A small label in one of the colour ROLES (AGENTS.md, "The app's look").
  * Each role means one thing everywhere:
- *   primary   ours, selected                 dark green on its tint
- *   pending   waiting on someone (รอมัดจำ)     gold ink on a gold tint
- *   success   confirmed, done well            bright-green ink on its tint
- *   info      a neutral fact worth a colour   navy on its tint
- *   neutral   no colour needed                grey
- *   danger    an error, a deletion            red on its tint
- * All pass WCAG AA for small text (the lowest is success, 6.1:1).
+ *   primary         ours, selected                 dark green on its tint
+ *   primary-strong  secured, the end of the road   white on solid dark green
+ *   pending         waiting on someone (รอมัดจำ)     gold ink on a gold tint
+ *   success         confirmed, done well            bright-green ink on its tint
+ *   info            a neutral fact worth a colour   navy on its tint
+ *   neutral         no colour needed                grey
+ *   danger          an error, a deletion            red on its tint
+ * All pass WCAG AA for small text (the lowest is success, 6.1:1;
+ * primary-strong is 8.1:1).
  */
-export type Tone = "primary" | "pending" | "success" | "info" | "neutral" | "danger";
+export type Tone = "primary" | "primary-strong" | "pending" | "success" | "info" | "neutral" | "danger";
 
 const TONES: Record<Tone, string> = {
   primary: "border-primary/20 bg-primary-soft text-primary",
+  "primary-strong": "border-primary bg-primary text-white",
   pending: "border-pending/50 bg-pending-soft text-pending-ink",
   success: "border-success/25 bg-success-soft text-success-ink",
   info: "border-info/20 bg-info-soft text-info",

@@ -15,7 +15,7 @@
 // file is allowed to skip "use client".
 
 import type { CateringEvent, StaffOption } from "./actions";
-import { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR, STATUS_TONE } from "./event-status";
+import { STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE } from "./event-status";
 import { Badge } from "@/components/ui/badge";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 import { toNum } from "./to-num";
@@ -78,13 +78,13 @@ export const MUSIC_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "own_band",     label: "วงดนตรีลูกค้านำมาเอง" },
   { value: "other",        label: "อื่นๆ" },
 ];
-// STATUS_OPTIONS/STATUS_LABEL/STATUS_COLOR live in event-status.ts (plain
+// STATUS_OPTIONS/STATUS_LABEL/STATUS_TONE live in event-status.ts (plain
 // TS, no JSX) so actions.ts — a "use server" file that can't import this
 // module — shares the same definitions instead of duplicating them.
-// Imported (not just re-exported) because StatusBadge below uses them, and
-// `export ... from` alone creates no local binding; re-exported so every
-// existing importer of this module keeps working unchanged.
-export { STATUS_OPTIONS, STATUS_LABEL, STATUS_COLOR };
+// Imported (not just re-exported) because BookingStatusBadge below uses
+// them, and `export ... from` alone creates no local binding; re-exported so
+// every existing importer of this module keeps working unchanged.
+export { STATUS_OPTIONS, STATUS_LABEL };
 // Values mirror the CHECK constraint in supabase/catering_migration.sql.
 export const CHARGE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "food",      label: "อาหาร" },
@@ -163,8 +163,8 @@ export const FOOD_FORMAT_LABEL   = Object.fromEntries(FOOD_FORMAT_OPTIONS.map((o
 export const MUSIC_TYPE_LABEL    = Object.fromEntries(MUSIC_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const CHARGE_TYPE_LABEL   = Object.fromEntries(CHARGE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const RATE_TYPE_LABEL     = Object.fromEntries(RATE_TYPE_OPTIONS.map((o) => [o.value, o.label]));
-// STATUS_LABEL/STATUS_COLOR are defined in event-status.ts and re-exported
-// above — see the note there.
+// STATUS_LABEL is defined in event-status.ts and re-exported above — see
+// the note there.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -229,16 +229,8 @@ export function Field({ label, children, className }: { label: string; children:
   );
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[status] ?? ""}`}>
-      {STATUS_LABEL[status] ?? status}
-    </span>
-  );
-}
-
-/** A booking's status in the shared look's colour roles (STATUS_TONE). Used by
- *  the pages already moved to that look; StatusBadge stays for the rest. */
+/** A booking's status in the shared look's colour roles (STATUS_TONE): the
+ *  one status badge, on every screen. */
 export function BookingStatusBadge({ status }: { status: string }) {
   return (
     <Badge tone={STATUS_TONE[status] ?? "neutral"} className={status === "cancelled" ? "line-through" : undefined}>
