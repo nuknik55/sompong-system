@@ -7,7 +7,6 @@ import {
   returnOrderSession,
   markOrderSent,
   updateOrderItems,
-  saveHeadQty,
   cancelOrderSession,
 } from "../actions";
 import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
@@ -66,8 +65,13 @@ export function SessionActions({
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [editRows, setEditRows] = useState<Record<string, EditRow>>(() => initEditRows(session.items));
-  const [editingQty, setEditingQty] = useState<string | null>(null);
-  const [editQtyVal, setEditQtyVal] = useState("");
+  // The head's figures, one field per line, pre-filled with what stands
+  // (staff's quantity, or a head's earlier one). The page keys this component
+  // on the order's version, so a reload after a refusal starts from the data.
+  const [headQty, setHeadQty] = useState<Record<string, string>>(() =>
+    Object.fromEntries(session.items.map((i) => [i.id, String(effectiveQty(i))])),
+  );
+  const [approveFailed, setApproveFailed] = useState(false);
 
   const view: OrderView = { role, isCreator, status: session.status };
   const mayEdit = canEditLines(view);
@@ -107,16 +111,38 @@ export function SessionActions({
     });
   }
 
+  /** The head's figure for a line, as a number; NaN when the field is not one. */
+  function headFigure(itemId: string): number {
+    const raw = (headQty[itemId] ?? "").trim();
+    return raw === "" ? NaN : Number(raw);
+  }
+  const headChanged = session.items.filter((i) => headFigure(i.id) !== effectiveQty(i)).length;
+  const headInvalid = session.items.some((i) => { const n = headFigure(i.id); return !Number.isFinite(n) || n < 0; });
+
   function handleApprove() {
     setError(null);
-    // The version the screen read: the database refuses a stale one, and the
-    // message says to reload (decision 3).
-    runWrite(() => approveOrderSession(session.id, session.version), { onOk: () => router.refresh() });
+    setApproveFailed(false);
+    if (headInvalid) { setError("จำนวนต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป ยังไม่ได้อนุมัติ"); return; }
+    // Every line's figure, with the version the screen read: the database
+    // saves them and approves in one transaction, or does neither and says
+    // why (a stale version: someone changed the order since it was opened).
+    const lines = session.items.map((i) => ({ itemId: i.id, qty: headFigure(i.id) }));
+    startTransition(async () => {
+      try {
+        const result = await approveOrderSession(session.id, session.version, lines);
+        if (result.error) { setError(result.error); setApproveFailed(true); return; }
+        router.refresh();
+      } catch {
+        setError(RETRY_MESSAGE);
+        setApproveFailed(true);
+      }
+    });
   }
 
   function handleReturn() {
     setError(null);
-    runWrite(() => returnOrderSession(session.id, returnNote.trim() || undefined), { onOk: () => router.refresh() });
+    if (!returnNote.trim()) { setError("กรุณาระบุว่าต้องแก้อะไร ก่อนตีกลับ"); return; }
+    runWrite(() => returnOrderSession(session.id, returnNote), { onOk: () => router.refresh() });
   }
 
   function handleMarkSent() {
@@ -153,21 +179,6 @@ export function SessionActions({
     });
   }
 
-  function startEditQty(itemId: string, currentQty: number) {
-    setEditingQty(itemId);
-    setEditQtyVal(String(currentQty));
-  }
-
-  function saveQtyEdit(itemId: string) {
-    const val = parseFloat(editQtyVal);
-    setError(null);
-    // The edit box stays open on failure, deliberately: the typed figure is
-    // still there to retry with, and the message says why.
-    runWrite(() => saveHeadQty(itemId, isNaN(val) ? null : val, session.id), {
-      onOk: () => { setEditingQty(null); router.refresh(); },
-    });
-  }
-
   const orderableItems = session.items.filter((i) => effectiveQty(i) > 0);
   const receivedCount = session.items.filter((i) => i.qtyReceived !== null).length;
   const totalItems = session.items.length;
@@ -176,7 +187,10 @@ export function SessionActions({
   // The head's table (waiting, for a head) and the purchaser's checklist
   // (reviewed) share one table; it is shown even when every quantity is 0,
   // so an all-zero order still has its lines and its buttons (item 35).
-  const showReviewTable = (session.status === "submitted" && (mayHeadQty || mayApprove)) || session.status === "reviewed";
+  const showReviewTable = session.status === "reviewed";
+  // A head reviewing a waiting order corrects it like the paper sheet: a
+  // quantity field on every line, อนุมัติ saves them with the approval.
+  const showHeadReview = session.status === "submitted" && (mayHeadQty || mayApprove || mayReturn);
 
   const editForm = (
     <div className="space-y-3">
@@ -251,11 +265,12 @@ export function SessionActions({
 
   const returnForm = showReturnForm && (
     <div className="space-y-2 rounded-lg border border-pending/60 bg-pending-soft p-3">
-      <input type="text" placeholder="เหตุผล / ข้อความถึงผู้สั่ง (ไม่จำเป็น)"
+      <label className="block text-xs font-medium text-pending-ink" htmlFor="return-note">ต้องแก้อะไร (บอกผู้สั่ง)</label>
+      <input id="return-note" type="text" placeholder="เช่น กุ้งแกะสั่งเกิน ลดเหลือ 3 โล"
         value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
         className="w-full rounded-md border border-pending/60 bg-white px-3 py-2 text-sm" />
       <div className="flex gap-2">
-        <button type="button" disabled={isPending} onClick={handleReturn} className={buttonClass("primary", { size: "sm" })}>
+        <button type="button" disabled={isPending || !returnNote.trim()} onClick={handleReturn} className={buttonClass("primary", { size: "sm" })}>
           ยืนยันตีกลับ
         </button>
         <button type="button" onClick={() => setShowReturnForm(false)} className={buttonClass("secondary")}>
@@ -307,7 +322,75 @@ export function SessionActions({
         </div>
       )}
 
-      {/* The head's table (waiting) / the purchaser's checklist (reviewed) */}
+      {/* The head's review of a waiting order: the paper sheet, corrected in place */}
+      {showHeadReview && (
+        <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h3 className="text-sm font-medium text-neutral-800">ตรวจรายการ ({session.items.length})</h3>
+            <p className="text-xs text-neutral-500">
+              {mayHeadQty ? "แก้จำนวนได้ในช่อง แล้วกดอนุมัติ — จำนวนที่แก้จะบันทึกพร้อมการอนุมัติ" : "รอตรวจสอบ"}
+            </p>
+          </div>
+          <div className="divide-y divide-neutral-100">
+            {session.items.map((item) => {
+              const n = headFigure(item.id);
+              const changed = n !== effectiveQty(item);
+              const bad = !Number.isFinite(n) || n < 0;
+              return (
+                <div key={item.id} className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${changed ? "bg-pending-soft" : ""}`}>
+                  <div className="min-w-0">
+                    <div className="text-sm text-neutral-800">{item.ingredientName}</div>
+                    <div className="text-xs text-neutral-500">
+                      เหลือ ครัว {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
+                      {" · "}ตู้แช่ {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
+                      {(changed || item.reviewerQtyOrdered !== null) && <span className="text-pending-ink"> · ผู้สั่งขอ {item.qtyOrdered}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {mayHeadQty ? (
+                      <input
+                        type="number" min="0" step="any" inputMode="decimal"
+                        aria-label={`จำนวนสั่ง ${item.ingredientName}`}
+                        value={headQty[item.id] ?? ""}
+                        onChange={(e) => setHeadQty((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                        className={`w-20 rounded-md border px-2 py-1.5 text-right text-sm ${bad ? "border-danger" : changed ? "border-pending" : "border-neutral-300"}`}
+                      />
+                    ) : (
+                      <span className="text-sm font-medium text-neutral-800">{effectiveQty(item)}</span>
+                    )}
+                    <span className="w-10 truncate text-xs text-neutral-500">{item.orderUnit ?? ""}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {(mayApprove || mayReturn) && (
+            <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
+              <div className="flex flex-wrap items-center gap-3">
+                {mayApprove && (
+                  <button type="button" disabled={isPending || headInvalid} onClick={handleApprove} className={buttonClass("primary")}>
+                    {isPending ? "กำลังบันทึก..." : headChanged > 0 ? `✓ อนุมัติ (แก้ ${headChanged} รายการ)` : "✓ อนุมัติ"}
+                  </button>
+                )}
+                {mayReturn && (
+                  <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
+                    className={buttonClass("secondary")}>
+                    ตีกลับ
+                  </button>
+                )}
+                {approveFailed && (
+                  <button type="button" onClick={() => router.refresh()} className={buttonClass("link", { size: "sm" })}>
+                    โหลดข้อมูลล่าสุด
+                  </button>
+                )}
+              </div>
+              {returnForm}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* The purchaser's checklist (reviewed) */}
       {showReviewTable && (
         <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
@@ -342,7 +425,6 @@ export function SessionActions({
                   const isOrderable = eqty > 0;
                   const isChecked = checkedItems.has(item.id);
                   const wasEdited = item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered;
-                  const isEditingThis = editingQty === item.id;
                   return (
                     <tr key={item.id}
                       className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-pending-soft" : ""}`}>
@@ -366,35 +448,12 @@ export function SessionActions({
                         {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {isEditingThis ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <input autoFocus type="number" min="0" step="any"
-                              value={editQtyVal}
-                              onChange={(e) => setEditQtyVal(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") saveQtyEdit(item.id);
-                                if (e.key === "Escape") setEditingQty(null);
-                              }}
-                              className="w-20 rounded border border-info/30 bg-info-soft px-2 py-1 text-right text-sm" />
-                            <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
-                              className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
-                            <button type="button" onClick={() => setEditingQty(null)}
-                              className={buttonClass("secondary", { size: "sm" })}>✕</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-2">
-                            <span className={`font-medium ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>
-                              {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
-                              {wasEdited && (
-                                <span className="block text-xs font-normal text-pending-ink">แก้จาก {item.qtyOrdered}</span>
-                              )}
-                            </span>
-                            {mayHeadQty && !isChecked && (
-                              <button type="button" onClick={() => startEditQty(item.id, eqty)}
-                                className={buttonClass("link", { size: "sm" })}>แก้</button>
-                            )}
-                          </div>
-                        )}
+                        <span className={`font-medium ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>
+                          {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
+                          {wasEdited && (
+                            <span className="block text-xs font-normal text-pending-ink">แก้จาก {item.qtyOrdered}</span>
+                          )}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -402,26 +461,6 @@ export function SessionActions({
               </tbody>
             </table>
           </div>
-
-          {/* Waiting footer: approve (with the version read) and return */}
-          {session.status === "submitted" && (mayApprove || mayReturn) && (
-            <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
-              <div className="flex flex-wrap gap-3">
-                {mayApprove && (
-                  <button type="button" disabled={isPending} onClick={handleApprove} className={buttonClass("primary")}>
-                    {isPending ? "กำลังบันทึก..." : "✓ อนุมัติ"}
-                  </button>
-                )}
-                {mayReturn && (
-                  <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
-                    className={buttonClass("secondary")}>
-                    ตีกลับ
-                  </button>
-                )}
-              </div>
-              {returnForm}
-            </div>
-          )}
 
           {/* Reviewed footer: mark sent (owner, admin) and return (a head) */}
           {session.status === "reviewed" && (maySend || mayReturn) && (

@@ -231,7 +231,7 @@ export default async function SessionDetailPage({
         </div>
       )}
 
-      <SessionActions session={session} role={profile.role} isCreator={isCreator} />
+      <SessionActions key={session.version} session={session} role={profile.role} isCreator={isCreator} />
 
       {/* Every quantity change: who, old, new, when (item 35, decision 3) */}
       {changes.length > 0 && (

@@ -79,24 +79,43 @@ export async function createOrderSession(
 }
 
 /**
- * A head approves (decisions 2–4). `version` is the order as the head's
- * screen read it; the database refuses a stale one, so the head reloads and
- * approves what is there now.
+ * A head approves WITH the quantities, in one database transaction
+ * (order_review_approve, order_review_approve_migration.sql): every line is
+ * checked first, each head quantity that changes is logged, then the order is
+ * reviewed — or nothing is written and the message says why. `version` is
+ * the order as the head's screen read it; a stale one is refused (Nik,
+ * 2026-09-23: approval ends in exactly one of two states).
  */
-export async function approveOrderSession(sessionId: string, version: number): Promise<ActionResult> {
+export async function approveOrderSession(
+  sessionId: string,
+  version: number,
+  lines: { itemId: string; qty: number }[],
+): Promise<ActionResult> {
   await requireOrdering();
+  if (lines.some((l) => !Number.isFinite(l.qty) || l.qty < 0)) {
+    return { error: "จำนวนต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป ยังไม่ได้อนุมัติ" };
+  }
   const supabase = await createClient();
-  const { error } = await supabase.rpc("order_approve", { p_session: sessionId, p_seen_version: version });
+  const { error } = await supabase.rpc("order_review_approve", {
+    p_session: sessionId,
+    p_seen_version: version,
+    p_lines: lines.map((l) => ({ id: l.itemId, qty: l.qty })),
+  });
   if (error) return { error: error.message };
   revalidateOrders(sessionId);
   return {};
 }
 
-/** A head returns the order to its creator, until it is sent (decision 7). Both notes are kept. */
-export async function returnOrderSession(sessionId: string, note?: string): Promise<ActionResult> {
+/**
+ * A head returns the order to its creator, until it is sent (decision 7).
+ * Both notes are kept. The head says what to fix (Nik, 2026-09-23): a return
+ * with no note is refused here.
+ */
+export async function returnOrderSession(sessionId: string, note: string): Promise<ActionResult> {
   await requireOrdering();
+  if (!note.trim()) return { error: "กรุณาระบุว่าต้องแก้อะไร ก่อนตีกลับ" };
   const supabase = await createClient();
-  const { error } = await supabase.rpc("order_return", { p_session: sessionId, p_note: note?.trim() || null });
+  const { error } = await supabase.rpc("order_return", { p_session: sessionId, p_note: note.trim() });
   if (error) return { error: error.message };
   revalidateOrders(sessionId);
   return {};
@@ -147,16 +166,6 @@ export async function markOrderSent(sessionId: string): Promise<ActionResult> {
   await requireOrdering();
   const supabase = await createClient();
   const { error } = await supabase.rpc("order_mark_sent", { p_session: sessionId });
-  if (error) return { error: error.message };
-  revalidateOrders(sessionId);
-  return {};
-}
-
-/** A head's quantity, while the order waits for review — before approving (decision 3). NULL clears it. */
-export async function saveHeadQty(itemId: string, qty: number | null, sessionId: string): Promise<ActionResult> {
-  await requireOrdering();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("order_set_head_qty", { p_item: itemId, p_qty: qty });
   if (error) return { error: error.message };
   revalidateOrders(sessionId);
   return {};
