@@ -9,6 +9,7 @@ import {
   type ImportPreview,
 } from "./actions";
 import { canApply, importReducer, initialImportState } from "./import-state";
+import { buttonClass } from "@/components/ui/button";
 
 const TYPE_LABEL: Record<string, string> = {
   food: "อาหาร",
@@ -51,11 +52,11 @@ function fmt(n: number): string {
 }
 
 function Delta({ current, next }: { current: number | null; next: number }) {
-  if (current === null) return <span className="text-xs text-neutral-400">ใหม่</span>;
+  if (current === null) return <span className="text-xs text-neutral-500">ใหม่</span>;
   const d = next - current;
-  if (Math.abs(d) < 0.005) return <span className="text-xs text-neutral-400">เท่าเดิม</span>;
+  if (Math.abs(d) < 0.005) return <span className="text-xs text-neutral-500">เท่าเดิม</span>;
   return (
-    <span className={`text-xs tabular-nums ${d > 0 ? "text-green-700" : "text-red-600"}`}>
+    <span className={`text-xs tabular-nums ${d > 0 ? "text-success-ink" : "text-danger"}`}>
       {d > 0 ? "+" : ""}
       {fmt(d)}
     </span>
@@ -157,7 +158,7 @@ export function RevenueImportClient() {
             type="button"
             onClick={handlePreview}
             disabled={isPending || !file}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
@@ -169,9 +170,9 @@ export function RevenueImportClient() {
             {preview && " — อ่านแล้ว"}
           </p>
         )}
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         {applied?.ok && (
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+          <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success-ink">
             บันทึกเดือน {applied.yearMonth} แล้ว ✓ — รายได้ {applied.revenueWritten} บรรทัด, ค่าใช้จ่าย{" "}
             {applied.expensesWritten} รายการ, จำนวนบิล/ลูกค้า{applied.coversReplaced ? " (แทนที่)" : " (เพิ่มใหม่)"}
             {applied.wasReimport && " (แทนที่ข้อมูลเดิม)"}
@@ -182,10 +183,10 @@ export function RevenueImportClient() {
       {preview && (
         <>
           {preview.blocks.length > 0 && (
-            <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
-              <p className="text-sm font-medium text-amber-900">ยังบันทึกไม่ได้ — ต้องแก้ก่อน</p>
+            <div className="space-y-3 rounded-lg border border-pending/60 bg-pending-soft p-4">
+              <p className="text-sm font-medium text-pending-ink">ยังบันทึกไม่ได้ — ต้องแก้ก่อน</p>
               {preview.blocks.map((b, i) => (
-                <div key={i} className="text-sm text-amber-900">
+                <div key={i} className="text-sm text-pending-ink">
                   {b.kind === "unstored" && (
                     <>
                       <p>
@@ -221,14 +222,14 @@ export function RevenueImportClient() {
                 เดือน {preview.yearMonth} — จากไฟล์ {preview.fileName}
               </p>
               {preview.previousImport && (
-                <p className="text-xs text-amber-700">
+                <p className="text-xs text-pending-ink">
                   เคยนำเข้าแล้วเมื่อ {new Date(preview.previousImport.importedAt).toLocaleString("th-TH")} — กดยืนยันจะแทนที่ทั้งหมด
                 </p>
               )}
             </div>
 
             <table className="mt-3 w-full text-sm">
-              <thead className="text-left text-xs text-neutral-500">
+              <thead className="text-left text-xs">
                 <tr>
                   <th className="py-1">ประเภทรายได้</th>
                   <th className="py-1 text-right">ปัจจุบัน</th>
@@ -252,7 +253,7 @@ export function RevenueImportClient() {
                 {/* Shown greyed precisely so its exclusion is visible rather than
                     implied. The import cannot write this row: "other" is not a
                     RevenueType, and the RPC's allowlist has no entry for it. */}
-                <tr className="border-t border-neutral-100 bg-neutral-50 text-neutral-400">
+                <tr className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
                   <td className="py-1.5">
                     อื่นๆ (บัญชี)
                     <span className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-600">ไม่แตะต้อง</span>
@@ -291,7 +292,7 @@ export function RevenueImportClient() {
                   <tr key={e.bill_ref} className="border-t border-neutral-100">
                     <td className="py-1.5">
                       {e.coa_code} {COA_LABEL[e.coa_code] ?? ""}
-                      <span className="ml-2 text-xs text-neutral-400">{e.bill_ref}</span>
+                      <span className="ml-2 text-xs text-neutral-500">{e.bill_ref}</span>
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-neutral-500">
                       {e.current === null ? "—" : fmt(e.current)}
@@ -304,7 +305,7 @@ export function RevenueImportClient() {
                 ))}
                 {preview.expenses.length === 0 && (
                   <tr>
-                    <td className="py-2 text-sm text-neutral-400">ไม่มี</td>
+                    <td className="py-2 text-sm text-neutral-500">ไม่มี</td>
                   </tr>
                 )}
               </tbody>
@@ -315,7 +316,7 @@ export function RevenueImportClient() {
               {preview.platformFees.map((p) => ` · GP ${p.method} ${p.ratePct}% ของ ${fmt(p.amount)}`).join("")}
             </p>
             {preview.discounts.unclassifiedNames.length > 0 && (
-              <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              <p className="mt-2 rounded bg-pending-soft px-2 py-1 text-xs text-pending-ink">
                 ส่วนลดที่ยังไม่รู้จัก (ไม่ถูกบันทึก): {preview.discounts.unclassifiedNames.join(", ")}
               </p>
             )}
@@ -329,7 +330,7 @@ export function RevenueImportClient() {
               จำนวนบิล {fmt(preview.covers.bills)} · จำนวนลูกค้า {fmt(preview.covers.customers)} · ยกเลิกบิล{" "}
               {fmt(preview.covers.cancelledBills)} รายการ {fmt(preview.covers.cancelledAmount)} บาท
             </p>
-            <p className={`mt-1 text-xs ${preview.coversCurrent ? "text-neutral-500" : "text-amber-700"}`}>
+            <p className={`mt-1 text-xs ${preview.coversCurrent ? "text-neutral-500" : "text-pending-ink"}`}>
               {preview.coversCurrent
                 ? `เดิมในระบบ: บิล ${fmt(preview.coversCurrent.bills)} · ลูกค้า ${fmt(preview.coversCurrent.customers)} — จะแทนที่`
                 : "เดือนนี้ยังไม่มีจำนวนบิล/ลูกค้าในระบบ — จะเพิ่มให้"}
@@ -348,12 +349,12 @@ export function RevenueImportClient() {
           )}
 
           <div className="flex items-center justify-end gap-3">
-            {blocked && <p className="text-sm text-amber-700">แก้รายการข้างบนก่อนจึงจะบันทึกได้</p>}
+            {blocked && <p className="text-sm text-pending-ink">แก้รายการข้างบนก่อนจึงจะบันทึกได้</p>}
             <button
               type="button"
               onClick={handleApply}
               disabled={!applyEnabled}
-              className="rounded-md bg-brand-green px-5 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
+              className={buttonClass("primary")}
             >
               {isPending ? "กำลังบันทึก..." : `ยืนยันบันทึกเดือน ${preview.yearMonth}`}
             </button>

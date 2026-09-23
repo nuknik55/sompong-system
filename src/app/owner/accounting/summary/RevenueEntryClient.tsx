@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
 import { setMonthlyRevenue } from "../actions";
+import { buttonClass } from "@/components/ui/button";
 
 // Six of these are written by the POS import; "other" is compiled by the
 // accountants and hand-entered. Once a month has been imported the six are
@@ -83,7 +84,7 @@ export function RevenueEntryClient({
             </a>
           </span>
         ) : (
-          <span className="text-xs text-neutral-400">กรอกยอดขายแยกประเภท</span>
+          <span className="text-xs text-neutral-500">กรอกยอดขายแยกประเภท</span>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
@@ -123,13 +124,13 @@ export function RevenueEntryClient({
           </span>
         </span>
         <div className="flex items-center gap-3">
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          {saved && <p className="text-xs text-green-600">บันทึกแล้ว ✓</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
+          {saved && <p className="text-xs text-success-ink">บันทึกแล้ว ✓</p>}
           <button
             type="button"
             onClick={handleSave}
             disabled={isPending}
-            className="rounded-md bg-brand-green px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending ? "กำลังบันทึก..." : "บันทึกรายได้"}
           </button>

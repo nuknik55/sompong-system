@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useRef } from "react";
 import type { WeeklySupplierRow } from "../actions";
 import { shiftDay } from "@/lib/bangkok-date";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
@@ -44,7 +46,7 @@ function SupplierRows({ section }: { section: WeeklySupplierRow[] }) {
             <td className="px-3 py-2 text-sm font-medium text-neutral-800">
               {r.supplier.name}
             </td>
-            <td className="px-2 py-2 text-xs text-neutral-400">{r.supplier.description ?? ""}</td>
+            <td className="px-2 py-2 text-xs text-neutral-500">{r.supplier.description ?? ""}</td>
             {r.days.map((v, di) => (
               <td key={di} className={`px-2 py-2 text-right tabular-nums text-sm ${v ? "text-neutral-800 font-medium" : "text-neutral-300"}`}>
                 {fmt(v) || "–"}
@@ -55,7 +57,7 @@ function SupplierRows({ section }: { section: WeeklySupplierRow[] }) {
             </td>
             <td className="px-2 py-2 text-xs text-neutral-500">
               {r.supplier.bank && `${r.supplier.bank} ${r.supplier.account_number ?? ""}`}
-              {r.supplier.internal_account && <span className="font-medium text-blue-600">{r.supplier.internal_account}</span>}
+              {r.supplier.internal_account && <span className="font-medium text-info">{r.supplier.internal_account}</span>}
             </td>
           </tr>
         );
@@ -81,23 +83,23 @@ function SectionTable({ title, section, total, note, days }: {
   if (section.length === 0) return null;
   return (
     <div className="rounded-xl border border-neutral-300 bg-white overflow-hidden">
-      <div className="border-b-2 border-neutral-300 bg-neutral-800 px-4 py-2.5 flex items-center justify-between">
-        <span className="text-sm font-semibold text-white">{title}</span>
-        {note && <span className="text-xs text-neutral-400">{note}</span>}
+      <div className="border-b border-neutral-300 bg-neutral-100 px-4 py-2.5 flex items-center justify-between">
+        <span className="font-heading text-sm font-semibold text-neutral-900">{title}</span>
+        {note && <span className="text-xs text-neutral-600">{note}</span>}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-neutral-500 border-b-2 border-neutral-200 bg-neutral-50">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2 text-left w-44">ซัพพลายเออร์</th>
               <th className="px-2 py-2 text-left">รายละเอียด</th>
               {DAY_LABELS.map((l, i) => (
                 <th key={i} className="px-2 py-2 text-right w-20">
                   <div className="font-semibold text-neutral-700">{l}</div>
-                  <div className="text-neutral-400 font-normal">{days[i]?.slice(5).replace("-", "/")}</div>
+                  <div className="text-neutral-600 font-normal">{days[i]?.slice(5).replace("-", "/")}</div>
                 </th>
               ))}
-              <th className="px-3 py-2 text-right w-24 border-l border-neutral-200 text-neutral-700 font-semibold">รวม</th>
+              <th className="px-3 py-2 text-right w-24 border-l">รวม</th>
               <th className="px-2 py-2 text-left w-32">บัญชี</th>
             </tr>
           </thead>
@@ -289,14 +291,14 @@ export function TransferSlipClient({
         {/* Week picker */}
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => router.push(`/owner/accounting/transfer-slip?week=${prevWeekTuesday(tuesday)}`)}
-            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+            className={buttonClass("secondary")}>
             ← สัปดาห์ก่อน
           </button>
 
           <button type="button"
             onClick={() => weekInputRef.current?.showPicker?.() ?? weekInputRef.current?.click()}
-            className="relative flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
-            <svg className="h-4 w-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            className={buttonClass("secondary", { className: "relative" })}>
+            <svg className="h-4 w-4 text-neutral-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
             </svg>
             สัปดาห์ {weekLabel}
@@ -306,42 +308,42 @@ export function TransferSlipClient({
           </button>
 
           <button onClick={() => router.push(`/owner/accounting/transfer-slip?week=${nextWeekTuesday(tuesday)}`)}
-            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+            className={buttonClass("secondary")}>
             สัปดาห์ถัดไป →
           </button>
 
           <div className="ml-auto flex gap-2">
             <button onClick={exportExcel}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               Export Excel
             </button>
             <button onClick={() => window.print()}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               พิมพ์
             </button>
           </div>
         </div>
 
         {/* Source account */}
-        <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-sm">
+        <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-info-soft/60 px-4 py-2.5 text-sm">
           <span className="text-neutral-600 font-medium">บัญชีต้นทาง:</span>
           <input type="text" value={sourceAccount} onChange={(e) => setSourceAccount(e.target.value)}
-            className="rounded border border-neutral-300 bg-white px-3 py-1 text-sm focus:border-blue-400 focus:outline-none w-48" />
-          <span className="text-neutral-400 text-xs">โอนวัน: {nextTuesday}</span>
+            className="rounded border border-neutral-300 bg-white px-3 py-1 text-sm focus:border-info/30 focus:outline-none w-48" />
+          <span className="text-neutral-500 text-xs">โอนวัน: {nextTuesday}</span>
         </div>
 
         {rows.every((r) => r.total === 0) ? (
           <div className="rounded-xl border border-neutral-200 bg-white px-6 py-10 text-center space-y-2">
             <p className="text-sm text-neutral-500 font-medium">ไม่มีรายการที่ผูกซัพพลายเออร์ในสัปดาห์นี้</p>
             {unlinkedCount > 0 ? (
-              <p className="text-sm text-amber-600">
+              <p className="text-sm text-pending-ink">
                 พบ <strong>{unlinkedCount}</strong> รายการในสัปดาห์นี้ที่ยังไม่ได้เลือกซัพ —{" "}
-                <a href={`/owner/accounting/daily?date=${days[0]}`} className="underline hover:text-amber-800">
+                <a href={`/owner/accounting/daily?date=${days[0]}`} className="underline hover:text-pending-ink">
                   ไปแก้ไขในหน้าบันทึกรายวัน
                 </a>
               </p>
             ) : (
-              <p className="text-xs text-neutral-400">ยังไม่มีรายการในสัปดาห์นี้เลย</p>
+              <p className="text-xs text-neutral-500">ยังไม่มีรายการในสัปดาห์นี้เลย</p>
             )}
           </div>
         ) : (

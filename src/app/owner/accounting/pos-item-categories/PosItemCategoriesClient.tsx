@@ -9,6 +9,7 @@ import {
   type ItemClassificationPreview,
 } from "./actions";
 import { CATEGORIES, CATEGORY_LABEL, isCategory, type Category } from "./categories";
+import { buttonClass } from "@/components/ui/button";
 
 // `decided` is the property that matters: only decided rows are written.
 //
@@ -322,7 +323,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
             type="button"
             onClick={handleRead}
             disabled={isPending || !file}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
@@ -333,14 +334,14 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
             {preview && ` — อ่านแล้ว (${preview.period})`}
           </p>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
         {/* Three states, never a success tick on a write that did not happen.
             "บันทึกแล้ว 0 รายการ ✓" reads as either a bug or a lie depending on
             the reader, and it is the same apparent-success-with-no-effect shape
             this project keeps finding. */}
         {saved !== null &&
           (saved.written > 0 ? (
-            <p className="text-sm text-green-700">
+            <p className="text-sm text-success-ink">
               บันทึกแล้ว {saved.written} รายการ ✓
               {saved.skipped > 0 && (
                 <span className="text-neutral-500"> — ข้าม {saved.skipped} รายการที่ไม่มีการเปลี่ยนแปลง</span>
@@ -366,7 +367,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                 <p className="text-xs text-neutral-500">
                   ยอดร้านกาแฟ สุทธิ ({preview.period}) — หลังหักส่วนลดและ GP Grab/LineMan ตามอัตราในไฟล์
                 </p>
-                <p className={`text-2xl font-semibold tabular-nums ${reconciled ? "text-green-700" : "text-neutral-900"}`}>
+                <p className={`text-2xl font-semibold tabular-nums ${reconciled ? "text-success-ink" : "text-neutral-900"}`}>
                   {fmt(totals.net)} ฿
                 </p>
                 <p className="text-xs text-neutral-500 tabular-nums">ก่อนหัก {fmt(totals.gross)} ฿</p>
@@ -382,13 +383,13 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
               </div>
               <div className="text-right">
                 <p className="text-xs text-neutral-500">ต่าง</p>
-                <p className={`text-lg font-semibold tabular-nums ${reconciled ? "text-green-700" : Math.abs(gap) < 5000 ? "text-amber-600" : "text-red-600"}`}>
+                <p className={`text-lg font-semibold tabular-nums ${reconciled ? "text-success-ink" : Math.abs(gap) < 5000 ? "text-pending-ink" : "text-danger"}`}>
                   {gap > 0 ? "+" : ""}{fmt(gap)}
                 </p>
               </div>
             </div>
             {preview.unreviewedCount > 0 && (
-              <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p className="mt-3 rounded-md bg-pending-soft px-3 py-2 text-sm text-pending-ink">
                 มี {preview.unreviewedCount} รายการที่ยังไม่มีหมวด — รายการใหม่ที่เพิ่งมีในเดือนนี้
                 {" "}
                 <button type="button" onClick={() => setOnlyUnreviewed((v) => !v)} className="underline">
@@ -413,7 +414,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
             </div>
             <div className="max-h-[32rem] overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="sticky top-0 text-left text-xs">
                   <tr>
                     <th className="px-3 py-2 w-36">หมวด</th>
                     <th className="px-3 py-2">สินค้า</th>
@@ -428,7 +429,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                       The direction of the carve-out is the thing most likely
                       to be misread on this screen. */}
                   <tr>
-                    <th colSpan={7} className="px-3 pb-2 text-left text-xs font-normal text-neutral-600">
+                    <th colSpan={7} className="px-3 pb-2 text-left text-xs">
                       {CARVE_OUT_HELP}
                     </th>
                   </tr>
@@ -442,7 +443,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                         key={c.productName}
                         // Shading follows the DECISION, not the stored state, so a
                         // row stops looking outstanding the moment it is acted on.
-                        className={`border-t border-neutral-100 ${!d.decided ? "bg-amber-50/60" : ""}`}
+                        className={`border-t border-neutral-100 ${!d.decided ? "bg-pending-soft/60" : ""}`}
                       >
                         <td className="px-3 py-2">
                           <select
@@ -451,7 +452,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                             onChange={(e) => setCategory(c, e.target.value)}
                             // Amber follows the DECISION: a pre-selected
                             // suggestion is still undecided and still amber.
-                            className={`w-full rounded border px-1.5 py-1 text-xs ${!d.decided ? "border-amber-400 text-amber-800" : "border-neutral-300"}`}
+                            className={`w-full rounded border px-1.5 py-1 text-xs ${!d.decided ? "border-pending/60 text-pending-ink" : "border-neutral-300"}`}
                           >
                             {/* The placeholder is the "not yet decided" state.
                                 A stored row cannot go back to it: there is no
@@ -468,9 +469,9 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                         </td>
                         <td className="px-3 py-2 text-neutral-800">
                           {c.productName}
-                          {!c.reviewed && <span className="ml-2 text-xs text-amber-700">ใหม่</span>}
+                          {!c.reviewed && <span className="ml-2 text-xs text-pending-ink">ใหม่</span>}
                           {!d.decided && (
-                            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                            <span className="ml-2 rounded bg-pending-soft px-1.5 py-0.5 text-xs text-pending-ink">
                               {d.suggested ? "แนะนำ — ยังไม่ยืนยัน" : "ยังไม่เลือกหมวด"}
                             </span>
                           )}
@@ -483,7 +484,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                             <span className="text-xs text-neutral-300">—</span>
                           ) : d.category === "coffee" ? (
                             // Mirrors the CHECK: no carve-out on a coffee row.
-                            <span className="text-xs text-neutral-400">ทั้งรายการ</span>
+                            <span className="text-xs text-neutral-500">ทั้งรายการ</span>
                           ) : (
                             <input
                               type="number"
@@ -512,7 +513,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                   })}
                   {visible.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-3 py-6 text-center text-sm text-neutral-400">
+                      <td colSpan={7} className="px-3 py-6 text-center text-sm text-neutral-500">
                         ไม่มีรายการ
                       </td>
                     </tr>
@@ -533,7 +534,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                   type="button"
                   onClick={acceptSuggestions}
                   disabled={isPending || suggestedCount === 0}
-                  className="rounded-md border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  className={buttonClass("secondary")}
                 >
                   ยืนยันตามที่ระบบแนะนำ ({suggestedCount} รายการ)
                 </button>
@@ -541,7 +542,7 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                   type="button"
                   onClick={handleSave}
                   disabled={isPending || decidedCount === 0}
-                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                  className={buttonClass("primary")}
                 >
                   {isPending ? "กำลังบันทึก..." : `บันทึก ${decidedCount} รายการ`}
                 </button>

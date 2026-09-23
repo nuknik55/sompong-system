@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
 import { upsertSupplier, reorderSupplier, deleteSupplier, type Supplier } from "../actions";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 type DraftRow = Omit<Supplier, "id"> & { id?: string };
 
@@ -21,11 +23,12 @@ const BLANK: DraftRow = {
 
 const BANKS = ["K-Bank", "SCB", "กรุงไทย", "Bangkok", "ออมสิน", "ทหารไทย", "LH", "อื่นๆ"];
 
-// Zebra colors per category type
+// Zebra colors per category type: the brand accents (a payment type is told
+// apart, not judged), at half tint so grey text on them still reads.
 const ROW_BG: Record<string, { even: string; odd: string }> = {
-  "c-transfer": { even: "bg-blue-50",   odd: "bg-white" },
-  "c-cash":     { even: "bg-purple-50", odd: "bg-white" },
-  "i-transfer": { even: "bg-orange-50", odd: "bg-white" },
+  "c-transfer": { even: "bg-brand-navy-soft/50", odd: "bg-white" },
+  "c-cash":     { even: "bg-brand-teal-soft/50", odd: "bg-white" },
+  "i-transfer": { even: "bg-brand-gold-soft/50", odd: "bg-white" },
 };
 
 function rowTypeKey(s: Supplier) {
@@ -33,9 +36,9 @@ function rowTypeKey(s: Supplier) {
 }
 
 function pill(credit: boolean, mode: string) {
-  if (!credit) return <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">โอนทันที</span>;
-  if (mode === "cash") return <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">เครดิต/สด</span>;
-  return <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">เครดิต/โอน</span>;
+  if (!credit) return <span className="rounded-full bg-brand-gold-soft px-2 py-0.5 text-xs font-medium text-brand-gold-ink">โอนทันที</span>;
+  if (mode === "cash") return <span className="rounded-full bg-brand-teal-soft px-2 py-0.5 text-xs font-medium text-brand-teal-ink">เครดิต/สด</span>;
+  return <span className="rounded-full bg-brand-navy-soft px-2 py-0.5 text-xs font-medium text-brand-navy">เครดิต/โอน</span>;
 }
 
 // Confirm dialog state
@@ -64,26 +67,26 @@ function EditForm({
   onCancel: () => void;
 }) {
   return (
-    <tr className={`border-t-2 ${isNew ? "border-green-300 bg-green-50/60" : "border-amber-300 bg-amber-50/60"}`}>
+    <tr className={`border-t-2 ${isNew ? "border-success/30 bg-success-soft/60" : "border-pending/60 bg-pending-soft/60"}`}>
       <td className="px-2 py-2 w-8" />
       <td className="px-2 py-2 w-14">
         <input type="number" value={draft.sort_order}
           onChange={(e) => set("sort_order", Number(e.target.value))}
-          className="w-14 rounded border border-neutral-300 px-1.5 py-1 text-xs text-right focus:border-blue-400 focus:outline-none" />
+          className="w-14 rounded border border-neutral-300 px-1.5 py-1 text-xs text-right focus:border-info/30 focus:outline-none" />
       </td>
       <td className="px-1.5 py-2">
         <input type="text" autoFocus placeholder="ชื่อซัพ *" value={draft.name}
           onChange={(e) => set("name", e.target.value)}
-          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none" />
       </td>
       <td className="px-1.5 py-2">
         <input type="text" placeholder="รายละเอียด/ชื่อเล่น" value={draft.description ?? ""}
           onChange={(e) => set("description", e.target.value)}
-          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none" />
       </td>
       <td className="px-1.5 py-2 w-28">
         <select value={draft.bank ?? ""} onChange={(e) => set("bank", e.target.value || null)}
-          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
+          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-info/30 focus:outline-none bg-white">
           <option value="">—</option>
           {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
@@ -91,7 +94,7 @@ function EditForm({
       <td className="px-1.5 py-2 w-36">
         <input type="text" placeholder="เลขบัญชี" value={draft.account_number ?? ""}
           onChange={(e) => set("account_number", e.target.value)}
-          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums focus:border-blue-400 focus:outline-none" />
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums focus:border-info/30 focus:outline-none" />
       </td>
       <td className="px-1.5 py-2 w-36">
         <select value={`${draft.credit ? "c" : "i"}-${draft.payment_mode}`}
@@ -100,7 +103,7 @@ function EditForm({
             set("credit", c === "c");
             set("payment_mode", m);
           }}
-          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-blue-400 focus:outline-none bg-white">
+          className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm focus:border-info/30 focus:outline-none bg-white">
           <option value="c-transfer">เครดิต / โอน</option>
           <option value="c-cash">เครดิต / สด</option>
           <option value="i-transfer">โอนทันที</option>
@@ -110,7 +113,7 @@ function EditForm({
         {!draft.credit ? (
           <input type="text" placeholder="K-Bank_Sompong / SCB_Sompong" value={draft.internal_account ?? ""}
             onChange={(e) => set("internal_account", e.target.value)}
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none" />
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-xs focus:border-info/30 focus:outline-none" />
         ) : (
           <span className="text-xs text-neutral-300">—</span>
         )}
@@ -118,15 +121,15 @@ function EditForm({
       <td className="px-2 py-2 whitespace-nowrap">
         <div className="flex gap-1.5">
           <button onClick={onSave} disabled={isPending}
-            className="rounded bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800 disabled:opacity-50">
+            className={buttonClass("primary", { size: "sm" })}>
             {isPending ? "..." : "บันทึก"}
           </button>
           <button onClick={onCancel}
-            className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100">
+            className={buttonClass("secondary", { size: "sm" })}>
             ยกเลิก
           </button>
         </div>
-        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-xs text-danger">{error}</p>}
       </td>
     </tr>
   );
@@ -268,7 +271,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
           แสดงที่ปิดใช้งาน
         </label>
         <button onClick={openNew} disabled={editId !== null}
-          className="rounded-lg bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-40">
+          className={buttonClass("primary")}>
           + เพิ่มซัพใหม่
         </button>
       </div>
@@ -284,7 +287,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-neutral-800 text-xs text-neutral-100">
+              <tr className={TH_ROW}>
                 <th className="px-2 py-2.5 w-8" />
                 <th className="px-2 py-2.5 text-left w-14">ลำดับ</th>
                 <th className="px-3 py-2.5 text-left">ชื่อซัพ</th>
@@ -321,35 +324,35 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
                     <td className="px-1 py-2">
                       <div className="flex flex-col gap-0.5">
                         <button onClick={() => handleReorder(s.id, "up")} disabled={isPending || isFirst}
-                          className="h-4 w-5 text-neutral-400 hover:text-neutral-700 disabled:opacity-20 text-xs leading-none">▲</button>
+                          className="h-4 w-5 text-neutral-500 hover:text-neutral-700 disabled:opacity-20 text-xs leading-none">▲</button>
                         <button onClick={() => handleReorder(s.id, "down")} disabled={isPending || isLast}
-                          className="h-4 w-5 text-neutral-400 hover:text-neutral-700 disabled:opacity-20 text-xs leading-none">▼</button>
+                          className="h-4 w-5 text-neutral-500 hover:text-neutral-700 disabled:opacity-20 text-xs leading-none">▼</button>
                       </div>
                     </td>
-                    <td className="px-2 py-2.5 text-xs text-neutral-400 tabular-nums">{s.sort_order}</td>
+                    <td className="px-2 py-2.5 text-xs text-neutral-500 tabular-nums">{s.sort_order}</td>
                     <td className="px-3 py-2.5 font-medium text-neutral-800">{s.name}</td>
                     <td className="px-3 py-2.5 text-neutral-500 text-xs">{s.description ?? "—"}</td>
                     <td className="px-3 py-2.5 text-xs text-neutral-600">{s.bank ?? "—"}</td>
                     <td className="px-3 py-2.5 text-xs text-neutral-600 tabular-nums">{s.account_number ?? "—"}</td>
                     <td className="px-3 py-2.5">{pill(s.credit, s.payment_mode)}</td>
-                    <td className="px-3 py-2.5 text-xs text-blue-600">{s.internal_account ?? "—"}</td>
+                    <td className="px-3 py-2.5 text-xs text-info">{s.internal_account ?? "—"}</td>
                     <td className="px-2 py-2.5 whitespace-nowrap text-right">
                       <button onClick={() => openEdit(s)} disabled={editId !== null}
-                        className="rounded border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:border-amber-400 hover:text-amber-700 disabled:opacity-30">
+                        className={buttonClass("secondary", { size: "sm" })}>
                         แก้ไข
                       </button>
                       <button onClick={() => handleToggleActive(s)} disabled={isPending || editId !== null}
-                        className={`ml-1 rounded border px-2.5 py-1 text-xs disabled:opacity-30 ${
+                        className={`ml-1 h-8 rounded-lg border px-3 font-heading text-sm font-medium disabled:opacity-30 ${
                           s.is_active
-                            ? "border-neutral-300 text-neutral-400 hover:border-red-300 hover:text-red-500"
-                            : "border-green-400 text-green-700 hover:bg-green-50"
+                            ? "border-neutral-300 text-neutral-500 hover:border-danger/40 hover:text-danger"
+                            : "border-success/30 text-success-ink hover:bg-success-soft"
                         }`}>
                         {s.is_active ? "ปิด" : "เปิด"}
                       </button>
                       <button
                         onClick={() => setConfirmDelete({ id: s.id, name: s.name })}
                         disabled={isPending || editId !== null}
-                        className="ml-1 rounded border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-500 hover:bg-red-100 disabled:opacity-30">
+                        className={buttonClass("link", { size: "sm", dangerHover: true, className: "ml-3" })}>
                         ลบ
                       </button>
                     </td>
@@ -359,7 +362,7 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
 
               {visible.length === 0 && editId === null && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-neutral-400">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-neutral-500">
                     ยังไม่มีซัพพลายเออร์
                   </td>
                 </tr>
@@ -369,9 +372,9 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         {suppliers.filter((s) => s.is_active).length} รายการที่ใช้งาน · {suppliers.filter((s) => !s.is_active).length} ปิดใช้งาน
       </p>
 
@@ -383,22 +386,22 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
           {/* Dialog */}
           <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl mx-4">
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-red-500 text-xl">⚠️</span>
+              <span className="text-danger text-xl">⚠️</span>
               <h2 className="text-base font-semibold text-neutral-900">ยืนยันการลบ</h2>
             </div>
             <p className="mt-2 text-sm text-neutral-600">
               ต้องการลบ <strong className="text-neutral-900">&ldquo;{confirmDelete.name}&rdquo;</strong> ออกจากระบบถาวร?
             </p>
-            <p className="mt-1 text-xs text-neutral-400">
+            <p className="mt-1 text-xs text-neutral-500">
               รายการบันทึกรายวันที่เชื่อมกับซัพนี้จะยังอยู่ แต่ชื่อซัพจะหายไป
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setConfirmDelete(null)}
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50">
+                className={buttonClass("secondary")}>
                 ยกเลิก
               </button>
               <button onClick={handleDelete} disabled={isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                className={buttonClass("primary", { danger: true })}>
                 {isPending ? "กำลังลบ..." : "ลบถาวร"}
               </button>
             </div>

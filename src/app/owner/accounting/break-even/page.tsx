@@ -7,6 +7,8 @@ import { breakEven } from "../break-even";
 import { nextMonth, previousMonth } from "../checklist";
 import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { ToolRow } from "../tool-row";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 /**
  * Break-even for one month: four figures and one sentence of basis. No
@@ -54,28 +56,26 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
   const notices = completenessNotices(summary);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-lg font-semibold text-neutral-900">จุดคุ้มทุน</h1>
-      </div>
+    <PageShell>
+      <PageHeader title="จุดคุ้มทุน" />
       <ToolRow role={profile.role} yearMonth={yearMonth} current="break-even" />
 
       <div className="flex items-center gap-3">
-        <a href={`/owner/accounting/break-even?month=${prevMonth}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
+        <a href={`/owner/accounting/break-even?month=${prevMonth}`} className={buttonClass("secondary", { size: "sm" })}>‹</a>
         <span className="font-medium text-neutral-800">{thaiMonth(yearMonth)}</span>
         {yearMonth !== today && (
-          <a href={`/owner/accounting/break-even?month=${nextMonthStr}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
+          <a href={`/owner/accounting/break-even?month=${nextMonthStr}`} className={buttonClass("secondary", { size: "sm" })}>›</a>
         )}
       </div>
 
       {summary.totalRevenue === 0 ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <p className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm text-pending-ink">
           เดือนนี้ยังไม่มีรายได้ในระบบ — นำเข้ารายได้ POS ก่อน จึงจะคำนวณจุดคุ้มทุนได้
         </p>
       ) : (
         <>
           {notices.map((n) => (
-            <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{n}</p>
+            <p key={n} className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm text-pending-ink">{n}</p>
           ))}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -112,12 +112,12 @@ export default async function BreakEvenPage({ searchParams }: { searchParams: Pr
           </p>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 
 function Figure({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: "red" | "amber" | "green" }) {
-  const color = highlight === "red" ? "text-red-600" : highlight === "amber" ? "text-amber-600" : highlight === "green" ? "text-brand-green" : "text-neutral-900";
+  const color = highlight === "red" ? "text-danger" : highlight === "amber" ? "text-pending-ink" : highlight === "green" ? "text-brand-green" : "text-neutral-900";
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <p className="text-xs text-neutral-500">{label}</p>

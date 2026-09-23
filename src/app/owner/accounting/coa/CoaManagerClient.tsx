@@ -11,6 +11,7 @@ import {
   reorderCoaAccount,
   type CoaAccount,
 } from "../actions";
+import { buttonClass } from "@/components/ui/button";
 
 type EditState = { code: string; name: string; target_pct: string };
 type AddAccountState = { groupCode: string; groupName: string; code: string; name: string };
@@ -142,13 +143,13 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
     <div className="space-y-4">
       {/* Status messages */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-danger">✕</button>
         </div>
       )}
       {msg && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+        <div className="rounded-lg border border-success/30 bg-success-soft px-4 py-2 text-sm text-success-ink">
           {msg}
         </div>
       )}
@@ -182,24 +183,24 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                       <span>%</span>
                     </div>
                     <button onClick={handleUpdate} disabled={isPending}
-                      className="rounded bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">
+                      className={buttonClass("primary", { size: "sm" })}>
                       บันทึก
                     </button>
                     <button onClick={() => setEditing(null)}
-                      className="rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-200">
+                      className={buttonClass("secondary", { size: "sm" })}>
                       ยกเลิก
                     </button>
                   </>
                 ) : (
                   <>
-                    <span className="text-xs font-mono text-neutral-400 w-12">{g.code}</span>
+                    <span className="text-xs font-mono text-neutral-500 w-12">{g.code}</span>
                     <span className="flex-1 text-sm font-semibold text-neutral-800">{g.name}</span>
                     {g.target_pct != null && (
-                      <span className="text-xs text-neutral-400">เป้า {g.target_pct}%</span>
+                      <span className="text-xs text-neutral-500">เป้า {g.target_pct}%</span>
                     )}
                     <button
                       onClick={() => setEditing({ code: g.code, name: g.name, target_pct: String(g.target_pct ?? "") })}
-                      className="text-xs text-neutral-400 hover:text-neutral-700"
+                      className={buttonClass("link", { size: "sm" })}
                     >
                       แก้ไข
                     </button>
@@ -213,7 +214,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                   const isEditingThis = editing?.code === c.code;
                   return (
                     <div key={c.code} className="group flex items-center gap-3 border-b border-neutral-50 px-4 py-2 last:border-0 hover:bg-neutral-50/50">
-                      <span className="w-12 font-mono text-xs text-neutral-400">{c.code}</span>
+                      <span className="w-12 font-mono text-xs text-neutral-500">{c.code}</span>
                       {isEditingThis ? (
                         <>
                           <input
@@ -223,11 +224,11 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                             autoFocus
                           />
                           <button onClick={handleUpdate} disabled={isPending}
-                            className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">
+                            className={buttonClass("primary", { size: "sm" })}>
                             บันทึก
                           </button>
                           <button onClick={() => setEditing(null)}
-                            className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200">
+                            className={buttonClass("secondary", { size: "sm" })}>
                             ยกเลิก
                           </button>
                         </>
@@ -238,7 +239,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                             <button
                               onClick={() => handleReorder(c.code, g.code, "up")}
                               disabled={isPending || idx === 0}
-                              className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
+                              className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
                               title="เลื่อนขึ้น"
                             >
                               ▲
@@ -246,7 +247,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                             <button
                               onClick={() => handleReorder(c.code, g.code, "down")}
                               disabled={isPending || idx === children.length - 1}
-                              className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
+                              className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-20"
                               title="เลื่อนลง"
                             >
                               ▼
@@ -254,14 +255,14 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                             <span className="mx-1 text-neutral-200">|</span>
                             <button
                               onClick={() => setEditing({ code: c.code, name: c.name, target_pct: "" })}
-                              className="text-xs text-neutral-400 hover:text-neutral-700"
+                              className={buttonClass("link", { size: "sm" })}
                             >
                               แก้ไข
                             </button>
                             <button
                               onClick={() => handleDelete(c.code, c.name)}
                               disabled={isPending}
-                              className="text-xs text-neutral-400 hover:text-red-500 disabled:opacity-30"
+                              className={buttonClass("link", { size: "sm", dangerHover: true })}
                             >
                               ลบ
                             </button>
@@ -274,7 +275,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
 
                 {/* Add account row */}
                 {addingAccount?.groupCode === g.code ? (
-                  <div className="flex items-center gap-2 border-t border-blue-100 bg-blue-50/30 px-4 py-2">
+                  <div className="flex items-center gap-2 border-t border-blue-100 bg-info-soft/30 px-4 py-2">
                     <input
                       type="text"
                       placeholder="รหัส (เช่น 126)"
@@ -292,18 +293,18 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
                       className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none"
                     />
                     <button onClick={handleAddAccount} disabled={isPending}
-                      className="rounded bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800 disabled:opacity-50">
+                      className={buttonClass("primary", { size: "sm" })}>
                       เพิ่ม
                     </button>
                     <button onClick={() => { setAddingAccount(null); setError(null); }}
-                      className="rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-200">
+                      className={buttonClass("secondary", { size: "sm" })}>
                       ยกเลิก
                     </button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setAddingAccount({ groupCode: g.code, groupName: g.name, code: "", name: "" })}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-green-700 hover:bg-green-50/50"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-success-ink hover:bg-success-soft/50"
                   >
                     + เพิ่มหมวดย่อย
                   </button>
@@ -316,7 +317,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
 
       {/* Add new group */}
       {addingGroup ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-3">
+        <div className="rounded-xl border border-info/30 bg-info-soft/30 p-4 space-y-3">
           <p className="text-sm font-medium text-neutral-700">เพิ่มกลุ่มใหม่</p>
           <div className="flex flex-wrap gap-2">
             <input
@@ -347,11 +348,11 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
           </div>
           <div className="flex gap-2">
             <button onClick={handleAddGroup} disabled={isPending}
-              className="rounded-lg bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
+              className={buttonClass("primary")}>
               {isPending ? "กำลังเพิ่ม..." : "เพิ่มกลุ่ม"}
             </button>
             <button onClick={() => { setAddingGroup(false); setError(null); }}
-              className="rounded-lg border border-neutral-200 px-4 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               ยกเลิก
             </button>
           </div>
@@ -359,7 +360,7 @@ export function CoaManagerClient({ coa }: { coa: CoaAccount[] }) {
       ) : (
         <button
           onClick={() => setAddingGroup(true)}
-          className="w-full rounded-xl border border-dashed border-neutral-300 py-3 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
+          className={buttonClass("secondary", { className: "w-full" })}
         >
           + เพิ่มกลุ่มใหม่
         </button>

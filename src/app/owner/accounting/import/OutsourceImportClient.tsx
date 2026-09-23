@@ -10,6 +10,7 @@ import {
   type OutsourcePreview,
 } from "./outsource-actions";
 import { canApply, importReducer, initialImportState } from "../revenue-import/import-state";
+import { buttonClass } from "@/components/ui/button";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -126,7 +127,7 @@ export function OutsourceImportClient() {
             type="button"
             onClick={handlePreview}
             disabled={isPending || !file}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
@@ -153,9 +154,9 @@ export function OutsourceImportClient() {
             {preview && ` — อ่านแล้ว: แผ่น ${preview.expenseSheet}, ${preview.months.length} เดือน`}
           </p>
         )}
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         {applied?.ok && (
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+          <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success-ink">
             บันทึกเดือน {thaiMonth(applied.yearMonth)} แล้ว ✓ —{" "}
             {applied.budget69Owned ? "เฉพาะรายได้อื่นๆ" : `${applied.inserted} รายการ`} · รายได้อื่นๆ {fmt(applied.other)}
             {applied.wasReimport && ` (แทนที่ของเดิม ${applied.deleted} รายการ)`}
@@ -168,7 +169,7 @@ export function OutsourceImportClient() {
           {/* Month overview: every month in the file, its status, and who owns it. */}
           <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="text-left text-xs">
                 <tr>
                   <th className="px-3 py-2">เดือน</th>
                   <th className="px-3 py-2">แถวในแผ่น</th>
@@ -184,16 +185,16 @@ export function OutsourceImportClient() {
                   <tr
                     key={o.yearMonth}
                     onClick={() => !isPending && setYearMonth(o.yearMonth)}
-                    className={`cursor-pointer border-t border-neutral-100 ${o.yearMonth === yearMonth ? "bg-amber-50/60 font-medium" : "hover:bg-neutral-50"}`}
+                    className={`cursor-pointer border-t border-neutral-100 ${o.yearMonth === yearMonth ? "bg-pending-soft/60 font-medium" : "hover:bg-neutral-50"}`}
                   >
                     <td className="px-3 py-1.5">{thaiMonth(o.yearMonth)}</td>
                     <td className="px-3 py-1.5 text-xs tabular-nums text-neutral-500">{o.firstRow}–{o.lastRow}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{fmt(o.blockTotal)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{"value" in o.other ? fmt(o.other.value) : <span className="text-red-700">ไม่พบ</span>}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{"value" in o.other ? fmt(o.other.value) : <span className="text-danger">ไม่พบ</span>}</td>
                     <td className="px-3 py-1.5 text-xs text-neutral-600">
                       {o.beforeLedger ? "ก่อนเริ่มระบบ — ข้าม" : o.budget69Owned ? "budget69 → เฉพาะรายได้อื่นๆ" : "ไฟล์บัญชี"}
                     </td>
-                    <td className={`px-3 py-1.5 text-xs ${o.blocks.length === 0 ? "text-green-700" : "text-red-700 font-semibold"}`}>
+                    <td className={`px-3 py-1.5 text-xs ${o.blocks.length === 0 ? "text-success-ink" : "text-danger font-semibold"}`}>
                       {o.blocks.length === 0 ? "ตรงกัน ✓" : "หยุด"}
                     </td>
                     <td className="px-3 py-1.5 text-xs text-neutral-500">
@@ -210,7 +211,7 @@ export function OutsourceImportClient() {
               {/* THE STOPS. Not warnings: the confirm button is disabled below,
                   and the server refuses the same way whatever the client sends. */}
               {identity && identity.kind === "identity" && (
-                <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4 text-sm text-red-900">
+                <div className="rounded-lg border-2 border-danger/40 bg-danger-soft p-4 text-sm text-red-900">
                   <p className="font-semibold">หยุด — ยอดรวมของไฟล์ไม่ตรงกับแถวที่อ่านได้</p>
                   <p className="mt-1">
                     รวมคชจ. บอกว่า {fmt(identity.total)} แต่ หักจ่ายสด {fmt(identity.cashTotal)} + กลุ่มรายจ่ายรายเดือน {fmt(identity.monthlySum)} ={" "}
@@ -220,7 +221,7 @@ export function OutsourceImportClient() {
                 </div>
               )}
               {unmapped && unmapped.kind === "unmapped" && (
-                <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4 text-sm text-red-900">
+                <div className="rounded-lg border-2 border-danger/40 bg-danger-soft p-4 text-sm text-red-900">
                   <p className="font-semibold">
                     หยุด — มี {unmapped.rows.length} รายการในกลุ่มรายจ่ายรายเดือนที่ระบบไม่รู้จัก รวม {fmt(unmapped.total)} บาท
                   </p>
@@ -236,7 +237,7 @@ export function OutsourceImportClient() {
                 </div>
               )}
               {otherMissing && otherMissing.kind === "other-missing" && (
-                <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4 text-sm text-red-900">
+                <div className="rounded-lg border-2 border-danger/40 bg-danger-soft p-4 text-sm text-red-900">
                   <p className="font-semibold">หยุด — ไม่พบ รายได้อื่นๆ (F7) ของเดือนนี้</p>
                   <p className="mt-1">{otherMissing.reason}</p>
                 </div>
@@ -247,7 +248,7 @@ export function OutsourceImportClient() {
                 </div>
               )}
               {month.budget69Owned && !month.beforeLedger && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="rounded-lg border border-pending/60 bg-pending-soft p-4 text-sm text-pending-ink">
                   <p className="font-medium">เดือนนี้เป็นของ budget69 — จะบันทึกเฉพาะ รายได้อื่นๆ</p>
                   <p className="mt-1 text-xs">
                     รายจ่ายรายเดือนของ ม.ค.–ก.ค. 69 อยู่ในระบบจาก budget69 แล้ว เดือนหนึ่งมีแหล่งเดียว ตารางด้านล่างแสดงตัวเลขจากไฟล์บัญชีให้เทียบ แต่ไม่เขียน
@@ -265,13 +266,13 @@ export function OutsourceImportClient() {
                     </span>
                   </p>
                   {month.previousImport && (
-                    <p className="text-xs text-amber-700">
+                    <p className="text-xs text-pending-ink">
                       เคยนำเข้าแล้ว {new Date(month.previousImport.importedAt).toLocaleString("th-TH")} — ยืนยันจะแทนที่ทั้งหมด
                     </p>
                   )}
                 </div>
                 <table className="mt-3 w-full text-sm">
-                  <thead className="text-left text-xs text-neutral-500">
+                  <thead className="text-left text-xs">
                     <tr>
                       <th className="py-1">บัญชี</th>
                       <th className="py-1">ในไฟล์</th>
@@ -315,13 +316,13 @@ export function OutsourceImportClient() {
                     <span className="text-lg font-semibold">{fmt(month.other.value)}</span>
                     <span className="ml-2 text-xs text-neutral-500">แผ่น {month.other.sheet} · ผูกด้วย{month.other.tiedBy === "name" ? "ชื่อแผ่น" : month.other.tiedBy === "formula" ? "สูตร F7" : "สูตร F7 และชื่อแผ่น"}</span>
                     {month.storedOther !== null && (
-                      <span className={`ml-3 text-xs ${Math.abs(month.storedOther - month.other.value) > 0.005 ? "text-amber-700" : "text-neutral-500"}`}>
+                      <span className={`ml-3 text-xs ${Math.abs(month.storedOther - month.other.value) > 0.005 ? "text-pending-ink" : "text-neutral-500"}`}>
                         ในระบบตอนนี้ {fmt(month.storedOther)}{Math.abs(month.storedOther - month.other.value) > 0.005 ? " → จะถูกแทนที่" : " (เท่ากัน)"}
                       </span>
                     )}
                   </p>
                 ) : (
-                  <p className="mt-1 text-red-700">{month.other.missing}</p>
+                  <p className="mt-1 text-danger">{month.other.missing}</p>
                 )}
               </div>
 
@@ -336,7 +337,7 @@ export function OutsourceImportClient() {
                         <span className="ml-2 text-neutral-500">— {n.reason}</span>
                       </span>
                       {n.appDaily !== undefined && (
-                        <span className={`tabular-nums ${n.mismatch ? "font-semibold text-amber-700" : "text-neutral-500"}`}>
+                        <span className={`tabular-nums ${n.mismatch ? "font-semibold text-pending-ink" : "text-neutral-500"}`}>
                           ในระบบ 230+231: {fmt(n.appDaily)} {n.mismatch ? "≠ ไม่ตรงกับไฟล์ — ตรวจบันทึกรายวัน" : "="}
                         </span>
                       )}
@@ -350,13 +351,13 @@ export function OutsourceImportClient() {
 
               <div className="flex items-center justify-end gap-3">
                 {!applyEnabled && monthBlocked && !isPending && (
-                  <p className="text-sm text-red-700">{month.beforeLedger ? "เดือนนี้ไม่บันทึก" : "ยังบันทึกไม่ได้ — ดูข้อความด้านบน"}</p>
+                  <p className="text-sm text-danger">{month.beforeLedger ? "เดือนนี้ไม่บันทึก" : "ยังบันทึกไม่ได้ — ดูข้อความด้านบน"}</p>
                 )}
                 <button
                   type="button"
                   onClick={handleApply}
                   disabled={!applyEnabled}
-                  className="rounded-md bg-brand-green px-5 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
+                  className={buttonClass("primary")}
                 >
                   {isPending ? "กำลังบันทึก..." : month.budget69Owned ? `ยืนยันบันทึกรายได้อื่นๆ ${thaiMonth(month.yearMonth)}` : `ยืนยันบันทึกเดือน ${thaiMonth(month.yearMonth)}`}
                 </button>

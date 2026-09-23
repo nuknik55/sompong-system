@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { listStoredItems } from "./actions";
 import { PosItemCategoriesClient } from "./PosItemCategoriesClient";
 import { CATEGORIES, CATEGORY_LABEL } from "./categories";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function PosItemCategoriesPage() {
   await requireAdmin();
@@ -18,13 +18,8 @@ export default async function PosItemCategoriesPage() {
   const coffeeSide = stored.filter((s) => s.category === "coffee" || s.coffeeSharePerUnit != null);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">จัดหมวดสินค้า POS</h1>
-        <Link href="/owner/accounting" className="text-sm text-neutral-500 hover:text-neutral-800">
-          ← กลับหน้าบัญชี
-        </Link>
-      </div>
+    <PageShell>
+      <PageHeader back={{ href: "/owner/accounting", label: "กลับหน้าบัญชี" }} title="จัดหมวดสินค้า POS" />
 
       <div className="space-y-2 text-sm text-neutral-500">
         <p>
@@ -67,6 +62,6 @@ export default async function PosItemCategoriesPage() {
           </ul>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

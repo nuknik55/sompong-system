@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { requireOwner } from "@/lib/auth";
 import { Budget69ImportClient } from "./Budget69ImportClient";
 import { OutsourceImportClient } from "./OutsourceImportClient";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 /**
  * OWNER ONLY. Both imports on this page write 790 เงินเดือนเจ้าของร้าน, which
@@ -30,13 +30,8 @@ export default async function ImportPage() {
   const prev = m === 1 ? `${y! - 1}-12` : `${y}-${String(m! - 1).padStart(2, "0")}`;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-kanit text-xl font-semibold text-neutral-900">นำเข้ารายจ่ายรายเดือน</h1>
-        <Link href="/owner/accounting" className="text-sm text-neutral-500 hover:text-neutral-800">
-          ← กลับหน้าบัญชี
-        </Link>
-      </div>
+    <PageShell>
+      <PageHeader back={{ href: "/owner/accounting", label: "กลับหน้าบัญชี" }} title="นำเข้ารายจ่ายรายเดือน" />
 
       <div className="space-y-2 text-sm text-neutral-500">
         <p>
@@ -66,6 +61,6 @@ export default async function ImportPage() {
           <Budget69ImportClient defaultYearMonth={prev} />
         </div>
       </details>
-    </div>
+    </PageShell>
   );
 }

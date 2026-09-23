@@ -6,6 +6,9 @@ import { previousMonth, nextMonth } from "../checklist";
 import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { completenessNotices } from "../summary/completeness";
 import { ToolRow } from "../tool-row";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 /**
  * ต้นทุนอาหาร — the head chef's month, and since 2026-09-18 what an admin has
@@ -57,38 +60,32 @@ export default async function FoodCostPage({ searchParams }: { searchParams: Pro
   // as "well under target".
   const judged = !view.expenseDataIncomplete && !view.monthInProgress && view.cogs > 0;
   const over = view.gapPoints != null && view.gapPoints > 0;
-  const pctColor = !judged || view.gapPoints == null ? "text-neutral-900" : over ? "text-red-600" : "text-brand-green";
+  const pctColor = !judged || view.gapPoints == null ? "text-neutral-900" : over ? "text-danger" : "text-brand-green";
   const verdictBox = !judged
     ? "border-neutral-200 bg-neutral-50 text-neutral-700"
     : over
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-green-200 bg-green-50 text-green-800";
+      ? "border-danger/40 bg-danger-soft text-danger"
+      : "border-success/30 bg-success-soft text-success-ink";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <a href={`/owner/accounting?month=${yearMonth}`} className="text-sm text-neutral-400 hover:text-neutral-700">← ดูทั้งเดือน</a>
-          <span className="text-sm text-neutral-300">/</span>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">ต้นทุนอาหาร</h1>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader back={{ href: `/owner/accounting?month=${yearMonth}`, label: "ดูทั้งเดือน", reload: true }} title="ต้นทุนอาหาร" />
       <ToolRow role={profile.role} yearMonth={yearMonth} current="food-cost" />
 
       <div className="flex items-center gap-3">
-        <a href={`/owner/accounting/food-cost?month=${prev}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
+        <a href={`/owner/accounting/food-cost?month=${prev}`} className={buttonClass("secondary", { size: "sm" })}>‹</a>
         <span className="font-medium text-neutral-800">{thaiMonth(yearMonth)}</span>
         {yearMonth < today && (
-          <a href={`/owner/accounting/food-cost?month=${next}`} className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
+          <a href={`/owner/accounting/food-cost?month=${next}`} className={buttonClass("secondary", { size: "sm" })}>›</a>
         )}
       </div>
 
       {notices.map((n) => (
-        <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{n}</p>
+        <p key={n} className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm text-pending-ink">{n}</p>
       ))}
 
       {view.revenue === 0 ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <p className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm text-pending-ink">
           เดือนนี้ยังไม่มียอดขายในระบบ — นำเข้ารายได้ POS ก่อน จึงจะคิด % ต้นทุนอาหารได้
           {view.cogs !== 0 && <> (ตอนนี้บันทึกค่าวัตถุดิบไว้แล้ว {baht(view.cogs)} บาท)</>}
         </p>
@@ -140,8 +137,8 @@ export default async function FoodCostPage({ searchParams }: { searchParams: Pro
           {view.accounts.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-                  <tr className="border-b border-neutral-200">
+                <thead className="text-left text-xs">
+                  <tr className={TH_ROW}>
                     <th className="px-4 py-2">หมวดวัตถุดิบ (เรียงจากมากไปน้อย)</th>
                     <th className="px-4 py-2 text-right">จำนวน (฿)</th>
                     <th className="w-24 px-4 py-2 text-right">% ของยอดขาย</th>
@@ -152,7 +149,7 @@ export default async function FoodCostPage({ searchParams }: { searchParams: Pro
                     <tr key={a.code} className="border-t border-neutral-100">
                       <td className="px-4 py-1.5 text-neutral-700">{a.name}</td>
                       <td className="px-4 py-1.5 text-right tabular-nums text-neutral-700">{baht2(a.total)}</td>
-                      <td className="px-4 py-1.5 text-right tabular-nums text-xs text-neutral-400">
+                      <td className="px-4 py-1.5 text-right tabular-nums text-xs text-neutral-500">
                         {a.pctOfRevenue != null ? `${a.pctOfRevenue.toFixed(1)}%` : "—"}
                       </td>
                     </tr>
@@ -184,7 +181,7 @@ export default async function FoodCostPage({ searchParams }: { searchParams: Pro
         % Food Cost ในหน้า ภาพรวมต้นทุน ซึ่งคิดจากสูตรอาหารของเมนูที่ขายได้ ในรอบการนำเข้ายอดขายล่าสุด
         ไม่ใช่รายเดือน — เดือนที่ซื้อของตุนไว้จะสูงกว่าปกติ และเดือนที่ใช้ของเก่าจะต่ำกว่าปกติ
       </p>
-    </div>
+    </PageShell>
   );
 }
 

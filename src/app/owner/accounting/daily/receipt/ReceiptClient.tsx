@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { ExpenseEntry } from "../../actions";
+import { buttonClass } from "@/components/ui/button";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -188,15 +189,15 @@ export function ReceiptClient({
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3">
         <div className="flex items-center gap-3">
           <a href={`/owner/accounting/daily?date=${date}`}
-            className="text-sm text-neutral-500 hover:text-neutral-800">
+            className={buttonClass("link")}>
             ← กลับ
           </a>
-          <span className="text-sm text-neutral-400">|</span>
+          <span className="text-sm text-neutral-300">|</span>
           <span className="text-xs text-neutral-500">คลิกข้อความสีเทา เพื่อแก้ไขก่อนพิมพ์</span>
         </div>
         <button
           onClick={saveAndPrint}
-          className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          className={buttonClass("primary")}
         >
           พิมพ์ใบรับรอง
         </button>

@@ -23,6 +23,10 @@ export function PageShell({ children, className }: { children: ReactNode; classN
  * subtitle; the page's actions top RIGHT. The back link is a plain <a>, so
  * the unsaved-changes guard (useLeaveGuard, capture phase) catches it like
  * any other link on the page.
+ *
+ * `back.reload`: a plain <a href> (a full page load) instead of Next's Link,
+ * for the pages whose back link always was one (the accounting screens), so
+ * moving them to this header does not change how they navigate.
  */
 export function PageHeader({
   back,
@@ -30,17 +34,22 @@ export function PageHeader({
   subtitle,
   actions,
 }: {
-  back?: { href: string; label: string };
+  back?: { href: string; label: string; reload?: boolean };
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
     <header className="space-y-1.5">
-      {back && (
+      {back && !back.reload && (
         <Link href={back.href} className={buttonClass("link", { size: "md" })}>
           <span aria-hidden="true">←</span> {back.label}
         </Link>
+      )}
+      {back?.reload && (
+        <a href={back.href} className={buttonClass("link", { size: "md" })}>
+          <span aria-hidden="true">←</span> {back.label}
+        </a>
       )}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">

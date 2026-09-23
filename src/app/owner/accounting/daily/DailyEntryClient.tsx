@@ -15,6 +15,8 @@ import {
 import { isDailyEditable, resolveEditPaymentMethod, splitByPaymentMethod } from "./payment-split";
 import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 import { capexWarning, capexWarningText } from "../capex-hint";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -82,12 +84,12 @@ function SearchableSelect({
         onClick={() => { setOpen(true); setQuery(""); }}
         onFocus={() => { setOpen(true); setQuery(""); }}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
+        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none"
       />
       {open && (
         <div className="absolute left-0 top-full z-50 mt-0.5 w-56 max-h-60 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl">
           {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบ</p>
+            <p className="px-3 py-2 text-sm text-neutral-500">ไม่พบ</p>
           ) : (
             groups.map((g) => {
               const kids = filtered.filter((c) => c.group_code === g.code);
@@ -98,7 +100,7 @@ function SearchableSelect({
                   {kids.map((c) => (
                     <button key={c.code} type="button"
                       onMouseDown={() => { onChange(c.code); setOpen(false); setQuery(""); }}
-                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-blue-50 ${value === c.code ? "bg-blue-50 font-medium text-blue-700" : "text-neutral-700"}`}>
+                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100 ${value === c.code ? "bg-primary-soft font-medium text-primary" : "text-neutral-700"}`}>
                       {c.name}
                     </button>
                   ))}
@@ -156,24 +158,24 @@ function SupplierAutocomplete({
           onClick={() => { setOpen(true); setQuery(""); }}
           onFocus={() => { setOpen(true); setQuery(""); }}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none"
+          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none"
         />
         {value && (
           <button type="button" onMouseDown={() => { onChange(""); setQuery(""); }}
-            className="shrink-0 text-neutral-400 hover:text-neutral-700 text-xs px-1">✕</button>
+            className="shrink-0 text-neutral-500 hover:text-neutral-700 text-xs px-1">✕</button>
         )}
       </div>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-0.5 w-64 max-h-56 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl">
           {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-neutral-400">ไม่พบ</p>
+            <p className="px-3 py-2 text-sm text-neutral-500">ไม่พบ</p>
           ) : (
             filtered.map((s) => (
               <button key={s.id} type="button"
                 onMouseDown={() => { onChange(s.id); setOpen(false); setQuery(""); }}
-                className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-blue-50 ${value === s.id ? "bg-blue-50 font-medium text-blue-700" : "text-neutral-700"}`}>
+                className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100 ${value === s.id ? "bg-primary-soft font-medium text-primary" : "text-neutral-700"}`}>
                 <span className="font-medium">{s.name}</span>
-                {s.description && <span className="ml-1 text-xs text-neutral-400">— {s.description}</span>}
+                {s.description && <span className="ml-1 text-xs text-neutral-500">— {s.description}</span>}
               </button>
             ))
           )}
@@ -301,7 +303,7 @@ export function DailyEntryClient({
     });
   const capexNotice =
     capexRows.length === 0 ? null : (
-      <div className="no-print rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <div className="no-print rounded-lg border border-pending/60 bg-pending-soft px-3 py-2 text-xs text-pending-ink">
         <p>{capexWarningText(capexThreshold)}</p>
         <ul className="mt-1 space-y-0.5">
           {capexRows.map((x) => (
@@ -310,7 +312,7 @@ export function DailyEntryClient({
             </li>
           ))}
         </ul>
-        <p className="mt-1 text-amber-700">บันทึกได้ตามปกติ — ระบบไม่เปลี่ยนหมวดให้เอง</p>
+        <p className="mt-1 text-pending-ink">บันทึกได้ตามปกติ — ระบบไม่เปลี่ยนหมวดให้เอง</p>
       </div>
     );
 
@@ -583,14 +585,14 @@ export function DailyEntryClient({
         {/* Date strip */}
         <div className="flex flex-wrap items-center gap-2 no-print">
           <a href={`/owner/accounting/daily?date=${shiftDate(date, -1)}`}
-            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+            className={buttonClass("secondary")}>
             ← วันก่อน
           </a>
 
           <button type="button"
             onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
-            className="relative flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
-            <svg className="h-4 w-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            className={buttonClass("secondary", { className: "relative" })}>
+            <svg className="h-4 w-4 text-neutral-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <path d="M16 2v4M8 2v4M3 10h18"/>
             </svg>
@@ -602,7 +604,7 @@ export function DailyEntryClient({
 
           {!isToday && (
             <a href={`/owner/accounting/daily?date=${shiftDate(date, 1)}`}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               วันถัดไป →
             </a>
           )}
@@ -610,21 +612,21 @@ export function DailyEntryClient({
           <div className="ml-auto flex gap-2">
             {selectedIds.size > 0 && (
               <a href={`/owner/accounting/daily/receipt?date=${date}&ids=${[...selectedIds].join(",")}`}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
+                className={buttonClass("primary", { size: "sm" })}>
                 สร้างใบรับรอง ({selectedIds.size})
               </a>
             )}
             <button onClick={exportCsv} disabled={entries.length === 0}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40">
+              className={buttonClass("secondary")}>
               ดาวน์โหลด Excel
             </button>
             <button onClick={() => window.print()}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               พิมพ์
             </button>
             {pending.length > 0 && (
               <button onClick={handleSave} disabled={isPending}
-                className="rounded-lg bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
+                className={buttonClass("primary")}>
                 {isPending ? "กำลังบันทึก..." : `บันทึก (${pending.length} รายการ)`}
               </button>
             )}
@@ -692,7 +694,7 @@ export function DailyEntryClient({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-neutral-50 border-b border-neutral-200 text-xs text-neutral-500">
+                <tr className={TH_ROW}>
                   <th className="px-2 py-2.5 w-8">
                     <input type="checkbox"
                       checked={entries.length > 0 && selectedIds.size === entries.length}
@@ -725,11 +727,11 @@ export function DailyEntryClient({
                     const isEven = entryNum % 2 === 0;
 
                     const entryRow = editing?.id === e.id ? (
-                      <tr key={e.id} className="border-t border-amber-100 bg-amber-50/50">
+                      <tr key={e.id} className="border-t border-amber-100 bg-pending-soft/50">
                         <td className="px-2 py-2">
                           <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
                         </td>
-                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
+                        <td className="px-3 py-2 text-neutral-500 text-xs">{entryNum}</td>
                         <td className="px-1.5 py-1.5 w-40">
                           <SupplierAutocomplete value={editing.supplierId}
                             onChange={(id) => setEditing({ ...editing, supplierId: id })}
@@ -739,10 +741,10 @@ export function DailyEntryClient({
                           <input type="text" value={editing.detail}
                             onChange={(ev) => setEditing({ ...editing, detail: ev.target.value })}
                             placeholder="รายละเอียด..."
-                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" autoFocus />
+                            className="w-full rounded border border-pending/60 px-2 py-1 text-sm focus:outline-none focus:border-amber-500" autoFocus />
                           {/* An edited entry is asked the same question as a new one. */}
                           {editingIsCapex && (
-                            <p className="mt-1 text-[11px] leading-snug text-amber-800">{capexWarningText(capexThreshold)}</p>
+                            <p className="mt-1 text-[11px] leading-snug text-pending-ink">{capexWarningText(capexThreshold)}</p>
                           )}
                         </td>
                         <td className="px-1.5 py-1.5">
@@ -753,28 +755,28 @@ export function DailyEntryClient({
                         <td className="px-1.5 py-1.5">
                           <input type="text" inputMode="decimal" placeholder="0" value={editing.amountCash}
                             onChange={(ev) => setEditing({ ...editing, amountCash: ev.target.value.replace(/[^0-9.]/g, "") })}
-                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
+                            className="w-full rounded border border-pending/60 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
                         </td>
                         <td className="px-1.5 py-1.5">
                           <input type="text" inputMode="decimal" placeholder="0" value={editing.amountTransfer}
                             onChange={(ev) => setEditing({ ...editing, amountTransfer: ev.target.value.replace(/[^0-9.]/g, "") })}
-                            className="w-full rounded border border-amber-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
+                            className="w-full rounded border border-pending/60 px-2 py-1 text-sm text-right tabular-nums focus:outline-none" />
                         </td>
                         <td className="px-1.5 py-1.5">
                           <div className="flex gap-1">
                             <button onClick={handleUpdate} disabled={isPending}
-                              className="rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50">บันทึก</button>
+                              className={buttonClass("primary", { size: "sm" })}>บันทึก</button>
                             <button onClick={() => setEditing(null)}
-                              className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200">ยกเลิก</button>
+                              className={buttonClass("secondary", { size: "sm" })}>ยกเลิก</button>
                           </div>
                         </td>
                       </tr>
                     ) : (
-                      <tr key={e.id} className={`border-t border-neutral-100 group ${selectedIds.has(e.id) ? "bg-blue-50/60" : isEven ? "bg-neutral-50/60 hover:bg-neutral-100/60" : "bg-white hover:bg-neutral-50"}`}>
+                      <tr key={e.id} className={`border-t border-neutral-100 group ${selectedIds.has(e.id) ? "bg-primary-soft/70" : isEven ? "bg-neutral-50/60 hover:bg-neutral-100/60" : "bg-white hover:bg-neutral-50"}`}>
                         <td className="px-2 py-2">
                           <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleEntry(e)} className="cursor-pointer" />
                         </td>
-                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum}</td>
+                        <td className="px-3 py-2 text-neutral-500 text-xs">{entryNum}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500 truncate max-w-[10rem]">
                           {e.supplier_name ? (
                             <span className="font-medium text-neutral-700">{e.supplier_name}</span>
@@ -782,31 +784,31 @@ export function DailyEntryClient({
                         </td>
                         <td className="px-3 py-2 text-neutral-700 text-sm">{e.detail || e.note || "–"}</td>
                         <td className="px-3 py-2 text-xs">
-                          <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
+                          <span className="text-neutral-500">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
                           <span className="text-neutral-600">{e.coa_name}</span>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "cash" ? fmt(e.amount) : ""}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-neutral-800">{e.payment_method === "transfer" ? fmt(e.amount) : ""}</td>
                         <td className="px-2 py-2 text-right whitespace-nowrap">
                           <button onClick={() => startEdit(e)}
-                            className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-amber-300 hover:text-amber-600 active:bg-amber-50">แก้ไข</button>
+                            className={buttonClass("secondary", { size: "sm" })}>แก้ไข</button>
                           <button onClick={() => handleDelete(e.id)} disabled={isPending}
-                            className="ml-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-100 active:bg-red-200 disabled:opacity-30">ลบ</button>
+                            className={buttonClass("link", { size: "sm", dangerHover: true, className: "ml-3" })}>ลบ</button>
                         </td>
                       </tr>
                     );
 
                     const pendingRows = pendingHere.map((r, pi) => (
-                      <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
+                      <tr key={r.id} className="border-t border-blue-100 bg-info-soft/30">
                         <td className="px-2 py-2" />
-                        <td className="px-3 py-2 text-neutral-400 text-xs">{entryNum + 1 + pi}</td>
+                        <td className="px-3 py-2 text-neutral-500 text-xs">{entryNum + 1 + pi}</td>
                         <td className="px-1.5 py-1.5 w-40">
                           <SupplierAutocomplete value={r.supplierId} onChange={(id) => updateRow(r.id, "supplierId", id)} suppliers={suppliers} />
                         </td>
                         <td className="px-1.5 py-1.5">
                           <input type="text" placeholder="รายละเอียด..." value={r.detail}
                             onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none" />
                         </td>
                         <td className="px-1.5 py-1.5 w-36">
                           <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
@@ -814,16 +816,16 @@ export function DailyEntryClient({
                         <td className="px-1.5 py-1.5 w-24">
                           <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
                             onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-info/30 focus:outline-none" />
                         </td>
                         <td className="px-1.5 py-1.5 w-24">
                           <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
                             onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
-                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-info/30 focus:outline-none" />
                         </td>
                         <td className="px-1.5 py-1.5">
                           <button onClick={() => removeRow(r.id)}
-                            className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
+                            className={buttonClass("link", { size: "sm", dangerHover: true })}>ลบ</button>
                         </td>
                       </tr>
                     ));
@@ -832,9 +834,9 @@ export function DailyEntryClient({
                       <tr key={`ins-${i}`} className="group/ins">
                         <td colSpan={8} className="px-0 py-0">
                           <div className="relative flex items-center justify-center" style={{ height: "20px" }}>
-                            <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-blue-300 transition-colors" />
+                            <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-neutral-200 group-hover/ins:bg-primary/40 transition-colors" />
                             <button type="button" onClick={() => insertRowAfter(i)} title="แทรกรายการ"
-                              className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-xs font-bold text-neutral-400 shadow-sm opacity-50 group-hover/ins:opacity-100 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500 active:bg-blue-100 transition-all">
+                              className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-xs font-bold text-neutral-500 shadow-sm opacity-50 group-hover/ins:opacity-100 hover:border-primary/40 hover:bg-primary-soft hover:text-primary active:bg-primary-soft transition-all">
                               +
                             </button>
                           </div>
@@ -848,9 +850,9 @@ export function DailyEntryClient({
 
                 {/* Bottom pending rows */}
                 {pending.filter((r) => r.insertAfter === undefined).map((r, i) => (
-                  <tr key={r.id} className="border-t border-blue-100 bg-blue-50/30">
+                  <tr key={r.id} className="border-t border-blue-100 bg-info-soft/30">
                     <td className="px-2 py-2" />
-                    <td className="px-3 py-2 text-neutral-400 text-xs">{
+                    <td className="px-3 py-2 text-neutral-500 text-xs">{
                       (() => {
                         let s = 0;
                         for (let ei = 0; ei < entries.length; ei++) {
@@ -866,7 +868,7 @@ export function DailyEntryClient({
                     <td className="px-1.5 py-1.5">
                       <input type="text" placeholder="รายละเอียด..." value={r.detail}
                         onChange={(ev) => updateRow(r.id, "detail", ev.target.value)}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-400 focus:outline-none" />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-info/30 focus:outline-none" />
                     </td>
                     <td className="px-1.5 py-1.5 w-36">
                       <SearchableSelect value={r.coaCode} onChange={(code) => updateRow(r.id, "coaCode", code)} leafCoa={leafCoa} groups={groups} />
@@ -874,16 +876,16 @@ export function DailyEntryClient({
                     <td className="px-1.5 py-1.5 w-24">
                       <input type="text" inputMode="decimal" placeholder="0" value={r.amountCash}
                         onChange={(ev) => updateRow(r.id, "amountCash", ev.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-info/30 focus:outline-none" />
                     </td>
                     <td className="px-1.5 py-1.5 w-24">
                       <input type="text" inputMode="decimal" placeholder="0" value={r.amountTransfer}
                         onChange={(ev) => updateRow(r.id, "amountTransfer", ev.target.value.replace(/[^0-9.]/g, ""))}
-                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-blue-400 focus:outline-none" />
+                        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm text-right tabular-nums focus:border-info/30 focus:outline-none" />
                     </td>
                     <td className="px-1.5 py-1.5">
                       <button onClick={() => removeRow(r.id)}
-                        className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-400 hover:border-red-300 hover:text-red-500">ลบ</button>
+                        className={buttonClass("link", { size: "sm", dangerHover: true })}>ลบ</button>
                     </td>
                   </tr>
                 ))}
@@ -891,7 +893,7 @@ export function DailyEntryClient({
                 {/* Add row */}
                 <tr className="border-t border-neutral-100">
                   <td colSpan={8} className="px-3 py-2.5">
-                    <button onClick={addRow} className="text-sm font-medium text-green-700 hover:text-green-800">
+                    <button onClick={addRow} className="text-sm font-medium text-success-ink hover:text-success-ink">
                       + เพิ่มรายการ
                     </button>
                   </td>
@@ -922,7 +924,7 @@ export function DailyEntryClient({
 
         {/* Fix cost */}
         {!isEmpty && (
-          <div className="no-print flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <div className="no-print flex flex-wrap items-center gap-3 rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm">
             <span className="font-medium text-neutral-700">Fix cost</span>
             <input type="text" inputMode="numeric" value={fixCost}
               onChange={(e) => {
@@ -930,8 +932,8 @@ export function DailyEntryClient({
                 setFixCost(raw);
                 localStorage.setItem("daily-fix-cost", raw);
               }}
-              className="w-32 rounded border border-neutral-300 bg-white px-3 py-1.5 text-right tabular-nums focus:border-blue-400 focus:outline-none" />
-            <span className="text-neutral-400">บาท</span>
+              className="w-32 rounded border border-neutral-300 bg-white px-3 py-1.5 text-right tabular-nums focus:border-info/30 focus:outline-none" />
+            <span className="text-neutral-500">บาท</span>
             <span className="ml-auto text-neutral-500">
               รวมสุทธิ:{" "}
               <span className="font-semibold tabular-nums text-neutral-900">{fmt(savedCash + savedTransfer + fixCostNum)}</span>
@@ -939,23 +941,23 @@ export function DailyEntryClient({
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600 no-print">{error}</p>}
-        {saveMsg && <p className="text-sm font-medium text-green-700 no-print">{saveMsg}</p>}
+        {error && <p className="text-sm text-danger no-print">{error}</p>}
+        {saveMsg && <p className="text-sm font-medium text-success-ink no-print">{saveMsg}</p>}
 
         {capexNotice}
 
         {pending.length > 0 && (
           <div className="flex items-center justify-between no-print">
-            <p className="text-xs text-blue-600">แถวสีฟ้า = ยังไม่ได้บันทึก</p>
+            <p className="text-xs text-info">แถวสีฟ้า = ยังไม่ได้บันทึก</p>
             <button onClick={handleSave} disabled={isPending}
-              className="rounded-lg bg-green-700 px-6 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
+              className={buttonClass("primary")}>
               {isPending ? "กำลังบันทึก..." : `บันทึก ${pending.length} รายการ`}
             </button>
           </div>
         )}
 
         {isEmpty && (
-          <p className="py-6 text-center text-sm text-neutral-400 no-print">
+          <p className="py-6 text-center text-sm text-neutral-500 no-print">
             ยังไม่มีรายการ — กด &ldquo;+ เพิ่มรายการ&rdquo; เพื่อเริ่มบันทึก
           </p>
         )}

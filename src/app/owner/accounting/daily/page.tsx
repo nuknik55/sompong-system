@@ -6,6 +6,7 @@ import { getCapexThreshold } from "@/lib/data";
 import { getCoa, getEntriesByDate, getSuppliers } from "../actions";
 import { DailyEntryClient } from "./DailyEntryClient";
 import { ToolRow } from "../tool-row";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function DailyEntryPage({
   searchParams,
@@ -31,14 +32,10 @@ export default async function DailyEntryPage({
   const yearMonth = date.slice(0, 7);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      {/* Nav */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <a href={`/owner/accounting?month=${yearMonth}`} className="text-sm text-neutral-400 hover:text-neutral-700">← ดูทั้งเดือน</a>
-          <span className="text-neutral-300 text-sm">/</span>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">บันทึกรายวัน</h1>
-        </div>
+    <PageShell>
+      {/* Nav (not on the printed sheet) */}
+      <div className="no-print">
+        <PageHeader back={{ href: `/owner/accounting?month=${yearMonth}`, label: "ดูทั้งเดือน", reload: true }} title="บันทึกรายวัน" />
       </div>
       <ToolRow role={profile.role} yearMonth={yearMonth} current="daily" />
 
@@ -50,6 +47,6 @@ export default async function DailyEntryPage({
         suppliers={suppliers}
         capexThreshold={capexThreshold}
       />
-    </div>
+    </PageShell>
   );
 }

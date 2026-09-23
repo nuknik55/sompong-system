@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { bangkokToday, startOfWeek } from "@/lib/bangkok-date";
 import { getWeeklyTransferData } from "../actions";
 import { TransferSlipClient } from "./TransferSlipClient";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 function prevTuesday(from?: string): string {
   // The Tuesday on or before the day, in Bangkok. It used to read the clock
@@ -24,16 +25,12 @@ export default async function TransferSlipPage({
   const { rows, days, unlinkedCount } = await getWeeklyTransferData(tuesday);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <a href="/owner/accounting" className="text-sm text-neutral-400 hover:text-neutral-700">← บัญชี</a>
-          <span className="text-neutral-300 text-sm">/</span>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">ใบโอนเงิน</h1>
-        </div>
+    <PageShell>
+      <div className="no-print">
+        <PageHeader back={{ href: "/owner/accounting", label: "บัญชี", reload: true }} title="ใบโอนเงิน" />
       </div>
 
       <TransferSlipClient tuesday={tuesday} rows={rows} days={days} unlinkedCount={unlinkedCount} />
-    </div>
+    </PageShell>
   );
 }

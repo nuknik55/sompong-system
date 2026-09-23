@@ -4,6 +4,7 @@ import { useReducer, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { applyBudget69Import, previewBudget69Import, type ApplyResult, type Budget69Preview } from "./actions";
 import { canApply, importReducer, initialImportState } from "../revenue-import/import-state";
+import { buttonClass } from "@/components/ui/button";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -117,7 +118,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
             type="button"
             onClick={handlePreview}
             disabled={isPending || !file}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {isPending && !preview ? "กำลังอ่าน..." : "อ่านไฟล์"}
           </button>
@@ -129,9 +130,9 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
             {preview && " — อ่านแล้ว"}
           </p>
         )}
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         {applied?.ok && (
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+          <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-success-ink">
             บันทึกเดือน {thaiMonth(applied.yearMonth)} แล้ว ✓ — {applied.inserted} รายการ
             {applied.wasReimport && ` (แทนที่ของเดิม ${applied.deleted} รายการ)`}
           </p>
@@ -143,7 +144,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
           {/* THE STOP. Not a warning: the confirm button is disabled below, and
               the server refuses the same way whatever the client sends. */}
           {unexplained && unexplained.kind === "unexplained" && (
-            <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4 text-sm text-red-900">
+            <div className="rounded-lg border-2 border-danger/40 bg-danger-soft p-4 text-sm text-red-900">
               <p className="font-semibold">หยุด — ยอดในชีตกับที่จะบันทึกไม่ตรงกัน และไม่มีคำอธิบาย</p>
               <p className="mt-1">
                 ชีตบอกว่าเดือนนี้มีรายจ่าย {fmt(unexplained.sheetExpenseTotal)} (ยอดขาย − Net Profit
@@ -156,7 +157,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
             </div>
           )}
           {unmapped && unmapped.kind === "unmapped" && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="rounded-lg border border-pending/60 bg-pending-soft p-4 text-sm text-pending-ink">
               <p className="font-medium">
                 มี {unmapped.rows.length} แถวในชีตที่ยังไม่ได้จับคู่บัญชี รวม {fmt(unmapped.total)} บาท — ต้องเพิ่มในตารางจับคู่ก่อน
               </p>
@@ -174,7 +175,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
           {/* Month overview — which months reconcile, and which are already in. */}
           <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="text-left text-xs">
                 <tr>
                   <th className="px-3 py-2">เดือน</th>
                   <th className="px-3 py-2 text-right">รายจ่ายตามชีต</th>
@@ -187,13 +188,13 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
               </thead>
               <tbody>
                 {preview.overview.map((o) => (
-                  <tr key={o.yearMonth} className={`border-t border-neutral-100 ${o.yearMonth === preview.yearMonth ? "bg-amber-50/60 font-medium" : ""}`}>
+                  <tr key={o.yearMonth} className={`border-t border-neutral-100 ${o.yearMonth === preview.yearMonth ? "bg-pending-soft/60 font-medium" : ""}`}>
                     <td className="px-3 py-1.5">{thaiMonth(o.yearMonth)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{fmt(o.sheetExpenseTotal)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(o.writtenTotal)} <span className="text-xs text-neutral-400">({o.entries})</span></td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(o.writtenTotal)} <span className="text-xs text-neutral-500">({o.entries})</span></td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-neutral-500">{fmt(o.posOwnedTotal)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{o.unmapped === 0 ? "—" : o.unmapped}</td>
-                    <td className={`px-3 py-1.5 text-xs ${o.reconciles ? "text-green-700" : "text-red-700 font-semibold"}`}>{o.reconciles ? "ตรงกัน ✓" : "ไม่ตรง — หยุด"}</td>
+                    <td className={`px-3 py-1.5 text-xs ${o.reconciles ? "text-success-ink" : "text-danger font-semibold"}`}>{o.reconciles ? "ตรงกัน ✓" : "ไม่ตรง — หยุด"}</td>
                     <td className="px-3 py-1.5 text-xs text-neutral-500">{o.importedAt ? new Date(o.importedAt).toLocaleDateString("th-TH") : "—"}</td>
                   </tr>
                 ))}
@@ -208,13 +209,13 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
                 {thaiMonth(preview.yearMonth)} — ยอดขายตามชีต {fmt(preview.revenue)} · Net Profit {fmt(preview.netProfit)} · รายจ่าย {fmt(preview.sheetExpenseTotal)}
               </p>
               {preview.previousImport && (
-                <p className="text-xs text-amber-700">
+                <p className="text-xs text-pending-ink">
                   เคยนำเข้าแล้ว {new Date(preview.previousImport.importedAt).toLocaleString("th-TH")} — ยืนยันจะแทนที่ทั้งหมด
                 </p>
               )}
             </div>
             <table className="mt-3 w-full text-sm">
-              <thead className="text-left text-xs text-neutral-500">
+              <thead className="text-left text-xs">
                 <tr>
                   <th className="py-1">บัญชี</th>
                   <th className="py-1 text-right">ยอดชีต</th>
@@ -290,13 +291,13 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
 
           <div className="flex items-center justify-end gap-3">
             {!applyEnabled && preview.blocks.length > 0 && (
-              <p className="text-sm text-red-700">ยังบันทึกไม่ได้ — ดูข้อความด้านบน</p>
+              <p className="text-sm text-danger">ยังบันทึกไม่ได้ — ดูข้อความด้านบน</p>
             )}
             <button
               type="button"
               onClick={handleApply}
               disabled={!applyEnabled}
-              className="rounded-md bg-brand-green px-5 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
+              className={buttonClass("primary")}
             >
               {isPending ? "กำลังบันทึก..." : `ยืนยันบันทึกเดือน ${thaiMonth(preview.yearMonth)}`}
             </button>

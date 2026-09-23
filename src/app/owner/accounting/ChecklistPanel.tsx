@@ -11,20 +11,20 @@ import { thaiMonth, type Checklist } from "./checklist";
 export function ChecklistPanel({ checklist, role }: { checklist: Checklist; role: Role }) {
   if (checklist.allDone) return null;
   const mark = (s: Checklist["steps"][number]) =>
-    s.state === "done" ? <span className="text-green-700">✓</span> : s.state === "partial" ? <span className="text-amber-600">◐</span> : <span className="text-neutral-400">○</span>;
+    s.state === "done" ? <span className="text-success-ink">✓</span> : s.state === "partial" ? <span className="text-pending-ink">◐</span> : <span className="text-neutral-500">○</span>;
   return (
-    <details open={!checklist.collapsed} className="rounded-lg border border-amber-200 bg-amber-50">
-      <summary className="cursor-pointer px-4 py-2.5 text-sm text-amber-900">
+    <details open={!checklist.collapsed} className="rounded-lg border border-pending/60 bg-pending-soft">
+      <summary className="cursor-pointer px-4 py-2.5 text-sm text-pending-ink">
         <span className="font-medium">ปิดเดือน {thaiMonth(checklist.yearMonth)}</span>
         <span className="ml-2">เหลือ {checklist.openCount} ขั้นตอน</span>
-        <span className="ml-2 text-xs text-amber-700">
+        <span className="ml-2 text-xs text-pending-ink">
           {checklist.steps.filter((s) => s.state !== "done").map((s) => s.title.split(" ")[0]).join(" · ")}
         </span>
       </summary>
-      <ol className="space-y-1.5 border-t border-amber-200 px-4 py-3 text-sm">
+      <ol className="space-y-1.5 border-t border-pending/60 px-4 py-3 text-sm">
         {checklist.steps.map((s, i) => (
           <li key={s.key} className="flex flex-wrap items-baseline gap-x-2">
-            <span className="w-4 tabular-nums text-neutral-400">{i + 1}.</span>
+            <span className="w-4 tabular-nums text-neutral-500">{i + 1}.</span>
             <span className="w-4">{mark(s)}</span>
             {s.ownerOnly && role !== "owner" ? (
               <span className={s.state === "done" ? "text-neutral-500" : "text-neutral-800"}>{s.title}</span>

@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { deleteExpenseEntry, type ExpenseEntry } from "./actions";
 import { bangkokToday } from "@/lib/bangkok-date";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -106,18 +108,18 @@ export function AccountingEntryClient({
       {/* Month navigator + total */}
       <div className="flex flex-wrap items-center gap-3">
         <a href={`/owner/accounting?month=${prevMonth}`}
-          className="rounded border border-neutral-300 px-2.5 py-1 text-sm hover:bg-neutral-50">‹</a>
+          className={buttonClass("secondary", { size: "sm" })}>‹</a>
         <span className="font-medium text-neutral-800">{getThaiMonth(yearMonth)}</span>
         {!isCurrentMonth && (
           <a href={`/owner/accounting?month=${nextMonth}`}
-            className="rounded border border-neutral-300 px-2.5 py-1 text-sm hover:bg-neutral-50">›</a>
+            className={buttonClass("secondary", { size: "sm" })}>›</a>
         )}
         <div className="ml-auto flex items-center gap-2 text-sm">
           {isFiltering ? (
             <>
               <span className="text-neutral-500">ผลค้นหา:</span>
               <span className="font-semibold text-neutral-900">{formatBaht(filteredTotal)} บาท</span>
-              <span className="text-neutral-400 text-xs">/ เดือน {formatBaht(monthTotal)}</span>
+              <span className="text-neutral-500 text-xs">/ เดือน {formatBaht(monthTotal)}</span>
             </>
           ) : (
             <>
@@ -135,7 +137,7 @@ export function AccountingEntryClient({
           placeholder="ค้นหาในเดือนนี้ เช่น กุ้ง มัน ไม้กวาด..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-48 rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+          className="flex-1 min-w-48 rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-info/30 focus:outline-none"
         />
         <select
           value={filterGroup}
@@ -150,14 +152,14 @@ export function AccountingEntryClient({
         {isFiltering && (
           <button
             onClick={() => { setSearch(""); setFilterGroup(""); }}
-            className="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50"
+            className={buttonClass("secondary")}
           >
             ล้าง
           </button>
         )}
         <a
           href={`/owner/accounting/daily?date=${today}`}
-          className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
+          className={buttonClass("primary")}
         >
           + บันทึกวันนี้
         </a>
@@ -172,7 +174,7 @@ export function AccountingEntryClient({
 
       {/* Entries */}
       {sortedDates.length === 0 ? (
-        <p className="py-10 text-center text-sm text-neutral-400">
+        <p className="py-10 text-center text-sm text-neutral-500">
           {isFiltering ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มีรายการในเดือนนี้"}
         </p>
       ) : (
@@ -190,7 +192,7 @@ export function AccountingEntryClient({
                 <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-3 py-2">
                   <a
                     href={`/owner/accounting/daily?date=${d}`}
-                    className="text-sm font-semibold text-neutral-700 hover:text-blue-600 hover:underline"
+                    className={buttonClass("link")}
                     title="คลิกเพื่อแก้ไขรายการของวันนี้"
                   >
                     {dateLabel}
@@ -200,7 +202,7 @@ export function AccountingEntryClient({
                 {/* Entry table */}
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-xs text-neutral-400">
+                    <tr className={TH_ROW}>
                       <th className="px-3 py-1.5 text-left">รายละเอียด</th>
                       <th className="px-3 py-1.5 text-left w-40">หมวดบัญชี</th>
                       <th className="px-3 py-1.5 text-right w-28">เงินสด</th>
@@ -215,7 +217,7 @@ export function AccountingEntryClient({
                           {e.note ? highlight(e.note, search) : <span className="text-neutral-300">–</span>}
                         </td>
                         <td className="px-3 py-2 text-xs">
-                          <span className="text-neutral-400">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
+                          <span className="text-neutral-500">{e.group_name?.replace(/\s*\(.*\)/, "")} › </span>
                           <span className="text-neutral-600">{e.coa_name}</span>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-neutral-800">
@@ -229,7 +231,7 @@ export function AccountingEntryClient({
                             type="button"
                             onClick={() => handleDelete(e.id)}
                             disabled={isPending}
-                            className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-400 hover:bg-red-100 active:bg-red-200 disabled:opacity-30"
+                            className={buttonClass("link", { size: "sm", dangerHover: true })}
                             title="ลบรายการ"
                           >
                             ลบ
@@ -260,7 +262,7 @@ export function AccountingEntryClient({
         </div>
       )}
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

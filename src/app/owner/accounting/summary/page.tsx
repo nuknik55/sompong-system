@@ -7,6 +7,9 @@ import { bangkokYearMonth } from "@/lib/bangkok-date";
 import { completenessNotices, profitJudgementAllowed } from "./completeness";
 import { RevenueEntryClient } from "./RevenueEntryClient";
 import { ToolRow } from "../tool-row";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -80,37 +83,34 @@ export default async function AccountingSummaryPage({
   const profitColor = !profitJudgementAllowed(summary)
     ? "text-neutral-900"
     : operatingProfit < 0
-      ? "text-red-600"
+      ? "text-danger"
       : "text-brand-green";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <a href={`/owner/accounting?month=${yearMonth}`} className="text-sm text-neutral-400 hover:text-neutral-700">← ดูทั้งเดือน</a>
-          <span className="text-neutral-300 text-sm">/</span>
-          <h1 className="font-kanit text-lg font-semibold text-neutral-900">สรุปรายเดือน</h1>
-        </div>
-        <div className="flex items-center gap-4 text-sm text-neutral-400">
+      <PageHeader
+        back={{ href: `/owner/accounting?month=${yearMonth}`, label: "ดูทั้งเดือน", reload: true }}
+        title="สรุปรายเดือน"
+        actions={
           <a
             href={`/owner/accounting/summary/print?month=${yearMonth}`}
-            className="rounded border border-neutral-300 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50"
+            className={buttonClass("secondary", { size: "sm" })}
           >
             พิมพ์ / Export P&amp;L
           </a>
-        </div>
-      </div>
+        }
+      />
       <ToolRow role={profile.role} yearMonth={yearMonth} current="summary" />
 
       {/* Month navigator */}
       <div className="flex items-center gap-3">
         <a href={`/owner/accounting/summary?month=${prevMonth}`}
-          className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">‹</a>
+          className={buttonClass("secondary", { size: "sm" })}>‹</a>
         <span className="font-medium text-neutral-800">{getThaiMonth(yearMonth)}</span>
         {!isCurrentMonth && (
           <a href={`/owner/accounting/summary?month=${nextMonthStr}`}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-50">›</a>
+            className={buttonClass("secondary", { size: "sm" })}>›</a>
         )}
       </div>
 
@@ -118,13 +118,13 @@ export default async function AccountingSummaryPage({
       <RevenueEntryClient yearMonth={yearMonth} initialRevenue={revenueMap as Record<string, number>} importedAt={importedAt} />
 
       {totalRevenue === 0 ? (
-        <p className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
+        <p className="rounded-lg bg-pending-soft border border-pending/60 px-4 py-3 text-sm text-pending-ink">
           ยังไม่ได้กรอกรายได้เดือนนี้ — กรอกก่อนเพื่อดู % ต้นทุน
         </p>
       ) : null}
 
       {notices.map((n) => (
-        <p key={n} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p key={n} className="rounded-lg border border-pending/60 bg-pending-soft px-4 py-3 text-sm text-pending-ink">
           {n}
         </p>
       ))}
@@ -154,7 +154,7 @@ export default async function AccountingSummaryPage({
           {totalRevenue > 0 && covers.bills > 0 && ` · เฉลี่ย ${formatBaht(totalRevenue / covers.bills)} ฿/บิล`}
           {totalRevenue > 0 && covers.customers > 0 && ` · ${formatBaht(totalRevenue / covers.customers)} ฿/คน`}
           {covers.cancelledBills > 0 && (
-            <span className="text-neutral-400"> · ยกเลิก {covers.cancelledBills.toLocaleString("th-TH")} บิล ({formatBaht(covers.cancelledAmount)} ฿ ตาม POS)</span>
+            <span className="text-neutral-500"> · ยกเลิก {covers.cancelledBills.toLocaleString("th-TH")} บิล ({formatBaht(covers.cancelledAmount)} ฿ ตาม POS)</span>
           )}
         </p>
       )}
@@ -162,8 +162,8 @@ export default async function AccountingSummaryPage({
       {/* Cost Structure table */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-            <tr className="border-b border-neutral-200">
+          <thead className="text-left text-xs">
+            <tr className={TH_ROW}>
               <th className="px-4 py-2">หมวด</th>
               <th className="px-4 py-2 text-right">จำนวน (฿)</th>
               <th className="px-4 py-2 text-right w-20">% จริง</th>
@@ -183,7 +183,7 @@ export default async function AccountingSummaryPage({
                   <td className="px-4 py-2 text-right tabular-nums">
                     {g.pct_of_revenue != null ? `${g.pct_of_revenue.toFixed(1)}%` : "—"}
                   </td>
-                  <td className="px-4 py-2 text-right text-neutral-400">
+                  <td className="px-4 py-2 text-right text-neutral-500">
                     {g.target_pct != null ? `${g.target_pct}%` : "—"}
                   </td>
                   <td className="px-4 py-2">
@@ -197,7 +197,7 @@ export default async function AccountingSummaryPage({
                     <td className="px-4 py-1.5 text-right tabular-nums text-neutral-600">
                       {formatBaht(a.total)}
                     </td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-neutral-400 text-xs">
+                    <td className="px-4 py-1.5 text-right tabular-nums text-neutral-500 text-xs">
                       {a.pct_of_revenue != null ? `${a.pct_of_revenue.toFixed(1)}%` : "—"}
                     </td>
                     <td className="px-4 py-1.5" />
@@ -240,10 +240,10 @@ export default async function AccountingSummaryPage({
               <tr key={g.group_code} className="border-t border-neutral-200 text-neutral-500">
                 <td className="px-4 py-2">
                   {g.group_name}
-                  <span className="ml-2 text-xs text-neutral-400">(ไม่หักจากกำไรดำเนินงาน)</span>
+                  <span className="ml-2 text-xs text-neutral-500">(ไม่หักจากกำไรดำเนินงาน)</span>
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums">{formatBaht(g.total)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-neutral-400">
+                <td className="px-4 py-2 text-right tabular-nums text-neutral-500">
                   {totalRevenue > 0 ? `${((g.total / totalRevenue) * 100).toFixed(1)}%` : "—"}
                 </td>
                 <td colSpan={2} />
@@ -252,12 +252,12 @@ export default async function AccountingSummaryPage({
           </tfoot>
         </table>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
 function KpiCard({ label, value, highlight }: { label: string; value: string; highlight?: "red" | "amber" | "green" }) {
-  const color = highlight === "red" ? "text-red-600" : highlight === "amber" ? "text-amber-600" : highlight === "green" ? "text-brand-green" : "text-neutral-900";
+  const color = highlight === "red" ? "text-danger" : highlight === "amber" ? "text-pending-ink" : highlight === "green" ? "text-brand-green" : "text-neutral-900";
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <p className="text-xs text-neutral-500">{label}</p>

@@ -18,7 +18,7 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
       key={key}
       href={href}
       aria-current={current === key ? "page" : undefined}
-      className={current === key ? "font-medium text-neutral-900" : "hover:text-neutral-800"}
+      className={current === key ? "font-semibold text-primary" : "hover:text-neutral-900 hover:underline underline-offset-2"}
     >
       {label}
     </Link>
@@ -26,7 +26,7 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
   const sep = <span className="text-neutral-300">·</span>;
   const group = (label: string, links: React.ReactNode[]) => (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="text-xs uppercase tracking-wide text-neutral-400">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-neutral-500">{label}</span>
       {links.flatMap((l, i) => (i === 0 ? [l] : [<span key={`s${i}`}>{sep}</span>, l]))}
     </span>
   );
@@ -50,7 +50,7 @@ export function ToolRow({ role, yearMonth, current }: { role: Role; yearMonth: s
       {group("ทุกวัน", [item("/owner/accounting/daily", "บันทึกรายวัน", "daily"), item("/owner/accounting/transfer-slip", "ใบโอนเงิน", "transfer-slip")])}
       <span className="hidden text-neutral-300 sm:inline">|</span>
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-xs uppercase tracking-wide text-neutral-400">ทุกเดือน</span>
+        <span className="text-xs uppercase tracking-wide text-neutral-500">ทุกเดือน</span>
         {monthlyArrows}
       </span>
       <span className="hidden text-neutral-300 sm:inline">|</span>
