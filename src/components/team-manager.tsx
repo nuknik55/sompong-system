@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { createUser, deleteUser, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
 import type { Role } from "@/lib/auth";
 import { assignableRoles, teamRefusal } from "@/lib/team-rules";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 export type TeamUser = {
   id: string;
@@ -211,13 +213,13 @@ export function TeamManager({
     <div className="space-y-4">
       <button
         type="button"
-        className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+        className={buttonClass("primary")}
         onClick={() => setShowForm((v) => !v)}
       >
         {showForm ? "ยกเลิก" : "+ เพิ่มบัญชีใหม่"}
       </button>
 
-      {createError && <p className="text-sm text-red-600">{createError}</p>}
+      {createError && <p className="text-sm text-danger">{createError}</p>}
 
       {showForm && (
         <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
@@ -263,7 +265,7 @@ export function TeamManager({
             type="button"
             disabled={isPending}
             onClick={submitCreate}
-            className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className={buttonClass("primary", { className: "w-full" })}
           >
             สร้างบัญชี
           </button>
@@ -273,7 +275,7 @@ export function TeamManager({
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2">ชื่อ</th>
               <th className="px-3 py-2">User</th>
               <th className="px-3 py-2">สิทธิ์</th>
@@ -336,20 +338,20 @@ export function TeamManager({
                             type="button"
                             disabled={isPending}
                             onClick={saveEdit}
-                            className="rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+                            className={buttonClass("primary", { size: "sm" })}
                           >
                             บันทึก
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingId(null)}
-                            className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+                            className={buttonClass("secondary", { size: "sm" })}
                           >
                             ยกเลิก
                           </button>
                         </div>
                         {rowError[u.id] && (
-                          <p className="mt-1 text-right text-xs text-red-600">{rowError[u.id]}</p>
+                          <p className="mt-1 text-right text-xs text-danger">{rowError[u.id]}</p>
                         )}
                       </td>
                     </>
@@ -359,7 +361,7 @@ export function TeamManager({
                       <td className="px-3 py-2">
                         {u.full_name}
                         {u.employee_id && (
-                          <div className="text-xs text-neutral-400">
+                          <div className="text-xs text-neutral-500">
                             HR: {employeeLabelById.get(u.employee_id) ?? "ไม่พบพนักงาน"}
                           </div>
                         )}
@@ -369,7 +371,7 @@ export function TeamManager({
                       {/* Role cell */}
                       <td className="px-3 py-2">
                         {u.role === "owner" ? (
-                          <span className="inline-flex items-center rounded-full bg-brand-gold/15 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                          <span className="inline-flex items-center rounded-full bg-brand-gold/15 px-2.5 py-0.5 text-xs font-semibold text-pending-ink">
                             {ROLE_LABEL.owner}
                           </span>
                         ) : canActOnRow ? (
@@ -392,7 +394,7 @@ export function TeamManager({
                                 type="button"
                                 disabled={isPending}
                                 onClick={() => applyRole(u.id)}
-                                className="rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+                                className={buttonClass("primary", { size: "sm" })}
                               >
                                 บันทึก
                               </button>
@@ -409,7 +411,7 @@ export function TeamManager({
                           <div className="flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
-                              className="text-neutral-500 hover:text-neutral-900"
+                              className={buttonClass("link")}
                               onClick={() => startEdit(u)}
                             >
                               แก้ไข
@@ -418,7 +420,7 @@ export function TeamManager({
                             {canChangePwd && (
                               <button
                                 type="button"
-                                className="text-blue-500 hover:text-blue-700"
+                                className={buttonClass("link")}
                                 onClick={() => {
                                   setPwdRowId((prev) => (prev === u.id ? null : u.id));
                                   setPwdValue("");
@@ -432,7 +434,7 @@ export function TeamManager({
                             {canDelete && (
                               <button
                                 type="button"
-                                className="text-red-500 hover:text-red-700"
+                                className={buttonClass("link", { dangerHover: true })}
                                 onClick={() => remove(u.id)}
                               >
                                 ลบบัญชี
@@ -455,14 +457,14 @@ export function TeamManager({
                               type="button"
                               disabled={isPending}
                               onClick={() => submitPassword(u.id)}
-                              className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                              className={buttonClass("primary", { size: "sm" })}
                             >
                               ยืนยัน
                             </button>
                             <button
                               type="button"
                               onClick={() => { setPwdRowId(null); setPwdValue(""); }}
-                              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+                              className={buttonClass("secondary", { size: "sm" })}
                             >
                               ยกเลิก
                             </button>
@@ -470,7 +472,7 @@ export function TeamManager({
                         )}
 
                         {rowError[u.id] && (
-                          <p className="mt-1 text-right text-xs text-red-600">{rowError[u.id]}</p>
+                          <p className="mt-1 text-right text-xs text-danger">{rowError[u.id]}</p>
                         )}
                       </td>
                     </>

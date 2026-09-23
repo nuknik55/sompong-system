@@ -6,6 +6,8 @@ import { deletePosSalesAlias, updatePosSalesAlias } from "@/app/owner/sales-impo
 import { decimalBoxInput, decimalBoxText } from "@/lib/decimal-input";
 import { validDivisor } from "@/lib/pos-sales-divisor";
 import { useLeaveGuard } from "@/lib/use-leave-guard";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 export type DivisorRow = { id: string; posProductName: string; menuId: string; divisor: number };
 export type MenuOption = { id: string; name: string; category: string | null };
@@ -100,8 +102,8 @@ export function PosDivisorsClient({ rows, menus }: { rows: DivisorRow[]; menus: 
   if (rows.length === 0) {
     return (
       <div className="space-y-3">
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {notice && <p className="text-sm text-green-700">{notice}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {notice && <p className="text-sm text-success-ink">{notice}</p>}
         <p className="rounded-lg border border-neutral-200 bg-white px-4 py-6 text-center text-sm text-neutral-500">
           ยังไม่มีตัวหาร — สร้างได้จากหน้านำเข้ายอดขาย (ปุ่ม หาร หรือ ผูกเข้าเมนู)
         </p>
@@ -111,12 +113,12 @@ export function PosDivisorsClient({ rows, menus }: { rows: DivisorRow[]; menus: 
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-green-700">{notice}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
+      {notice && <p className="text-sm text-success-ink">{notice}</p>}
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-neutral-500">
+            <tr className={TH_ROW}>
               <th className="px-3 py-2">ชื่อสินค้าใน POS</th>
               <th className="px-3 py-2">เมนูในแอป</th>
               <th className="px-3 py-2 text-right">ตัวหาร</th>
@@ -147,14 +149,14 @@ export function PosDivisorsClient({ rows, menus }: { rows: DivisorRow[]; menus: 
                     ) : (
                       <>
                         {menu?.name ?? "(ไม่พบเมนู)"}
-                        {menu?.category && <span className="ml-1.5 text-xs text-neutral-400">{menu.category}</span>}
+                        {menu?.category && <span className="ml-1.5 text-xs text-neutral-500">{menu.category}</span>}
                       </>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {current ? (
                       <span className="inline-flex items-center gap-1">
-                        <span className="text-neutral-400">÷</span>
+                        <span className="text-neutral-500">÷</span>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -180,7 +182,7 @@ export function PosDivisorsClient({ rows, menus }: { rows: DivisorRow[]; menus: 
                           type="button"
                           disabled={isPending || !dirty}
                           onClick={save}
-                          className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
+                          className={buttonClass("primary", { size: "sm" })}
                         >
                           {isPending ? "กำลังบันทึก..." : "บันทึก"}
                         </button>
@@ -208,7 +210,7 @@ export function PosDivisorsClient({ rows, menus }: { rows: DivisorRow[]; menus: 
                           type="button"
                           disabled={isPending}
                           onClick={() => remove(r)}
-                          className="ml-3 text-xs text-red-600 underline hover:text-red-800 disabled:opacity-40"
+                          className="ml-3 text-xs text-danger underline hover:text-danger disabled:opacity-40"
                         >
                           ลบ
                         </button>

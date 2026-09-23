@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * The one error screen, used by every segment's error.tsx and by
@@ -71,7 +72,7 @@ export function RouteError({
         <button
           type="button"
           onClick={copy}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          className={buttonClass("primary")}
         >
           {copied ? "คัดลอกแล้ว ✓" : "คัดลอกข้อความสำหรับส่งผู้ดูแล"}
         </button>
@@ -79,12 +80,12 @@ export function RouteError({
           <button
             type="button"
             onClick={retry}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            className={buttonClass("secondary")}
           >
             ลองใหม่
           </button>
         )}
-        <Link href="/" className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+        <Link href="/" className={buttonClass("secondary")}>
           กลับหน้าแรก
         </Link>
       </div>

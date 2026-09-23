@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { displayIdentity } from "@/lib/identity";
 import { TeamManager } from "@/components/team-manager";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 export default async function OwnerTeamPage() {
   const me = await requireAdmin();
@@ -45,12 +46,9 @@ export default async function OwnerTeamPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900">จัดการพนักงาน</h1>
-        <p className="text-sm text-neutral-500">เพิ่มบัญชีพนักงานใหม่ และตั้งสิทธิ์การใช้งานได้ที่นี่</p>
-      </div>
+    <PageShell>
+      <PageHeader title="จัดการพนักงาน" subtitle="เพิ่มบัญชีพนักงานใหม่ และตั้งสิทธิ์การใช้งานได้ที่นี่" />
       <TeamManager users={users} currentUserId={me.id} currentUserRole={me.role} employeeOptions={employeeOptions} />
-    </div>
+    </PageShell>
   );
 }

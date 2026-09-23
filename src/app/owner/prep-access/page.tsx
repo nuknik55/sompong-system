@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { requireOwner } from "@/lib/auth";
 import { getPrepAccessBoard } from "@/lib/prep-access";
 import { PrepAccessClient } from "./PrepAccessClient";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 // ── สิทธิ์ดูสูตรของเตรียม — OWNER ONLY, DELIBERATELY ────────────────────────
 //
@@ -24,15 +25,17 @@ export default async function PrepAccessPage() {
   const { recipes, people, grants } = await getPrepAccessBoard();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
-      <div>
-        <h1 className="font-kanit text-lg font-semibold text-neutral-900">สิทธิ์ดูสูตรของเตรียม</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          สูตรของเตรียมทุกสูตรถูกปิดไว้ก่อน — เปิดให้ทีละคน ทีละสูตร เจ้าของร้านเห็นทุกสูตรเสมอ
-          และเป็นคนเดียวที่เปิดสิทธิ์ให้คนอื่นได้
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="สิทธิ์ดูสูตรของเตรียม"
+        subtitle={
+          <span>
+            สูตรของเตรียมทุกสูตรถูกปิดไว้ก่อน — เปิดให้ทีละคน ทีละสูตร เจ้าของร้านเห็นทุกสูตรเสมอ
+            และเป็นคนเดียวที่เปิดสิทธิ์ให้คนอื่นได้
+          </span>
+        }
+      />
       <PrepAccessClient recipes={recipes} people={people} grants={grants} />
-    </div>
+    </PageShell>
   );
 }

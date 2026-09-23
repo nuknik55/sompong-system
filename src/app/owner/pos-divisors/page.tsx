@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PosDivisorsClient, type DivisorRow, type MenuOption } from "./PosDivisorsClient";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 // ── ตัวหารยอดขาย POS: every divisor in one place (Nik, 2026-09-21) ──────────
 // pos_sales_aliases is how the POS sales import turns a POS count into the
@@ -34,12 +34,9 @@ export default async function PosDivisorsPage() {
   const options: MenuOption[] = (menus ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category }));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
+    <PageShell>
       <div className="space-y-2">
-        <Link href="/owner" className="text-xs text-neutral-500 underline hover:text-neutral-800">
-          ← ภาพรวมต้นทุนและ Menu Engineering
-        </Link>
-        <h1 className="font-kanit text-lg font-semibold text-neutral-900">ตัวหารยอดขาย POS</h1>
+        <PageHeader back={{ href: "/owner", label: "ภาพรวมต้นทุนและ Menu Engineering" }} title="ตัวหารยอดขาย POS" />
         <div className="space-y-1 text-sm text-neutral-500">
           <p>การนำเข้ายอดขายจาก POS หารจำนวนขายของแต่ละชื่อในรายการนี้ด้วยตัวหาร ก่อนรวมเข้าเมนูในแอป</p>
           <ul className="list-disc space-y-0.5 pl-5">
@@ -58,6 +55,6 @@ export default async function PosDivisorsPage() {
         </div>
       </div>
       <PosDivisorsClient rows={rows} menus={options} />
-    </div>
+    </PageShell>
   );
 }

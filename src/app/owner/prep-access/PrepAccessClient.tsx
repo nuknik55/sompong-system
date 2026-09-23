@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Tabs } from "@/components/tabs";
 import { grantPrepAccess, revokePrepAccess, grantAllPreps, revokeAllPreps } from "./actions";
 import type { PrepAccessRecipe, PrepAccessPerson, PrepAccessGrant } from "@/lib/prep-access";
+import { buttonClass } from "@/components/ui/button";
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", editor: "Editor", staff: "Staff" };
 
@@ -123,7 +124,7 @@ export function PrepAccessClient({
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {shownRecipes.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-400">ไม่พบสูตร</p>}
+        {shownRecipes.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-500">ไม่พบสูตร</p>}
         {shownRecipes.map((r) => {
           const n = countByRecipe.get(r.id) ?? 0;
           const open = openRecipe === r.id;
@@ -136,15 +137,15 @@ export function PrepAccessClient({
               >
                 <span className="min-w-0 flex-1 text-sm text-neutral-800">
                   {r.name}
-                  {r.category && <span className="ml-2 text-xs text-neutral-400">{r.category}</span>}
+                  {r.category && <span className="ml-2 text-xs text-neutral-500">{r.category}</span>}
                 </span>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${n === 0 ? "bg-neutral-100 text-neutral-500" : "bg-green-100 text-green-700"}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${n === 0 ? "bg-neutral-100 text-neutral-500" : "bg-success-soft text-success-ink"}`}>
                   {n === 0 ? "ยังไม่เปิดให้ใคร" : `${n} คนเห็น`}
                 </span>
               </button>
               {open && (
                 <div className="space-y-1 border-t border-neutral-100 bg-neutral-50/60 px-4 py-3">
-                  {people.length === 0 && <p className="text-sm text-neutral-400">ไม่มีผู้ใช้ที่เปิดสิทธิ์ได้</p>}
+                  {people.length === 0 && <p className="text-sm text-neutral-500">ไม่มีผู้ใช้ที่เปิดสิทธิ์ได้</p>}
                   {people.map((p) => {
                     const g = granted.get(key(r.id, p.id));
                     const k = key(r.id, p.id);
@@ -156,16 +157,16 @@ export function PrepAccessClient({
                           onClick={() => toggle(r.id, p.id, !!g)}
                           className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
                             g
-                              ? "border-green-300 bg-green-50 text-green-800 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                              : "border-neutral-300 bg-white text-neutral-600 hover:border-green-400 hover:bg-green-50 hover:text-green-800"
+                              ? "border-success/30 bg-success-soft text-success-ink hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+                              : "border-neutral-300 bg-white text-neutral-600 hover:border-success/30 hover:bg-success-soft hover:text-success-ink"
                           }`}
                         >
                           {busy === k ? "กำลังบันทึก…" : g ? "✓ เห็นสูตรนี้" : "เปิดให้เห็น"}
                         </button>
                         <span className="text-sm text-neutral-700">{p.fullName}</span>
-                        <span className="text-xs text-neutral-400">{ROLE_LABEL[p.role] ?? p.role}</span>
+                        <span className="text-xs text-neutral-500">{ROLE_LABEL[p.role] ?? p.role}</span>
                         {g && (
-                          <span className="text-xs text-neutral-400">
+                          <span className="text-xs text-neutral-500">
                             · เปิดเมื่อ {fmtDate(g.grantedAt)}
                             {g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
                           </span>
@@ -228,15 +229,15 @@ export function PrepAccessClient({
                 onClick={() => toggle(r.id, p.id, !!g)}
                 className={`shrink-0 rounded-lg border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
                   g
-                    ? "border-green-300 bg-green-50 text-green-800 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                    : "border-neutral-300 bg-white text-neutral-600 hover:border-green-400 hover:bg-green-50 hover:text-green-800"
+                    ? "border-success/30 bg-success-soft text-success-ink hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+                    : "border-neutral-300 bg-white text-neutral-600 hover:border-success/30 hover:bg-success-soft hover:text-success-ink"
                 }`}
               >
                 {busy === k ? "กำลังบันทึก…" : g ? "✓ เห็นสูตรนี้" : "เปิดให้เห็น"}
               </button>
               <span className="min-w-0 flex-1 text-sm text-neutral-700">{r.name}</span>
               {g && (
-                <span className="shrink-0 text-xs text-neutral-400">
+                <span className="shrink-0 text-xs text-neutral-500">
                   เปิดเมื่อ {fmtDate(g.grantedAt)}{g.grantedByName ? ` โดย ${g.grantedByName}` : ""}
                 </span>
               )}
@@ -253,10 +254,10 @@ export function PrepAccessClient({
                 onClick={() => setOpenPerson(open ? null : p.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <span className={`text-xs text-neutral-400 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+                <span className={`text-xs text-neutral-500 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
                 <span className="min-w-0 truncate text-sm font-medium text-neutral-800">{p.fullName}</span>
-                <span className="shrink-0 text-xs text-neutral-400">{ROLE_LABEL[p.role] ?? p.role}</span>
-                <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${held === 0 ? "bg-neutral-100 text-neutral-500" : "bg-green-100 text-green-700"}`}>
+                <span className="shrink-0 text-xs text-neutral-500">{ROLE_LABEL[p.role] ?? p.role}</span>
+                <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${held === 0 ? "bg-neutral-100 text-neutral-500" : "bg-success-soft text-success-ink"}`}>
                   {held} / {recipes.length} สูตร
                 </span>
               </button>
@@ -265,7 +266,7 @@ export function PrepAccessClient({
                   type="button"
                   disabled={isPending && busy === allKey}
                   onClick={() => bulk(p, "grant", held)}
-                  className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-green-400 hover:bg-green-50 hover:text-green-800 disabled:opacity-40"
+                  className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-success/30 hover:bg-success-soft hover:text-success-ink disabled:opacity-40"
                 >
                   {busy === allKey ? "กำลังบันทึก…" : `เปิดทั้งหมด (${recipes.length})`}
                 </button>
@@ -275,7 +276,7 @@ export function PrepAccessClient({
                   type="button"
                   disabled={isPending && busy === allKey}
                   onClick={() => bulk(p, "revoke", held)}
-                  className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                  className={buttonClass("secondary", { size: "sm", className: "shrink-0" })}
                 >
                   {busy === allKey ? "กำลังบันทึก…" : "ปิดทั้งหมด"}
                 </button>
@@ -287,7 +288,7 @@ export function PrepAccessClient({
                   เห็นอยู่ ({held})
                 </p>
                 {heldRecipes.length === 0 ? (
-                  <p className="px-4 py-2 text-xs text-neutral-400">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
+                  <p className="px-4 py-2 text-xs text-neutral-500">ยังไม่เห็นสูตรของเตรียมใดเลย</p>
                 ) : (
                   <ul>{heldRecipes.map(rowFor)}</ul>
                 )}
@@ -295,7 +296,7 @@ export function PrepAccessClient({
                   ยังไม่เห็น ({recipes.length - held})
                 </p>
                 {notHeldRecipes.length === 0 ? (
-                  <p className="px-4 py-2 text-xs text-neutral-400">เห็นครบทุกสูตรแล้ว</p>
+                  <p className="px-4 py-2 text-xs text-neutral-500">เห็นครบทุกสูตรแล้ว</p>
                 ) : (
                   <ul>{notHeldRecipes.map(rowFor)}</ul>
                 )}
@@ -310,15 +311,15 @@ export function PrepAccessClient({
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)} className="ml-2 text-danger/70 hover:text-danger">✕</button>
         </div>
       )}
 
       <div className="flex flex-wrap gap-3 text-sm">
         <span className="rounded-lg bg-neutral-100 px-3 py-1.5 text-neutral-700">สูตรทั้งหมด {recipes.length}</span>
-        <span className={`rounded-lg px-3 py-1.5 ${unheld === recipes.length ? "bg-amber-100 text-amber-800" : "bg-neutral-100 text-neutral-700"}`}>
+        <span className={`rounded-lg px-3 py-1.5 ${unheld === recipes.length ? "bg-pending-soft text-pending-ink" : "bg-neutral-100 text-neutral-700"}`}>
           ยังไม่เปิดให้ใครเลย {unheld} สูตร
         </span>
         <span className="rounded-lg bg-neutral-100 px-3 py-1.5 text-neutral-700">เปิดสิทธิ์แล้ว {grants.length} รายการ</span>
