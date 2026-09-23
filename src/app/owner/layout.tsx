@@ -20,7 +20,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       <AppHeader profile={profile} pendingCount={pendingCount} openRepairCount={openRepairCount} />
-      <main className="flex-1 p-4 sm:p-6">{children}</main>
+      {/* min-w-0: a flex item defaults to min-width:auto, so one long
+          unbroken row (the category tabs on /owner) widened the whole page
+          past the screen instead of scrolling inside its own box. */}
+      <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
     </div>
   );
 }

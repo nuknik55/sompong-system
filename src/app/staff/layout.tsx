@@ -8,7 +8,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       <AppHeader profile={profile} openRepairCount={openRepairCount} />
-      <main className="flex-1 p-4 sm:p-6">{children}</main>
+      <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
     </div>
   );
 }
