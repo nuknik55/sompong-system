@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addCateringEventLabor, deleteCateringEventLabor } from "../../actions";
 import type { CateringEventLabor, CateringTransferCostRate } from "../../actions";
-import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum, thFullDate } from "../../shared-utils";
+import { COST_TYPE_OPTIONS, Field, fmtBaht, toNum } from "../../shared-utils";
 import { lockCateringEventCost, unlockCateringEventCost } from "./actions";
 import { staleQuoteMessage } from "@/lib/quote-doc";
 import type { CateringEventCostSnapshot } from "./actions";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate } from "@/lib/thai-date";
 
 // ต้นทุนภายใน has no sub-nav entry (see catering-sub-nav.tsx), so the link
 // beside + เพิ่มต้นทุน below is the ONLY way to reach it without typing the
@@ -244,11 +245,9 @@ export function CostSummaryClient({
           banner by the button covers that case instead. */}
       {hasSnapshot && (
         <div className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-700">
-          {/* snapshot_at is UTC — a raw .slice(0, 10) can read a day behind
-              actual Thai calendar time for a lock made ~00:00-07:00 local
-              (UTC+7). Converting via Bangkok-local formatting first avoids
-              that. */}
-          ล็อกต้นทุนแล้วเมื่อ {thFullDate(new Date(snapshot!.snapshot_at).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))} — ตัวเลขด้านล่างเป็นค่าที่บันทึกไว้ถาวร ไม่คำนวณสดอีกต่อไป
+          {/* snapshot_at is a UTC timestamp: thaiDate reads it in Bangkok
+              time, so a lock made 00:00-07:00 local shows its own day. */}
+          ล็อกต้นทุนแล้วเมื่อ {thaiDate(snapshot!.snapshot_at)} — ตัวเลขด้านล่างเป็นค่าที่บันทึกไว้ถาวร ไม่คำนวณสดอีกต่อไป
         </div>
       )}
 

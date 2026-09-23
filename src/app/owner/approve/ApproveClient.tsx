@@ -5,6 +5,7 @@ import { approveChange, rejectChange } from "@/app/owner/approve/actions";
 import type { PendingChange } from "@/lib/pending-data";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDateTime } from "@/lib/thai-date";
 
 // ─── Type labels ───────────────────────────────────────────────────────────────
 
@@ -294,7 +295,7 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
 // ─── Single change row ─────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" });
+  return thaiDateTime(iso);
 }
 
 function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => void }) {

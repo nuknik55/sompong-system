@@ -11,6 +11,7 @@ import {
 } from "./outsource-actions";
 import { canApply, importReducer, initialImportState } from "../revenue-import/import-state";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate, thaiDateTime } from "@/lib/thai-date";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -198,7 +199,7 @@ export function OutsourceImportClient() {
                       {o.blocks.length === 0 ? "ตรงกัน ✓" : "หยุด"}
                     </td>
                     <td className="px-3 py-1.5 text-xs text-neutral-500">
-                      {o.previousImport ? new Date(o.previousImport.importedAt).toLocaleDateString("th-TH") : "—"}
+                      {o.previousImport ? thaiDate(o.previousImport.importedAt) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -267,7 +268,7 @@ export function OutsourceImportClient() {
                   </p>
                   {month.previousImport && (
                     <p className="text-xs text-pending-ink">
-                      เคยนำเข้าแล้ว {new Date(month.previousImport.importedAt).toLocaleString("th-TH")} — ยืนยันจะแทนที่ทั้งหมด
+                      เคยนำเข้าแล้ว {thaiDateTime(month.previousImport.importedAt)} — ยืนยันจะแทนที่ทั้งหมด
                     </p>
                   )}
                 </div>

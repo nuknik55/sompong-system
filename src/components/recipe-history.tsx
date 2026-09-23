@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getRecipeHistory, type RecipeHistoryEntry, type RecipeTarget } from "@/app/staff/actions";
+import { thaiDateTime } from "@/lib/thai-date";
 
 const ACTION_LABEL: Record<RecipeHistoryEntry["action"], string> = {
   insert: "เพิ่ม",
@@ -10,7 +11,7 @@ const ACTION_LABEL: Record<RecipeHistoryEntry["action"], string> = {
 };
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return thaiDateTime(iso);
 }
 
 export function RecipeHistory({ target, parentId }: { target: RecipeTarget; parentId: string }) {

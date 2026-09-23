@@ -11,6 +11,7 @@ import { CategoryTabs } from "@/components/category-tabs";
 import { getPosImportMeta } from "./sales-import-actions";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { StatTile } from "@/components/ui/stat-tile";
+import { thaiDate } from "@/lib/thai-date";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -126,8 +127,8 @@ export default async function OwnerDashboardPage({
           📅 ข้อมูลยอดขาย:{" "}
           <span className="text-neutral-600 font-normal">
             {posImportMeta.dateTo && posImportMeta.dateTo !== posImportMeta.dateFrom
-              ? `${posImportMeta.dateFrom} – ${posImportMeta.dateTo}`
-              : posImportMeta.dateFrom}
+              ? `${thaiDate(posImportMeta.dateFrom)} – ${thaiDate(posImportMeta.dateTo)}`
+              : thaiDate(posImportMeta.dateFrom)}
           </span>
         </p>
       )}

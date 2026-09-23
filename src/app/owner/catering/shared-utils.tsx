@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 import { toNum } from "./to-num";
 import { toTimeInput } from "./booking-form";
+import { thaiDateWithDay } from "@/lib/thai-date";
 
 export { toNum, toTimeInput };
 
@@ -168,12 +169,14 @@ export const RATE_TYPE_LABEL     = Object.fromEntries(RATE_TYPE_OPTIONS.map((o) 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** "ศ 18/9/2569": the one on-screen date (lib/thai-date.ts), with the day
+ *  of the week, as the booking list has always shown it. */
 export function thDate(d: string): string {
-  const [y, m, day] = d.split("-").map(Number);
-  const dow = new Date(d + "T00:00:00").getDay();
-  return `${DAYS_SHORT[dow]} ${day}/${m}/${(y ?? 2500) + 543}`;
+  return thaiDateWithDay(d);
 }
 
+/** "ศ 18 กันยายน 2569": the printed documents' long date only (quotation,
+ *  function sheets); a screen shows thDate. */
 export function thFullDate(d: string): string {
   const [y, m, day] = d.split("-").map(Number);
   const dow = new Date(d + "T00:00:00").getDay();

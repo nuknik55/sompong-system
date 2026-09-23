@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle, Plus } from "lucide-react";
 import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate } from "@/lib/thai-date";
 
 function relTime(iso: string): string {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -14,7 +15,7 @@ function relTime(iso: string): string {
   if (h < 24) return `${h} ชม.ที่แล้ว`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d} วันที่แล้ว`;
-  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+  return thaiDate(iso);
 }
 
 const CAT_ICON: Record<string, React.ReactNode> = {

@@ -4,20 +4,20 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { CateringActivityLogEntry } from "../actions";
 import { updateCateringActivityLine, deleteCateringActivityLine } from "../actions";
-import { thFullDate } from "../shared-utils";
+import { thDate } from "../shared-utils";
 import { bangkokDateTime } from "../log-time";
 import { buttonClass } from "@/components/ui/button";
 
 /**
- * Combines thFullDate's Thai date with HH:MM — the log's "when" is a full
- * timestamp, unlike anywhere else thFullDate is used in this module. Both
+ * The screen's Thai date (thDate, "ศ 18/9/2569") with HH:MM — the log's
+ * "when" is a full timestamp. Both
  * parts are taken in Bangkok time by name (log-time.ts): this component is
  * rendered on the server, whose clock is UTC, and again in the browser, and
  * formatting in the runtime's own zone gave the two a different string.
  */
 function formatLogTimestamp(iso: string): string {
   const { date, time } = bangkokDateTime(iso);
-  return `${thFullDate(date)} ${time}`;
+  return `${thDate(date)} ${time}`;
 }
 
 /**

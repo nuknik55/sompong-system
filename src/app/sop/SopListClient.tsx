@@ -8,6 +8,7 @@ import type { SopListItem } from "@/lib/sop-data";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { AccentTag, Badge, accentFor } from "@/components/ui/badge";
+import { thaiDate } from "@/lib/thai-date";
 
 type Tab = "all" | "has" | "none";
 
@@ -106,7 +107,7 @@ export function SopListClient({
 
               {item.sopId ? (
                 <span className={`shrink-0 text-xs ${sopComplete ? "text-success-ink" : "text-pending-ink"}`}>
-                  {sopComplete ? "✓" : "⚠"} มี SOP — {item.updatedAt ?? ""}
+                  {sopComplete ? "✓" : "⚠"} มี SOP — {item.updatedAt ? thaiDate(item.updatedAt) : ""}
                   {item.authorName ? ` (${item.authorName})` : ""}
                   {missing.length > 0 && ` · ขาด: ${missing.join(", ")}`}
                 </span>

@@ -11,6 +11,10 @@
  * No imports: this runs under `node --test`.
  */
 
+// Relative, with the extension: this module is also run by node --test,
+// which does not know the @/ alias.
+import { thaiDate as sharedThaiDate } from "../../../lib/thai-date.ts";
+
 export type StepState = "done" | "open" | "partial";
 
 export type ChecklistStep = {
@@ -67,9 +71,9 @@ export function thaiMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
   return `${MONTHS_TH[(m ?? 1) - 1]} ${(y ?? 0) + 543}`;
 }
+/** The one on-screen date (lib/thai-date.ts): a timestamp in Bangkok time. */
 function thaiDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return `${d} ${MONTHS_TH[(m ?? 1) - 1]} ${(y ?? 0) + 543}`;
+  return sharedThaiDate(iso);
 }
 
 export function deriveChecklist(ev: ChecklistEvidence, yearMonth: string): Checklist {

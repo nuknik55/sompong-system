@@ -6,11 +6,12 @@ import { Tabs } from "@/components/tabs";
 import { grantPrepAccess, revokePrepAccess, grantAllPreps, revokeAllPreps } from "./actions";
 import type { PrepAccessRecipe, PrepAccessPerson, PrepAccessGrant } from "@/lib/prep-access";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate } from "@/lib/thai-date";
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", editor: "Editor", staff: "Staff" };
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return thaiDate(iso);
 }
 
 /**

@@ -17,6 +17,7 @@ import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 import { capexWarning, capexWarningText } from "../capex-hint";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDateWithDay } from "@/lib/thai-date";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ const MONTHS_TH = [
   "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม",
 ];
 
+/** The long date, for the printed sheet's heading and the export title only;
+ *  the screen shows thaiDateWithDay (lib/thai-date.ts). */
 function toThaiDate(date: string): string {
   const [dy, dm, dd] = date.split("-").map(Number);
   return `${dd} ${MONTHS_TH[(dm ?? 1) - 1]} ${(dy ?? 2568) + 543}`;
@@ -596,7 +599,7 @@ export function DailyEntryClient({
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <path d="M16 2v4M8 2v4M3 10h18"/>
             </svg>
-            {toThaiDate(date)}
+            {thaiDateWithDay(date)}
             <input ref={dateInputRef} type="date" value={date} max={today}
               onChange={(e) => router.push(`/owner/accounting/daily?date=${e.target.value}`)}
               className="absolute inset-0 opacity-0 cursor-pointer w-full" tabIndex={-1} />

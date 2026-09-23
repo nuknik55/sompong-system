@@ -8,11 +8,10 @@ import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { RowLink } from "@/components/ui/row-link";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDate } from "@/lib/thai-date";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("th-TH", {
-    day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok",
-  });
+  return thaiDate(iso);
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {

@@ -5,9 +5,10 @@ import type { OrderStatus, OrderSessionSummary } from "@/lib/inventory-data";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { RowLink } from "@/components/ui/row-link";
+import { thaiDate } from "@/lib/thai-date";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
+  return thaiDate(iso);
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { applyBudget69Import, previewBudget69Import, type ApplyResult, type Budget69Preview } from "./actions";
 import { canApply, importReducer, initialImportState } from "../revenue-import/import-state";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate, thaiDateTime } from "@/lib/thai-date";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -195,7 +196,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
                     <td className="px-3 py-1.5 text-right tabular-nums text-neutral-500">{fmt(o.posOwnedTotal)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{o.unmapped === 0 ? "—" : o.unmapped}</td>
                     <td className={`px-3 py-1.5 text-xs ${o.reconciles ? "text-success-ink" : "text-danger font-semibold"}`}>{o.reconciles ? "ตรงกัน ✓" : "ไม่ตรง — หยุด"}</td>
-                    <td className="px-3 py-1.5 text-xs text-neutral-500">{o.importedAt ? new Date(o.importedAt).toLocaleDateString("th-TH") : "—"}</td>
+                    <td className="px-3 py-1.5 text-xs text-neutral-500">{o.importedAt ? thaiDate(o.importedAt) : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -210,7 +211,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
               </p>
               {preview.previousImport && (
                 <p className="text-xs text-pending-ink">
-                  เคยนำเข้าแล้ว {new Date(preview.previousImport.importedAt).toLocaleString("th-TH")} — ยืนยันจะแทนที่ทั้งหมด
+                  เคยนำเข้าแล้ว {thaiDateTime(preview.previousImport.importedAt)} — ยืนยันจะแทนที่ทั้งหมด
                 </p>
               )}
             </div>

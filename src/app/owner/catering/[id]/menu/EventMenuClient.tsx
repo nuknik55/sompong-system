@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { CateringDishOption, EventMenuActionResult, EventMenuSource, EventMenuSources } from "../../actions";
 import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus } from "../../actions";
-import { fmtBaht, toNum, BookingStatusBadge, thDate, thFullDate } from "../../shared-utils";
+import { fmtBaht, toNum, BookingStatusBadge, thDate } from "../../shared-utils";
 import { menuLineQuantityOk } from "../../booking-lines";
 import { markUnsaved } from "@/lib/unsaved-changes";
 import {
@@ -257,7 +257,7 @@ function EventMenuEditor({
       <PageHeader
         back={{ href: header.backHref, label: header.backLabel }}
         title="รายการอาหารของงาน"
-        subtitle={<><BookingStatusBadge status={header.status} /><span>{thFullDate(header.date)}</span></>}
+        subtitle={<><BookingStatusBadge status={header.status} /><span>{thDate(header.date)}</span></>}
         actions={dirty ? <span className="rounded-full bg-pending-soft px-2.5 py-0.5 text-xs font-medium text-pending-ink">มีการแก้ไขที่ยังไม่บันทึก</span> : undefined}
       />
 

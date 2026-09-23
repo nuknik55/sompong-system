@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
 import { setMonthlyRevenue } from "../actions";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDateTime } from "@/lib/thai-date";
 
 // Six of these are written by the POS import; "other" is compiled by the
 // accountants and hand-entered. Once a month has been imported the six are
@@ -78,7 +79,7 @@ export function RevenueEntryClient({
         <p className="text-sm font-medium text-neutral-700">รายได้เดือนนี้</p>
         {locked ? (
           <span className="text-xs text-neutral-500">
-            นำเข้าจาก POS แล้วเมื่อ {new Date(importedAt).toLocaleString("th-TH")} —{" "}
+            นำเข้าจาก POS แล้วเมื่อ {thaiDateTime(importedAt)} —{" "}
             <a href="/owner/accounting/revenue-import" className="underline hover:text-neutral-800">
               แก้ที่หน้านำเข้ารายได้
             </a>

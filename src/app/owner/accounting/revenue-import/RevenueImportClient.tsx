@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import { canApply, importReducer, initialImportState } from "./import-state";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate, thaiDateTime } from "@/lib/thai-date";
 
 const TYPE_LABEL: Record<string, string> = {
   food: "อาหาร",
@@ -223,7 +224,7 @@ export function RevenueImportClient() {
               </p>
               {preview.previousImport && (
                 <p className="text-xs text-pending-ink">
-                  เคยนำเข้าแล้วเมื่อ {new Date(preview.previousImport.importedAt).toLocaleString("th-TH")} — กดยืนยันจะแทนที่ทั้งหมด
+                  เคยนำเข้าแล้วเมื่อ {thaiDateTime(preview.previousImport.importedAt)} — กดยืนยันจะแทนที่ทั้งหมด
                 </p>
               )}
             </div>
@@ -282,7 +283,7 @@ export function RevenueImportClient() {
           </div>
 
           <div className="rounded-lg border border-neutral-200 bg-white p-4">
-            <p className="text-sm font-medium text-neutral-800">ค่าใช้จ่ายที่จะบันทึก ({preview.entryDate})</p>
+            <p className="text-sm font-medium text-neutral-800">ค่าใช้จ่ายที่จะบันทึก ({thaiDate(preview.entryDate)})</p>
             <p className="mt-1 text-xs text-neutral-500">
               ทั้งสามรายการเป็น &quot;ไม่ต้องจ่าย&quot; — GP ถูกหักก่อนเงินเข้า และส่วนลดไม่มีเงินออก จึงไม่ขึ้นในรายการโอน
             </p>

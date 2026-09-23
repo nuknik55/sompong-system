@@ -6,6 +6,7 @@ import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { buttonClass } from "@/components/ui/button";
+import { thaiDate } from "@/lib/thai-date";
 
 export default async function PurchaseQueuePage() {
   const profile = await requireProfile();
@@ -40,9 +41,7 @@ function PurchaseCard({ session }: { session: OrderSessionSummary }) {
       <div className="min-w-0 space-y-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-neutral-900">
-            {new Date(session.createdAt).toLocaleDateString("th-TH", {
-              day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok"
-            })}
+            {thaiDate(session.createdAt)}
           </span>
           {session.stationName && (
             <span className="text-xs text-neutral-500">{session.stationName}</span>

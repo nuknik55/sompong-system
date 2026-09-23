@@ -8,6 +8,7 @@ import { updateReportStatus } from "@/app/maintenance/actions";
 import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
+import { thaiDateTime } from "@/lib/thai-date";
 
 const CAT_ICON: Record<string, React.ReactNode> = {
   ไฟฟ้า: <Zap className="h-4 w-4 text-yellow-500" />,
@@ -41,7 +42,7 @@ function ReportPhoto({ url, label }: { url: string; label: string }) {
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return thaiDateTime(iso);
 }
 
 export function MaintenanceDetailClient({

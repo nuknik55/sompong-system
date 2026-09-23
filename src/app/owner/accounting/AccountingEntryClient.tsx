@@ -6,6 +6,7 @@ import { deleteExpenseEntry, type ExpenseEntry } from "./actions";
 import { bangkokToday } from "@/lib/bangkok-date";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDateWithDay } from "@/lib/thai-date";
 
 function formatBaht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -184,8 +185,7 @@ export function AccountingEntryClient({
             const dayCash = dayEntries.filter((e) => e.payment_method === "cash").reduce((s, e) => s + e.amount, 0);
             const dayTransfer = dayEntries.filter((e) => e.payment_method === "transfer").reduce((s, e) => s + e.amount, 0);
             const dayTotal = dayCash + dayTransfer;
-            const [dy, dm, dd] = d.split("-");
-            const dateLabel = `${parseInt(dd!)} / ${parseInt(dm!)} / ${parseInt(dy!) + 543}`;
+            const dateLabel = thaiDateWithDay(d);
             return (
               <div key={d} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
                 {/* Date header */}

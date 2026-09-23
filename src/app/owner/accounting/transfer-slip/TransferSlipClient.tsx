@@ -6,12 +6,15 @@ import type { WeeklySupplierRow } from "../actions";
 import { shiftDay } from "@/lib/bangkok-date";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDate, thaiDayMonth } from "@/lib/thai-date";
 
 const MONTHS_TH = [
   "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
   "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม",
 ];
 
+/** The long date, for the printed slip and the Excel export only; the screen
+ *  shows thaiDate / thaiDayMonth (lib/thai-date.ts). */
 function thDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return `${d} ${MONTHS_TH[(m ?? 1) - 1]} ${(y ?? 2568) + 543}`;
@@ -96,7 +99,7 @@ function SectionTable({ title, section, total, note, days }: {
               {DAY_LABELS.map((l, i) => (
                 <th key={i} className="px-2 py-2 text-right w-20">
                   <div className="font-semibold text-neutral-700">{l}</div>
-                  <div className="text-neutral-600 font-normal">{days[i]?.slice(5).replace("-", "/")}</div>
+                  <div className="text-neutral-600 font-normal">{thaiDayMonth(days[i])}</div>
                 </th>
               ))}
               <th className="px-3 py-2 text-right w-24 border-l">รวม</th>
@@ -205,6 +208,9 @@ export function TransferSlipClient({
 
   const weekLabel = `${thDate(days[0]!)} – ${thDate(days[6]!)}`;
   const nextTuesday = thDate(shiftDay(days[6]!, 1));
+  // The same two, as the screen shows a date.
+  const weekLabelScreen = `${thaiDate(days[0])} – ${thaiDate(days[6])}`;
+  const nextTuesdayScreen = thaiDate(shiftDay(days[6]!, 1));
 
   // ── Export Excel ────────────────────────────────────────────────
 
@@ -301,7 +307,7 @@ export function TransferSlipClient({
             <svg className="h-4 w-4 text-neutral-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
             </svg>
-            สัปดาห์ {weekLabel}
+            สัปดาห์ {weekLabelScreen}
             <input ref={weekInputRef} type="date" value={tuesday}
               onChange={(e) => router.push(`/owner/accounting/transfer-slip?week=${e.target.value}`)}
               className="absolute inset-0 opacity-0 cursor-pointer w-full" tabIndex={-1} />
@@ -329,7 +335,7 @@ export function TransferSlipClient({
           <span className="text-neutral-600 font-medium">บัญชีต้นทาง:</span>
           <input type="text" value={sourceAccount} onChange={(e) => setSourceAccount(e.target.value)}
             className="rounded border border-neutral-300 bg-white px-3 py-1 text-sm focus:border-info/30 focus:outline-none w-48" />
-          <span className="text-neutral-500 text-xs">โอนวัน: {nextTuesday}</span>
+          <span className="text-neutral-500 text-xs">โอนวัน: {nextTuesdayScreen}</span>
         </div>
 
         {rows.every((r) => r.total === 0) ? (

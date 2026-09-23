@@ -19,6 +19,7 @@ import { decimalBoxInput, decimalBoxText } from "@/lib/decimal-input";
 import { Plus, Save, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { thaiDateTime } from "@/lib/thai-date";
 
 export type UsageMap = Record<string, { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] }>;
 
@@ -704,7 +705,7 @@ export function IngredientManager({
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return thaiDateTime(iso);
 }
 
 function UsageItem({

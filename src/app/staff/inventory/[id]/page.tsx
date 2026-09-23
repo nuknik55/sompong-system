@@ -4,7 +4,9 @@ import { getOrderSessionDetail } from "@/lib/inventory-data";
 import { SessionActions } from "./SessionActions";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
+import { thaiDateTime } from "@/lib/thai-date";
 
+/** The printed order and receive sheets' date (their own format). */
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
     day: "numeric", month: "short", year: "numeric",
@@ -76,24 +78,24 @@ export default async function SessionDetailPage({
         </div>
         <div className="flex gap-2">
           <span className="w-24 shrink-0 text-neutral-500">ส่งเมื่อ</span>
-          <span>{formatDate(session.submittedAt)}</span>
+          <span>{thaiDateTime(session.submittedAt)}</span>
         </div>
         {session.reviewedAt && (
           <div className="flex gap-2">
             <span className="w-24 shrink-0 text-neutral-500">ตรวจโดย</span>
-            <span>{session.reviewedByName} · {formatDate(session.reviewedAt)}</span>
+            <span>{session.reviewedByName} · {thaiDateTime(session.reviewedAt)}</span>
           </div>
         )}
         {session.sentAt && (
           <div className="flex gap-2">
             <span className="w-24 shrink-0 text-neutral-500">ส่งสั่งเมื่อ</span>
-            <span>{formatDate(session.sentAt)}</span>
+            <span>{thaiDateTime(session.sentAt)}</span>
           </div>
         )}
         {session.receivedAt && (
           <div className="flex gap-2">
             <span className="w-24 shrink-0 text-neutral-500">รับของเมื่อ</span>
-            <span>{formatDate(session.receivedAt)}</span>
+            <span>{thaiDateTime(session.receivedAt)}</span>
           </div>
         )}
         {session.note && session.status !== "returned" && (

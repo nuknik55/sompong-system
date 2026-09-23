@@ -7,7 +7,7 @@ import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
   getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog, getEventMenuDishes,
 } from "../actions";
-import { thFullDate, BookingStatusBadge } from "../shared-utils";
+import { thDate, BookingStatusBadge } from "../shared-utils";
 import { buttonClass } from "@/components/ui/button";
 import { ButtonGroup, PageHeader, PageShell } from "@/components/ui/page";
 import { dishNamesForPriceBox } from "../event-menu";
@@ -50,7 +50,7 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
       <PageHeader
         back={{ href: "/owner/catering", label: "รายการจอง" }}
         title={event.customer_name ?? "การจอง"}
-        subtitle={<><BookingStatusBadge status={event.status} /><span>{thFullDate(event.event_date)}</span></>}
+        subtitle={<><BookingStatusBadge status={event.status} /><span>{thDate(event.event_date)}</span></>}
         // AT THE TOP AS WELL AS THE BOTTOM. The bottom row sits under the
         // entire booking form — a screen or two of scrolling — and on the
         // day this shipped the head chef could not find it there
