@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import { CATEGORIES, CATEGORY_LABEL, isCategory, type Category } from "./categories";
 import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 // `decided` is the property that matters: only decided rows are written.
 //
@@ -414,8 +415,8 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
             </div>
             <div className="max-h-[32rem] overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 text-left text-xs">
-                  <tr>
+                <thead className="sticky top-0 bg-white text-left text-xs">
+                  <tr className={TH_ROW}>
                     <th className="px-3 py-2 w-36">หมวด</th>
                     <th className="px-3 py-2">สินค้า</th>
                     <th className="px-3 py-2">หมวดใน POS</th>
@@ -428,8 +429,8 @@ export function PosItemCategoriesClient({ initialStoredCount }: { initialStoredC
                       screen next to the carve-out boxes while the list scrolls.
                       The direction of the carve-out is the thing most likely
                       to be misread on this screen. */}
-                  <tr>
-                    <th colSpan={7} className="px-3 pb-2 text-left text-xs">
+                  <tr className="border-b border-neutral-300">
+                    <th colSpan={7} className="px-3 pt-2 pb-2 text-left text-xs font-normal text-neutral-600">
                       {CARVE_OUT_HELP}
                     </th>
                   </tr>

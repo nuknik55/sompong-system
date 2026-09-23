@@ -11,6 +11,7 @@ import {
 import { canApply, importReducer, initialImportState } from "./import-state";
 import { buttonClass } from "@/components/ui/button";
 import { thaiDate, thaiDateTime } from "@/lib/thai-date";
+import { TH_ROW } from "@/components/ui/table";
 
 const TYPE_LABEL: Record<string, string> = {
   food: "อาหาร",
@@ -231,22 +232,22 @@ export function RevenueImportClient() {
 
             <table className="mt-3 w-full text-sm">
               <thead className="text-left text-xs">
-                <tr>
-                  <th className="py-1">ประเภทรายได้</th>
-                  <th className="py-1 text-right">ปัจจุบัน</th>
-                  <th className="py-1 text-right">จะเป็น</th>
-                  <th className="py-1 text-right">ต่าง</th>
+                <tr className={TH_ROW}>
+                  <th className="px-2 py-1">ประเภทรายได้</th>
+                  <th className="px-2 py-1 text-right">ปัจจุบัน</th>
+                  <th className="px-2 py-1 text-right">จะเป็น</th>
+                  <th className="px-2 py-1 text-right">ต่าง</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.revenue.map((r) => (
                   <tr key={r.revenue_type} className="border-t border-neutral-100">
-                    <td className="py-1.5">{TYPE_LABEL[r.revenue_type] ?? r.revenue_type}</td>
-                    <td className="py-1.5 text-right tabular-nums text-neutral-500">
+                    <td className="px-2 py-1.5">{TYPE_LABEL[r.revenue_type] ?? r.revenue_type}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">
                       {r.current === null ? "—" : fmt(r.current)}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums font-medium">{fmt(r.amount)}</td>
-                    <td className="py-1.5 text-right">
+                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.amount)}</td>
+                    <td className="px-2 py-1.5 text-right">
                       <Delta current={r.current} next={r.amount} />
                     </td>
                   </tr>
@@ -255,22 +256,22 @@ export function RevenueImportClient() {
                     implied. The import cannot write this row: "other" is not a
                     RevenueType, and the RPC's allowlist has no entry for it. */}
                 <tr className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
-                  <td className="py-1.5">
+                  <td className="px-2 py-1.5">
                     อื่นๆ (บัญชี)
                     <span className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-600">ไม่แตะต้อง</span>
                   </td>
-                  <td className="py-1.5 text-right tabular-nums">
+                  <td className="px-2 py-1.5 text-right tabular-nums">
                     {preview.otherCurrent === null ? "—" : fmt(preview.otherCurrent)}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums">คงเดิม</td>
-                  <td className="py-1.5" />
+                  <td className="px-2 py-1.5 text-right tabular-nums">คงเดิม</td>
+                  <td className="px-2 py-1.5" />
                 </tr>
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-300 font-semibold">
-                  <td className="py-1.5">รวมที่จะบันทึก</td>
+                  <td className="px-2 py-1.5">รวมที่จะบันทึก</td>
                   <td />
-                  <td className="py-1.5 text-right tabular-nums">{fmt(preview.restaurantGross)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(preview.restaurantGross)}</td>
                   <td />
                 </tr>
               </tfoot>

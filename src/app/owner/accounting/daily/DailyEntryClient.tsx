@@ -612,7 +612,7 @@ export function DailyEntryClient({
             </a>
           )}
 
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap gap-2">
             {selectedIds.size > 0 && (
               <a href={`/owner/accounting/daily/receipt?date=${date}&ids=${[...selectedIds].join(",")}`}
                 className={buttonClass("primary", { size: "sm" })}>

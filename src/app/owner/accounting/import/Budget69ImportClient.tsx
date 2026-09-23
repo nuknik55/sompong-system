@@ -6,6 +6,7 @@ import { applyBudget69Import, previewBudget69Import, type ApplyResult, type Budg
 import { canApply, importReducer, initialImportState } from "../revenue-import/import-state";
 import { buttonClass } from "@/components/ui/button";
 import { thaiDate, thaiDateTime } from "@/lib/thai-date";
+import { TH_ROW } from "@/components/ui/table";
 
 const MONTHS_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -177,7 +178,7 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
           <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
             <table className="w-full text-sm">
               <thead className="text-left text-xs">
-                <tr>
+                <tr className={TH_ROW}>
                   <th className="px-3 py-2">เดือน</th>
                   <th className="px-3 py-2 text-right">รายจ่ายตามชีต</th>
                   <th className="px-3 py-2 text-right">จะบันทึก</th>
@@ -217,29 +218,29 @@ export function Budget69ImportClient({ defaultYearMonth }: { defaultYearMonth: s
             </div>
             <table className="mt-3 w-full text-sm">
               <thead className="text-left text-xs">
-                <tr>
-                  <th className="py-1">บัญชี</th>
-                  <th className="py-1 text-right">ยอดชีต</th>
-                  <th className="py-1 text-right">บันทึกรายวันแล้ว</th>
-                  <th className="py-1 text-right">จะบันทึก</th>
+                <tr className={TH_ROW}>
+                  <th className="px-2 py-1">บัญชี</th>
+                  <th className="px-2 py-1 text-right">ยอดชีต</th>
+                  <th className="px-2 py-1 text-right">บันทึกรายวันแล้ว</th>
+                  <th className="px-2 py-1 text-right">จะบันทึก</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.entries.filter((e) => e.lump > 0).map((e) => (
                   <tr key={e.coa_code} className="border-t border-neutral-100">
-                    <td className="py-1">{e.coa_code} {e.coa_name}</td>
-                    <td className="py-1 text-right tabular-nums text-neutral-500">{fmt(e.sheetAmount)}</td>
-                    <td className="py-1 text-right tabular-nums text-neutral-500">{e.appAmount > 0 ? fmt(e.appAmount) : "—"}</td>
-                    <td className="py-1 text-right tabular-nums font-medium">{fmt(e.lump)}</td>
+                    <td className="px-2 py-1">{e.coa_code} {e.coa_name}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-neutral-500">{fmt(e.sheetAmount)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-neutral-500">{e.appAmount > 0 ? fmt(e.appAmount) : "—"}</td>
+                    <td className="px-2 py-1 text-right tabular-nums font-medium">{fmt(e.lump)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-300 font-semibold">
-                  <td className="py-1.5">รวมที่จะบันทึก ({preview.entries.filter((e) => e.lump > 0).length} รายการ)</td>
-                  <td className="py-1.5 text-right tabular-nums text-neutral-500">{fmt(preview.sheetTotalMapped)}</td>
-                  <td className="py-1.5 text-right tabular-nums text-neutral-500">{fmt(preview.sheetTotalMapped - preview.writtenTotal)}</td>
-                  <td className="py-1.5 text-right tabular-nums">{fmt(preview.writtenTotal)}</td>
+                  <td className="px-2 py-1.5">รวมที่จะบันทึก ({preview.entries.filter((e) => e.lump > 0).length} รายการ)</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">{fmt(preview.sheetTotalMapped)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">{fmt(preview.sheetTotalMapped - preview.writtenTotal)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(preview.writtenTotal)}</td>
                 </tr>
               </tfoot>
             </table>
