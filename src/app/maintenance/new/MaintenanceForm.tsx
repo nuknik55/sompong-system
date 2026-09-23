@@ -9,8 +9,8 @@ import type { MaintenanceReport } from "@/lib/maintenance-data";
 
 const CATEGORIES = [
   { label: "ไฟฟ้า",       icon: <Zap className="h-4 w-4" />,             color: "text-yellow-600" },
-  { label: "ประปา",        icon: <Droplets className="h-4 w-4" />,        color: "text-blue-600" },
-  { label: "เครื่องครัว", icon: <UtensilsCrossed className="h-4 w-4" />, color: "text-green-700" },
+  { label: "ประปา",        icon: <Droplets className="h-4 w-4" />,        color: "text-info" },
+  { label: "เครื่องครัว", icon: <UtensilsCrossed className="h-4 w-4" />, color: "text-success-ink" },
   { label: "อื่นๆ",        icon: <MoreHorizontal className="h-4 w-4" />,  color: "text-neutral-500" },
 ];
 
@@ -84,7 +84,7 @@ export function MaintenanceForm({
               onClick={() => setCategory(c.label)}
               className={`flex h-11 items-center justify-center gap-2 rounded-lg border text-sm transition-colors ${
                 category === c.label
-                  ? "border-green-700 bg-green-50 font-medium text-green-800"
+                  ? "border-green-700 bg-success-soft font-medium text-success-ink"
                   : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
               }`}
             >
@@ -117,7 +117,7 @@ export function MaintenanceForm({
           rows={3}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm"
         />
-        <p className="mt-1 text-xs text-neutral-400">ต้องระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง</p>
+        <p className="mt-1 text-xs text-neutral-500">ต้องระบุจุดที่เสียหาย หรือรายละเอียด อย่างน้อยหนึ่งอย่าง</p>
       </div>
 
       {/* Urgent toggle */}
@@ -125,17 +125,17 @@ export function MaintenanceForm({
         type="button"
         onClick={() => setIsUrgent((v) => !v)}
         className={`flex w-full items-center justify-between rounded-lg px-4 py-3 transition-colors ${
-          isUrgent ? "bg-red-50 border border-red-200" : "bg-neutral-50 border border-neutral-200"
+          isUrgent ? "bg-danger-soft border border-danger/40" : "bg-neutral-50 border border-neutral-200"
         }`}
       >
-        <span className={`flex items-center gap-2 text-sm font-medium ${isUrgent ? "text-red-700" : "text-neutral-600"}`}>
+        <span className={`flex items-center gap-2 text-sm font-medium ${isUrgent ? "text-danger" : "text-neutral-600"}`}>
           <AlertTriangle className="h-4 w-4" />
           เร่งด่วน (กระทบการทำงานตอนนี้)
         </span>
         <span className={`h-6 w-11 rounded-full transition-colors ${isUrgent ? "bg-red-500" : "bg-neutral-300"}`} />
       </button>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <button
         type="button"

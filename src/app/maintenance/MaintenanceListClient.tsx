@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle, Plus } from "lucide-react";
 import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
+import { buttonClass } from "@/components/ui/button";
 
 function relTime(iso: string): string {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -19,7 +20,7 @@ function relTime(iso: string): string {
 const CAT_ICON: Record<string, React.ReactNode> = {
   ไฟฟ้า: <Zap className="h-3.5 w-3.5 text-yellow-500" />,
   ประปา: <Droplets className="h-3.5 w-3.5 text-blue-500" />,
-  เครื่องครัว: <UtensilsCrossed className="h-3.5 w-3.5 text-green-700" />,
+  เครื่องครัว: <UtensilsCrossed className="h-3.5 w-3.5 text-success-ink" />,
   อื่นๆ: <MoreHorizontal className="h-3.5 w-3.5 text-neutral-500" />,
 };
 
@@ -29,9 +30,9 @@ const STATUS_LABEL: Record<MaintenanceStatus, string> = {
   done: "เสร็จแล้ว",
 };
 const STATUS_CLS: Record<MaintenanceStatus, string> = {
-  new: "bg-amber-100 text-amber-700",
-  in_progress: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
+  new: "bg-pending-soft text-pending-ink",
+  in_progress: "bg-info-soft text-info",
+  done: "bg-success-soft text-success-ink",
 };
 
 type Tab = "all" | MaintenanceStatus;
@@ -65,12 +66,12 @@ export function MaintenanceListClient({
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`rounded-full px-3 py-1 text-sm transition-colors ${
+              // The selected tab is the primary tint (a selection, not an action).
+              className={`rounded-full border px-3 py-1 font-heading text-sm transition-colors ${
                 tab === key
-                  ? "font-medium text-white"
-                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                  ? "border-primary/30 bg-primary-soft font-medium text-primary"
+                  : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
               }`}
-              style={tab === key ? { backgroundColor: "#2F5A16" } : undefined}
             >
               {label} ({n})
             </button>
@@ -79,7 +80,7 @@ export function MaintenanceListClient({
       </div>
 
       {filtered.length === 0 ? (
-        <p className="py-10 text-center text-sm text-neutral-400">ไม่มีรายการ</p>
+        <p className="py-10 text-center text-sm text-neutral-500">ไม่มีรายการ</p>
       ) : (
         <ul className="space-y-3">
           {filtered.map((r) => {
@@ -111,11 +112,11 @@ export function MaintenanceListClient({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex flex-wrap items-center gap-2">
                     {r.isUrgent && (
-                      <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
+                      <span className="inline-flex items-center gap-1 rounded bg-danger-soft px-1.5 py-0.5 text-xs text-danger">
                         <AlertTriangle className="h-3 w-3" /> เร่งด่วน
                       </span>
                     )}
-                    <span className="text-xs text-neutral-400">
+                    <span className="text-xs text-neutral-500">
                       {r.reporterName || "ไม่ระบุ"} · {relTime(r.createdAt)}
                     </span>
                     {/* "ไม่ระบุชื่อ" is the truth for rows accepted before the
@@ -130,18 +131,14 @@ export function MaintenanceListClient({
                     {canEdit && (
                       <Link
                         href={`/maintenance/${r.id}/edit`}
-                        className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                        className={buttonClass("secondary", { size: "sm" })}
                       >
                         แก้ไข
                       </Link>
                     )}
                     <Link
                       href={`/maintenance/${r.id}`}
-                      className={`rounded border px-2 py-0.5 text-xs font-medium ${
-                        canManage && r.status !== "done"
-                          ? "border-green-700 text-green-700 hover:bg-green-50"
-                          : "border-neutral-200 text-neutral-500 hover:bg-neutral-100"
-                      }`}
+                      className={buttonClass(canManage && r.status !== "done" ? "primary" : "secondary", { size: "sm" })}
                     >
                       {canManage && r.status !== "done" ? "จัดการ" : "ดู"}
                     </Link>
@@ -155,8 +152,7 @@ export function MaintenanceListClient({
 
       <Link
         href="/maintenance/new"
-        className="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full shadow-xl text-white sm:hidden"
-        style={{ backgroundColor: "#2F5A16" }}
+        className="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-xl hover:bg-primary-hover sm:hidden"
       >
         <Plus className="h-6 w-6" />
       </Link>

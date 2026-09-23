@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { approveChange, rejectChange } from "@/app/owner/approve/actions";
 import type { PendingChange } from "@/lib/pending-data";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 // ─── Type labels ───────────────────────────────────────────────────────────────
 
@@ -77,7 +79,7 @@ function SectionSteps({ label, steps }: { label: string; steps: { text: string; 
           <li key={i} className="text-xs text-neutral-700 leading-relaxed">
             {s.text}
             {s.photoUrl && (
-              <span className="ml-1.5 inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-[10px] text-blue-600">
+              <span className="ml-1.5 inline-flex items-center rounded bg-info-soft px-1 py-0.5 text-[10px] text-info">
                 📷 รูป
               </span>
             )}
@@ -101,7 +103,7 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
         platingSteps?: { text: string; photoUrl: string | null }[];
         checklist?: { text: string; photoUrl: string | null }[];
       } | null;
-      if (!sop) return <p className="text-xs text-neutral-400">ไม่มีข้อมูล SOP</p>;
+      if (!sop) return <p className="text-xs text-neutral-500">ไม่มีข้อมูล SOP</p>;
 
       const noteEntries = Object.entries(sop.ingredientNotes ?? {}).filter(([, n]) => n?.trim());
       const totalSteps =
@@ -136,7 +138,7 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
           <SectionSteps label="Checklist" steps={(sop.checklist ?? []).map(s => ({ ...s, photoUrl: null }))} />
 
           {totalSteps === 0 && noteEntries.length === 0 && (
-            <p className="text-xs text-neutral-400">ไม่มีขั้นตอนหรือหมายเหตุ</p>
+            <p className="text-xs text-neutral-500">ไม่มีขั้นตอนหรือหมายเหตุ</p>
           )}
         </div>
       );
@@ -155,28 +157,28 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
           {items.length > 0 && (
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-neutral-400 border-b border-neutral-100">
-                  <th className="text-left pb-1 font-normal">วัตถุดิบ</th>
-                  <th className="text-right pb-1 font-normal pr-2">ปริมาณ</th>
-                  <th className="text-left pb-1 font-normal">หน่วย</th>
+                <tr className={TH_ROW}>
+                  <th className="px-2 py-1 text-left">วัตถุดิบ</th>
+                  <th className="px-2 py-1 text-right">ปริมาณ</th>
+                  <th className="px-2 py-1 text-left">หน่วย</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item, i) => (
                   <tr key={i} className="border-b border-neutral-50">
-                    <td className="py-0.5 text-neutral-700">{item.ingredientName ?? item.ingredient_id ?? "—"}</td>
-                    <td className="py-0.5 text-right pr-2 text-neutral-700 tabular-nums">{item.quantity}</td>
-                    <td className="py-0.5 text-neutral-500">{item.unit ?? ""}</td>
+                    <td className="px-2 py-0.5 text-neutral-700">{item.ingredientName ?? item.ingredient_id ?? "—"}</td>
+                    <td className="px-2 py-0.5 text-right text-neutral-700 tabular-nums">{item.quantity}</td>
+                    <td className="px-2 py-0.5 text-neutral-500">{item.unit ?? ""}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
           {deletedIds.length > 0 && (
-            <p className="text-xs text-red-500">— ลบออก {deletedIds.length} รายการ</p>
+            <p className="text-xs text-danger">— ลบออก {deletedIds.length} รายการ</p>
           )}
           {items.length === 0 && deletedIds.length === 0 && (
-            <p className="text-xs text-neutral-400">ไม่มีการเปลี่ยนแปลง</p>
+            <p className="text-xs text-neutral-500">ไม่มีการเปลี่ยนแปลง</p>
           )}
         </div>
       );
@@ -266,7 +268,7 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
     case "sop_delete": {
       const name = String(payload.menuName ?? payload.prepName ?? payload.ingredientName ?? "");
       return (
-        <div className="rounded bg-red-50 border border-red-100 p-2 text-xs text-red-700">
+        <div className="rounded bg-danger-soft border border-danger/25 p-2 text-xs text-danger">
           ⚠ ต้องการลบ <strong>{name}</strong> — ข้อมูลจะหายถาวร
         </div>
       );
@@ -274,7 +276,7 @@ function PayloadDetail({ type, payload }: { type: string; payload: Record<string
 
     case "ingredient_category_delete": {
       return (
-        <div className="rounded bg-amber-50 border border-amber-100 p-2 text-xs text-amber-700">
+        <div className="rounded bg-pending-soft border border-pending/40 p-2 text-xs text-pending-ink">
           ⚠ จะล้างหมวด <strong>{String(payload.category)}</strong> ออกจากวัตถุดิบทุกรายการที่อยู่ในหมวดนี้ (วัตถุดิบยังอยู่ในระบบ แค่ไม่มีหมวด)
         </div>
       );
@@ -338,9 +340,9 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
   }
 
   const statusBadge: Record<string, string> = {
-    pending: "bg-amber-100 text-amber-700",
-    approved: "bg-green-100 text-green-700",
-    rejected: "bg-red-100 text-red-700",
+    pending: "bg-pending-soft text-pending-ink",
+    approved: "bg-success-soft text-success-ink",
+    rejected: "bg-danger-soft text-danger",
   };
   const statusLabel: Record<string, string> = {
     pending: "รอดำเนินการ",
@@ -356,7 +358,7 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
           <span className="font-medium text-neutral-800">
             {CHANGE_TYPE_LABEL[change.changeType] ?? change.changeType}
           </span>
-          <span className="mx-2 text-neutral-400">—</span>
+          <span className="mx-2 text-neutral-500">—</span>
           <span className="text-sm text-neutral-600">{payloadSummary(change.changeType, change.payload)}</span>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge[change.status]}`}>
@@ -365,21 +367,21 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
       </div>
 
       {/* Meta */}
-      <div className="text-xs text-neutral-400">
+      <div className="text-xs text-neutral-500">
         โดย <span className="font-medium text-neutral-600">{change.editorName}</span>
         {" · "}{formatDate(change.createdAt)}
         {change.resolvedAt && ` · ดำเนินการแล้ว ${formatDate(change.resolvedAt)}`}
       </div>
 
       {change.status === "rejected" && change.adminNote && (
-        <p className="text-xs text-red-600">เหตุผลปฏิเสธ: {change.adminNote}</p>
+        <p className="text-xs text-danger">เหตุผลปฏิเสธ: {change.adminNote}</p>
       )}
 
       {/* Detail toggle */}
       <button
         type="button"
         onClick={() => setShowDetail((v) => !v)}
-        className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700"
+        className={buttonClass("link", { size: "sm" })}
       >
         <span>{showDetail ? "▲" : "▼"}</span>
         <span>{showDetail ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}</span>
@@ -392,7 +394,7 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
         </div>
       )}
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
 
       {/* Action buttons */}
       {change.status === "pending" && !showReject && (
@@ -401,7 +403,7 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
             type="button"
             disabled={isPending}
             onClick={handleApprove}
-            className="rounded-md bg-brand-green px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
+            className={buttonClass("primary")}
             style={{ backgroundColor: "#2F5A16" }}
           >
             {isPending ? "กำลังดำเนินการ..." : "✓ อนุมัติ"}
@@ -409,7 +411,7 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
           <button
             type="button"
             onClick={() => setShowReject(true)}
-            className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+            className={buttonClass("secondary", { danger: true })}
           >
             ✕ ปฏิเสธ
           </button>
@@ -430,14 +432,14 @@ function ChangeRow({ change, onDone }: { change: PendingChange; onDone: () => vo
               type="button"
               disabled={isPending}
               onClick={handleReject}
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className={buttonClass("primary", { danger: true })}
             >
               {isPending ? "กำลังดำเนินการ..." : "ยืนยันปฏิเสธ"}
             </button>
             <button
               type="button"
               onClick={() => setShowReject(false)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+              className={buttonClass("secondary")}
             >
               ยกเลิก
             </button>
@@ -457,14 +459,14 @@ export function ApproveClient({ changes }: { changes: PendingChange[] }) {
   const resolved = list.filter((c) => c.status !== "pending");
 
   if (list.length === 0) {
-    return <p className="py-12 text-center text-sm text-neutral-400">ไม่มีรายการรอดำเนินการ</p>;
+    return <p className="py-12 text-center text-sm text-neutral-500">ไม่มีรายการรอดำเนินการ</p>;
   }
 
   return (
     <div className="space-y-6">
       {pending.length > 0 && (
         <section>
-          <h2 className="mb-3 font-kanit font-medium text-neutral-700">รอดำเนินการ ({pending.length})</h2>
+          <h2 className="mb-3 font-heading font-medium text-neutral-700">รอดำเนินการ ({pending.length})</h2>
           <ul className="space-y-3">
             {pending.map((c) => (
               <ChangeRow
@@ -481,11 +483,11 @@ export function ApproveClient({ changes }: { changes: PendingChange[] }) {
         </section>
       )}
       {pending.length === 0 && (
-        <p className="py-4 text-center text-sm text-neutral-400">ไม่มีรายการรอดำเนินการ ✓</p>
+        <p className="py-4 text-center text-sm text-neutral-500">ไม่มีรายการรอดำเนินการ ✓</p>
       )}
       {resolved.length > 0 && (
         <section>
-          <h2 className="mb-3 font-kanit font-medium text-neutral-500">ประวัติล่าสุด ({resolved.length})</h2>
+          <h2 className="mb-3 font-heading font-medium text-neutral-500">ประวัติล่าสุด ({resolved.length})</h2>
           <ul className="space-y-3">
             {resolved.map((c) => (
               <ChangeRow key={c.id} change={c} onDone={() => {}} />

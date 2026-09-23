@@ -6,11 +6,13 @@ import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle } from "l
 import { SopPhotoUpload } from "@/components/sop-photo-upload";
 import { updateReportStatus } from "@/app/maintenance/actions";
 import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 
 const CAT_ICON: Record<string, React.ReactNode> = {
   ไฟฟ้า: <Zap className="h-4 w-4 text-yellow-500" />,
   ประปา: <Droplets className="h-4 w-4 text-blue-500" />,
-  เครื่องครัว: <UtensilsCrossed className="h-4 w-4 text-green-700" />,
+  เครื่องครัว: <UtensilsCrossed className="h-4 w-4 text-success-ink" />,
   อื่นๆ: <MoreHorizontal className="h-4 w-4 text-neutral-500" />,
 };
 
@@ -18,9 +20,9 @@ const STATUS_LABEL: Record<MaintenanceStatus, string> = {
   new: "แจ้งแล้ว", in_progress: "กำลังซ่อม", done: "เสร็จแล้ว",
 };
 const STATUS_CLS: Record<MaintenanceStatus, string> = {
-  new: "bg-amber-100 text-amber-700",
-  in_progress: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
+  new: "bg-pending-soft text-pending-ink",
+  in_progress: "bg-info-soft text-info",
+  done: "bg-success-soft text-success-ink",
 };
 
 function ReportPhoto({ url, label }: { url: string; label: string }) {
@@ -93,24 +95,27 @@ export function MaintenanceDetailClient({
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-base font-semibold text-neutral-900">
+    <div className="max-w-lg space-y-5">
+      {/* Header: the shared page header */}
+      <PageHeader
+        back={{ href: "/maintenance", label: "รายการแจ้งซ่อม" }}
+        title={
+          <span className="flex items-center gap-2">
             {CAT_ICON[report.category] ?? CAT_ICON["อื่นๆ"]}
             {report.category}
-          </div>
-          <p className="text-sm text-neutral-600 mt-0.5">{report.location || "ไม่ระบุจุด"}</p>
-        </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLS[report.status]}`}>
-          {STATUS_LABEL[report.status]}
-        </span>
-      </div>
+          </span>
+        }
+        subtitle={<span className="text-neutral-600">{report.location || "ไม่ระบุจุด"}</span>}
+        actions={
+          <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLS[report.status]}`}>
+            {STATUS_LABEL[report.status]}
+          </span>
+        }
+      />
 
       {/* Urgent */}
       {report.isUrgent && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" /> เร่งด่วน — กระทบการทำงาน
         </div>
       )}
@@ -118,7 +123,7 @@ export function MaintenanceDetailClient({
       {/* Description */}
       {report.description && (
         <div className="rounded-lg bg-neutral-50 border border-neutral-100 px-3 py-2.5">
-          <p className="text-xs text-neutral-400 mb-0.5">รายละเอียด</p>
+          <p className="text-xs text-neutral-500 mb-0.5">รายละเอียด</p>
           <p className="text-sm text-neutral-700 whitespace-pre-wrap">{report.description}</p>
         </div>
       )}
@@ -132,16 +137,16 @@ export function MaintenanceDetailClient({
       ) : null}
 
       {/* Meta */}
-      <div className="text-xs text-neutral-400 space-y-0.5">
+      <div className="text-xs text-neutral-500 space-y-0.5">
         <p>แจ้งโดย <span className="font-medium text-neutral-600">{report.reporterName || "ไม่ระบุ"}</span> · {fmtDate(report.createdAt)}</p>
         {report.status !== "new" && (
           <p>{report.status === "done" ? "ซ่อมโดย" : "รับเรื่องโดย"} <span className="font-medium text-neutral-600">{report.resolverName || "ไม่ระบุชื่อ"}</span></p>
         )}
         {report.resolvedAt && <p>ดำเนินการเสร็จ {fmtDate(report.resolvedAt)}</p>}
-        {report.resolverNote && <p className="text-green-600">✓ {report.resolverNote}</p>}
+        {report.resolverNote && <p className="text-success-ink">✓ {report.resolverNote}</p>}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* Status actions (editor+) */}
       {canManage && report.status !== "done" && !showDonePanel && (
@@ -149,14 +154,13 @@ export function MaintenanceDetailClient({
           {report.status === "new" && (
             <button type="button" disabled={isPending}
               onClick={() => changeStatus("in_progress")}
-              className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+              className={buttonClass("secondary")}>
               รับเรื่อง — กำลังซ่อม
             </button>
           )}
           <button type="button" disabled={isPending}
             onClick={() => changeStatus("done")}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            style={{ backgroundColor: "#2F5A16" }}>
+            className={buttonClass("primary")}>
             ✓ เสร็จแล้ว
           </button>
         </div>
@@ -164,20 +168,20 @@ export function MaintenanceDetailClient({
 
       {/* Done confirmation panel — uploads after photo before confirming */}
       {showDonePanel && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
-          <p className="text-sm font-medium text-green-800">ยืนยันซ่อมเสร็จ</p>
+        <div className="rounded-xl border border-success/30 bg-success-soft p-4 space-y-3">
+          <p className="text-sm font-medium text-success-ink">ยืนยันซ่อมเสร็จ</p>
 
           <div>
-            <p className="mb-1.5 text-xs text-green-700">รูปหลังซ่อม (ไม่บังคับ)</p>
+            <p className="mb-1.5 text-xs text-success-ink">รูปหลังซ่อม (ไม่บังคับ)</p>
             <SopPhotoUpload photoUrl={afterPhoto} onChange={setAfterPhoto}
               bucket="sop-photos" filenamePrefix="maint-after-" />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-green-700">หมายเหตุ (ไม่บังคับ)</label>
+            <label className="mb-1 block text-xs text-success-ink">หมายเหตุ (ไม่บังคับ)</label>
             <input type="text" value={resolverNote} onChange={(e) => setResolverNote(e.target.value)}
               placeholder="เช่น เปลี่ยนหลอดใหม่แล้ว"
-              className="w-full rounded-lg border border-green-200 bg-white px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-success/30 bg-white px-3 py-2 text-sm" />
           </div>
 
           <div className="flex gap-2">
@@ -187,7 +191,7 @@ export function MaintenanceDetailClient({
               {isPending ? "กำลังบันทึก..." : "ยืนยันเสร็จแล้ว"}
             </button>
             <button type="button" onClick={() => setShowDonePanel(false)}
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100">
+              className={buttonClass("secondary")}>
               ยกเลิก
             </button>
           </div>
@@ -197,7 +201,7 @@ export function MaintenanceDetailClient({
       {/* Edit button for own "new" reports */}
       {isOwn && report.status === "new" && (
         <a href={`/maintenance/${report.id}/edit`}
-          className="inline-block rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
+          className={buttonClass("secondary")}>
           แก้ไขรายการ
         </a>
       )}
