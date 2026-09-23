@@ -4,6 +4,8 @@ import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
+import { PageHeader, PageShell } from "@/components/ui/page";
+import { buttonClass } from "@/components/ui/button";
 
 export default async function PurchaseQueuePage() {
   const profile = await requireProfile();
@@ -12,16 +14,13 @@ export default async function PurchaseQueuePage() {
   const sessions = await getOrderSessions({ status: "reviewed" });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <PageShell>
       <InventorySubNav showTemplate={true} canReview={true} canSend={true} />
 
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900">รอสั่งซื้อ</h1>
-        <p className="text-xs text-neutral-400 mt-0.5">ตรวจสอบแล้ว รอโทรสั่งซัพพลายเออร์</p>
-      </div>
+      <PageHeader title="รอสั่งซื้อ" subtitle={<span className="text-xs">ตรวจสอบแล้ว รอโทรสั่งซัพพลายเออร์</span>} />
 
       {sessions.length === 0 ? (
-        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">
+        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
           ไม่มีรายการรอสั่งซื้อ
         </div>
       ) : (
@@ -31,13 +30,13 @@ export default async function PurchaseQueuePage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 
 function PurchaseCard({ session }: { session: OrderSessionSummary }) {
   return (
-    <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4 flex items-center justify-between gap-4">
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 flex items-center justify-between gap-4">
       <div className="min-w-0 space-y-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-neutral-900">
@@ -48,7 +47,7 @@ function PurchaseCard({ session }: { session: OrderSessionSummary }) {
           {session.stationName && (
             <span className="text-xs text-neutral-500">{session.stationName}</span>
           )}
-          <span className="text-xs text-neutral-400">{session.itemCount} รายการ</span>
+          <span className="text-xs text-neutral-500">{session.itemCount} รายการ</span>
         </div>
         <p className="text-xs text-neutral-500">
           สร้างโดย {session.createdByName}
@@ -57,7 +56,7 @@ function PurchaseCard({ session }: { session: OrderSessionSummary }) {
       </div>
       <Link
         href={`/staff/inventory/${session.id}`}
-        className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800"
+        className={buttonClass("primary", { size: "sm", className: "shrink-0" })}
       >
         สั่งซื้อ →
       </Link>

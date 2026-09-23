@@ -4,6 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { FromTemplateButton } from "./FromTemplateButton";
 import type { OrderStatus, OrderSessionSummary, Template } from "@/lib/inventory-data";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
+import { RowLink } from "@/components/ui/row-link";
+import { TH_ROW } from "@/components/ui/table";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
@@ -20,11 +24,11 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 };
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
-  submitted: "bg-amber-100 text-amber-800",
-  returned:  "bg-orange-100 text-orange-800",
-  reviewed:  "bg-blue-100 text-blue-800",
-  sent:      "bg-purple-100 text-purple-800",
-  received:  "bg-green-100 text-green-800",
+  submitted: "bg-pending-soft text-pending-ink",
+  returned:  "bg-danger-soft text-danger",
+  reviewed:  "bg-info-soft text-info",
+  sent:      "bg-primary-soft text-primary",
+  received:  "bg-success-soft text-success-ink",
 };
 
 function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
@@ -33,7 +37,7 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
     <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
+          <tr className={TH_ROW}>
             <th className="px-3 py-2">วันที่</th>
             <th className="px-3 py-2">แผนก</th>
             <th className="px-3 py-2">สถานะ</th>
@@ -43,21 +47,18 @@ function SessionTable({ sessions }: { sessions: OrderSessionSummary[] }) {
         </thead>
         <tbody>
           {sessions.map((s) => (
-            <tr key={s.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50">
-              <td className="px-3 py-2">
-                <Link href={`/staff/inventory/${s.id}`} className="font-medium text-neutral-900 hover:underline">
-                  {formatDate(s.createdAt)}
-                </Link>
-              </td>
+            // The whole row opens the order.
+            <RowLink key={s.id} href={`/staff/inventory/${s.id}`} className="border-b border-neutral-100 last:border-0">
+              <td className="px-3 py-2 whitespace-nowrap font-medium text-neutral-900">{formatDate(s.createdAt)}</td>
               <td className="px-3 py-2 text-neutral-600">{s.stationName ?? "—"}</td>
               <td className="px-3 py-2">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[s.status]}`}>
+                <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[s.status]}`}>
                   {STATUS_LABEL[s.status]}
                 </span>
               </td>
               <td className="px-3 py-2 text-right text-neutral-500">{s.itemCount}</td>
               <td className="px-3 py-2 text-neutral-500">{s.createdByName}</td>
-            </tr>
+            </RowLink>
           ))}
         </tbody>
       </table>
@@ -85,15 +86,25 @@ export function InventoryListClient({
 
   return (
     <div className="space-y-3">
-      {/* header: h1+subtitle LEFT, toggle RIGHT */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">งานของฉัน</h1>
-          <p className="text-xs text-neutral-400 mt-0.5">
-            {showAll ? "ใบสั่งของทั้งหมดทุกแผนก" : "ใบสั่งของที่ฉันสร้าง + รอรับของ"}
-          </p>
-        </div>
-        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 pt-1">
+      {/* The shared page header: the title and what is shown LEFT, the
+          two ways to start an order RIGHT; the ทุกแผนก switch sits above
+          the table it filters. */}
+      <PageHeader
+        title="งานของฉัน"
+        subtitle={<span className="text-xs">{showAll ? "ใบสั่งของทั้งหมดทุกแผนก" : "ใบสั่งของที่ฉันสร้าง + รอรับของ"}</span>}
+        actions={
+          <>
+            {templates.length > 0 && (
+              <FromTemplateButton templates={templates} />
+            )}
+            <Link href="/staff/inventory/new" className={buttonClass("primary")}>
+              + เช็คของ / สั่งของ
+            </Link>
+          </>
+        }
+      />
+      <div className="flex justify-end">
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5">
           <span className="text-xs text-neutral-500">ทุกแผนก</span>
           <button
             type="button"
@@ -101,9 +112,8 @@ export function InventoryListClient({
             aria-checked={showAll}
             onClick={() => setShowAll(!showAll)}
             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-              showAll ? "" : "bg-neutral-200"
+              showAll ? "bg-primary" : "bg-neutral-300"
             }`}
-            style={showAll ? { backgroundColor: "#2F5A16" } : undefined}
           >
             <span
               className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
@@ -114,19 +124,6 @@ export function InventoryListClient({
         </label>
       </div>
 
-      {/* action buttons */}
-      <div className="flex gap-2 flex-wrap">
-        {templates.length > 0 && (
-          <FromTemplateButton templates={templates} />
-        )}
-        <Link
-          href="/staff/inventory/new"
-          className="rounded-md px-3 py-2 text-sm font-medium text-white"
-          style={{ backgroundColor: "#2F5A16" }}
-        >
-          + เช็คของ / สั่งของ
-        </Link>
-      </div>
 
       {active.length > 0 ? (
         <SessionTable sessions={active} />

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Template } from "@/lib/inventory-data";
+import { buttonClass } from "@/components/ui/button";
 
 export function FromTemplateButton({ templates }: { templates: Template[] }) {
   const router = useRouter();
@@ -26,7 +27,7 @@ export function FromTemplateButton({ templates }: { templates: Template[] }) {
       <button
         type="button"
         onClick={handleClick}
-        className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        className={buttonClass("secondary")}
       >
         สั่งของจาก Template
       </button>
@@ -42,7 +43,7 @@ export function FromTemplateButton({ templates }: { templates: Template[] }) {
                   key={t.id}
                   type="button"
                   onClick={() => pick(t.id)}
-                  className="w-full text-left rounded-lg border border-neutral-200 px-4 py-3 text-sm font-medium text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400 transition-colors"
+                  className={buttonClass("secondary", { className: "w-full text-left" })}
                 >
                   {t.name}
                 </button>
@@ -51,7 +52,7 @@ export function FromTemplateButton({ templates }: { templates: Template[] }) {
             <button
               type="button"
               onClick={() => setShow(false)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50"
+              className={buttonClass("secondary", { className: "w-full" })}
             >
               ยกเลิก
             </button>

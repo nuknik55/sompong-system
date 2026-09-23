@@ -4,6 +4,8 @@ import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessions } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import type { OrderSessionSummary } from "@/lib/inventory-data";
+import { PageHeader, PageShell } from "@/components/ui/page";
+import { buttonClass } from "@/components/ui/button";
 
 export default async function ReviewQueuePage() {
   const profile = await requireProfile();
@@ -13,26 +15,23 @@ export default async function ReviewQueuePage() {
   const sessions = await getOrderSessions({ status: "submitted" });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <PageShell>
       <InventorySubNav showTemplate={true} canReview={true} canSend={canSend} />
 
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900">รอตรวจสอบ</h1>
-        <p className="text-xs text-neutral-400 mt-0.5">ใบสั่งของที่ staff ส่งมา รอ editor+ ตรวจสอบ</p>
-      </div>
+      <PageHeader title="รอตรวจสอบ" subtitle={<span className="text-xs">ใบสั่งของที่ staff ส่งมา รอ editor+ ตรวจสอบ</span>} />
 
       {sessions.length === 0 ? (
-        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">
+        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
           ไม่มีรายการรอตรวจสอบ
         </div>
       ) : (
         <div className="space-y-2">
           {sessions.map((s) => (
-            <SessionCard key={s.id} session={s} cta={{ label: "ตรวจสอบ →", color: "#2F5A16" }} />
+            <SessionCard key={s.id} session={s} cta={{ label: "ตรวจสอบ →" }} />
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -41,7 +40,7 @@ function SessionCard({
   cta,
 }: {
   session: OrderSessionSummary;
-  cta: { label: string; color: string };
+  cta: { label: string };
 }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 flex items-center justify-between gap-4">
@@ -55,14 +54,13 @@ function SessionCard({
           {session.stationName && (
             <span className="text-xs text-neutral-500">{session.stationName}</span>
           )}
-          <span className="text-xs text-neutral-400">{session.itemCount} รายการ</span>
+          <span className="text-xs text-neutral-500">{session.itemCount} รายการ</span>
         </div>
         <p className="text-xs text-neutral-500">สร้างโดย {session.createdByName}</p>
       </div>
       <Link
         href={`/staff/inventory/${session.id}`}
-        className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-white"
-        style={{ backgroundColor: cta.color }}
+        className={buttonClass("primary", { size: "sm", className: "shrink-0" })}
       >
         {cta.label}
       </Link>

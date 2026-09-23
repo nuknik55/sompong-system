@@ -2,6 +2,7 @@ import { requireAdminOrEditor, isAdminOrAbove } from "@/lib/auth";
 import { getTemplates, getTemplateItems, getIngredientsForOrder } from "@/lib/inventory-data";
 import { InventorySubNav } from "@/components/inventory-sub-nav";
 import { TemplateClient } from "./TemplateClient";
+import { PageShell } from "@/components/ui/page";
 
 export default async function TemplatePage({
   searchParams,
@@ -22,7 +23,7 @@ export default async function TemplatePage({
   const availableIngredients = allIngredients.filter((i) => !itemIngIds.has(i.id));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <PageShell>
       <InventorySubNav showTemplate canReview={true} canSend={isAdminOrAbove(profile.role)} />
       <TemplateClient
         key={selectedId ?? "none"}
@@ -31,6 +32,6 @@ export default async function TemplatePage({
         initialItems={items}
         availableIngredients={availableIngredients}
       />
-    </div>
+    </PageShell>
   );
 }

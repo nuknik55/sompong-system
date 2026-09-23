@@ -11,6 +11,8 @@ import {
   saveEditorItemEdit,
 } from "../actions";
 import type { OrderSessionDetail, OrderItem } from "@/lib/inventory-data";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
 
 type EditRow = {
   kitchenQty: string;
@@ -166,31 +168,31 @@ export function SessionActions({
 
   return (
     <div className="space-y-4 pb-8 no-print">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* ตีกลับ — edit form */}
       {/* Non-editors get the status and the reason, but no form. Without this
           branch the panel would render empty for them, which reads as a broken
           page rather than as a permission boundary. */}
       {session.status === "returned" && !canFixReturned && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
-          <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
-          {session.note && <p className="text-sm text-amber-700">{session.note}</p>}
-          <p className="text-xs text-amber-600">
+        <div className="rounded-lg border border-pending/60 bg-pending-soft p-3 space-y-1">
+          <p className="text-sm font-medium text-pending-ink">ถูกตีกลับให้แก้ไขใหม่</p>
+          {session.note && <p className="text-sm text-pending-ink">{session.note}</p>}
+          <p className="text-xs text-pending-ink">
             รอ {session.createdByName} แก้ไขและส่งใหม่
           </p>
         </div>
       )}
 
       {session.status === "returned" && canFixReturned && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
-          <p className="text-sm font-medium text-amber-800">ถูกตีกลับให้แก้ไขใหม่</p>
-          {session.note && <p className="text-sm text-amber-700">{session.note}</p>}
+        <div className="rounded-lg border border-pending/60 bg-pending-soft p-3 space-y-3">
+          <p className="text-sm font-medium text-pending-ink">ถูกตีกลับให้แก้ไขใหม่</p>
+          {session.note && <p className="text-sm text-pending-ink">{session.note}</p>}
 
-          <div className="rounded-lg border border-amber-200 bg-white overflow-x-auto">
+          <div className="rounded-lg border border-pending/60 bg-white overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-amber-100 bg-amber-50 text-neutral-500">
+                <tr className={TH_ROW}>
                   <th className="px-2 py-2 text-left">วัตถุดิบ</th>
                   <th className="px-2 py-2 text-right">เหลือ(ครัว)</th>
                   <th className="px-2 py-2 text-left">หน่วย</th>
@@ -244,7 +246,7 @@ export function SessionActions({
           </div>
 
           <button type="button" disabled={isPending} onClick={handleUpdateAndResubmit}
-            className="rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
+            className={buttonClass("primary")}>
             {isPending ? "กำลังส่ง..." : "บันทึกและส่งใหม่อีกครั้ง"}
           </button>
         </div>
@@ -255,26 +257,26 @@ export function SessionActions({
         <div className="space-y-3">
           <div className="flex flex-wrap gap-3">
             <button type="button" disabled={isPending} onClick={handleReview}
-              className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50">
+              className={buttonClass("primary")}>
               {isPending ? "กำลังบันทึก..." : "✓ ตรวจสอบแล้ว"}
             </button>
             <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
-              className="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
+              className={buttonClass("secondary")}>
               ตีกลับ
             </button>
           </div>
           {showReturnForm && (
-            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <div className="space-y-2 rounded-lg border border-pending/60 bg-pending-soft p-3">
               <input type="text" placeholder="เหตุผล / ข้อความถึง staff (ไม่จำเป็น)"
                 value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
-                className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm" />
+                className="w-full rounded-md border border-pending/60 bg-white px-3 py-2 text-sm" />
               <div className="flex gap-2">
                 <button type="button" disabled={isPending} onClick={handleReturn}
-                  className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
+                  className={buttonClass("primary", { size: "sm" })}>
                   ยืนยันตีกลับ
                 </button>
                 <button type="button" onClick={() => setShowReturnForm(false)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white">
+                  className={buttonClass("secondary")}>
                   ยกเลิก
                 </button>
               </div>
@@ -295,7 +297,7 @@ export function SessionActions({
                   ? `รายการ (${session.items.length})`
                   : "สรุปการสั่งซื้อ"}
               </h3>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-neutral-500">
                 {session.status === "reviewed"
                   ? "ตรวจสอบโดย " + (session.reviewedByName ?? "")
                   : "ส่งสั่งแล้ว"}
@@ -303,7 +305,7 @@ export function SessionActions({
             </div>
             {session.status === "reviewed" && checkedItems.size > 0 && (
               <button type="button" onClick={() => setCheckedItems(new Set())}
-                className="text-xs text-neutral-400 hover:text-neutral-700 underline">ล้าง</button>
+                className="text-xs text-neutral-500 hover:text-neutral-700 underline">ล้าง</button>
             )}
           </div>
 
@@ -312,7 +314,7 @@ export function SessionActions({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-400">
+                  <tr className={TH_ROW}>
                     <th className="px-3 py-2 w-8" />
                     <th className="px-3 py-2 text-left">วัตถุดิบ</th>
                     <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
@@ -331,20 +333,20 @@ export function SessionActions({
                     const isEditingThis = editingQty === item.id;
                     return (
                       <tr key={item.id}
-                        className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
+                        className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-pending-soft" : ""}`}>
                         <td className="px-3 py-2">
                           {isOrderable && (
                             <button type="button" onClick={() => toggleCheck(item.id)}
                               className={`flex h-5 w-5 items-center justify-center rounded border-2 text-xs transition-colors ${
                                 isChecked
                                   ? "border-green-600 bg-green-600 text-white"
-                                  : "border-neutral-300 hover:border-green-400"
+                                  : "border-neutral-300 hover:border-success/30"
                               }`}>
                               {isChecked ? "✓" : ""}
                             </button>
                           )}
                         </td>
-                        <td className={`px-3 py-2 ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
+                        <td className={`px-3 py-2 ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>
                           {item.ingredientName}
                         </td>
                         <td className="px-3 py-2 text-right text-neutral-500">
@@ -367,23 +369,23 @@ export function SessionActions({
                                   if (e.key === "Enter") saveQtyEdit(item.id);
                                   if (e.key === "Escape") setEditingQty(null);
                                 }}
-                                className="w-20 rounded border border-blue-400 bg-blue-50 px-2 py-1 text-right text-sm" />
+                                className="w-20 rounded border border-info/30 bg-info-soft px-2 py-1 text-right text-sm" />
                               <button type="button" onClick={() => saveQtyEdit(item.id)} disabled={isPending}
                                 className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">✓</button>
                               <button type="button" onClick={() => setEditingQty(null)}
-                                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">✕</button>
+                                className={buttonClass("secondary", { size: "sm" })}>✕</button>
                             </div>
                           ) : (
                             <div className="flex items-center justify-end gap-2">
-                              <span className={`font-medium ${isChecked ? "line-through text-neutral-400" : "text-neutral-800"}`}>
+                              <span className={`font-medium ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>
                                 {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
                                 {wasEdited && (
-                                  <span className="block text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</span>
+                                  <span className="block text-xs font-normal text-pending-ink">แก้จาก {item.qtyOrdered}</span>
                                 )}
                               </span>
                               {canEditQty && isOrderable && !isChecked && (
                                 <button type="button" onClick={() => startEditQty(item.id, eqty)}
-                                  className="text-xs text-blue-400 hover:text-blue-600 hover:underline">แก้</button>
+                                  className={buttonClass("link", { size: "sm" })}>แก้</button>
                               )}
                             </div>
                           )}
@@ -410,7 +412,7 @@ export function SessionActions({
                     <span className="text-sm font-medium text-neutral-700">
                       {qty} {item.orderUnit ?? ""}
                       {wasEdited && (
-                        <span className="ml-1 text-xs text-amber-600">(แก้จาก {item.qtyOrdered})</span>
+                        <span className="ml-1 text-xs text-pending-ink">(แก้จาก {item.qtyOrdered})</span>
                       )}
                     </span>
                   </div>
@@ -423,28 +425,28 @@ export function SessionActions({
           {session.status === "reviewed" && canSend && (
             <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50 space-y-2">
               <button type="button" disabled={isPending} onClick={handleMarkSent}
-                className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+                className={buttonClass("primary", { className: "w-full" })}>
                 {isPending ? "กำลังบันทึก..." : "✓ บันทึกว่าสั่งของแล้ว"}
               </button>
-              <p className="text-center text-xs text-neutral-400">กดหลังโทรสั่งของเรียบร้อยแล้ว</p>
+              <p className="text-center text-xs text-neutral-500">กดหลังโทรสั่งของเรียบร้อยแล้ว</p>
               <div className="flex justify-center">
                 <button type="button" disabled={isPending} onClick={() => setShowReturnForm((v) => !v)}
-                  className="text-xs text-amber-600 hover:underline">
+                  className={buttonClass("link", { size: "sm" })}>
                   ตีกลับ (พบปัญหา)
                 </button>
               </div>
               {showReturnForm && (
-                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="space-y-2 rounded-lg border border-pending/60 bg-pending-soft p-3">
                   <input type="text" placeholder="เหตุผล (ไม่จำเป็น)"
                     value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
-                    className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm" />
+                    className="w-full rounded-md border border-pending/60 bg-white px-3 py-2 text-sm" />
                   <div className="flex gap-2">
                     <button type="button" disabled={isPending} onClick={handleReturn}
-                      className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50">
+                      className={buttonClass("primary", { size: "sm" })}>
                       ยืนยันตีกลับ
                     </button>
                     <button type="button" onClick={() => setShowReturnForm(false)}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white">
+                      className={buttonClass("secondary")}>
                       ยกเลิก
                     </button>
                   </div>
@@ -476,7 +478,7 @@ export function SessionActions({
           )}
           <div className="flex flex-wrap gap-3">
             <button type="button" onClick={() => window.print()}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
+              className={buttonClass("secondary")}>
               พิมพ์ใบสั่งของ
             </button>
             <a href={`/staff/inventory/${session.id}/receive`}
@@ -492,7 +494,7 @@ export function SessionActions({
       {session.status === "received" && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
           <button type="button" onClick={() => window.print()}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
+            className={buttonClass("secondary")}>
             พิมพ์ใบรับของ
           </button>
         </div>

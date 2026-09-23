@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth";
 import { getOrderSessionDetail } from "@/lib/inventory-data";
 import { ReceiveForm } from "./ReceiveForm";
+import { PageShell } from "@/components/ui/page";
 
 export default async function ReceivePage({
   params,
@@ -15,8 +16,8 @@ export default async function ReceivePage({
   if (session.status !== "sent") redirect(`/staff/inventory/${id}`);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <PageShell>
       <ReceiveForm session={session} />
-    </div>
+    </PageShell>
   );
 }

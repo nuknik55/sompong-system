@@ -1,8 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireProfile, isAdminOrAbove } from "@/lib/auth";
 import { getOrderSessionDetail } from "@/lib/inventory-data";
 import { SessionActions } from "./SessionActions";
+import { TH_ROW } from "@/components/ui/table";
+import { PageHeader, PageShell } from "@/components/ui/page";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("th-TH", {
@@ -21,11 +22,11 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_CLASS: Record<string, string> = {
-  submitted: "bg-amber-100 text-amber-800",
-  returned:  "bg-orange-100 text-orange-800",
-  reviewed:  "bg-blue-100 text-blue-800",
-  sent:      "bg-purple-100 text-purple-800",
-  received:  "bg-green-100 text-green-800",
+  submitted: "bg-pending-soft text-pending-ink",
+  returned:  "bg-danger-soft text-danger",
+  reviewed:  "bg-info-soft text-info",
+  sent:      "bg-primary-soft text-primary",
+  received:  "bg-success-soft text-success-ink",
 };
 
 export default async function SessionDetailPage({
@@ -48,16 +49,16 @@ export default async function SessionDetailPage({
   const showReceived = session.status === "received" || session.items.some((i) => i.qtyReceived !== null);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div className="flex items-center gap-3">
-        <Link href="/staff/inventory" className="text-sm text-neutral-500 hover:text-neutral-900">← กลับ</Link>
-        <div className="flex items-center gap-2 flex-1">
-          <h1 className="text-lg font-semibold text-neutral-900">ใบสั่งของ #{shortId}</h1>
+    <PageShell>
+      <PageHeader
+        back={{ href: "/staff/inventory", label: "กลับ" }}
+        title={<>ใบสั่งของ #{shortId}</>}
+        subtitle={
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[session.status] ?? ""}`}>
             {STATUS_LABEL[session.status] ?? session.status}
           </span>
-        </div>
-      </div>
+        }
+      />
 
       <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
         {session.stationName && (
@@ -108,7 +109,7 @@ export default async function SessionDetailPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-400">
+                <tr className={TH_ROW}>
                   <th className="px-3 py-2 text-left">วัตถุดิบ</th>
                   <th className="px-3 py-2 text-right">เหลือ (ครัว)</th>
                   <th className="px-3 py-2 text-right">เหลือ (ตู้แช่)</th>
@@ -122,7 +123,7 @@ export default async function SessionDetailPage({
                   const wasEdited = (item.editorQtyOrdered !== null && item.editorQtyOrdered !== item.qtyOrdered)
                                  || (item.reviewerQtyOrdered !== null && item.reviewerQtyOrdered !== item.qtyOrdered);
                   return (
-                    <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-amber-50" : ""}`}>
+                    <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-pending-soft" : ""}`}>
                       <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
                       <td className="px-3 py-2 text-right text-neutral-500">
                         {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
@@ -133,14 +134,14 @@ export default async function SessionDetailPage({
                       <td className="px-3 py-2 text-right font-medium text-neutral-800">
                         {effectiveQty > 0 ? `${effectiveQty} ${item.orderUnit ?? ""}`.trim() : "—"}
                         {wasEdited && (
-                          <div className="text-xs font-normal text-amber-600">แก้จาก {item.qtyOrdered}</div>
+                          <div className="text-xs font-normal text-pending-ink">แก้จาก {item.qtyOrdered}</div>
                         )}
                       </td>
                       {showReceived && (
-                        <td className="px-3 py-2 text-right text-green-700">
+                        <td className="px-3 py-2 text-right text-success-ink">
                           {item.qtyReceived !== null
                             ? `${item.qtyReceived} ${item.orderUnit ?? ""}`.trim()
-                            : <span className="text-neutral-400">ยังไม่มา</span>}
+                            : <span className="text-neutral-500">ยังไม่มา</span>}
                         </td>
                       )}
                     </tr>
@@ -160,9 +161,9 @@ export default async function SessionDetailPage({
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="border border-gray-400 px-2 py-1 w-6">✓</th>
-                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
-                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
+                <th className="border px-2 py-1 w-6">✓</th>
+                <th className="border px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border px-2 py-1 text-right">สั่ง</th>
               </tr>
             </thead>
             <tbody>
@@ -190,9 +191,9 @@ export default async function SessionDetailPage({
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="border border-gray-400 px-2 py-1 text-left">วัตถุดิบ</th>
-                <th className="border border-gray-400 px-2 py-1 text-right">สั่ง</th>
-                <th className="border border-gray-400 px-2 py-1 text-right">รับจริง</th>
+                <th className="border px-2 py-1 text-left">วัตถุดิบ</th>
+                <th className="border px-2 py-1 text-right">สั่ง</th>
+                <th className="border px-2 py-1 text-right">รับจริง</th>
               </tr>
             </thead>
             <tbody>
@@ -215,6 +216,6 @@ export default async function SessionDetailPage({
       )}
 
       <SessionActions session={session} canReview={canReview} canSend={canSend} isCreator={isCreator} canOverrideCreator={canOverrideCreator} />
-    </div>
+    </PageShell>
   );
 }

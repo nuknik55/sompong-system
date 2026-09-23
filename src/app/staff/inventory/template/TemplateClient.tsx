@@ -2,13 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { Template, TemplateItem, IngredientForOrder } from "@/lib/inventory-data";
 import {
   createTemplate, renameTemplate, deleteTemplate,
   addItemsToTemplate, removeItemsFromTemplate, updateTemplateItem,
   reorderTemplateItems,
 } from "./actions";
+import { buttonClass } from "@/components/ui/button";
+import { TH_ROW } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
+import { TAB_ROW, tabClass } from "@/components/ui/tabs";
 
 type UpdateFields = {
   order_unit?: string | null;
@@ -46,12 +49,12 @@ function TemplateRow({
           <div className="flex flex-col gap-0.5 items-center">
             <button type="button" onClick={() => onMove("up")}
               disabled={index === 0 || isPending}
-              className="text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-25 leading-none">▲</button>
+              className="text-xs text-neutral-500 hover:text-neutral-700 disabled:opacity-25 leading-none">▲</button>
             <button type="button" onClick={() => onMove("down")}
               disabled={index === totalCount - 1 || isPending}
-              className="text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-25 leading-none">▼</button>
+              className="text-xs text-neutral-500 hover:text-neutral-700 disabled:opacity-25 leading-none">▼</button>
             <button type="button" onClick={onRemove} disabled={isPending}
-              className="text-xs text-red-400 hover:text-red-700 disabled:opacity-40 leading-none">✕</button>
+              className="text-xs text-red-400 hover:text-danger disabled:opacity-40 leading-none">✕</button>
           </div>
         </td>
       )}
@@ -307,26 +310,25 @@ export function TemplateClient({
   return (
     <div className="space-y-4 pb-12">
 
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link href="/staff/inventory" className="text-sm text-neutral-400 hover:text-neutral-700">← กลับ</Link>
-        <button type="button" onClick={() => { setShowCreate(true); setCreateName(""); }}
-          className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800">
-          + สร้าง Template
-        </button>
-      </div>
+      {/* Header: the shared page header */}
+      <PageHeader
+        back={{ href: "/staff/inventory", label: "กลับ" }}
+        title="Template"
+        actions={
+          <button type="button" onClick={() => { setShowCreate(true); setCreateName(""); }}
+            className={buttonClass("primary")}>
+            + สร้าง Template
+          </button>
+        }
+      />
 
       {/* Template tabs */}
       {templates.length > 0 && (
-        <div className="flex gap-1 flex-wrap border-b border-neutral-200">
+        <div className={TAB_ROW}>
           {templates.map((t) => (
             <button key={t.id} type="button"
               onClick={() => router.push(`/staff/inventory/template?t=${t.id}`)}
-              className={`rounded-t-md px-3 py-1.5 text-sm font-medium transition-colors -mb-px ${
-                t.id === selectedTemplateId
-                  ? "border border-b-white border-neutral-200 bg-white text-neutral-900"
-                  : "text-neutral-500 hover:text-neutral-800"
-              }`}>
+              className={tabClass(t.id === selectedTemplateId)}>
               {t.name}
             </button>
           ))}
@@ -335,7 +337,7 @@ export function TemplateClient({
 
       {/* No templates */}
       {templates.length === 0 && (
-        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">
+        <div className="rounded-lg border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
           ยังไม่มี Template — กด &ldquo;+ สร้าง Template&rdquo; เพื่อเริ่ม
         </div>
       )}
@@ -358,24 +360,24 @@ export function TemplateClient({
               ) : (
                 <button type="button"
                   onClick={() => { setEditingName(true); setNameVal(currentTemplate.name); }}
-                  className="flex items-center gap-1.5 text-lg font-semibold text-neutral-900 hover:text-neutral-600">
+                  className={buttonClass("link")}>
                   {currentTemplate.name}
-                  <span className="text-xs font-normal text-neutral-400">✎</span>
+                  <span className="text-xs font-normal text-neutral-500">✎</span>
                 </button>
               )}
               <p className="text-sm text-neutral-500 mt-0.5">{items.length} รายการ</p>
             </div>
             <button type="button" onClick={handleDelete} disabled={isPending}
-              className="mt-1 text-sm text-red-400 hover:text-red-700 disabled:opacity-50">
+              className={buttonClass("link", { danger: true, className: "mt-1" })}>
               ลบ template
             </button>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           {/* Items table */}
           {items.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-400">
+            <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
               ยังไม่มีวัตถุดิบ — กด &ldquo;+ เพิ่มวัตถุดิบ&rdquo; ด้านล่าง
             </div>
           ) : (
@@ -383,7 +385,7 @@ export function TemplateClient({
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-xs text-neutral-400 bg-neutral-50">
+                    <tr className={TH_ROW}>
                       {editMode && <th className="w-8 px-2 py-2" />}
                       <th className="px-3 py-2 text-left">วัตถุดิบ</th>
                       <th className="px-2 py-2 text-left">หน่วยสั่ง</th>
@@ -420,14 +422,14 @@ export function TemplateClient({
               <button type="button" onClick={() => setEditMode((v) => !v)}
                 className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                   editMode
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                    ? "border-primary/30 bg-primary-soft text-primary"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
                 }`}>
                 {editMode ? "✓ เสร็จแล้ว" : "แก้ไข"}
               </button>
             )}
             <button type="button" onClick={() => setShowAdd(true)}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+              className={buttonClass("secondary")}>
               + เพิ่มวัตถุดิบ
             </button>
           </div>
@@ -447,7 +449,7 @@ export function TemplateClient({
                 <div className="flex gap-1.5 flex-wrap">
                   <button type="button" onClick={() => setAddCategory(null)}
                     className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                      !addCategory ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                      !addCategory ? "bg-primary-soft text-primary ring-1 ring-inset ring-primary/25" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                     }`}>
                     ทั้งหมด
                   </button>
@@ -455,7 +457,7 @@ export function TemplateClient({
                     <button key={cat} type="button"
                       onClick={() => setAddCategory(addCategory === cat ? null : cat)}
                       className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                        addCategory === cat ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                        addCategory === cat ? "bg-primary-soft text-primary ring-1 ring-inset ring-primary/25" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                       }`}>
                       {cat}
                     </button>
@@ -463,12 +465,12 @@ export function TemplateClient({
                 </div>
               )}
               {addSelected.size > 0 && (
-                <p className="text-xs text-blue-600">เลือกแล้ว {addSelected.size} รายการ</p>
+                <p className="text-xs text-info">เลือกแล้ว {addSelected.size} รายการ</p>
               )}
             </div>
             <div className="overflow-y-auto flex-1 divide-y divide-neutral-100">
               {filteredAvailable.length === 0 ? (
-                <p className="p-4 text-sm text-neutral-400 text-center">ไม่พบรายการ</p>
+                <p className="p-4 text-sm text-neutral-500 text-center">ไม่พบรายการ</p>
               ) : filteredAvailable.map((ing) => (
                 <label key={ing.id}
                   className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-neutral-50">
@@ -478,10 +480,10 @@ export function TemplateClient({
                       if (e.target.checked) n.add(ing.id); else n.delete(ing.id);
                       return n;
                     })}
-                    className="h-4 w-4 rounded border-neutral-300 text-blue-600" />
+                    className="h-4 w-4 rounded border-neutral-300 text-info" />
                   <div>
                     <p className="text-sm text-neutral-800">{ing.name}</p>
-                    {ing.category && <p className="text-xs text-neutral-400">{ing.category}</p>}
+                    {ing.category && <p className="text-xs text-neutral-500">{ing.category}</p>}
                   </div>
                 </label>
               ))}
@@ -489,11 +491,11 @@ export function TemplateClient({
             <div className="border-t border-neutral-100 p-4 flex gap-2 justify-end">
               <button type="button"
                 onClick={() => { setShowAdd(false); setAddSelected(new Set()); setAddSearch(""); setAddCategory(null); }}
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100">
+                className={buttonClass("secondary")}>
                 ยกเลิก
               </button>
               <button type="button" onClick={handleAdd} disabled={addSelected.size === 0}
-                className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+                className={buttonClass("primary")}>
                 เพิ่ม {addSelected.size} รายการ
               </button>
             </div>
@@ -512,11 +514,11 @@ export function TemplateClient({
               className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowCreate(false)}
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100">
+                className={buttonClass("secondary")}>
                 ยกเลิก
               </button>
               <button type="button" onClick={handleCreate} disabled={!createName.trim() || isPending}
-                className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+                className={buttonClass("primary")}>
                 {isPending ? "กำลังสร้าง..." : "สร้าง"}
               </button>
             </div>

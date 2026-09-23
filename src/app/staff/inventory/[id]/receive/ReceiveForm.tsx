@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { receiveOrderItems } from "../../actions";
 import type { OrderSessionDetail } from "@/lib/inventory-data";
+import { buttonClass } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 
 const VARIANCE_THRESHOLD = 0.3;
 
@@ -57,17 +59,19 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <a href={`/staff/inventory/${session.id}`} className="text-sm text-neutral-500 hover:text-neutral-900">← กลับ</a>
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">บันทึกรับของ #{shortId}</h1>
-          {session.stationName && <p className="text-sm text-neutral-500">{session.stationName}</p>}
-        </div>
+      {/* The page header's shape, with this form's own back link kept as it
+          was (a plain <a>, a full page load), above the title. */}
+      <div className="space-y-1.5">
+        <a href={`/staff/inventory/${session.id}`} className={buttonClass("link")}>← กลับ</a>
+        <PageHeader
+          title={<>บันทึกรับของ #{shortId}</>}
+          subtitle={session.stationName ? <span>{session.stationName}</span> : undefined}
+        />
       </div>
 
       {/* Progress */}
       {alreadyDone > 0 && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800">
+        <div className="rounded-lg border border-success/30 bg-success-soft px-4 py-2.5 text-sm text-success-ink">
           รับแล้ว {alreadyDone} / {session.items.length} รายการ
           {alreadyDone < session.items.length && " — กรอกรายการที่มาถึงแล้วกด บันทึก ได้เลย"}
         </div>
@@ -76,7 +80,7 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
       <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
         {/* Column headers */}
         <div className="border-b border-neutral-100 bg-neutral-50 px-3 py-2">
-          <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs text-neutral-400">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs text-neutral-500">
             <span>วัตถุดิบ</span>
             <span className="w-28 text-right">สั่งไป</span>
             <span className="w-32 text-right">รับจริง</span>
@@ -94,20 +98,20 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
             <div
               key={item.id}
               className={`grid grid-cols-[1fr_auto_auto] gap-2 items-center px-3 py-2.5 border-b border-neutral-100 last:border-0 ${
-                alreadyReceived && inputVal !== "" ? "bg-green-50" : variance ? "bg-amber-50" : ""
+                alreadyReceived && inputVal !== "" ? "bg-success-soft" : variance ? "bg-pending-soft" : ""
               }`}
             >
               <div>
                 <span className="text-sm text-neutral-800">{item.ingredientName}</span>
                 {alreadyReceived && (
-                  <div className="text-xs text-green-600">✓ รับแล้ว {item.qtyReceived} {item.orderUnit ?? ""} — แก้ได้ถ้าพิมพ์ผิด</div>
+                  <div className="text-xs text-success-ink">✓ รับแล้ว {item.qtyReceived} {item.orderUnit ?? ""} — แก้ได้ถ้าพิมพ์ผิด</div>
                 )}
                 {!alreadyReceived && variance && (
-                  <div className="text-xs text-amber-600">ต่างจากที่สั่งเกิน 30%</div>
+                  <div className="text-xs text-pending-ink">ต่างจากที่สั่งเกิน 30%</div>
                 )}
               </div>
 
-              <span className="w-28 text-right text-sm text-neutral-400">
+              <span className="w-28 text-right text-sm text-neutral-500">
                 {orderedQty > 0 ? `${orderedQty} ${item.orderUnit ?? ""}`.trim() : "—"}
               </span>
 
@@ -118,31 +122,31 @@ export function ReceiveForm({ session }: { session: OrderSessionDetail }) {
                   onChange={(e) => setInputs((prev) => ({ ...prev, [item.id]: e.target.value }))}
                   placeholder="เว้นว่าง = ยังไม่มา"
                   className={`w-24 rounded border px-2 py-1 text-right text-sm ${
-                    alreadyReceived && inputVal !== "" ? "border-green-400 bg-green-50"
-                    : variance ? "border-amber-400"
+                    alreadyReceived && inputVal !== "" ? "border-success/30 bg-success-soft"
+                    : variance ? "border-pending/60"
                     : "border-neutral-300"
                   }`}
                 />
-                <span className="text-xs text-neutral-400 w-6 truncate">{item.orderUnit ?? ""}</span>
+                <span className="text-xs text-neutral-500 w-6 truncate">{item.orderUnit ?? ""}</span>
               </div>
             </div>
           );
         })}
       </div>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         เว้นว่าง = ยังไม่มา (ค้างไว้ รับเพิ่มได้ภายหลัง) · สีเหลือง = ต่างจากที่สั่งเกิน 30%
       </p>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex justify-end gap-3 pb-8">
         <a href={`/staff/inventory/${session.id}`}
-          className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100">
+          className={buttonClass("secondary")}>
           ยกเลิก
         </a>
         <button type="button" onClick={handleSubmit} disabled={isPending}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+          className={buttonClass("primary")}>
           {isPending ? "กำลังบันทึก..." : "บันทึกรายการที่มาแล้ว"}
         </button>
       </div>
