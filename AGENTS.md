@@ -251,6 +251,9 @@ whenever a check is added or its definition changes.**
 | `public.is_owner()` | **owner, admin** | owner only — **WRONG** | `migrations/006_owner_role.sql` (0001 had owner only); confirmed live 2026-09-16 |
 | `public.is_owner_only()` | owner | owner — right | `prep_owner_only_predicate_migration.sql` |
 | `public.is_editor_or_above()` | owner, admin, editor | right | `migrations/008_inventory_order_system.sql` |
+| `public.is_order_head()` | owner, admin, editor — THE ONE definition of a supply-order head (README item 35, decision 1); narrow heads here and nowhere else. A staff login is never a head | right | `supply_order_approval_migration.sql` (written 2026-09-23, NOT APPLIED) |
+| `public.can_order()` | owner, admin, editor, staff — who may place, edit, receive and cancel supply orders; hr and sales may not (decision 9) | right | the same file |
+| `public.order_create / order_edit / order_set_head_qty / order_approve / order_return / order_mark_sent / receive_order_item / order_cancel` | each checks role, status and creator itself and refuses with a Thai message the screen shows as it is; SECURITY DEFINER; the ONLY way to write the order tables (direct INSERT/UPDATE/DELETE are closed for every app role). `order_approve(session, seen_version)` refuses a stale version. `order_log_change` and `order_touch` are private (EXECUTE revoked) | — | the same file |
 | `public.current_role()` | returns the caller's `profiles.role`; NULL with no session | — | `migrations/0001_init.sql` |
 | `public.can_see_prep(id)` | owner by role; anyone else, admins included, only with a grant row for that prep | — | `prep_owner_only_predicate_migration.sql` |
 | `public.catering_event_unlocked(id)` | TRUE when the booking exists and `cost_locked_at` is null; used by the lock policies | — | `catering_sales_limits_migration.sql` |
@@ -284,8 +287,10 @@ says** (live by the repo; policy text not read live):
 `_delete` (009). All were written meaning editor and above. One has drifted
 from the app since: marking an order sent became admin-only in the app
 (`6dd173d`), and `order_sessions_update_editor` still lets an editor do it,
-or any other status change, by a direct call. That belongs to the
-supply-order approval work (README item 35).
+or any other status change, by a direct call. **`supply_order_approval_migration.sql`
+(written 2026-09-23, waiting for Nik) drops the five order policies and
+closes every direct write on the order tables; the app then writes only
+through the order functions.** The station policies stay as they are.
 
 ## App guards (`src/lib/auth.ts`, `src/lib/prep-access.ts`)
 
@@ -297,6 +302,7 @@ supply-order approval work (README item 35).
 | `requireHR()` | owner, hr |
 | `requireHROrAdmin()` | owner, hr, admin. **Its pages DO receive salary columns** (attendance, leave, schedule call `getEmployees`); its comment "no salary data" is wrong. README item 28. |
 | `requireSales()` | owner, admin, sales |
+| `requireOrdering()` | owner, admin, editor, staff — every supply-ordering route (item 35, decision 9); hr and sales go home. `src/lib/order-rules.ts` is the screen's mirror of the database's order rules (who may edit, approve, return, send, receive, cancel, by role, creator and status), tested; the database functions enforce them |
 | `requireProfile()` | every signed-in account that has a profile |
 | `canSeePrep()`, `getPrepVisibility()` | owner by role; everyone else by grant row only. Never calls the SQL `can_see_prep()`. |
 | `eventMenuAccess(role)` (`src/lib/event-menu-access.ts`) | `edit`: owner, admin; `view`: sales; `none`: everyone else. The one rule for a booking's OWN menu (catering per-event menus, item 39): the page renders by it, every write action refuses by it. The cost lock is a separate rule applied on top, with no role exception in the app. |

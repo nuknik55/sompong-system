@@ -257,6 +257,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
+| `supply_order_approval_migration.sql` | Nik (written 2026-09-23; item 35) | The supply-order approval flow. ONE transaction: adds `cancelled` and the version, return and cancel columns to `order_sessions`, `received_by/at` to `order_items`, the `order_item_changes` log, the functions `is_order_head`, `can_order`, `order_create`, `order_edit`, `order_set_head_qty`, `order_approve`, `order_return`, `order_mark_sent`, `receive_order_item` (rewritten) and `order_cancel`; closes every direct write on the order tables; turns the account foreign keys to ON DELETE RESTRICT; puts `templates`/`template_items` in the repo and drops their open policies; cancels the 22 trial orders (asserted 5/5/12). Tests itself as the six roles and a login with no profile (62 tests), 93 result rows, re-runnable while no order is open. **Run under PGlite (Postgres 18) against a stand-in of the live schema, twice: 94 rows both times, the second a re-run.** An independent adversarial review probed it under PGlite too; its three should-fix findings and the nits are in. The app code that calls it is on the local branch `item-35-approval`, NOT pushed: until Nik runs the file, the deployed code writes the tables directly, which the file closes — so the order is file first, then the code. In the gap (nobody orders yet) every ordering write fails and the reads still work. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -2304,6 +2305,97 @@ In order. Nothing here is started unless it says so.
     tables, and counts of orders by status, self-reviewed orders, orders
     with no station, order lines, and lines with each override set.
 
+    **BUILT 2026-09-23; the migration waits for Nik, the app code waits for
+    the migration.** Nik answered every question (his context: ordering is
+    on paper, the app flow never went live, most staff get their own login,
+    the generic accounts are his test logins, the real heads today are เฮง,
+    อู๋, ธีรวัฒน์, เวช and แหงน). The decisions, and where each lives:
+    1. A head is any editor, admin or owner: `is_order_head()`, ONE
+       replaceable function; a staff login is never a head.
+    2. Any head approves any order; the station is optional and no part of
+       approval.
+    3. A head changes quantities while reviewing, before approving; after
+       approval they are locked (`order_set_head_qty` refuses). Every
+       quantity change is a row of `order_item_changes` (who, old, new,
+       when). Approval carries the order's `version` as the head's screen
+       read it; any edit counts it up and `order_approve` refuses a stale
+       one, so the head reloads and approves again. (`updated_at` could not
+       be the token: the touch trigger stamps `now()`, the same for a whole
+       transaction, which the file's own tests would not have caught.)
+    4. A head may approve their own order; the screen marks it อนุมัติเอง.
+    5. Marking an order sent stays owner and admin. The purchaser-quantity
+       stage is gone from the server and the screens; `editor_qty_ordered`
+       and its 3 stored values stay. A shortfall is recorded at receiving.
+    6. The creator edits their own order while it waits for review and after
+       a return (`order_edit`); once approved the database refuses.
+    7. A head may return a reviewed order until it is marked sent; the head's
+       note is `return_note`, the staff note is kept.
+    8. Receiving: anyone who may order, line by line; who received and when
+       is stored PER LINE (`order_items.received_by/received_at`); the order
+       closes itself when every line has a quantity, and that is the only
+       way to 'received' — the direct sent→received policy is gone.
+    9. hr and sales cannot order: `requireOrdering()` at every ordering
+       route and `can_order()` in every function.
+    10. Cancel instead of delete, status ยกเลิก: the creator while waiting;
+        a head before it is sent; owner and admin after it is sent too;
+        `cancelled_by/at`, `cancel_note`. Deletes are closed for every app
+        role.
+    11. Heads see a badge on สั่งของ counting orders waiting for review
+        (`getReviewQueueCount`), and approve in the ตรวจสอบ tab.
+    12. Each orderer will have their own login (Nik).
+    13. The 22 open trial orders (5 waiting, 5 reviewed, 12 sent) become
+        ยกเลิก in the migration with the note "ปิดโดยระบบก่อนเริ่มใช้ขั้นตอน
+        อนุมัติใหม่"; counts asserted; nothing deleted.
+    14. Everyone who may order sees every order; each person edits only their
+        own (no admin override on a returned order any more).
+    15. An account with order history cannot be deleted: the account foreign
+        keys of `order_sessions` (and the new ones, and
+        `order_items.received_by`, `order_item_changes.changed_by`) are
+        ON DELETE RESTRICT; the team page checks first and offers
+        ระงับการใช้งาน (a ban through the auth admin API; `setUserDisabled`)
+        instead of a raw error. New orders always have a creator (a CHECK from
+        2026-09-23 on); the 13 July orders with none stay as they are.
+    16. The generic accounts are Nik's test logins.
+
+    **The drift, recorded (decision 15):** live, `order_sessions.created_by`
+    is nullable with no default, and `created_by`, `reviewed_by`, `sent_by`,
+    `approved_by` and `station_id` are all ON DELETE SET NULL (Nik read it in
+    the SQL editor, 2026-09-23). The repo's 008 says NOT NULL with no ON
+    DELETE action. Nothing in the repo made the change; it happened when
+    accounts were deleted, and 13 July orders lost their creator that way.
+    The migration prints the live state before and after, turns the four
+    account columns to RESTRICT, leaves `station_id` alone, and lists every
+    other column referencing profiles ON DELETE SET NULL without changing it.
+
+    **The template tables:** `templates` and `template_items` were created
+    outside the repo (no file). Live they carried `auth_write_*` (ALL,
+    authenticated, USING true) beside the role-checked policies, so any
+    signed-in account could write or delete a template directly. The
+    migration puts their definitions in the repo (types read from the app;
+    it prints the live columns to compare), drops `auth_write_*` and the
+    duplicate `auth_read_*`, re-creates a plain SELECT for signed-in
+    accounts, and revokes anon's grants. The template screen writes through
+    the service role and is unaffected.
+
+    **Stock on hand:** the order form already captures it per line (เหลือ
+    ครัว / เหลือ ตู้แช่, with the units the template carries), so Nik's paper
+    sheet's two figures are both in the app.
+
+    **Files:** `supabase/supply_order_approval_migration.sql` (the migration;
+    see "Not applied"); on the local branch `item-35-approval`:
+    `src/lib/order-rules.ts` (the screen's mirror of the rules, tested),
+    `requireOrdering()` in `auth.ts`, `staff/inventory/actions.ts` (every
+    write through the functions, no service role), `inventory-data.ts`
+    (new columns, the change log, the badge count, the line count paged),
+    the inventory screens, the badge in `app-header.tsx` and the four
+    layouts, and the team page's disable. The smaller findings are fixed with
+    it: no status move reports success for a change it did not make (the
+    functions raise); a failed read no longer marks an order received (the
+    database closes the order itself); both notes are kept; an all-zero
+    reviewed order shows its lines and buttons; the line count is paged;
+    `receive_order_item` no longer checks the retired 'approved';
+    `saveEditorItemEdit` is gone.
+
 36. **Admins can still READ account 790's rows through the API.**
     **DEFERRED by Nik, 2026-09-17, and again on 2026-09-18: the admin is
     trusted and non-technical.** Not started; kept here for when it is wanted. The
@@ -3864,10 +3956,16 @@ station order-template editor (`station_ingredients`, and its child
 `/owner/stations/[id]/template`) has been off the nav since 2026-07-03, when
 order templates moved to `/staff/inventory/template`. Listed for Nik on
 2026-09-22 as "to delete or to relink"; he decided to keep it as it is and wait
-for item 35 (supply ordering), which may reuse the station data. So it is
+for item 35 (supply ordering), which might reuse the station data. So it is
 neither deleted nor linked, it is left out of the shared look's rollout, and
 `src/lib/route-links.test.ts` lists it in NO_WAY_IN with that reason. Do not
 delete it, its table or its data without asking.
+
+**Item 35 no longer needs it (2026-09-23).** Nik decided heads are global and
+the station plays no part in approval (decisions 1–2), so the approval flow
+reads `stations` only for the optional station on an order and never touches
+`station_ingredients`. `/owner/stations` goes back to Nik as a plain
+keep-or-delete decision: nothing waits on it any more.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,
