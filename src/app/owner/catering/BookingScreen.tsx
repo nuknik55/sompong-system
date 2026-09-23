@@ -537,8 +537,12 @@ export function BookingScreen({
 
       {/* ONE lock for the whole form while a save is in flight and until it
           lands: a disabled fieldset disables every control inside it,
-          including those the shared components render. */}
-      <fieldset disabled={busy} className="m-0 min-w-0 space-y-5 border-0 p-0">
+          including those the shared components render.
+          No m-0: Tailwind's space-y puts the gap as each child's BOTTOM
+          margin, and m-0 on this child zeroed it, so the save buttons sat
+          flush against the price box's border (Nik, 2026-09-23). Preflight
+          already resets a fieldset's own margin. */}
+      <fieldset disabled={busy} className="min-w-0 space-y-5 border-0 p-0">
       {/* ── The booking: the sheet's row ── */}
       <section className="space-y-4 rounded-xl border border-neutral-300 bg-white p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
