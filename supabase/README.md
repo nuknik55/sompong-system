@@ -258,6 +258,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
+| `order_review_approve_migration.sql` | Nik (written 2026-09-23; item 54) | One function, `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH the quantities, in one transaction — every line checked first, each head quantity that changes logged, then reviewed; a stale version refused before any write. Tests itself as the roles (26 tests), 39 result rows, re-runnable; run under PGlite on the item-35 schema, twice: 39 rows both times. The app code that calls it (the review screen) is on the local branch `review-approve`, NOT pushed: until Nik runs the file, the deployed review screen keeps working as before (it calls `order_approve` and `order_set_head_qty`, which stay). Order: the file, then the code. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -3985,6 +3986,32 @@ and after Nik's import.
     means RESTRICT on these four and, on the team page, counting them in
     `hasOrderHistory`'s check. Decide per column: an expense entry's author
     and an approval's resolver are the ones an audit would miss.
+
+54. **Ordering follows the paper sheet's hand-off (Nik, 2026-09-23).**
+    - **"Waiting for you" counts, DONE (`98d0bb4`):** staff — their own
+      returned orders (งานของฉัน) and their own sent orders to receive
+      (รับของ); a head — orders to review (ตรวจสอบ); admin and owner — to
+      review and to mark sent (สั่งซื้อ). Each on its tab; the sidebar badge
+      is the sum and opens the earliest step with work.
+    - **The head reviews in one step, BUILT, waits for Nik:**
+      `order_review_approve_migration.sql` ("Not applied"), then the code
+      on the local branch `review-approve`. Before, the head's quantity
+      edit was a small grey "แก้" link per line, saved on its own, separate
+      from approval; now every line has a quantity field and อนุมัติ saves
+      them with the approval, or nothing. ตีกลับ requires a note.
+      **Follow-ups once it is live (the review of 2026-09-23):** revoke
+      EXECUTE on `order_approve` and `order_set_head_qty` from
+      authenticated (still callable directly; the app no longer calls them,
+      but the deployed code does until then); require the note in
+      `order_return` itself (today the screen and the server action do);
+      both old functions lock the line before the order, the new one the
+      order first, so a direct call racing an approval can deadlock (one
+      side aborts, nothing partial).
+    - **Supplier grouping on the send screen: investigated, not built**
+      (the 2026-09-23 report: supplier names exist only as the POS
+      delivery vendor, 46 names, current to 2026-09-02; the accounting
+      `suppliers` table, 71 rows, matches few of them and holds bank
+      details but no phone or LINE). Waiting on Nik's answers.
 
 **`/owner/stations` stays, unlinked, on purpose (Nik, 2026-09-23).** The
 station order-template editor (`station_ingredients`, and its child
