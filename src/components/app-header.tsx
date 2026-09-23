@@ -102,6 +102,33 @@ const ROLE_LABEL: Record<string, string> = {
   sales: "ฝ่ายขาย",
 };
 
+/**
+ * The menu under four small headings (Nik, from the preview samples,
+ * 2026-09-23). Grouping is by LABEL over the role's own nav list, which is built exactly
+ * as before, so no item becomes visible or invisible to anyone: a role that
+ * never had จองงานจัดเลี้ยง still does not, and a heading whose items are
+ * all missing for that role is not rendered. Anything not named here (an
+ * item added later) is shown, ungrouped, at the end.
+ */
+const NAV_GROUPS: { heading: string; labels: string[] }[] = [
+  { heading: "ครัว", labels: ["ภาพรวมต้นทุน", "สูตรอาหาร", "จัดการวัตถุดิบ", "SOP ครัว", "สั่งของ"] },
+  { heading: "งานขาย", labels: ["จองงานจัดเลี้ยง"] },
+  { heading: "บริหาร", labels: ["บัญชี", "อนุมัติ", "แจ้งซ่อม", "ฝ่ายบุคคล", "ใบลา", "บันทึกเวลา"] },
+  { heading: "ตั้งค่า", labels: ["ผู้ใช้งาน/สิทธิ์", "สิทธิ์ดูสูตรของเตรียม"] },
+];
+
+/** The role's nav list, in groups; empty groups and empty headings dropped. */
+function groupNav(navLinks: NavItem[]): { heading: string | null; items: NavItem[] }[] {
+  const taken = new Set<string>();
+  const groups = NAV_GROUPS.map(({ heading, labels }) => {
+    const items = labels.flatMap((label) => navLinks.filter((l) => l.label === label));
+    items.forEach((i) => taken.add(i.href));
+    return { heading, items };
+  }).filter((g) => g.items.length > 0);
+  const rest = navLinks.filter((l) => !taken.has(l.href));
+  return rest.length ? [...groups, { heading: null, items: rest }] : groups;
+}
+
 function isActiveLink(href: string, exact: boolean, pathname: string): boolean {
   if (exact) return pathname === href;
   if (href === "/staff") return pathname.startsWith("/staff") && !pathname.startsWith("/staff/inventory");
@@ -123,54 +150,66 @@ function SidebarContent({
   const initial = (profile.full_name ?? "?").charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    // The sidebar in the brand green (Nik chose it, 2026-09-23). White text on #2F5A16 is 8.1:1; the active item is a GOLD PILL with
+    // near-black text (8.8:1) because gold TEXT on green is only 4.0:1 and
+    // fails AA at this size. Headings are white at 75% (5.4:1), inactive
+    // items white at 80% (5.9:1), and the แจ้งซ่อม count is a white pill
+    // with red text (6.6:1).
+    <div className="flex h-full flex-col bg-brand-green">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green">
-          <span className="font-kanit text-sm font-bold leading-none text-brand-gold">ส</span>
+      <div className="flex items-center gap-2.5 border-b border-white/15 px-4 py-4">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gold">
+          <span className="font-kanit text-sm font-bold leading-none text-neutral-900">ส</span>
         </div>
-        <span className="font-kanit text-sm font-semibold text-neutral-800">สมพงศ์ ซีฟู้ด</span>
+        <span className="font-kanit text-sm font-semibold text-white">สมพงศ์ ซีฟู้ด</span>
       </div>
 
-      {/* Nav items */}
+      {/* Nav items, in groups */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        {navLinks.map((link) => {
-          const active = isActiveLink(link.href, link.exact, pathname);
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={onNavigate}
-              className={[
-                "relative mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                active
-                  ? "font-medium text-brand-green bg-brand-green/10"
-                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
-              ].join(" ")}
-            >
-              <span className={active ? "text-brand-green" : "text-neutral-400"}>
-                {link.icon}
-              </span>
-              {link.label}
-              {link.badge != null && link.badge > 0 && (
-                <span className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {link.badge > 99 ? "99+" : link.badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+        {groupNav(navLinks).map((group, gi) => (
+          <div key={group.heading ?? `rest-${gi}`} className={gi > 0 ? "mt-4" : undefined}>
+            {group.heading && (
+              <p className="px-3 pb-1 text-[11px] font-medium tracking-wide text-white/75">{group.heading}</p>
+            )}
+            {group.items.map((link) => {
+              const active = isActiveLink(link.href, link.exact, pathname);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={onNavigate}
+                  className={[
+                    "relative mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                    active
+                      ? "font-medium text-neutral-900 bg-brand-gold"
+                      : "text-white/80 hover:bg-white/10 hover:text-white",
+                  ].join(" ")}
+                >
+                  <span className={active ? "text-neutral-900" : "text-white/70"}>
+                    {link.icon}
+                  </span>
+                  {link.label}
+                  {link.badge != null && link.badge > 0 && (
+                    <span className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-danger">
+                      {link.badge > 99 ? "99+" : link.badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* User + logout */}
-      <div className="border-t border-neutral-100 px-4 py-3">
+      <div className="border-t border-white/15 px-4 py-3">
         <div className="mb-2 flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-xs font-semibold text-neutral-600">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-semibold text-white">
             {initial}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-neutral-800">{profile.full_name}</p>
-            <p className="text-[11px] text-neutral-400">{ROLE_LABEL[profile.role] ?? profile.role}</p>
+            <p className="truncate text-xs font-medium text-white">{profile.full_name}</p>
+            <p className="text-[11px] text-white/75">{ROLE_LABEL[profile.role] ?? profile.role}</p>
           </div>
         </div>
         {/* ออกจากระบบ IS THE ONE EXIT NO PAGE GUARD CAN SEE. It is a form
@@ -191,7 +230,7 @@ function SidebarContent({
         >
           <button
             type="submit"
-            className="text-xs text-neutral-400 underline hover:text-neutral-700"
+            className="text-xs text-white/80 underline hover:text-white"
           >
             ออกจากระบบ
           </button>
@@ -233,17 +272,17 @@ export function AppHeader({
   return (
     <>
       {/* Mobile top strip */}
-      <div className="no-print flex items-center justify-between border-b border-brand-gold bg-white px-4 py-2.5 lg:hidden">
+      <div className="no-print flex items-center justify-between border-b border-brand-gold bg-brand-green px-4 py-2.5 lg:hidden">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-green">
-            <span className="font-kanit text-sm font-bold leading-none text-brand-gold">ส</span>
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gold">
+            <span className="font-kanit text-sm font-bold leading-none text-neutral-900">ส</span>
           </div>
-          <span className="font-kanit text-sm font-semibold text-neutral-800">สมพงศ์ ซีฟู้ด</span>
+          <span className="font-kanit text-sm font-semibold text-white">สมพงศ์ ซีฟู้ด</span>
         </div>
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100"
+          className="rounded-md p-1.5 text-white hover:bg-white/10"
           aria-label="เปิดเมนู"
         >
           <Menu size={20} />
@@ -262,7 +301,7 @@ export function AppHeader({
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                className="rounded-md p-1 text-white/80 hover:bg-white/10 hover:text-white"
                 aria-label="ปิดเมนู"
               >
                 <X size={18} />
@@ -279,7 +318,7 @@ export function AppHeader({
       )}
 
       {/* Desktop sidebar */}
-      <aside className="no-print hidden w-52 shrink-0 border-r border-neutral-200 lg:flex lg:flex-col">
+      <aside className="no-print hidden w-52 shrink-0 border-r border-brand-green lg:flex lg:flex-col">
         <SidebarContent
           profile={profile}
           navLinks={navLinks}
