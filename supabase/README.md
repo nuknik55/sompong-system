@@ -440,6 +440,19 @@ figures (48 / 43 / 5 / sum 651.387003 / min 0.024527 / max 99.861334) were
 published from the TypeScript side *before* the database result arrived, so
 agreement could not be retrofitted to whatever came back.
 
+## Nik's own to-do list
+
+Things only Nik does, outside the code. The SQL files waiting for him are
+in "Not applied" above, not here.
+
+- **Import the POS delivery data** (จัดการวัตถุดิบ, `/owner/ingredients`, the POS
+  import). Ingredient prices are calculated from it, so every day it is
+  not imported the costs age. **The last import was 2026-09-03**
+  (11:41 Bangkok, `NewMaterialTransferReceive_03092026114055.xls`), with
+  data up to **2026-09-02**: read from `pos_receipt_deliveries` on
+  2026-09-24 (read-only, service key: the latest `document_date` and
+  `imported_at`; 24,500 rows). Added 2026-09-24.
+
 ## Queued work
 
 In order. Nothing here is started unless it says so.
@@ -4016,11 +4029,19 @@ and after Nik's import.
       but only on an order that is not 'sent' (it refuses one, after
       taking both locks): a direct call or a stale screen. Postgres aborts
       one side, nothing partial. Not fixed.
-    - **Supplier grouping on the send screen: investigated, not built**
-      (the 2026-09-23 report: supplier names exist only as the POS
-      delivery vendor, 46 names, current to 2026-09-02; the accounting
-      `suppliers` table, 71 rows, matches few of them and holds bank
-      details but no phone or LINE). Waiting on Nik's answers.
+    - **Supplier grouping on the สั่งซื้อ screen: NOT BUILT, Nik's
+      decision (2026-09-23). Do not propose it again.** Nik also declined
+      a plain "copy the order for LINE" button; do not propose that
+      either. (The investigation behind it, for the record: supplier
+      names exist only as the POS delivery vendor, 46 names, current to
+      2026-09-02; the accounting `suppliers` table, 71 rows, matches few
+      of them and holds bank details but no phone or LINE.)
+    - **Nik's second test of the whole flow, on production: PASSED**
+      (reported 2026-09-24, with `440fdcb` live). Staff placed an order;
+      the editor saw the count on the sidebar and on ตรวจสอบ, corrected a
+      quantity on the new review screen, on a phone, and approved; admin
+      saw the count on สั่งซื้อ and marked it sent; staff saw the count on
+      รับของ and received it.
 
 **`/owner/stations` stays, unlinked, on purpose (Nik, 2026-09-23).** The
 station order-template editor (`station_ingredients`, and its child
