@@ -4046,21 +4046,20 @@ and after Nik's import.
       saw the count on สั่งซื้อ and marked it sent; staff saw the count on
       รับของ and received it.
 
-**`/owner/stations` stays, unlinked, on purpose (Nik, 2026-09-23).** The
-station order-template editor (`station_ingredients`, and its child
-`/owner/stations/[id]/template`) has been off the nav since 2026-07-03, when
-order templates moved to `/staff/inventory/template`. Listed for Nik on
-2026-09-22 as "to delete or to relink"; he decided to keep it as it is and wait
-for item 35 (supply ordering), which might reuse the station data. So it is
-neither deleted nor linked, it is left out of the shared look's rollout, and
-`src/lib/route-links.test.ts` lists it in NO_WAY_IN with that reason. Do not
-delete it, its table or its data without asking.
-
-**Item 35 no longer needs it (2026-09-23).** Nik decided heads are global and
-the station plays no part in approval (decisions 1–2), so the approval flow
-reads `stations` only for the optional station on an order and never touches
-`station_ingredients`. `/owner/stations` goes back to Nik as a plain
-keep-or-delete decision: nothing waits on it any more.
+**`/owner/stations` was REMOVED on 2026-09-24, by Nik's decision; its data
+was KEPT.** The station order-template editor (`/owner/stations` and its
+child `/owner/stations/[id]/template`) had been off the nav since 2026-07-03,
+when order templates moved to `/staff/inventory/template` (`templates`,
+`template_items`). Nik kept it on 2026-09-23 while item 35 might reuse the
+station data; item 35 did not (heads are global, the station plays no part
+in approval), so it went. Removed with it: its server actions, the two
+station-template reads in `src/lib/inventory-data.ts`
+(`getStationTemplate`, and `getAllStationTemplates`, which nothing called)
+and their type, its NO_WAY_IN entry in `src/lib/route-links.test.ts`, and
+the `@dnd-kit` packages, which only its editor used. **Kept, no SQL:** the
+`stations` and `station_ingredients` tables and every row in them; the
+optional station on the order form (`getStations`) stays as it is. Nothing
+in the app reads `station_ingredients` any more.
 
 **Checked and closed 2026-09-09, not queued:** every `page.tsx` under
 `src/app/owner` has at least one link to it. The one grep miss,

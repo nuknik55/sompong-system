@@ -35,11 +35,6 @@ import ts from "typescript";
 
 /** Pages with no link on purpose. */
 const NO_WAY_IN: Record<string, string> = {
-  "/owner/stations":
-    "the station order-template editor (station_ingredients, with its child /owner/stations/[id]/template). Off the nav since " +
-    "2026-07-03 (f959c0e), when order templates moved to /staff/inventory/template (templates, template_items); nothing else reads " +
-    "its table. Listed for Nik 2026-09-22; he decided on 2026-09-23 to keep it as it is, unlinked, until item 35 " +
-    "(supply ordering), which may reuse the station data (README).",
   "/staff/inventory/template/[stationId]":
     "a redirect to /staff/inventory/template for URLs from before 2026-07-03 (f959c0e).",
 };

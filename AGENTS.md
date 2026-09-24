@@ -894,8 +894,8 @@ five samples, **except**: HR (paused for its rebuild: it has only what comes
 globally — fonts, tokens, fields, the sidebar), the printed documents (the
 quotation, the function sheets, the P&L print, the schedule print, the
 receipt, the daily sheet's and the orders' print layouts, the SOP print) and
-the Excel exports, which keep their own look, and `/owner/stations`, kept as
-it is until item 35. **New work uses these, and invents none of its own.**
+the Excel exports, which keep their own look. (`/owner/stations`, left out
+of it too, was removed on 2026-09-24.) **New work uses these, and invents none of its own.**
 
 ## The shell (step 2)
 

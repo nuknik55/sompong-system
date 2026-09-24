@@ -138,8 +138,9 @@ export async function reorderTemplateItems(
 ): Promise<{ error?: string }> {
   await requireAdminOrEditor();
   const supabase = createAdminClient();
-  // N writes, not atomic — see reorderTemplateRows in owner/stations for why
-  // that is acceptable here: absolute assignments, so a retry repairs it.
+  // N writes, not atomic. Recoverable though: each sort_order is an absolute
+  // assignment from a complete ordering, so re-running the same reorder repairs
+  // a half-application. Reporting the failure is what makes that retry happen.
   for (const { id, sort_order } of updates) {
     const { error } = await supabase.from("template_items").update({ sort_order }).eq("id", id);
     if (error) return { error: error.message };

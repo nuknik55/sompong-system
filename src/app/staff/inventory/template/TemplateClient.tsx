@@ -138,7 +138,8 @@ export function TemplateClient({
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  // Same runner, same reason, as owner/stations/[id]/template (83cc517):
+  // The runner the station template editor had (83cc517; the editor was
+  // removed 2026-09-24), for the same reason:
   // this screen moves rows on screen and then writes, and it reverted only
   // when the action RETURNED an error. A THROWN failure left the optimistic
   // change standing with no message — a template on screen that the database

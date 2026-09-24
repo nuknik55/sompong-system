@@ -1,6 +1,5 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllRows } from "@/lib/data";
 import { NO_COUNTS, countsFor, type OrderCounts, type OrderStatus } from "@/lib/order-rules";
 
@@ -131,22 +130,6 @@ export type TemplateItem = {
   purchaseUnitLabel: string | null;
 };
 
-export type StationTemplateRow = {
-  id: string;
-  stationId: string;
-  ingredientId: string;
-  ingredientName: string;
-  ingredientCategory: string | null;
-  customGroup: string | null;
-  customUnit: string | null;
-  defaultQty: number | null;
-  sortOrder: number;
-  usageUnit: string | null;
-  purchaseUnitLabel: string | null;
-  kitchenUnit: string | null;
-  freezerUnit: string | null;
-};
-
 export async function getStations(): Promise<Station[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -181,96 +164,6 @@ export async function getIngredientsForOrder(): Promise<IngredientForOrder[]> {
     kitchenUnit: null,
     freezerUnit: null,
   }));
-}
-
-export async function getAllStationTemplates(): Promise<Record<string, StationTemplateRow[]>> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("station_ingredients")
-    .select(`
-      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order, kitchen_unit, freezer_unit,
-      ingredients(name, category, usage_unit, purchase_unit_label)
-    `)
-    .order("sort_order");
-  if (error) throw new Error(error.message);
-
-  type IngRef = { name: string; category: string | null; usage_unit: string | null; purchase_unit_label: string | null };
-  type RawRow = {
-    id: string; station_id: string; ingredient_id: string;
-    custom_group: string | null; custom_unit: string | null;
-    default_qty: number | null; sort_order: number;
-    kitchen_unit: string | null; freezer_unit: string | null;
-    ingredients: IngRef | IngRef[] | null;
-  };
-
-  function ingOf(r: RawRow): IngRef | null {
-    if (!r.ingredients) return null;
-    return Array.isArray(r.ingredients) ? r.ingredients[0] ?? null : r.ingredients;
-  }
-
-  const result: Record<string, StationTemplateRow[]> = {};
-  for (const r of (data ?? []) as unknown as RawRow[]) {
-    const ing = ingOf(r);
-    const row: StationTemplateRow = {
-      id: r.id,
-      stationId: r.station_id,
-      ingredientId: r.ingredient_id,
-      ingredientName: ing?.name ?? "",
-      ingredientCategory: ing?.category ?? null,
-      customGroup: r.custom_group,
-      customUnit: r.custom_unit,
-      defaultQty: r.default_qty,
-      sortOrder: r.sort_order,
-      usageUnit: ing?.usage_unit ?? null,
-      purchaseUnitLabel: ing?.purchase_unit_label ?? null,
-      kitchenUnit: r.kitchen_unit,
-      freezerUnit: r.freezer_unit,
-    };
-    if (!result[r.station_id]) result[r.station_id] = [];
-    result[r.station_id].push(row);
-  }
-  return result;
-}
-
-export async function getStationTemplate(stationId: string): Promise<StationTemplateRow[]> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("station_ingredients")
-    .select(`
-      id, station_id, ingredient_id, custom_group, custom_unit, default_qty, sort_order, kitchen_unit, freezer_unit,
-      ingredients(name, category, usage_unit, purchase_unit_label)
-    `)
-    .eq("station_id", stationId)
-    .order("sort_order");
-  if (error) throw new Error(error.message);
-
-  type IngRef2 = { name: string; category: string | null; usage_unit: string | null; purchase_unit_label: string | null };
-  type RawRow2 = {
-    id: string; station_id: string; ingredient_id: string;
-    custom_group: string | null; custom_unit: string | null;
-    default_qty: number | null; sort_order: number;
-    kitchen_unit: string | null; freezer_unit: string | null;
-    ingredients: IngRef2 | IngRef2[] | null;
-  };
-
-  return (data ?? [] as unknown as RawRow2[]).map((r) => {
-    const ing = r.ingredients ? (Array.isArray(r.ingredients) ? r.ingredients[0] : r.ingredients) : null;
-    return {
-      id: r.id,
-      stationId: r.station_id,
-      ingredientId: r.ingredient_id,
-      ingredientName: ing?.name ?? "",
-      ingredientCategory: ing?.category ?? null,
-      customGroup: r.custom_group,
-      customUnit: r.custom_unit,
-      defaultQty: r.default_qty,
-      sortOrder: r.sort_order,
-      usageUnit: ing?.usage_unit ?? null,
-      purchaseUnitLabel: ing?.purchase_unit_label ?? null,
-      kitchenUnit: r.kitchen_unit,
-      freezerUnit: r.freezer_unit,
-    };
-  });
 }
 
 export async function getOrderSessions(opts?: {
