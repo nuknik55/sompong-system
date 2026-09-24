@@ -7,6 +7,8 @@ import { EventTypesSettingsClient } from "./EventTypesSettingsClient";
 import { CateringSubNav } from "@/components/catering-sub-nav";
 import { Tabs } from "@/components/tabs";
 import { PageHeader, PageShell } from "@/components/ui/page";
+import { buttonClass } from "@/components/ui/button";
+import Link from "next/link";
 
 // Two editable lists, one page. ประเภทงาน joined the rates here on 2026-09-15
 // rather than taking a fifth sub-nav item: the sub-nav was deliberately cut
@@ -27,7 +29,10 @@ export default async function CateringSettingsPage() {
     <PageShell>
       <CateringSubNav isAdmin={true} />
 
-      <PageHeader title="ตั้งค่าจัดเลี้ยง" />
+      <PageHeader
+        title="ตั้งค่าจัดเลี้ยง"
+        actions={<Link href="/owner/catering/detail-blocks" className={buttonClass("secondary")}>คลังรายละเอียดงาน</Link>}
+      />
 
       <Tabs
         tabs={[

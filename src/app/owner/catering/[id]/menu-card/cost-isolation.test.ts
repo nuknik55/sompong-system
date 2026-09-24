@@ -113,3 +113,87 @@ test("the walk reads what it should: the card reaches the shared reads and not t
 test("THE RULE: the card's page, its client and its save action import nothing that computes cost", () => {
   assert.deepEqual(walk(CARD).offenders, []);
 });
+
+// ── The event-details sheet (Nik, 2026-09-24) ─────────────────────────────
+//
+// The same rule for the sheet: a sales session edits and prints it, and it
+// goes to the customer with the quotation. Its editor page, client and save
+// action, its print page, the printed sheet itself and the shared header walk
+// to nothing that exports a cost figure. And what it READS carries no price,
+// no cost and no note but its own: the column lists of every select in its
+// data file are checked, so a kitchen note or an amount cannot be added to a
+// read without this failing.
+
+const DETAILS = path.join(HERE, "../details");
+const SHEET = [
+  path.join(DETAILS, "page.tsx"), path.join(DETAILS, "DetailsClient.tsx"), path.join(DETAILS, "actions.ts"),
+  path.join(DETAILS, "print/page.tsx"), path.join(DETAILS, "PrintToolbar.tsx"), path.join(DETAILS, "EventSheet.tsx"),
+  path.join(DETAILS, "sheet-data.ts"), path.join(HERE, "../doc-header.tsx"),
+];
+
+test("the walk reads what it should: the sheet reaches its data, the shared reads and the header, not the cost-bearing modules", () => {
+  const reached = rel(walk(SHEET).reached);
+  for (const f of ["app/owner/catering/[id]/details/sheet-data.ts", "app/owner/catering/menu-read.ts", "app/owner/catering/[id]/doc-header.tsx", "lib/event-sheet.ts", "app/owner/catering/detail-image.ts", "app/owner/catering/activity-log.ts"]) {
+    assert.ok(reached.includes(f), `${f} not reached: ${reached.join(", ")}`);
+  }
+  for (const f of ["app/owner/catering/actions.ts", "app/owner/catering/event-menu.ts", "app/owner/catering/shared-utils.tsx"]) {
+    assert.ok(!reached.includes(f), `${f} is reached`);
+  }
+});
+
+test("THE RULE, for the sheet: its pages, its client, its save action and its print import nothing that computes cost", () => {
+  assert.deepEqual(walk(SHEET).offenders, []);
+});
+
+/** Every column named in a .select("...") string literal of a file, embedded tables' columns included. */
+function selectedColumns(file: string): string[] {
+  const sf = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+  const out: string[] = [];
+  const visit = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "select") {
+      const arg = n.arguments[0];
+      if (arg && ts.isStringLiteralLike(arg)) {
+        for (const part of arg.text.split(/[(),]/)) {
+          const col = part.trim();
+          if (col !== "") out.push(col);
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+test("the sheet's reads select no price, amount, cost or note but its own job notes", () => {
+  const cols = selectedColumns(path.join(DETAILS, "sheet-data.ts"));
+  assert.ok(cols.includes("sheet_notes") && cols.includes("label"), cols.join(", ")); // the check sees the reads
+  const bad = cols.filter((c) => /price|amount|cost|total|note|margin|profit|deposit|bank|account/i.test(c) && c !== "sheet_notes" && c !== "cost_locked_at");
+  assert.deepEqual(bad, []);
+  // And it can fail: the quotation's own reads name amounts and prices.
+  const quoteCols = selectedColumns(path.join(HERE, "../../actions.ts"));
+  assert.ok(quoteCols.some((c) => /amount|unit_price/.test(c)));
+});
+
+/** Every property name the code reads (a.b, a?.b), from parsed source: comments cannot match. */
+function propertiesRead(source: string): string[] {
+  const sf = ts.createSourceFile("x.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const out: string[] = [];
+  const visit = (n: ts.Node) => {
+    if (ts.isPropertyAccessExpression(n)) out.push(n.name.text);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+const NOT_ON_THE_SHEET = /^(note|kitchen_note|detail_note|selling_price|unit_price|amount|price_per_set|unit_cost|deposit_amount|quoted_total)$/;
+
+test("the sheet's data and its print read no note, price or amount off a row (review, 2026-09-24)", () => {
+  // It can fail: mapping a dish's kitchen note onto the sheet is one line.
+  assert.deepEqual(propertiesRead("const x = dishes.map((d) => d.menu_name + d.note);").filter((p) => NOT_ON_THE_SHEET.test(p)), ["note"]);
+  for (const f of ["sheet-data.ts", "EventSheet.tsx"]) {
+    const read = propertiesRead(fs.readFileSync(path.join(DETAILS, f), "utf8"));
+    assert.ok(read.length > 20, `${f}: the check sees the code`);
+    assert.deepEqual(read.filter((p) => NOT_ON_THE_SHEET.test(p)), [], f);
+  }
+});

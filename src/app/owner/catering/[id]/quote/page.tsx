@@ -7,6 +7,8 @@ import { getCateringEvent, getCateringCharges, getCateringSettings } from "../..
 import { parseDocState, docMoney, sortForCustomerDoc } from "@/lib/quote-doc";
 import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
+import { readSheetContent, sheetIsEmpty } from "../details/sheet-data";
+import { EventSheet } from "../details/EventSheet";
 
 // ── ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ (document C) ─────────────────────────
 //
@@ -23,8 +25,9 @@ import { QuoteClient, type QuoteLine } from "./QuoteClient";
 // table count and the line total, as the price box has them; the food ordered
 // outside a set follows as its own lines. The dishes inside a set are NOT
 // listed here any more — with several sets the quotation ran past one A4
-// page. They belong to the event-details sheet (README item 39); until it
-// exists, sales gives the customer the dish list as before.
+// page. They are on the event-details sheet, which the quotation prints as
+// the pages after itself, in the same print job (Nik, 2026-09-24); the sheet
+// also prints alone from its own page (../details/print).
 //
 // The rules — which rows print, what the balance is computed from, and the
 // conditions text — are in @/lib/quote-doc, tested.
@@ -89,5 +92,16 @@ export default async function CateringQuotePage({
     event.deposit_amount,
   );
 
-  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={printFont.className} />;
+  // THE SHEET AFTER THE QUOTATION: on the quotation only (not the deposit
+  // or the invoice), and only when there is something on it.
+  // A sheet that cannot be read (an image link, a read) never costs the
+  // quotation: it prints without the sheet, and the sheet's own page says why.
+  const sheetContent = doc === "quote"
+    ? await readSheetContent(id).catch((err: unknown) => { console.error("event sheet read failed:", err); return null; })
+    : null;
+  const sheet = sheetContent && !sheetIsEmpty(sheetContent)
+    ? <EventSheet content={sheetContent} fontClass={printFont.className} />
+    : null;
+
+  return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={printFont.className} sheet={sheet} />;
 }

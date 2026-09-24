@@ -1,9 +1,10 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import type { CateringEvent, CateringSettings } from "../../actions";
 import type { DocState, DocMoney } from "@/lib/quote-doc";
 import { DOC_TITLE, conditionsFor, moneyRowsFor, fmtMoneyDoc } from "@/lib/quote-doc";
-import { thFullDate, timeRange, locationLabel } from "../../shared-utils";
+import { BAND, RULE, INKG, DocHeader } from "../doc-header";
 
 export type QuoteLine = {
   id: string;
@@ -14,21 +15,8 @@ export type QuoteLine = {
   amount: number;
 };
 
-/**
- * The greens of Nik's printed quotation, matched to the paper after he
- * rejected the first cut ("ทำไม่สวยเลย สีก็เข้มไป" — #1f7a45 was far darker
- * than the paper's soft olive/sage band). One family, three roles:
- *   BAND   the table head, white on sage — the paper's #8fae5d..#a3b86c range
- *   RULE   table borders and the letterhead rule, a paler tint of the same
- *          hue so the grid reads airy, not gridded
- *   INKG   the green used for TEXT (company name, section labels) — darker
- *          than BAND because text needs the contrast the band does not
- * White on sage is LOW contrast by web standards; it is what the paper does,
- * and the paper is the spec.
- */
-const BAND = "#9ab264";
-const RULE = "#cdd9ae";
-const INKG = "#5c7a34";
+// The greens (BAND, RULE, INKG) and the letterhead live in ../doc-header.tsx,
+// shared with the event-details sheet, which prints the same header.
 
 export function QuoteClient({
   event,
@@ -37,6 +25,7 @@ export function QuoteClient({
   money,
   settings,
   fontClass,
+  sheet,
 }: {
   event: CateringEvent;
   doc: DocState;
@@ -45,8 +34,14 @@ export function QuoteClient({
   settings: CateringSettings | null;
   /** next/font className for Sarabun — loaded in page.tsx, see the note there. */
   fontClass: string;
+  /**
+   * The event-details sheet, printed as the pages after the quotation in the
+   * same print job (Nik, 2026-09-24); null when the booking has none or this
+   * is the deposit or invoice. A checkbox in the toolbar leaves it out.
+   */
+  sheet?: ReactNode;
 }) {
-  const quotedDate = event.quoted_at ? thFullDate(event.quoted_at.slice(0, 10)) : "-";
+  const [withSheet, setWithSheet] = useState(true);
   const conditions = conditionsFor(doc, money.percent);
   const moneyRows = moneyRowsFor(doc, money);
 
@@ -108,6 +103,12 @@ export function QuoteClient({
             </a>
           ))}
         </div>
+        {sheet && (
+          <label className="flex items-center gap-1.5 text-sm text-neutral-700">
+            <input type="checkbox" checked={withSheet} onChange={(e) => setWithSheet(e.target.checked)} />
+            พิมพ์ใบรายละเอียดงานต่อท้าย
+          </label>
+        )}
         <button
           onClick={() => window.print()}
           className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-800"
@@ -120,47 +121,7 @@ export function QuoteClient({
         className={`quote-wrap px-6 py-8 ${fontClass}`}
         style={{ fontSize: "15px", lineHeight: "1.55", color: "#000" }}
       >
-        {/* Letterhead */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px", borderBottom: `2px solid ${BAND}`, paddingBottom: "8px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
-          <div>
-            <div style={{ fontSize: "18px", fontWeight: "bold", color: INKG }}>{settings?.company_name ?? "-"}</div>
-            {settings?.address && <div style={{ fontSize: "13px" }}>{settings.address}</div>}
-            <div style={{ fontSize: "13px" }}>
-              {settings?.tax_id && `เลขประจำตัวผู้เสียภาษี ${settings.tax_id}`}
-              {settings?.tax_id && settings?.phone ? "   " : ""}
-              {settings?.phone && `โทร. ${settings.phone}`}
-            </div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "24px", fontWeight: "bold", color: INKG, letterSpacing: "0.5px" }}>{DOC_TITLE[doc]}</div>
-            {/* ONE number across all three states, deliberately: they are the
-                same agreement at three moments, and a customer matching a
-                deposit slip to its quote should not have to match two
-                references. */}
-            <div style={{ fontSize: "13px" }}>เลขที่ {event.quote_number}</div>
-            {event.quote_revision > 0 && <div style={{ fontSize: "13px" }}>แก้ไขครั้งที่ {event.quote_revision}</div>}
-            <div style={{ fontSize: "13px" }}>วันที่ {quotedDate}</div>
-          </div>
-        </div>
-
-        {/* Customer + event */}
-        <div style={{ display: "flex", gap: "24px", marginBottom: "10px" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG }}>เรียน</div>
-            <div>{event.customer_name ?? "-"}</div>
-            {event.customer_company_name && <div>{event.customer_company_name}</div>}
-            {event.customer_contact_person && <div>ผู้ติดต่อ: {event.customer_contact_person}</div>}
-            {event.customer_phone && <div>โทร. {event.customer_phone}</div>}
-            {event.customer_address && <div>{event.customer_address}</div>}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG }}>รายละเอียดงาน</div>
-            <div>วันที่จัดงาน {thFullDate(event.event_date)}</div>
-            <div>เวลา {timeRange(event.start_time, event.end_time)}</div>
-            <div>สถานที่ {event.location_type === "in_house" ? locationLabel(event) : (event.offsite_address || "นอกสถานที่")}</div>
-            {event.guest_count != null && <div>จำนวนแขก {event.guest_count} ท่าน</div>}
-          </div>
-        </div>
+        <DocHeader settings={settings} event={event} title={DOC_TITLE[doc]} />
 
         {/* Line items. Column order is the paper's: ราคาต่อหน่วย BEFORE จำนวน. */}
         <table style={{ marginBottom: "10px" }}>
@@ -255,6 +216,9 @@ export function QuoteClient({
           </div>
         </div>
       </div>
+
+      {/* The event-details sheet: a new page after the quotation, same print job. */}
+      {sheet && withSheet && <div style={{ breakBefore: "page" }}>{sheet}</div>}
     </>
   );
 }
