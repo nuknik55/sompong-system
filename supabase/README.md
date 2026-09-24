@@ -2664,8 +2664,11 @@ In order. Nothing here is started unless it says so.
     since"), then the code pushed as `724171d` (the seam) and `2691dac` (the
     card). Checked read-only against production as owner and as sales: the
     page opens for คุณป้อม's booking with the real column (no lines saved
-    yet), and the booking screen and the kitchen sheet still open. Nik prints
-    one real card to check the colours. Decisions (Nik, 2026-09-24):
+    yet), and the booking screen and the kitchen sheet still open. **Nik
+    printed it and STOPPED there (2026-09-24): getting its look right would
+    take more than it is worth now. It stays live as it is; work on its look
+    is PAUSED by his decision — do not propose look changes to it.**
+    Decisions (Nik, 2026-09-24):
     - **The card placed on each table at the event.** ONE CARD PER TABLE:
       one print job, one A4 portrait page per table, all identical. The
       number of copies starts at the booking's table count (at least 1) and
@@ -4223,12 +4226,19 @@ states after running the widening migration below.
 | **B** ใบฟังก์ชั่นงาน — ฝ่ายครัว | `[id]/kitchen-sheet` | the kitchen | `0f14a7f`, corrected `62cd336` |
 | **C** ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ | `[id]/quote?doc=` | the customer | `0b35334` |
 
-All three group a package's food the same way, from ONE expansion
+A and B group a package's food the same way, from ONE expansion
 (`groupBySection` over the rows `getEventMenuDishes` returns — since
 2026-09-19 the booking's OWN copy of its set, `catering_event_menu_items`,
 or the shared `catering_set_menu_items` for a booking from before the copy
-existed; queue item 39): the customer, the floor and the kitchen cannot be
-told three different things. **The print
+existed; queue item 39), so the floor and the kitchen cannot be told two
+different things; the menu card reads the same rows. **C no longer lists
+the dishes inside a set (Nik, 2026-09-24, `9efcf09`):** with several sets
+it ran past one A4 page. A set prints as ONE line — its name, the price
+per table, the table count and the line total, as the price box has them
+— and the food ordered outside a set follows as its own lines; the
+deposit and invoice states share the page and print the same. The dish
+list belongs to the event-details sheet (proposed 2026-09-24, not built);
+until it exists sales gives the customer the dish list as before. **The print
 contract:** a section with no rows prints nothing at all — no heading, no
 blank row. Verified end-to-end by Nik: setting one dessert made ขนมหวาน
 separate on the printed sheet.
