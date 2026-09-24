@@ -43,18 +43,25 @@ export default async function SessionDetailPage({
     // On paper the page keeps the box it printed in before the shared look
     // (max-w-2xl, space-y-4, no padding of its own): the order and receive
     // sheets below are printed documents and keep their layout.
+    //
+    // ONLY those two sheets print (Nik, 2026-09-24): every on-screen part is
+    // hidden on paper. The header and the details card are print:hidden here;
+    // the tables and history already were, and SessionActions (the checklist,
+    // every control) hides itself with no-print on its own root.
     <PageShell className="print:max-w-2xl print:space-y-4 print:p-0">
-      <PageHeader
-        back={{ href: "/staff/inventory", label: "กลับ" }}
-        title={<>ใบสั่งของ #{shortId}</>}
-        subtitle={
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[session.status]}`}>
-            {STATUS_LABEL[session.status]}
-          </span>
-        }
-      />
+      <div className="print:hidden">
+        <PageHeader
+          back={{ href: "/staff/inventory", label: "กลับ" }}
+          title={<>ใบสั่งของ #{shortId}</>}
+          subtitle={
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[session.status]}`}>
+              {STATUS_LABEL[session.status]}
+            </span>
+          }
+        />
+      </div>
 
-      <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1 print:hidden">
         {session.stationName && (
           <div className="flex gap-2">
             <span className="w-24 shrink-0 text-neutral-500">แผนก</span>
