@@ -14,13 +14,16 @@
 // hooks and zero client-only browser APIs — that's the whole reason this
 // file is allowed to skip "use client".
 
-import type { CateringEvent, StaffOption } from "./actions";
+import type { StaffOption } from "./actions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE } from "./event-status";
 import { Badge } from "@/components/ui/badge";
 import { EVENT_MENU_SECTION_LIST } from "./event-menu";
 import { toNum } from "./to-num";
 import { toTimeInput } from "./booking-form";
 import { thaiDateWithDay } from "@/lib/thai-date";
+// The location labels live in location.ts (no cost in its imports) so the
+// menu card can print a venue without importing this file. Re-exported.
+export { LOCATION_TYPE_OPTIONS, VENUE_OPTIONS, ROOM_PORTION_OPTIONS, LOCATION_TYPE_LABEL, VENUE_LABEL, ROOM_PORTION_LABEL, locationLabel } from "./location";
 
 export { toNum, toTimeInput };
 
@@ -30,23 +33,6 @@ export const MONTHS_TH = [
 ];
 const DAYS_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
-// Values mirror the CHECK constraints in supabase/catering_migration.sql +
-// supabase/catering_location_migration.sql.
-export const LOCATION_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "in_house", label: "ภายในร้าน" },
-  { value: "offsite",  label: "นอกสถานที่" },
-];
-// 'offsite' dropped: it is now its own location_type, not a venue.
-export const VENUE_OPTIONS: { value: string; label: string }[] = [
-  { value: "air_shared", label: "แอร์รวม" },
-  { value: "room_v1",    label: "ห้อง V1" },
-  { value: "room_v2",    label: "ห้อง V2" },
-  { value: "room_v1_v2", label: "ห้อง V1 + V2" },
-];
-export const ROOM_PORTION_OPTIONS: { value: string; label: string }[] = [
-  { value: "half", label: "ครึ่งห้อง" },
-  { value: "full", label: "เต็มห้อง" },
-];
 export const BOOKING_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "table",    label: "จองโต๊ะ" },
   { value: "room",     label: "จองห้อง" },
@@ -156,9 +142,6 @@ export const COST_TYPE_OPTIONS: { value: string; label: string }[] = [
 ];
 export const COST_TYPE_LABEL = Object.fromEntries(COST_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 
-export const LOCATION_TYPE_LABEL = Object.fromEntries(LOCATION_TYPE_OPTIONS.map((o) => [o.value, o.label]));
-export const VENUE_LABEL         = Object.fromEntries(VENUE_OPTIONS.map((o) => [o.value, o.label]));
-export const ROOM_PORTION_LABEL  = Object.fromEntries(ROOM_PORTION_OPTIONS.map((o) => [o.value, o.label]));
 export const BOOKING_TYPE_LABEL  = Object.fromEntries(BOOKING_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 export const FOOD_FORMAT_LABEL   = Object.fromEntries(FOOD_FORMAT_OPTIONS.map((o) => [o.value, o.label]));
 export const MUSIC_TYPE_LABEL    = Object.fromEntries(MUSIC_TYPE_OPTIONS.map((o) => [o.value, o.label]));
@@ -192,13 +175,6 @@ export function timeRange(start: string | null, end: string | null): string {
 
 export function staffLabel(s: StaffOption): string {
   return s.nickname ?? s.full_name;
-}
-
-export function locationLabel(e: Pick<CateringEvent, "location_type" | "venue" | "room_portion">): string {
-  if (e.location_type === "offsite") return "นอกสถานที่";
-  const room = e.venue ? VENUE_LABEL[e.venue] ?? e.venue : "–";
-  const portion = e.room_portion ? ROOM_PORTION_LABEL[e.room_portion] : null;
-  return portion ? `${room} (${portion})` : room;
 }
 
 export function fmtBaht(n: number): string {

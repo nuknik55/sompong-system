@@ -51,26 +51,12 @@
  */
 import type { EventMenuAccess } from "@/lib/event-menu-access";
 import { menuLineQuantityError } from "./booking-lines.ts";
-
-/** One course of a booking's set: a copied row, or a shared row when falling back. */
-export type EventMenuDish = {
-  id: string;
-  menu_id: string;
-  menu_name: string;
-  /** menus.selling_price — a customer price, sales-readable. */
-  selling_price: number;
-  /** PORTIONS PER TABLE (per set), as catering_set_menu_items.quantity is. */
-  quantity: number;
-  section: string;
-  sort_order: number;
-  note: string | null;
-  /** Provenance, carried so a re-save keeps it: the shared set this course came from. */
-  source_set_menu_id?: string | null;
-  /** Provenance: the other booking's set line this course was copied from. */
-  source_event_menu_id?: string | null;
-};
-
-export type DishSource = "copy" | "shared" | "none";
+// The line helpers every printed document shares live in menu-lines.ts, which
+// holds no cost figure, so the menu card can use them without importing this
+// file (foodCostFigure, lineFoodCost). Re-exported: nothing else changes.
+import { isSetLine, EVENT_MENU_SECTIONS, type DishSource, type EventMenuDish } from "./menu-lines.ts";
+export { isSetLine, resolveDishes, EVENT_MENU_SECTIONS, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST } from "./menu-lines.ts";
+export type { DishSource, EventMenuDish, EventMenuSection } from "./menu-lines.ts";
 
 /** A set line of the booking, with what is served at it. */
 export type EventMenuLine = {
@@ -110,15 +96,6 @@ export type EventMenuView = {
 export const SWAP_WARN_RATIO = 0.1;
 
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/**
- * A set line is one copied from a shared set (set_menu_id) or a custom set —
- * which, by the widened CHECK, is the line that names neither a set nor a
- * dish. Decided from the two columns every screen already reads.
- */
-export function isSetLine(line: { set_menu_id: string | null; menu_id: string | null }): boolean {
-  return line.set_menu_id != null || line.menu_id == null;
-}
 
 /**
  * The page's lines: every set line of the booking with its price per table
@@ -264,27 +241,6 @@ export function swapWarningText(oldName: string, oldPrice: number, newName: stri
 }
 
 /**
- * What is served at a set line.
- *
- * `copied` is whether a copy was ever MADE for the line — the line's own
- * marker (set_name, stamped by catering_copy_set_menu and by the save), not
- * its row count. The 2026-09-19 review found the row count could not tell
- * "never copied" from "copied, then every course removed": the emptied copy
- * silently fell back to the shared set on every screen. A copied line with
- * no rows is a copy with no rows. Only a line never copied reads the shared
- * set (a booking from before the feature); a line with neither is empty.
- */
-export function resolveDishes(
-  copy: EventMenuDish[] | undefined,
-  shared: EventMenuDish[] | undefined,
-  copied: boolean,
-): { source: DishSource; dishes: EventMenuDish[] } {
-  if (copied || (copy && copy.length > 0)) return { source: "copy", dishes: copy ?? [] };
-  if (shared && shared.length > 0) return { source: "shared", dishes: shared };
-  return { source: "none", dishes: [] };
-}
-
-/**
  * What the page sends to the browser. THE COST MAP IS DROPPED unless the
  * access is "edit" — so even a page that computed one by mistake could not
  * ship it to a sales session. The page does not compute one for sales
@@ -374,23 +330,6 @@ export type LineDraft = {
    */
   removed: boolean;
 };
-
-/**
- * catering_set_menu_items.section / catering_event_menu_items.section — the
- * four groups, IN PRINT ORDER. The values mirror the CHECK constraint
- * (supabase/catering_set_menu_sections_migration.sql); the order is the order
- * the three documents print them in. ONE definition: shared-utils.tsx's
- * SET_MENU_SECTIONS, which the documents read, is built from this list.
- */
-export const EVENT_MENU_SECTIONS = ["dish", "dessert", "drink", "free"] as const;
-export type EventMenuSection = (typeof EVENT_MENU_SECTIONS)[number];
-export const EVENT_MENU_SECTION_LABELS: Record<EventMenuSection, string> = {
-  dish: "รายการอาหาร",
-  dessert: "ขนมหวาน",
-  drink: "เครื่องดื่ม",
-  free: "รายการแถมฟรี",
-};
-export const EVENT_MENU_SECTION_LIST: { value: string; label: string }[] = EVENT_MENU_SECTIONS.map((value) => ({ value, label: EVENT_MENU_SECTION_LABELS[value] }));
 
 export function draftFromLine(line: EventMenuLine): LineDraft {
   return {
