@@ -12,9 +12,6 @@ export type QuoteLine = {
   unitPrice: number;
   quantity: number;
   amount: number;
-  /** Dish names inside a package line, in section order. Empty for every
-   *  other kind of charge. */
-  dishes: string[];
 };
 
 /**
@@ -190,14 +187,6 @@ export function QuoteClient({
                   <td>
                     {l.label}
                     {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
-                    {/* What is inside the package, for the customer. Names
-                        only — pricing them again would double count against
-                        the package line they sit under. */}
-                    {l.dishes.length > 0 && (
-                      <ul style={{ margin: "3px 0 0", paddingLeft: "18px", fontSize: "13px", color: "#333" }}>
-                        {l.dishes.map((d) => <li key={d}>{d}</li>)}
-                      </ul>
-                    )}
                   </td>
                   <td style={{ textAlign: "right" }}>{fmtMoneyDoc(l.unitPrice)}</td>
                   <td style={{ textAlign: "center" }}>{l.quantity}</td>

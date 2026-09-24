@@ -3,12 +3,7 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
-import {
-  getCateringEvent, getCateringCharges, getCateringSettings,
-  getEventMenuDishes,
-} from "../../actions";
-import { SET_MENU_SECTIONS } from "../../shared-utils";
-import { groupBySection } from "@/lib/function-sheet";
+import { getCateringEvent, getCateringCharges, getCateringSettings } from "../../actions";
 import { parseDocState, docMoney, sortForCustomerDoc } from "@/lib/quote-doc";
 import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
@@ -21,8 +16,15 @@ import { QuoteClient, type QuoteLine } from "./QuoteClient";
 //
 // They are the same document with different money rows and different
 // conditions, which is why they are not three routes: the letterhead, the
-// customer block, the line items and the dish sub-lines are identical on all
-// three, and three copies of that would drift.
+// customer block and the line items are identical on all three, and three
+// copies of that would drift.
+//
+// A SET IS ONE LINE (Nik, 2026-09-24): its name, the price per table, the
+// table count and the line total, as the price box has them; the food ordered
+// outside a set follows as its own lines. The dishes inside a set are NOT
+// listed here any more — with several sets the quotation ran past one A4
+// page. They belong to the event-details sheet (README item 39); until it
+// exists, sales gives the customer the dish list as before.
 //
 // The rules — which rows print, what the balance is computed from, and the
 // conditions text — are in @/lib/quote-doc, tested.
@@ -40,15 +42,10 @@ export default async function CateringQuotePage({
   const { id } = await params;
   const rawDoc = parseDocState((await searchParams).doc);
 
-  // getEventMenuDishes reads the set lines itself, so the quotation no longer
-  // loads them separately; what it shows under each package is the booking's
-  // OWN copy (catering per-event menus), or the shared set for a booking from
-  // before the copy existed.
-  const [event, charges, settings, dishesByLine] = await Promise.all([
+  const [event, charges, settings] = await Promise.all([
     getCateringEvent(id),
     getCateringCharges(id),
     getCateringSettings(),
-    getEventMenuDishes(id),
   ]);
 
   if (!event) notFound();
@@ -71,32 +68,20 @@ export default async function CateringQuotePage({
     );
   }
 
-  // Dish sub-lines under each package line. The SAME expansion the service
-  // sheet and the kitchen sheet use — one definition of what is inside a
-  // package, so the customer, the floor and the kitchen cannot be told three
-  // different things.
-
-  // FOOD FIRST, discount last — Nik's paper order, the same order the
-  // booking screen's price box renders in. Insertion order within a type.
-  // The total below is order-independent, so it sums the raw list.
-  const lines: QuoteLine[] = sortForCustomerDoc(charges).map((c) => {
-    const served = c.event_menu_id ? dishesByLine.get(c.event_menu_id) : undefined;
-    const groups = served ? groupBySection(served.dishes, SET_MENU_SECTIONS) : [];
-    return {
-      id: c.id,
-      // The customer-facing name where the rate has one; the stored label
-      // otherwise — which is also every hand-typed line, by construction.
-      label: c.rate_display_label ?? c.label,
-      note: c.note,
-      unitPrice: c.unit_price,
-      quantity: c.quantity,
-      amount: c.amount,
-      // Flattened to names only: the customer is being shown what is included,
-      // not a second priced table. Section order is preserved, and a section
-      // with no rows contributes nothing.
-      dishes: groups.flatMap((g) => g.lines.map((l) => l.name)),
-    };
-  });
+  // SETS FIRST, then the food outside a set, then the rest, discount last —
+  // Nik's paper order, the same order the booking screen's price box renders
+  // in (customerDocRank). Insertion order within a kind. The total below is
+  // order-independent, so it sums the raw list.
+  const lines: QuoteLine[] = sortForCustomerDoc(charges).map((c) => ({
+    id: c.id,
+    // The customer-facing name where the rate has one; the stored label
+    // otherwise — which is also every hand-typed line, by construction.
+    label: c.rate_display_label ?? c.label,
+    note: c.note,
+    unitPrice: c.unit_price,
+    quantity: c.quantity,
+    amount: c.amount,
+  }));
 
   const money = docMoney(
     charges.reduce((s, c) => s + c.amount, 0),
