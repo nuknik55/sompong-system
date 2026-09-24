@@ -261,6 +261,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 | file | waiting on | while it waits |
 |---|---|---|
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
+| `catering_event_sheet_and_set_drafts_migration.sql` | Nik (committed and pushed alone in `5811ec3`, 2026-09-24). Expected: **98 rows**, ending "row count verified: 97 evidence rows emitted, as expected (this line makes 98)" | Nothing in production uses it. The code that does — the set-menu design workspace (`523c935`), the free mark (`23e16e2`) and the event-details sheet with its library (`9c64262`) — waits on the local branch `event-sheet-set-drafts` and is pushed only after it has run. What SQL cannot test (the file's header): the storage API's own type and size limits, signed URLs (their lifetime is the caller's choice), signed UPLOAD URLs, a copy from another bucket, a file's real content, the browser's resize, a real anonymous HTTP request. One upload and one print through the app after it runs check the first two. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
 ### The 125/126 boundary, recorded because 126's own entries cannot show it
@@ -4237,8 +4238,10 @@ it ran past one A4 page. A set prints as ONE line — its name, the price
 per table, the table count and the line total, as the price box has them
 — and the food ordered outside a set follows as its own lines; the
 deposit and invoice states share the page and print the same. The dish
-list belongs to the event-details sheet (proposed 2026-09-24, not built);
-until it exists sales gives the customer the dish list as before. **The print
+list is on the event-details sheet (built 2026-09-24; it prints as the
+pages after the quotation, and alone from `[id]/details/print`), which
+waits on `catering_event_sheet_and_set_drafts_migration.sql`; until it
+ships, sales gives the customer the dish list as before. **The print
 contract:** a section with no rows prints nothing at all — no heading, no
 blank row. Verified end-to-end by Nik: setting one dessert made ขนมหวาน
 separate on the printed sheet.
