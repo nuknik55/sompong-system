@@ -202,6 +202,8 @@ export type CateringSetMenu = {
   price_per_set: number;
   serves_guests: number | null;
   is_active: boolean;
+  /** A trial set from the design workspace: listed apart, never offered to a booking. */
+  is_draft: boolean;
   /**
    * Rows per section, keyed by section value — the list row shows the whole
    * breakdown so an incomplete package is visible without opening it.
@@ -808,11 +810,15 @@ export async function deleteCateringActivityLine(eventId: string, lineId: string
 export async function getCateringSetMenuOptions(): Promise<CateringSetMenuOption[]> {
   await requireSales();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("catering_set_menus")
-    .select("id, name, price_per_set")
-    .eq("is_active", true)
-    .order("name");
+  const read = (draftAware: boolean) => {
+    const q = supabase.from("catering_set_menus").select("id, name, price_per_set").eq("is_active", true);
+    // A trial set is never offered to a booking (the database also hides it
+    // from sales and refuses it as a booking line).
+    return (draftAware ? q.eq("is_draft", false) : q).order("name");
+  };
+  // Before the event-sheet migration there is no is_draft, and no draft.
+  let { data, error } = await read(true);
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
   if (error) throw error;
   return (data ?? []) as CateringSetMenuOption[];
 }
@@ -834,15 +840,18 @@ export async function getCateringDishOptions(): Promise<CateringDishOption[]> {
 export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const read = (draftAware: boolean) => supabase
     .from("catering_set_menus")
     // section rather than count(): the list needs the breakdown, not a total,
     // and counting in JS avoids one embedded aggregate per section. A package
     // holds of the order of ten rows, so this is cheaper than it looks.
-    .select("id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(section)")
+    .select((draftAware ? "id, name, description, price_per_set, serves_guests, is_active, is_draft, catering_set_menu_items(section)" : "id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(section)") as string)
     .order("created_at", { ascending: false });
+  // Before the event-sheet migration there is no is_draft, and no draft.
+  let { data, error } = await read(true);
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
   if (error) throw error;
-  return (data ?? []).map((r: Record<string, unknown>) => {
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
     const rows = (r.catering_set_menu_items as { section: string }[] | null) ?? [];
     const section_counts: Record<string, number> = {};
     for (const row of rows) section_counts[row.section] = (section_counts[row.section] ?? 0) + 1;
@@ -853,6 +862,7 @@ export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
       price_per_set: r.price_per_set as number,
       serves_guests: r.serves_guests as number | null,
       is_active: r.is_active as boolean,
+      is_draft: r.is_draft === true,
       section_counts,
     };
   });
@@ -1689,6 +1699,9 @@ export type SaveBookingResult =
 
 const SAVE_CONFLICT_WHY = "งานนี้ถูกบันทึกจากที่อื่นหลังจากเปิดหน้านี้ — กด “โหลดข้อมูลล่าสุด” แล้วแก้ไขอีกครั้ง";
 const SAVE_CONFLICT = `${SAVE_CONFLICT_WHY} ยังไม่ได้บันทึกอะไร`;
+/** A trial set (the design workspace's) offered as a booking's set. */
+const DRAFT_SET_REFUSED = "ชุดเมนูฉบับร่างใช้กับงานไม่ได้ — ทำเป็นชุดจริงก่อนที่หน้าออกแบบชุดเมนู";
+
 const PRICES_NOT_READY =
   "ระบบบันทึกกล่องราคายังไม่พร้อม (ยังไม่ได้รัน migration catering_booking_prices_save_migration.sql) — ยังไม่ได้บันทึกอะไร";
 
@@ -1707,6 +1720,16 @@ async function readUpdatedAt(supabase: Db, eventId: string): Promise<string | nu
  * yet is checked without one. The refusal to show, or null.
  */
 async function checkBookingPrices(supabase: Db, eventId: string | null, lines: BookingLine[], knownMenuIds: string[] | undefined): Promise<string | null> {
+  // A trial set never becomes a booking line. The database refuses it too
+  // (catering_save_booking_prices, and it hides drafts from sales); this
+  // says so plainly to owner and admin, who can see drafts.
+  const newSetIds = lines.flatMap((l) => (l.kind === "set" && l.eventMenuId === null ? [l.refId] : []));
+  if (newSetIds.length > 0) {
+    const { data: drafts, error: draftError } = await supabase
+      .from("catering_set_menus").select("id").in("id", newSetIds).eq("is_draft", true);
+    if (draftError) return isMissingSchemaError(draftError) ? PRICES_NOT_READY : draftError.message;
+    if ((drafts ?? []).length > 0) return DRAFT_SET_REFUSED;
+  }
   const { error } = await supabase.rpc("catering_save_booking_prices", {
     p_event_id: eventId, p_lines: lines, p_known_menu_ids: knownMenuIds ?? null, p_dry_run: true,
   });
@@ -2226,11 +2249,13 @@ export async function listEventMenuSources(eventId: string): Promise<EventMenuSo
   if (eventMenuAccess(profile.role) !== "edit") throw new Error(EDIT_REFUSED);
   const supabase = await createClient();
 
-  const { data: setRows, error: setError } = await supabase
-    .from("catering_set_menus")
-    .select("id, name, price_per_set, catering_set_menu_items(id)")
-    .eq("is_active", true)
-    .order("name");
+  const readSets = (draftAware: boolean) => {
+    const q = supabase.from("catering_set_menus").select("id, name, price_per_set, catering_set_menu_items(id)").eq("is_active", true);
+    return (draftAware ? q.eq("is_draft", false) : q).order("name");
+  };
+  // Before the event-sheet migration there is no is_draft, and no draft.
+  let { data: setRows, error: setError } = await readSets(true);
+  if (setError && isMissingSchemaError(setError)) ({ data: setRows, error: setError } = await readSets(false));
   if (setError) throw setError;
   const sets: EventMenuSourceSet[] = (setRows ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
@@ -2289,17 +2314,22 @@ export async function getEventMenuSourceDishes(source: EventMenuSource): Promise
   // unit_price, the one number both screens read.
   if (source.kind === "set") {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    const read = (draftAware: boolean) => supabase
       .from("catering_set_menus")
-      .select("name, price_per_set")
+      .select((draftAware ? "name, price_per_set, is_draft" : "name, price_per_set") as string)
       .eq("id", source.setMenuId)
       .maybeSingle();
+    // Before the event-sheet migration there is no is_draft, and no draft.
+    let { data, error } = await read(true);
+    if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
     if (error) throw error;
-    if (!data) throw new Error("ไม่พบชุดเมนูที่เลือก");
+    const set = data as unknown as { name: string; price_per_set: number | null; is_draft?: boolean } | null;
+    if (!set) throw new Error("ไม่พบชุดเมนูที่เลือก");
+    if (set.is_draft === true) throw new Error(DRAFT_SET_REFUSED);
     const items = (await getCateringSetMenuItemsForSets([source.setMenuId])).get(source.setMenuId) ?? [];
     return {
-      name: data.name as string,
-      pricePerTable: Number(data.price_per_set ?? 0),
+      name: set.name,
+      pricePerTable: Number(set.price_per_set ?? 0),
       dishes: items.map((it, i) => toEventMenuDish(it, (i + 1) * 10, source.setMenuId)),
     };
   }

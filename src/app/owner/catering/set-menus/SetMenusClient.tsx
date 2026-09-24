@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   saveCateringSetMenu, deleteCateringSetMenu, toggleCateringSetMenuActive, getCateringSetMenuItems,
 } from "../actions";
@@ -351,28 +352,11 @@ export function SetMenusClient({
   const comparison = setVsAlaCarte(dishesTotal, pricePerSet > 0 ? pricePerSet : null);
   const hasUnknownCost = items.some((it) => dishById.get(it.menu_id)?.has_unknown_cost);
 
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        title="จัดการชุดเมนู"
-        actions={
-          <button type="button" onClick={openAdd} className={buttonClass("primary")}>
-            + เพิ่มชุดเมนู
-          </button>
-        }
-      />
+  const realSets = setMenus.filter((sm) => !sm.is_draft);
+  const draftSets = setMenus.filter((sm) => sm.is_draft);
 
-      {error && !modal && (
-        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
-          {error}
-          <button onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
-        </div>
-      )}
-
-      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {setMenus.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-500">ยังไม่มีชุดเมนู</p>}
-        {setMenus.map((sm) => (
-          <div key={sm.id} className={`flex items-center gap-3 border-b border-neutral-50 px-4 py-3 last:border-0 ${!sm.is_active ? "opacity-50" : ""}`}>
+  const setRow = (sm: CateringSetMenu) => (
+          <div key={sm.id} className={`flex items-center gap-3 border-b border-neutral-50 px-4 py-3 last:border-0 ${!sm.is_active && !sm.is_draft ? "opacity-50" : ""}`}>
             <div className="flex-1">
               <span className="text-sm font-medium text-neutral-800">{sm.name}</span>
               {sm.serves_guests != null && <span className="ml-2 text-xs text-neutral-500">เสิร์ฟ {sm.serves_guests} ท่าน</span>}
@@ -399,21 +383,62 @@ export function SetMenusClient({
             <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(sm.price_per_set)}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => openEdit(sm)} className={buttonClass("link", { size: "sm" })}>แก้ไข</button>
-              <button
-                type="button"
-                onClick={() => handleToggleActive(sm)}
-                disabled={isPending}
-                className={`text-xs ${sm.is_active ? "text-neutral-500 hover:text-danger" : "text-success-ink hover:text-success-ink"}`}
-              >
-                {sm.is_active ? "ปิดใช้" : "เปิดใช้"}
-              </button>
+              {!sm.is_draft && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleActive(sm)}
+                  disabled={isPending}
+                  className={`text-xs ${sm.is_active ? "text-neutral-500 hover:text-danger" : "text-success-ink hover:text-success-ink"}`}
+                >
+                  {sm.is_active ? "ปิดใช้" : "เปิดใช้"}
+                </button>
+              )}
               <button type="button" onClick={() => handleDelete(sm)} disabled={isPending} className={buttonClass("link", { size: "sm", dangerHover: true })}>
                 ลบ
               </button>
             </div>
           </div>
-        ))}
+  );
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="จัดการชุดเมนู"
+        actions={
+          <>
+            <Link href="/owner/catering/set-menus/design" className={buttonClass("secondary")}>ออกแบบชุดเมนู</Link>
+            <button type="button" onClick={openAdd} className={buttonClass("primary")}>
+              + เพิ่มชุดเมนู
+            </button>
+          </>
+        }
+      />
+
+      {error && !modal && (
+        <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger">
+          {error}
+          <button onClick={() => setError(null)} className={buttonClass("link", { danger: true, className: "ml-2" })}>✕</button>
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        {realSets.length === 0 && <p className="px-4 py-6 text-center text-sm text-neutral-500">ยังไม่มีชุดเมนู</p>}
+        {realSets.map((sm) => setRow(sm))}
       </div>
+
+      {/* Trial sets from the design workspace, apart from the real ones: no
+          booking can use one and sales never sees one. The editor works on
+          both; a draft has no ปิดใช้/เปิดใช้, since it is offered nowhere. */}
+      {draftSets.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-heading text-base font-semibold text-neutral-800">
+            ชุดทดลอง (ฉบับร่าง) <span className="text-sm font-normal text-neutral-500">— ยังไม่ใช้กับงาน พนักงานขายไม่เห็น</span>
+          </h2>
+          <div className="overflow-hidden rounded-xl border border-dashed border-neutral-300 bg-white">
+            {draftSets.map((sm) => setRow(sm))}
+          </div>
+        </section>
+      )}
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
