@@ -58,6 +58,10 @@ export function QuoteClient({
           @page { size: A4; margin: 14mm 16mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .q-avoid-break { break-inside: avoid; }
+          /* The page margins above frame the sheet; the screen padding of the
+             layout and of this wrapper would take another 30 mm of A4. */
+          main { padding: 0 !important; }
+          .quote-wrap { padding: 0 !important; }
         }
         @media screen {
           .quote-wrap { max-width: 760px; margin: 0 auto; }
@@ -69,7 +73,11 @@ export function QuoteClient({
            then breaks such runs INSIDE their fixed cells; Thai wraps by
            dictionary anyway. */
         .quote-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .quote-wrap th, .quote-wrap td { border: 1px solid ${RULE}; padding: 9px 12px; vertical-align: top; overflow-wrap: anywhere; }
+        /* COMPACT ROWS (Nik, 2026-09-24): a booking with 2 sets, 5 extra
+           dishes and 5 other lines must fit one A4 page with the terms, the
+           bank line and the signatures. 14px at line-height 1.3 with 3px
+           padding is a 25px row, from 44px. */
+        .quote-wrap th, .quote-wrap td { border: 1px solid ${RULE}; padding: 3px 8px; vertical-align: top; overflow-wrap: anywhere; font-size: 14px; line-height: 1.3; }
       `}</style>
 
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white px-6 py-3">
@@ -110,10 +118,10 @@ export function QuoteClient({
 
       <div
         className={`quote-wrap px-6 py-8 ${fontClass}`}
-        style={{ fontSize: "15px", lineHeight: "1.7", color: "#000" }}
+        style={{ fontSize: "15px", lineHeight: "1.55", color: "#000" }}
       >
         {/* Letterhead */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px", borderBottom: `2px solid ${BAND}`, paddingBottom: "10px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px", borderBottom: `2px solid ${BAND}`, paddingBottom: "8px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
           <div>
             <div style={{ fontSize: "18px", fontWeight: "bold", color: INKG }}>{settings?.company_name ?? "-"}</div>
             {settings?.address && <div style={{ fontSize: "13px" }}>{settings.address}</div>}
@@ -136,7 +144,7 @@ export function QuoteClient({
         </div>
 
         {/* Customer + event */}
-        <div style={{ display: "flex", gap: "24px", marginBottom: "14px" }}>
+        <div style={{ display: "flex", gap: "24px", marginBottom: "10px" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG }}>เรียน</div>
             <div>{event.customer_name ?? "-"}</div>
@@ -155,10 +163,10 @@ export function QuoteClient({
         </div>
 
         {/* Line items. Column order is the paper's: ราคาต่อหน่วย BEFORE จำนวน. */}
-        <table style={{ marginBottom: "12px" }}>
+        <table style={{ marginBottom: "10px" }}>
           <colgroup>
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "45%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "44%" }} />
             <col style={{ width: "16%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "22%" }} />
@@ -211,7 +219,7 @@ export function QuoteClient({
             was worse. He is being asked to confirm the final wording; treat
             every line as provisional and do not add to it. The list itself
             lives in @/lib/quote-doc. */}
-        <div className="q-avoid-break" style={{ fontSize: "12.5px", color: "#333", marginBottom: "16px" }}>
+        <div className="q-avoid-break" style={{ fontSize: "12.5px", lineHeight: "1.45", color: "#333", marginBottom: "12px" }}>
           <div style={{ fontWeight: "bold", marginBottom: "3px", color: INKG, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>เงื่อนไข</div>
           <ol style={{ margin: 0, paddingLeft: "20px" }}>
             {conditions.map((c) => <li key={c}>{c}</li>)}
@@ -220,9 +228,9 @@ export function QuoteClient({
 
         {/* Bank block — on the two documents that ask for money. */}
         {doc !== "quote" && (settings?.bank_name || settings?.bank_account_number) && (
-          <div className="q-avoid-break" style={{ fontSize: "13px", marginBottom: "20px", border: `1px solid ${RULE}`, background: "#fafbf6", padding: "9px 13px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
-            <div style={{ fontWeight: "bold", marginBottom: "3px" }}>ชำระเงินโอนเข้าบัญชี</div>
+          <div className="q-avoid-break" style={{ fontSize: "13px", lineHeight: "1.45", marginBottom: "12px", border: `1px solid ${RULE}`, background: "#fafbf6", padding: "6px 12px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
             <div>
+              <span style={{ fontWeight: "bold" }}>ชำระเงินโอนเข้าบัญชี</span>{" "}
               {settings?.bank_name}
               {settings?.bank_account_name ? ` ชื่อบัญชี ${settings.bank_account_name}` : ""}
             </div>
@@ -234,7 +242,7 @@ export function QuoteClient({
             the left signs on behalf of the company (from settings), the
             right on behalf of the customer, a rule to write on when the
             booking has no company name for them. */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "30px", gap: "24px", fontSize: "14px" }}>
+        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "18px", gap: "24px", fontSize: "14px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ marginBottom: "26px" }}>ในนาม {settings?.company_name ?? "................................"}</div>
             <div>ลงชื่อ......................................ผู้เสนอราคา</div>
