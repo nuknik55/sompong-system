@@ -947,6 +947,8 @@ export function BookingScreen({
           {event.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className={buttonClass("secondary")}>ใบเสนอราคา</Link>}
           <Link href={`/owner/catering/${event.id}/function-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน บริการ</Link>
           <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน ครัว</Link>
+          {/* The card on each table (Nik, 2026-09-24): every status but cancelled. */}
+          {event.status !== "cancelled" && <Link href={`/owner/catering/${event.id}/menu-card`} className={buttonClass("secondary")}>การ์ดเมนูบนโต๊ะ</Link>}
         </ButtonGroup>
       )}
 
