@@ -15,6 +15,7 @@ import {
 } from "@/lib/order-rules";
 import { buttonClass } from "@/components/ui/button";
 import { TH_ROW } from "@/components/ui/table";
+import { StockFigure, StockLeft } from "../stock-left";
 
 type EditRow = {
   kitchenQty: string;
@@ -365,16 +366,28 @@ export function SessionActions({
               const changed = n !== effectiveQty(item);
               const bad = !Number.isFinite(n) || n < 0;
               return (
-                <div key={item.id} className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${changed ? "bg-pending-soft" : ""}`}>
-                  <div className="min-w-0">
+                // What is left sits right against the quantity field (Nik,
+                // 2026-09-24): the head orders from it. A wide screen has one
+                // row, name | what is left | quantity; a phone gives the name
+                // its own line and keeps the other two side by side under it.
+                <div key={item.id} className={`grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:grid-cols-[1fr_auto_auto] ${changed ? "bg-pending-soft" : ""}`}>
+                  <div className="col-span-2 min-w-0 sm:col-span-1">
                     <div className="text-sm text-neutral-800">{item.ingredientName}</div>
-                    <div className="text-xs text-neutral-500">
-                      เหลือ ครัว {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
-                      {" · "}ตู้แช่ {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
-                      {(changed || item.reviewerQtyOrdered !== null) && <span className="text-pending-ink"> · ผู้สั่งขอ {item.qtyOrdered}</span>}
-                      {head.moved.has(item.id) && <span className="font-medium text-danger"> · เปลี่ยนเป็น {effectiveQty(item)} หลังคุณเปิด</span>}
-                    </div>
+                    {((changed || item.reviewerQtyOrdered !== null) || head.moved.has(item.id)) && (
+                      <div className="text-xs">
+                        {(changed || item.reviewerQtyOrdered !== null) && <span className="text-pending-ink">ผู้สั่งขอ {item.qtyOrdered}</span>}
+                        {(changed || item.reviewerQtyOrdered !== null) && head.moved.has(item.id) && " · "}
+                        {head.moved.has(item.id) && <span className="font-medium text-danger">เปลี่ยนเป็น {effectiveQty(item)} หลังคุณเปิด</span>}
+                      </div>
+                    )}
                   </div>
+                  <StockLeft
+                    className="justify-self-end"
+                    kitchenQty={item.remainingKitchenQty}
+                    kitchenUnit={item.remainingKitchenUnit}
+                    freezerQty={item.remainingFreezerQty}
+                    freezerUnit={item.remainingFreezerUnit}
+                  />
                   <div className="flex items-center gap-1.5">
                     {mayHeadQty ? (
                       <input
@@ -472,11 +485,11 @@ export function SessionActions({
                       <td className={`px-3 py-2 ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>
                         {item.ingredientName}
                       </td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <StockFigure qty={item.remainingKitchenQty} unit={item.remainingKitchenUnit} />
                       </td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <StockFigure qty={item.remainingFreezerQty} unit={item.remainingFreezerUnit} />
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={`font-medium ${isChecked ? "line-through text-neutral-500" : "text-neutral-800"}`}>

@@ -6,6 +6,7 @@ import { SessionActions } from "./SessionActions";
 import { TH_ROW } from "@/components/ui/table";
 import { PageHeader, PageShell } from "@/components/ui/page";
 import { thaiDateTime } from "@/lib/thai-date";
+import { StockFigure } from "../stock-left";
 
 /** The printed order and receive sheets' date (their own format). */
 function formatDate(iso: string) {
@@ -138,11 +139,11 @@ export default async function SessionDetailPage({
                   return (
                     <tr key={item.id} className={`border-b border-neutral-100 last:border-0 ${wasEdited ? "bg-pending-soft" : ""}`}>
                       <td className="px-3 py-2 text-neutral-800">{item.ingredientName}</td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {item.remainingKitchenQty !== null ? `${item.remainingKitchenQty} ${item.remainingKitchenUnit ?? ""}`.trim() : "—"}
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <StockFigure qty={item.remainingKitchenQty} unit={item.remainingKitchenUnit} />
                       </td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {item.remainingFreezerQty !== null ? `${item.remainingFreezerQty} ${item.remainingFreezerUnit ?? ""}`.trim() : "—"}
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <StockFigure qty={item.remainingFreezerQty} unit={item.remainingFreezerUnit} />
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-neutral-800">
                         {eqty > 0 ? `${eqty} ${item.orderUnit ?? ""}`.trim() : "—"}
