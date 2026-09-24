@@ -258,6 +258,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `order_old_functions_and_return_note_migration.sql` | Nik (written 2026-09-24; item 54) | **Expect 29 result rows**, ending "row count verified: 28 evidence rows emitted, as expected (this line makes 29)". Item 54's follow-ups: DROPS `order_approve` and `order_set_head_qty` (after checking that no function body and no scheduled job names them; the DROP is RESTRICT), and replaces `order_return` so a return with no note, or a note of nothing but spaces, is refused. Tests itself as the roles (17 tests), every write rolled back; run under PGlite on the item-35 + item-54 schema, twice: 29 rows both times. No app code waits for it (the app already refuses an empty note and no longer calls the two), so it was pushed alone. After it: do not roll Vercel back past `440fdcb`; a re-run of `supply_order_approval_migration.sql` would bring the two functions and the note-less `order_return` back (run this file again after it); `order_review_approve_migration.sql` can no longer be re-run (its Step 0 stops, nothing changed). |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -4000,15 +4001,21 @@ and after Nik's import.
       edit was a small grey "แก้" link per line, saved on its own, separate
       from approval; now every line has a quantity field and อนุมัติ saves
       them with the approval, or nothing. ตีกลับ requires a note.
-      **Follow-ups, now due (the review of 2026-09-23); they go into the
-      next migration file with the supplier work, so Nik runs one file:** revoke
-      EXECUTE on `order_approve` and `order_set_head_qty` from
-      authenticated (still callable directly; since `440fdcb` the app no
-      longer calls them); require the note in
-      `order_return` itself (today the screen and the server action do);
-      both old functions lock the line before the order, the new one the
-      order first, so a direct call racing an approval can deadlock (one
-      side aborts, nothing partial).
+      **Follow-ups (the review of 2026-09-23), BUILT, wait for Nik:**
+      `order_old_functions_and_return_note_migration.sql` ("Not applied").
+      `order_approve` and `order_set_head_qty` are DROPPED rather than
+      revoked: nothing calls them (the app since `440fdcb`; the file
+      checks every function body and scheduled job), a revoked function
+      can be granted back by accident, and a dropped one cannot be called
+      by any role. `order_return` refuses a missing or blank note itself.
+      **The deadlock:** only `order_set_head_qty` locked the line before
+      the order (`order_approve` locked only the order; the note here said
+      "both"), so dropping it removes the pair recorded here.
+      `receive_order_item` has the same line-then-order shape and still
+      could deadlock with an approval, edit or return of the SAME order,
+      but only on an order that is not 'sent' (it refuses one, after
+      taking both locks): a direct call or a stale screen. Postgres aborts
+      one side, nothing partial. Not fixed.
     - **Supplier grouping on the send screen: investigated, not built**
       (the 2026-09-23 report: supplier names exist only as the POS
       delivery vendor, 46 names, current to 2026-09-02; the accounting
