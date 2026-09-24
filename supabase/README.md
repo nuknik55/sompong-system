@@ -90,6 +90,7 @@ and dated here.
 
 | file | ran | effect |
 |---|---|---|
+| `catering_menu_card_lines_migration.sql` | 2026-09-24 | **Item 39, the menu card's hand-typed lines.** Added `catering_events.menu_card_lines` (text, CHECK at most 3000 characters); no new policy or grant, the column inherits `catering_events_rw` and the cost lock. Run by Nik in the SQL editor as committed in `0cc9027`: **22 rows, every line ok, ending "row count verified: 21 evidence rows emitted, as expected (this line makes 22)"**, first run. Its "before" line read bookings 2 (awaiting_deposit 1, inquiry 1), cost-locked 0 — a new inquiry sales added after the harness check. The card's code followed: `724171d` (the cost-free seam) and `2691dac` (the card). |
 | `order_old_functions_and_return_note_migration.sql` | 2026-09-24 | **Item 54's follow-ups; item 35 is done with them.** Dropped `order_approve` and `order_set_head_qty` (nothing called them: checked in the app, in every function body and in scheduled jobs; the DROP was RESTRICT), and replaced `order_return` so a return with no note, or a note of nothing but spaces, is refused. Run by Nik in the SQL editor as committed in `52e4ba8`: **29 rows, every line ok, ending "row count verified: 28 evidence rows emitted, as expected (this line makes 29)"**, first run. Its "before" line read orders 44 (cancelled 22, received 21, sent 1); the sent one was Nik's second test order, received since. **Since then:** do not roll Vercel back past `440fdcb` (older code calls `order_approve`); a re-run of `supply_order_approval_migration.sql` would bring the two functions and the note-less `order_return` back (run this file again after it); `order_review_approve_migration.sql` can no longer be re-run (its Step 0 stops, nothing changed). |
 | `order_review_approve_migration.sql` | 2026-09-23 | **Item 54, the head reviews in one step.** `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH per-line quantities in one transaction, or nothing. Run by Nik in the SQL editor as committed in `c679e52`: **39 rows, every line ok, ending "row count verified: 38 evidence rows emitted, as expected (this line makes 39)"**, first run. Its "before" line read orders 43 (cancelled 22, received 21), lines 175, change-log rows 4 — Nik's test order had gone all the way to received. The app code that calls it (`bc6eb73`, `440fdcb`) was pushed after. `order_approve` and `order_set_head_qty` stayed until `order_old_functions_and_return_note_migration.sql` dropped them (2026-09-24). |
 | `supply_order_approval_migration.sql` | 2026-09-23 | **The supply-order approval flow (item 35).** Run by Nik in the SQL editor as committed in `abadb45`: **94 rows, every test line ok, ending "row count verified: 93 evidence rows emitted, as expected (this line makes 94)"**, first run. Step 2 cancelled the 22 open trial orders (5 submitted, 5 reviewed, 12 sent) with the note; the 20 received orders untouched. Six account columns of `order_sessions` are ON DELETE RESTRICT. 4 open template policies (`auth_write_*`, `auth_read_*`) dropped. Adds `cancelled`, `version`, the return and cancel columns, `order_items.received_by/at`, `order_item_changes`, `is_order_head()`, `can_order()` and the eight order functions; closes every direct write on the order tables. The app code that calls it, `2d4c10f`, was pushed after the result, the same day. |
@@ -259,7 +260,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
-| `catering_menu_card_lines_migration.sql` | Nik (written 2026-09-24; item 39, the menu card) | **Expect 22 result rows**, ending "row count verified: 21 evidence rows emitted, as expected (this line makes 22)". Adds ONE column, `catering_events.menu_card_lines` (text, at most 3000 characters): the menu card's hand-typed lines. No existing column fits (`detail_note`, `kitchen_note` and `music_note` are internal notes). No new policy or grant: the column inherits `catering_events_rw` and the cost lock. Tests itself as the roles (14 tests: sales, admin and owner write an open booking; on a cost-locked one sales writes nothing and owner and admin still can; editor, staff, hr and a login with no profile write nothing; 3000 characters pass, 3001 are refused), every write rolled back; run under PGlite on a catering stand-in, twice: 22 rows both times; three mutations (the lock policy missing, editors admitted, the length check removed) each fail with nothing applied. **The menu card's code waits for it** (the local branch `menu-card`): it reads and writes the column. |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -2659,9 +2659,13 @@ In order. Nothing here is started unless it says so.
     table, and Nik's simplifications) — DONE, APPLIED AND SHIPPED
     2026-09-19/20.** `catering_event_menu_save_migration.sql` ran clean on
     its first run (30 rows, every judged row ok — the applied table above).
-    **The menu card: BUILT 2026-09-24, waits for Nik** —
-    `catering_menu_card_lines_migration.sql` ("Not applied"), then the code
-    on the local branch `menu-card`. Decisions (Nik, 2026-09-24):
+    **The menu card: DONE 2026-09-24** —
+    `catering_menu_card_lines_migration.sql` applied (22 rows, see "Applied
+    since"), then the code pushed as `724171d` (the seam) and `2691dac` (the
+    card). Checked read-only against production as owner and as sales: the
+    page opens for คุณป้อม's booking with the real column (no lines saved
+    yet), and the booking screen and the kitchen sheet still open. Nik prints
+    one real card to check the colours. Decisions (Nik, 2026-09-24):
     - **The card placed on each table at the event.** ONE CARD PER TABLE:
       one print job, one A4 portrait page per table, all identical. The
       number of copies starts at the booking's table count (at least 1) and
