@@ -160,3 +160,10 @@ test("SEEN: a token-only change moves the token alone; nothing moved, or held, c
   assert.equal(seenAfter("same", seen, view("t1", "A"), ["set"]), seen);
   assert.equal(seenAfter("hold", seen, view("t2", "B"), ["set", "other"]), seen);
 });
+
+test("ticking แถมฟรี on a line is an unsaved change; unticking it again is not", () => {
+  const form = {} as Parameters<typeof bookingSnapshot>[0];
+  const line = { kind: "manual", section: "other", refId: null, eventMenuId: null, label: "น้ำแข็ง", unitPrice: "0", quantity: "1", amount: "0", chargeType: "other", free: false };
+  assert.notEqual(bookingSnapshot(form, [line]), bookingSnapshot(form, [{ ...line, free: true }]));
+  assert.equal(bookingSnapshot(form, [line]), bookingSnapshot(form, [{ ...line, free: false }]));
+});

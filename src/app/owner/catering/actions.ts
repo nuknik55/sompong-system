@@ -146,6 +146,9 @@ export type CateringCharge = {
    *  loaded line carried no reference, so the same set could be added twice
    *  and the save wrote two charge rows for one line). */
   event_menu_ref: string | null;
+  /** แถมฟรี, marked by hand (Nik, 2026-09-24): a ฿0 line that prints under
+   *  รายการแถมฟรี on the event-details sheet. Never inferred from a ฿0 price. */
+  is_free: boolean;
 };
 
 export type CateringRate = {
@@ -636,17 +639,21 @@ export async function getRoomConflictCandidates(
 export async function getCateringCharges(eventId: string): Promise<CateringCharge[]> {
   await requireSales();
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const read = (withFree: boolean) => supabase
     .from("catering_event_charges")
-    .select("id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, rate_id, catering_event_menus(set_menu_id, menu_id), catering_rates(rate_type, display_label)")
+    .select((withFree ? "id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, rate_id, is_free, catering_event_menus(set_menu_id, menu_id), catering_rates(rate_type, display_label)" : "id, label, charge_type, unit_price, quantity, amount, note, event_menu_id, rate_id, catering_event_menus(set_menu_id, menu_id), catering_rates(rate_type, display_label)") as string)
     .eq("event_id", eventId)
     // Ending on the id: two rows at one sort_order load in one order every
     // time, so a refresh cannot read as a change, and a save writes them
     // back as they were (review, 2026-09-21).
     .order("sort_order")
     .order("id");
+  // Until the event-sheet migration runs there is no is_free: read again
+  // without it, so the booking pages never break on the order of a deploy.
+  let { data, error } = await read(true);
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
   if (error) throw error;
-  return (data ?? []).map((r: Record<string, unknown>) => {
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
     const linked = r.catering_event_menus as { set_menu_id: string | null; menu_id: string | null } | null;
     // A custom set names neither a set nor a dish and is still a set line.
     const event_menu_kind: "set" | "dish" | null = linked ? (isSetLine(linked) ? "set" : "dish") : null;
@@ -665,6 +672,7 @@ export async function getCateringCharges(eventId: string): Promise<CateringCharg
       rate_id: r.rate_id as string | null,
       rate_type: rate?.rate_type ?? null,
       rate_display_label: rate?.display_label ?? null,
+      is_free: r.is_free === true,
     };
   });
 }
@@ -1657,8 +1665,8 @@ async function upsertCateringEvent(data: {
  * hand-typed items, or the discount.
  */
 export type BookingLine =
-  | { kind: "set" | "dish"; refId: string; eventMenuId: string | null; quantity: number }
-  | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null; rate_id: string | null };
+  | { kind: "set" | "dish"; refId: string; eventMenuId: string | null; quantity: number; is_free?: boolean }
+  | { kind: "charge"; label: string; charge_type: string; unit_price: number; quantity: number; amount: number; note: string | null; rate_id: string | null; is_free?: boolean };
 
 export type SaveBookingResult =
   | {

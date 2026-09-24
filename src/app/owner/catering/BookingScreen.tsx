@@ -20,6 +20,7 @@ import type {
   CateringRate, CateringSetMenuOption, StaffOption,
 } from "./actions";
 import { bookingLinesForSave, linesFromCharges, menuLineQuantityOk, priceBoxProblem, type Line, type Section } from "./booking-lines";
+import { canMarkFree, unmarkedZeroLines } from "@/lib/event-sheet";
 import { docMoney } from "@/lib/quote-doc";
 import { setCountUnit } from "@/lib/kitchen-sheet";
 import { foldSetName } from "./event-menu";
@@ -313,6 +314,9 @@ export function BookingScreen({
 
   // ── Price box helpers ──
   const total = lines.reduce((s, l) => s + (toNum(l.amount) ?? 0), 0);
+  // THE ฿0 WARNING (Nik, 2026-09-24): a ฿0 line not ticked แถมฟรี saves as
+  // it is, and does not print under รายการแถมฟรี. Said, never blocked.
+  const zeroNotFree = unmarkedZeroLines(lines.map((l) => ({ kind: l.kind, label: l.label, amount: toNum(l.amount) ?? 0, free: l.free })));
   // The computed deposit, shown beside the percentage field so whoever agrees
   // the term sees the figure it produces. Never written anywhere —
   // deposit_amount records what was actually received. Same arithmetic the
@@ -329,7 +333,7 @@ export function BookingScreen({
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind: "rate", section, refId: rate.id, eventMenuId: null,
       label: rate.label, unitPrice: String(rate.amount), quantity: String(qty), amount: String(rate.amount * qty),
-      chargeType: section === "music" ? "service" : (RATE_TYPE_TO_CHARGE_TYPE[rate.rate_type] ?? "other"), note: null,
+      chargeType: section === "music" ? "service" : (RATE_TYPE_TO_CHARGE_TYPE[rate.rate_type] ?? "other"), note: null, free: false,
     }]);
   }
   function addMenu(kind: "set" | "dish", id: string) {
@@ -359,13 +363,13 @@ export function BookingScreen({
     const qty = kind === "set" ? (tables !== null && menuLineQuantityOk("set", tables) ? tables : 1) : 1;
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind, section: "menu", refId: id, eventMenuId: null,
-      label: opt.name, unitPrice: String(price), quantity: String(qty), amount: String(price * qty), chargeType: "food", note: null,
+      label: opt.name, unitPrice: String(price), quantity: String(qty), amount: String(price * qty), chargeType: "food", note: null, free: false,
     }]);
   }
   function addManual(section: Section) {
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind: section === "discount" ? "discount" : "manual", section, refId: null, eventMenuId: null,
-      label: section === "discount" ? "ส่วนลด" : "", unitPrice: "", quantity: "1", amount: "", chargeType: section === "discount" ? "discount" : "other", note: null,
+      label: section === "discount" ? "ส่วนลด" : "", unitPrice: "", quantity: "1", amount: "", chargeType: section === "discount" ? "discount" : "other", note: null, free: false,
     }]);
   }
   function updateLine(key: string, patch: Partial<Line>) {
@@ -386,6 +390,18 @@ export function BookingScreen({
     }));
   }
   function removeLine(key: string) { setLines((ls) => ls.filter((l) => l.key !== key)); }
+  // แถมฟรี prices the line: ticked, ฿0 a unit and in all; unticked, the
+  // price it had before the tick on this screen. A line loaded already free
+  // has none: a dish gets the dish's price (as the database gives it), a rate
+  // the rate's, and a typed line keeps ฿0 for the person to type.
+  function markFree(l: Line, free: boolean) {
+    if (free) { updateLine(l.key, { free, unitPrice: "0", amount: "0", unitPriceBeforeFree: l.unitPrice }); return; }
+    const own = l.unitPriceBeforeFree
+      ?? (l.kind === "dish" ? dishOptions.find((d) => d.id === l.refId)?.selling_price
+        : l.kind === "rate" ? rates.find((r) => r.id === l.refId)?.amount
+        : undefined)?.toString();
+    updateLine(l.key, own === undefined ? { free, unitPriceBeforeFree: undefined } : { free, unitPrice: own, unitPriceBeforeFree: undefined });
+  }
 
   // ── Save ──
   const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflict;
@@ -772,10 +788,14 @@ export function BookingScreen({
                   {rows.map((l) => (
                     <div key={l.key} className="grid grid-cols-[1fr_6rem_4.5rem_7rem_2rem] items-center gap-2">
                       {l.kind === "manual" ? (
-                        <input className="line-input" placeholder="รายการ" value={l.label} disabled={busy} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
+                        <div className="min-w-0">
+                          <input className="line-input w-full" placeholder="รายการ" value={l.label} disabled={busy} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
+                          <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />
+                        </div>
                       ) : (
                         <div className="min-w-0">
                           <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
+                          {canMarkFree(l.kind) && <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />}
                           {/* THE DISH NAMES, under the set (Nik). Comma-separated,
                               clamped to two rows by CSS with the full list in the
                               tooltip — so a long set is cut by the space it has,
@@ -849,6 +869,11 @@ export function BookingScreen({
           })}
         </div>
         </div>
+        {zeroNotFree.length > 0 && (
+          <p role="status" className="mt-2 rounded-md bg-pending-soft px-3 py-2 text-xs text-pending-ink">
+            ราคา ฿0 แต่ยังไม่ได้ติ๊ก “แถมฟรี”: {zeroNotFree.join(", ")} — บันทึกได้ตามปกติ แต่จะไม่พิมพ์ในรายการแถมฟรีของใบรายละเอียดงาน
+          </p>
+        )}
         <div className="mt-3 flex items-baseline justify-between border-t-2 border-neutral-300 pt-3">
           <span className="text-sm font-medium text-neutral-700">รวมทั้งหมด</span>
           <span className="text-lg font-semibold tabular-nums text-neutral-900">{money(total)}</span>
@@ -945,6 +970,8 @@ export function BookingScreen({
       {event && (
         <ButtonGroup label="พิมพ์">
           {event.quote_number && <Link href={`/owner/catering/${event.id}/quote`} className={buttonClass("secondary")}>ใบเสนอราคา</Link>}
+          {/* The event-details sheet (Nik, 2026-09-24): edited here, printed after the quotation or alone. */}
+          <Link href={`/owner/catering/${event.id}/details`} className={buttonClass("secondary")}>ใบรายละเอียดงาน</Link>
           <Link href={`/owner/catering/${event.id}/function-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน บริการ</Link>
           <Link href={`/owner/catering/${event.id}/kitchen-sheet`} className={buttonClass("secondary")}>ใบฟังก์ชั่นงาน ครัว</Link>
           {/* The card on each table (Nik, 2026-09-24): every status but cancelled. */}
@@ -960,5 +987,20 @@ export function BookingScreen({
           .input-base, copied verbatim into seven files; the other six are
           untouched here and are Nik's decision, app-wide. */}
     </div>
+  );
+}
+
+/**
+ * แถมฟรี on one price-box line (Nik, 2026-09-24): a dish, rate or typed line
+ * that prints under รายการแถมฟรี on the event-details sheet. The mark is what
+ * makes it free, and it prices the line ฿0 (markFree); a ฿0 line without it
+ * is not free, and the screen only warns about it.
+ */
+function FreeMark({ line, disabled, onChange }: { line: Line; disabled: boolean; onChange: (free: boolean) => void }) {
+  return (
+    <label className="mt-0.5 inline-flex items-center gap-1 text-xs text-neutral-600">
+      <input type="checkbox" checked={line.free} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      แถมฟรี
+    </label>
   );
 }

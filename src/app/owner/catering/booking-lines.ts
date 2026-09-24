@@ -42,6 +42,7 @@
  */
 import type { BookingLine, CateringCharge } from "./actions";
 import { toNum } from "./to-num.ts";
+import { freeMarkProblem } from "../../../lib/event-sheet.ts";
 
 export type Line = {
   key: string;
@@ -57,6 +58,15 @@ export type Line = {
   chargeType: string;
   /** The stored charge's note; null for a new line. The screen shows none; the save carries it through. */
   note: string | null;
+  /**
+   * แถมฟรี, ticked by hand (Nik, 2026-09-24): a ฿0 dish, rate or typed line
+   * that prints under รายการแถมฟรี on the event-details sheet. Never a set
+   * (a set's free items are its own "free" section) and never the discount;
+   * never inferred from a ฿0 price (the screen only warns about those).
+   */
+  free: boolean;
+  /** The price the line had when แถมฟรี was ticked on this screen: unticking gives it back. Never saved. */
+  unitPriceBeforeFree?: string;
 };
 
 export type Section = "menu" | "room" | "drink" | "delivery" | "music" | "other" | "discount";
@@ -122,6 +132,9 @@ export function linesFromCharges(charges: CateringCharge[]): Line[] {
     amount: String(c.amount),
     chargeType: c.charge_type,
     note: c.note,
+    // Only a line that can carry the mark loads with it: a set or the
+    // discount marked by a direct write would otherwise block every save.
+    free: c.is_free === true && !(c.event_menu_id ? c.event_menu_kind === "set" : c.charge_type === "discount"),
   }));
 }
 
@@ -192,6 +205,9 @@ export function chargeLineError(c: ChargeLine): string | null {
   }
   if (c.rate_id !== null && typeof c.rate_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
   if (c.note !== null && typeof c.note !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
+  if (c.is_free !== undefined && typeof c.is_free !== "boolean") return "รูปแบบข้อมูลไม่ถูกต้อง";
+  // A free line is ฿0 a unit and ฿0 in all, and never the discount (the database's CHECK).
+  if (c.is_free && (c.charge_type === "discount" || c.amount !== 0 || c.unit_price !== 0)) return "รายการแถมฟรีต้องเป็น ฿0 (ราคาต่อหน่วย 0 และยอด 0) และไม่ใช่ส่วนลด";
   return null;
 }
 
@@ -209,6 +225,7 @@ function chargeFromLine(l: Line): ChargeLine {
     // used to write null over it (2026-09-21).
     note: l.note,
     rate_id: l.kind === "rate" ? l.refId : null,
+    is_free: l.free,
   };
 }
 
@@ -223,6 +240,8 @@ export function priceBoxProblem(lines: Line[], unit = "โต๊ะ"): string | 
     if (l.kind === "set" || l.kind === "dish") {
       const error = menuLineQuantityError(l.kind, toNum(l.quantity), unit);
       if (error) return `“${l.label}”: ${error}`;
+      const free = freeMarkProblem({ kind: l.kind, label: l.label, amount: toNum(l.amount) ?? 0, free: l.free });
+      if (free) return `“${l.label}”: ${free}`;
       continue;
     }
     if (isEmptyTypedRow(l)) continue;
@@ -265,6 +284,8 @@ export function bookingLinesProblem(
     }
     if (l.kind !== "set" && l.kind !== "dish") return BAD;
     const kind = (typeof l.eventMenuId === "string" ? storedKinds.get(l.eventMenuId) : undefined) ?? l.kind;
+    if (l.is_free !== undefined && typeof l.is_free !== "boolean") return BAD;
+    if (l.is_free && kind === "set") return "ชุดเมนูทำเครื่องหมายแถมฟรีไม่ได้ — ยังไม่ได้บันทึกอะไร";
     const error = menuLineQuantityError(kind, l.quantity, unit);
     if (error) return `จำนวนในกล่องราคาไม่ถูกต้อง: ${error} — ยังไม่ได้บันทึกอะไร`;
   }
@@ -284,7 +305,7 @@ export function bookingLinesForSave(lines: Line[]): BookingLine[] {
     .filter((l) => !isEmptyTypedRow(l))
     .map((l): BookingLine =>
       l.kind === "set" || l.kind === "dish"
-        ? { kind: l.kind, refId: l.refId ?? "", eventMenuId: l.eventMenuId, quantity: toNum(l.quantity) ?? 0 }
+        ? { kind: l.kind, refId: l.refId ?? "", eventMenuId: l.eventMenuId, quantity: toNum(l.quantity) ?? 0, is_free: l.kind === "dish" && l.free }
         : chargeFromLine(l),
     );
 }

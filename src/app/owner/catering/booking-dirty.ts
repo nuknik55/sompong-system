@@ -44,6 +44,8 @@ export type DirtyLine = {
   quantity: string;
   amount: string;
   chargeType: string;
+  /** แถมฟรี (2026-09-24): ticking it is a change the save writes. */
+  free?: boolean;
 };
 
 /** "4500.00" and "4500" are the same money; "" stays ""; nonsense stays itself. */
@@ -67,7 +69,7 @@ export function bookingSnapshot(form: FormState, lines: DirtyLine[]): string {
     f: ordered,
     l: lines.map((l) => [
       l.kind, l.section, l.refId, l.eventMenuId, l.label,
-      num(l.unitPrice), num(l.quantity), num(l.amount), l.chargeType,
+      num(l.unitPrice), num(l.quantity), num(l.amount), l.chargeType, l.free === true,
     ]),
   });
 }

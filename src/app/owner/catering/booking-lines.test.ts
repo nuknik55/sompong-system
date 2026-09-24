@@ -27,14 +27,14 @@ function menuCharge(kind: "set" | "dish", quantity: number, unitPrice: number): 
     id: `c-${kind}`, label: kind === "set" ? "โต๊ะจีน A" : "กุ้งก้ามกรามเผา", charge_type: "food",
     unit_price: unitPrice, quantity, amount: unitPrice * quantity, note: null,
     event_menu_id: `m-${kind}`, event_menu_kind: kind, event_menu_ref: `ref-${kind}`,
-    rate_id: null, rate_type: null, rate_display_label: null,
+    rate_id: null, rate_type: null, rate_display_label: null, is_free: false,
   };
 }
 
 function dishLine(quantity: string): Line {
   return {
     key: "k1", kind: "dish", section: "menu", refId: "ref-dish", eventMenuId: "m-dish", label: "กุ้งก้ามกรามเผา",
-    unitPrice: "1000", quantity, amount: "", chargeType: "food", note: null,
+    unitPrice: "1000", quantity, amount: "", chargeType: "food", note: null, free: false,
   };
 }
 
@@ -44,7 +44,7 @@ const setLine = (quantity: string): Line => ({
 
 const typedLine = (patch: Partial<Line>): Line => ({
   key: "k3", kind: "manual", section: "other", refId: null, eventMenuId: null, label: "ค่าไฟ",
-  unitPrice: "500", quantity: "1", amount: "500", chargeType: "other", note: null, ...patch,
+  unitPrice: "500", quantity: "1", amount: "500", chargeType: "other", note: null, free: false, ...patch,
 });
 
 const charge = (patch: Partial<ChargeLine>): ChargeLine => ({
@@ -74,7 +74,8 @@ test("0.5 survives a save and a reload, and a second save of the reloaded line",
 
 test("a menu line sends NO price: its price is the stored charge's (THE ONE PRICE)", () => {
   for (const l of bookingLinesForSave([dishLine("2"), setLine("10")])) {
-    assert.deepEqual(Object.keys(l).sort(), ["eventMenuId", "kind", "quantity", "refId"]);
+    // is_free since 2026-09-24: the free mark, not a price.
+    assert.deepEqual(Object.keys(l).sort(), ["eventMenuId", "is_free", "kind", "quantity", "refId"]);
   }
 });
 
@@ -144,9 +145,9 @@ test("typed, rate and discount lines are sent as before, the stored note carried
   const empty = typedLine({ key: "k5", label: "", unitPrice: "", amount: "" });
   const out = bookingLinesForSave([manual, rate, discount, empty]);
   assert.equal(out.length, 3);
-  assert.deepEqual(out[0], { kind: "charge", label: "ค่าไฟ", charge_type: "other", unit_price: 100, quantity: 2.5, amount: 250, note: "หมายเหตุเดิม", rate_id: null });
+  assert.deepEqual(out[0], { kind: "charge", label: "ค่าไฟ", charge_type: "other", unit_price: 100, quantity: 2.5, amount: 250, note: "หมายเหตุเดิม", rate_id: null, is_free: false });
   assert.equal(out[1].kind === "charge" && out[1].rate_id, "rate-1");
-  assert.deepEqual(out[2], { kind: "charge", label: "ส่วนลด", charge_type: "discount", unit_price: 500, quantity: 1, amount: -500, note: null, rate_id: null });
+  assert.deepEqual(out[2], { kind: "charge", label: "ส่วนลด", charge_type: "discount", unit_price: 500, quantity: 1, amount: -500, note: null, rate_id: null, is_free: false });
   // The note round-trips from the stored row.
   const [loaded] = linesFromCharges([{ ...menuCharge("dish", 1, 1), event_menu_id: null, event_menu_kind: null, event_menu_ref: null, charge_type: "other", note: "จากเดิม" }]);
   assert.equal(loaded.note, "จากเดิม");
@@ -175,4 +176,51 @@ test("saveBooking's own check holds a call it did not get from the screen to the
   for (const bad of ["x", null, [null], ["x"], [{ kind: "xyz", refId: "d", eventMenuId: null, quantity: 1 }]]) {
     assert.equal(bookingLinesProblem(bad, new Map()), "รูปแบบข้อมูลไม่ถูกต้อง — ยังไม่ได้บันทึกอะไร", JSON.stringify(bad));
   }
+});
+
+// ── แถมฟรี, the free mark (Nik, 2026-09-24) ────────────────────────────────
+
+test("the free mark round-trips: loaded from the charge, sent on the dish and the typed line, never on a set", () => {
+  const stored = { ...menuCharge("dish", 1, 0), is_free: true };
+  const [loaded] = linesFromCharges([stored]);
+  assert.equal(loaded.free, true);
+  const [dish, set, typed] = bookingLinesForSave([
+    { ...dishLine("1"), amount: "0", free: true },
+    { ...setLine("3"), free: true },
+    typedLine({ unitPrice: "0", amount: "0", free: true }),
+  ]);
+  assert.equal(dish.kind === "dish" && dish.is_free, true);
+  assert.equal(set.kind === "set" && set.is_free, false);
+  assert.equal(typed.kind === "charge" && typed.is_free, true);
+});
+
+test("a line marked free must be ฿0, and a set or the discount cannot be marked at all", () => {
+  assert.match(priceBoxProblem([typedLine({ free: true })]) ?? "", /แถมฟรี/);
+  assert.equal(priceBoxProblem([typedLine({ unitPrice: "0", amount: "0", free: true })]), null);
+  // A dish marked free is priced ฿0 by the mark itself (the screen and the database): never refused for its price.
+  assert.equal(priceBoxProblem([{ ...dishLine("1"), amount: "120", free: true }]), null);
+  assert.equal(priceBoxProblem([{ ...dishLine("1"), amount: "0", free: true }]), null);
+  // ฿5,000 × 0 totals ฿0 and is still not free.
+  assert.match(priceBoxProblem([typedLine({ unitPrice: "5000", quantity: "0", amount: "0", free: true })]) ?? "", /แถมฟรี/);
+  assert.match(priceBoxProblem([{ ...setLine("3"), amount: "0", free: true }]) ?? "", /แถมฟรี/);
+  assert.ok(chargeLineError(charge({ unit_price: 0, amount: 0, is_free: true })) === null);
+  assert.ok(chargeLineError(charge({ is_free: true })));
+  assert.ok(chargeLineError(charge({ charge_type: "discount", unit_price: 0, amount: 0, is_free: true })));
+});
+
+test("a set or the discount stored as free loads unmarked, so it cannot block every later save", () => {
+  const [set] = linesFromCharges([{ ...menuCharge("set", 2, 0), is_free: true }]);
+  assert.equal(set.free, false);
+  const [discount] = linesFromCharges([{ ...menuCharge("dish", 1, 0), event_menu_id: null, event_menu_kind: null, event_menu_ref: null, charge_type: "discount", is_free: true }]);
+  assert.equal(discount.free, false);
+});
+
+test("saveBooking's own check: the mark is a boolean, never on a set, and an older payload without it passes", () => {
+  const kinds = new Map<string, "set" | "dish">([["m-set", "set"]]);
+  const setAsDish = { kind: "dish", refId: "ref-set", eventMenuId: "m-set", quantity: 2, is_free: true } as BookingLine;
+  assert.match(bookingLinesProblem([setAsDish], kinds) ?? "", /แถมฟรี/);
+  assert.ok(bookingLinesProblem([{ kind: "dish", refId: "d", eventMenuId: null, quantity: 1, is_free: "yes" } as unknown as BookingLine], kinds));
+  assert.ok(bookingLinesProblem([{ ...charge({ unit_price: 0, amount: 0 }), is_free: 1 } as unknown as BookingLine], kinds));
+  assert.equal(bookingLinesProblem([charge({})], kinds), null);
+  assert.equal(bookingLinesProblem([{ kind: "dish", refId: "d", eventMenuId: null, quantity: 1 }], kinds), null);
 });
