@@ -452,6 +452,8 @@ in "Not applied" above, not here.
   data up to **2026-09-02**: read from `pos_receipt_deliveries` on
   2026-09-24 (read-only, service key: the latest `document_date` and
   `imported_at`; 24,500 rows). Added 2026-09-24.
+- **Rotate the Supabase keys, then make the GitHub repo private,** one at a
+  time, with Claude (queue item 45, "The security round of 2026-09-24").
 
 ## Queued work
 
@@ -3773,8 +3775,34 @@ and after Nik's import.
     (`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`);
     redeploy; check that the app works (sign in, `/owner/team`); only THEN
     deactivate the legacy keys, which can be undone. The old Vercel project
-    **app** (app-five-orpin-49.vercel.app) holds the key too until it is
-    deleted.
+    **app** (app-five-orpin-49.vercel.app) held the key too; Nik deleted it
+    on 2026-09-24 (below).
+
+    **The security round of 2026-09-24** (the plan: revoke the GitHub token,
+    delete the old Vercel project, rotate the Supabase keys, make the repo
+    private, in that order):
+    - **DONE: the GitHub token revoked (Nik, 2026-09-24).** The git remote
+      carried a classic personal access token in its URL, and a repo-wide
+      search printed it into a Claude transcript that day (AGENTS.md, "Every
+      search excludes .git, .env* and credential files"). Nik deleted every
+      classic token on his GitHub account, that one included. The remote is
+      now `https://github.com/nuknik55/sompong-system.git`, with no
+      credential in it; Git Credential Manager signs in (as nuknik55).
+    - **DONE: the old Vercel project `app` deleted (Nik, 2026-09-24),** and
+      with it its copy of the keys and the stale build that still served a
+      working login against the production database.
+    - **DONE: `app/.vercel/project.json` relinked to sompong-system**
+      (2026-09-24). It had pointed at the old project, so a `vercel env add`
+      run from `app/` would have gone there. Written by hand, because the
+      Vercel CLI has no login on this PC; the team id was carried over from
+      the old link, so the first CLI command Nik runs confirms it (it lists
+      sompong-system's variables, or fails; it cannot deploy anything).
+    - **REMAINING: (a) rotate the Supabase keys, the steps above; (c) make
+      the GitHub repo private.** Nik will do them one at a time, with
+      Claude, later. (a) before (c): a private repo on Vercel's Hobby plan
+      deploys only pushes by the account's owner, and (a) needs a redeploy.
+      After (c), the deploy and CI checks need a read-only token, since
+      GitHub's public API answers 404 for a private repo.
 
 46. **Nik or the head chef: three menus sold by weight** (Nik, 2026-09-21).
     Named exactly as in the POS, per kilo:
