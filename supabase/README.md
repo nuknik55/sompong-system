@@ -90,7 +90,8 @@ and dated here.
 
 | file | ran | effect |
 |---|---|---|
-| `order_review_approve_migration.sql` | 2026-09-23 | **Item 54, the head reviews in one step.** `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH per-line quantities in one transaction, or nothing. Run by Nik in the SQL editor as committed in `c679e52`: **39 rows, every line ok, ending "row count verified: 38 evidence rows emitted, as expected (this line makes 39)"**, first run. Its "before" line read orders 43 (cancelled 22, received 21), lines 175, change-log rows 4 — Nik's test order had gone all the way to received. The app code that calls it (`bc6eb73`, `440fdcb`) was pushed after. `order_approve` and `order_set_head_qty` still exist and are still granted; see item 54's follow-ups. |
+| `order_old_functions_and_return_note_migration.sql` | 2026-09-24 | **Item 54's follow-ups; item 35 is done with them.** Dropped `order_approve` and `order_set_head_qty` (nothing called them: checked in the app, in every function body and in scheduled jobs; the DROP was RESTRICT), and replaced `order_return` so a return with no note, or a note of nothing but spaces, is refused. Run by Nik in the SQL editor as committed in `52e4ba8`: **29 rows, every line ok, ending "row count verified: 28 evidence rows emitted, as expected (this line makes 29)"**, first run. Its "before" line read orders 44 (cancelled 22, received 21, sent 1); the sent one was Nik's second test order, received since. **Since then:** do not roll Vercel back past `440fdcb` (older code calls `order_approve`); a re-run of `supply_order_approval_migration.sql` would bring the two functions and the note-less `order_return` back (run this file again after it); `order_review_approve_migration.sql` can no longer be re-run (its Step 0 stops, nothing changed). |
+| `order_review_approve_migration.sql` | 2026-09-23 | **Item 54, the head reviews in one step.** `order_review_approve(session, seen_version, lines)`: a head approves a waiting order WITH per-line quantities in one transaction, or nothing. Run by Nik in the SQL editor as committed in `c679e52`: **39 rows, every line ok, ending "row count verified: 38 evidence rows emitted, as expected (this line makes 39)"**, first run. Its "before" line read orders 43 (cancelled 22, received 21), lines 175, change-log rows 4 — Nik's test order had gone all the way to received. The app code that calls it (`bc6eb73`, `440fdcb`) was pushed after. `order_approve` and `order_set_head_qty` stayed until `order_old_functions_and_return_note_migration.sql` dropped them (2026-09-24). |
 | `supply_order_approval_migration.sql` | 2026-09-23 | **The supply-order approval flow (item 35).** Run by Nik in the SQL editor as committed in `abadb45`: **94 rows, every test line ok, ending "row count verified: 93 evidence rows emitted, as expected (this line makes 94)"**, first run. Step 2 cancelled the 22 open trial orders (5 submitted, 5 reviewed, 12 sent) with the note; the 20 received orders untouched. Six account columns of `order_sessions` are ON DELETE RESTRICT. 4 open template policies (`auth_write_*`, `auth_read_*`) dropped. Adds `cancelled`, `version`, the return and cancel columns, `order_items.received_by/at`, `order_item_changes`, `is_order_head()`, `can_order()` and the eight order functions; closes every direct write on the order tables. The app code that calls it, `2d4c10f`, was pushed after the result, the same day. |
 | `purchase_cost_4dp_migration.sql` | by 2026-08-31 | Widened `ingredients.purchase_cost` from numeric(12,2) to numeric(12,4). Written 2026-08-30 and left untracked until 2026-09-23, when Nik did not remember whether it had run. **Verified 2026-09-23 (read-only, service key):** the column comes back at scale 4 (`390.0000`), exactly as `receive_qty`, numeric(_,4), the control, does; and one stored price, 1399.9989, needs four decimals, which numeric(12,2) could not hold. The 2026-08-31 sweep above records the same widening. |
 | `drop_fuel_cost_migration.sql` | by 2026-08-31 | Dropped `menus.fuel_cost`. Written 2026-08-30, untracked until 2026-09-23. **Verified 2026-09-23 (read-only, service key):** selecting the column returns 42703 "column menus.fuel_cost does not exist", while a select of real columns on the same table returns 200 (the control). `9b74eeb` (2026-08-31) is the hotfix for code that still selected the column after this ran. |
@@ -258,7 +259,6 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
-| `order_old_functions_and_return_note_migration.sql` | Nik (written 2026-09-24; item 54) | **Expect 29 result rows**, ending "row count verified: 28 evidence rows emitted, as expected (this line makes 29)". Item 54's follow-ups: DROPS `order_approve` and `order_set_head_qty` (after checking that no function body and no scheduled job names them; the DROP is RESTRICT), and replaces `order_return` so a return with no note, or a note of nothing but spaces, is refused. Tests itself as the roles (17 tests), every write rolled back; run under PGlite on the item-35 + item-54 schema, twice: 29 rows both times. No app code waits for it (the app already refuses an empty note and no longer calls the two), so it was pushed alone. After it: do not roll Vercel back past `440fdcb`; a re-run of `supply_order_approval_migration.sql` would bring the two functions and the note-less `order_return` back (run this file again after it); `order_review_approve_migration.sql` can no longer be re-run (its Step 0 stops, nothing changed). |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -2274,7 +2274,8 @@ In order. Nothing here is started unless it says so.
       "owner-only"; `requireAdmin`'s comment lists only editor and staff
       as redirected.
 
-35. **Supply orders: an approval flow, not a permission wall** (item 29
+35. ~~**Supply orders: an approval flow, not a permission wall**~~ **DONE,
+    with its follow-ups (item 54), 2026-09-24.** (item 29
     #5). Nik, 2026-09-17: staff will place orders and a head approves
     them. Investigated the same day; its own piece of work, waiting on
     Nik's answers. **Most of the flow exists:** staff submit (the button
@@ -4001,7 +4002,8 @@ and after Nik's import.
     `hasOrderHistory`'s check. Decide per column: an expense entry's author
     and an approval's resolver are the ones an audit would miss.
 
-54. **Ordering follows the paper sheet's hand-off (Nik, 2026-09-23).**
+54. ~~**Ordering follows the paper sheet's hand-off (Nik, 2026-09-23).**~~
+    **DONE 2026-09-24**, the follow-ups applied (see "Applied since").
     - **"Waiting for you" counts, DONE (`98d0bb4`):** staff — their own
       returned orders (งานของฉัน) and their own sent orders to receive
       (รับของ); a head — orders to review (ตรวจสอบ); admin and owner — to
@@ -4014,8 +4016,9 @@ and after Nik's import.
       edit was a small grey "แก้" link per line, saved on its own, separate
       from approval; now every line has a quantity field and อนุมัติ saves
       them with the approval, or nothing. ตีกลับ requires a note.
-      **Follow-ups (the review of 2026-09-23), BUILT, wait for Nik:**
-      `order_old_functions_and_return_note_migration.sql` ("Not applied").
+      **Follow-ups (the review of 2026-09-23), DONE:**
+      `order_old_functions_and_return_note_migration.sql`, applied
+      2026-09-24 (29 rows, see "Applied since").
       `order_approve` and `order_set_head_qty` are DROPPED rather than
       revoked: nothing calls them (the app since `440fdcb`; the file
       checks every function body and scheduled job), a revoked function
