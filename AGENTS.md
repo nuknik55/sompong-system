@@ -423,12 +423,37 @@ while you are typing it. Others in this family:
 - any `psql`/`mysql` connection string with an inline password
 
 When a value is needed, read it into a variable and use it; do not echo it. When
-only its presence matters, print a boolean or a masked prefix, never the value.
+only its presence matters, print a boolean, or name its kind in words ("a
+classic token", "a legacy JWT"), never the value or any part of it.
 
 And if one does get printed: **say so immediately and recommend rotating**,
 before and separately from whatever task it interrupted. A leaked credential
 does not become safe because the command that leaked it was well intentioned,
 and the person who can revoke it needs to know first, not as a footnote.
+
+## Every search excludes .git, .env* and credential files (Nik, 2026-09-24)
+
+**It happened on 2026-09-24.** A repo-wide grep for `github.com/nuknik55`,
+run to see what making the repo private would break, excluded
+`node_modules` and `.next` but not `.git`. It matched `.git/config` and
+printed the remote URL with its classic token in full. Nik revoked every
+classic token the same day, and the remote now holds no credential (Git
+Credential Manager signs in instead). `.git/config` is exactly the file the
+`git remote -v` rule above is about: a search walked into it by the side door.
+
+**The rule:**
+- **Every recursive search excludes `.git`, `.env*` and any credentials
+  file** (`.git-credentials`, `.npmrc`, `.netrc`, `auth.json`, a
+  `credentials` file anywhere). With grep:
+  `--exclude-dir=.git --exclude='.env*' --exclude='*credentials*' --exclude=.npmrc --exclude=.netrc --exclude=auth.json`.
+  The Grep tool skips `.git` already, but not `.env*`: exclude it there too.
+- **No report and no command output may print a secret-looking value:** a
+  token, key or password, or anything shaped like one (`eyJ…`, `sb_…`,
+  `ghp_…`, `github_pat_…`, a long random string after `key=` or
+  `token=`), **not even partly**: no prefix, no suffix, no "masked" middle.
+  A search that could match one prints file names (`grep -l`) or counts, not
+  lines. To report on a credential, print a boolean or its kind in words.
+- **A git remote URL is printed only when it contains no `@`.**
 
 # The service-role key: read-only against production, and say when it was used
 
