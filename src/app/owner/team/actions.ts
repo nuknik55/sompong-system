@@ -231,7 +231,7 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   if (await hasOrderHistory(supabase, userId)) return { error: DISABLE_INSTEAD };
   // The last owner or admin who can still sign in: the same rule as
   // disabling (counting profiles let a disabled owner count as one).
-  const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ลบ");
+  const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ลบ", "ลบ");
   if (lastActive) return { error: lastActive };
 
   // Best-effort: remove auth.users entry (needs SUPABASE_SERVICE_ROLE_KEY in Vercel)
@@ -274,7 +274,8 @@ async function lastActiveCheck(
   supabase: Awaited<ReturnType<typeof createClient>>,
   target: { id: string; role: string },
   refusedRead: string,
-  verb?: string,
+  /** The action the refusal names: ลบ, ระงับ, ลดสิทธิ์. */
+  verb: string,
 ): Promise<string | null> {
   if (target.role !== "owner" && target.role !== "admin") return null;
   const { data: sameRole, error } = await supabase.from("profiles").select("id, role").eq("role", target.role);
@@ -299,7 +300,7 @@ export async function setUserDisabled(userId: string, disabled: boolean): Promis
   if (refusal) return { error: refusal };
   const admin = createAdminClient();
   if (disabled) {
-    const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ");
+    const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ระงับ", "ระงับ");
     if (lastActive) return { error: lastActive };
   }
   // 100 years, or "none" to lift it: what the auth API calls a ban.

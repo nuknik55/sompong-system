@@ -153,6 +153,8 @@ test("demoting: the last admin who can still sign in keeps the role; a disabled 
   assert.notEqual(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("o1", "owner")], "ลดสิทธิ์"), null);
   // Another admin who can sign in: allowed.
   assert.equal(lastActiveRefusal(a("a1", "admin"), [a("a1", "admin"), a("a2", "admin")], "ลดสิทธิ์"), null);
+  // A delete names itself.
+  assert.equal(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner")], "ลบ"), "ต้องมี Owner ที่ใช้งานได้อย่างน้อย 1 คน ไม่สามารถลบ Owner คนสุดท้ายที่ใช้งานได้");
   // Without a verb the refusal still reads as disabling.
   assert.match(lastActiveRefusal(a("o1", "owner"), [a("o1", "owner")]) ?? "", /ไม่สามารถระงับ Owner/);
 });

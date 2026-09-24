@@ -73,9 +73,36 @@ test("the check flags the old profile count, a comment, an ignored answer and a 
   assert.equal(guardProblem(fn(`if (role !== "admin") {\n${check}\n}\n${write}`), "updateUserRole"), null);
 });
 
+/** The action lastActiveCheck's refusal names in `fnName` (its 4th argument), or null. */
+function verbIn(source: string, fnName: string): string | null {
+  const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
+  let verb: string | null = null;
+  file.forEachChild((node) => {
+    if (!ts.isFunctionDeclaration(node) || node.name?.text !== fnName || !node.body) return;
+    const walk = (n: ts.Node) => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "lastActiveCheck") {
+        const arg = n.arguments[3];
+        if (arg && ts.isStringLiteral(arg)) verb = arg.text;
+      }
+      n.forEachChild(walk);
+    };
+    walk(node.body);
+  });
+  return verb;
+}
+
 test("demoting, deleting and disabling all ask the last-active rule before they write", () => {
   const actions = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts"), "utf8");
   for (const fnName of ["updateUserRole", "deleteUser", "setUserDisabled"]) {
     assert.equal(guardProblem(actions, fnName), null, fnName);
   }
+});
+
+test("each refusal names its own action: a delete said ระงับ (2026-09-24)", () => {
+  assert.equal(verbIn(`async function deleteUser() { await lastActiveCheck(s, c, "x"); }`, "deleteUser"), null);
+  assert.equal(verbIn(`async function deleteUser() { await lastActiveCheck(s, c, "x", "ลบ"); }`, "deleteUser"), "ลบ");
+  const actions = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "actions.ts"), "utf8");
+  assert.equal(verbIn(actions, "deleteUser"), "ลบ");
+  assert.equal(verbIn(actions, "setUserDisabled"), "ระงับ");
+  assert.equal(verbIn(actions, "updateUserRole"), "ลดสิทธิ์");
 });
