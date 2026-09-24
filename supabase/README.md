@@ -259,6 +259,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `catering_menu_card_lines_migration.sql` | Nik (written 2026-09-24; item 39, the menu card) | **Expect 22 result rows**, ending "row count verified: 21 evidence rows emitted, as expected (this line makes 22)". Adds ONE column, `catering_events.menu_card_lines` (text, at most 3000 characters): the menu card's hand-typed lines. No existing column fits (`detail_note`, `kitchen_note` and `music_note` are internal notes). No new policy or grant: the column inherits `catering_events_rw` and the cost lock. Tests itself as the roles (14 tests: sales, admin and owner write an open booking; on a cost-locked one sales writes nothing and owner and admin still can; editor, staff, hr and a login with no profile write nothing; 3000 characters pass, 3001 are refused), every write rolled back; run under PGlite on a catering stand-in, twice: 22 rows both times; three mutations (the lock policy missing, editors admitted, the length check removed) each fail with nothing applied. **The menu card's code waits for it** (the local branch `menu-card`): it reads and writes the column. |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -2658,8 +2659,73 @@ In order. Nothing here is started unless it says so.
     table, and Nik's simplifications) — DONE, APPLIED AND SHIPPED
     2026-09-19/20.** `catering_event_menu_save_migration.sql` ran clean on
     its first run (30 rows, every judged row ok — the applied table above).
-    Printing a menu card is still not started, and is the only part of
-    round 2 that is not built.
+    **The menu card: BUILT 2026-09-24, waits for Nik** —
+    `catering_menu_card_lines_migration.sql` ("Not applied"), then the code
+    on the local branch `menu-card`. Decisions (Nik, 2026-09-24):
+    - **The card placed on each table at the event.** ONE CARD PER TABLE:
+      one print job, one A4 portrait page per table, all identical. The
+      number of copies starts at the booking's table count (at least 1) and
+      can be changed before printing, for spares (1 to 200; it is not saved).
+      Printed in COLOUR (`print-color-adjust: exact`).
+    - **What it shows:** the event (its type, and whose event: the company,
+      else the customer; there is no event-name column), the date in Thai
+      ("วันศุกร์ที่ 18 กันยายน 2569"), the venue (the room for an in-house
+      booking, the address's first line offsite); then every food line the
+      customer ordered: each set's courses grouped by section, several sets
+      each under its own name, then the dishes outside a set under
+      รายการอาหารเพิ่มเติม, then the lines typed by hand. The lines come from
+      the SAME reads the kitchen sheet, the function sheet and the quotation
+      use (`menu-read.ts`, which `actions.ts` wraps), so the card cannot
+      disagree with them. Thai only; NAMES only: no price anywhere, no
+      quantity, and no note (a course's note is for the kitchen).
+    - **Lines typed by hand** on the print page, one per line (at most 20,
+      each at most 100 characters), for things not in the system, such as a
+      dessert the customer brings. Saved with the booking
+      (`catering_events.menu_card_lines`), so a reprint keeps them. The same
+      rules as the booking's other non-price fields: owner, admin and sales;
+      **nothing on a cost-locked booking, for anyone** — the app refuses the
+      save for owner and admin too, as `saveBooking` does (they unlock on
+      the cost page first), while the database would still let owner and
+      admin write a locked row (`catering_events_lock_update`); printing a
+      locked booking's card still works. Not on a cancelled booking. Each
+      save writes one history line. **Saving moves the booking's
+      `updated_at`**, the booking screen's conflict token: a booking screen
+      left open elsewhere with unsaved edits is refused on its next save as
+      "changed since opened" (nothing is overwritten; reload).
+    - **The look:** a dark green (#2F5A16) band with a gold (#DFAF19) rule
+      under it, and room left for the logo, which comes later. Headings in
+      Kanit; **the body in Noto Sans Thai**, not Sarabun: the card is a
+      brand piece guests read, and Noto Sans Thai is the CI's body face,
+      loaded by next/font on every page and pairing with Kanit. Sarabun stays
+      the face of the three business documents (a Thai paperwork standard).
+    - **One page, always:** a long menu shrinks in steps to 60% of the type
+      size, then goes to two columns (from full size down to 60% again; a
+      section may continue in the next column, a heading never ends one). If
+      it still does not fit, the page says so and refuses to print: a card
+      that ran onto a second page, or lost its last lines, would be wrong
+      either way. With the 20-line cap only a very long booking menu can
+      get there.
+    - **Who, where:** owner, admin and sales, for every status except
+      cancelled; the button การ์ดเมนูบนโต๊ะ sits beside the other documents
+      on the booking screen, hidden for a cancelled booking, and the page
+      refuses one too.
+    - **Cost isolation:** the card's page, client and save action import
+      nothing that computes cost. Five small modules were split out, moved
+      verbatim with their old homes re-exporting or wrapping them:
+      `menu-lines.ts` (from `event-menu.ts`, which holds `foodCostFigure`),
+      `menu-read.ts` (the reads, from `actions.ts`, which holds the admin
+      operating costs), `location.ts` (from `shared-utils.tsx`),
+      `cost-lock.ts` and `activity-log.ts`. `menu-card/cost-isolation.test.ts`
+      walks the card's real import graph and fails on any module exporting
+      a cost figure; from the kitchen sheet the same walk reports
+      `foodCostFigure`, so it can fail.
+    - **No new kitchen sheet:** Nik says the current kitchen sheet is enough
+      (2026-09-24).
+    - **For Nik to look at on the first real print:** the colours; the
+      venue as printed ("ห้อง V1"; an in-house booking in the shared hall
+      prints "แอร์รวม"); the customer's name under the heading; and dish
+      names print as the system holds them, size marks included
+      ("ทอดมันปลา (ใหญ่)").
 
     **SEVEN THINGS TO KNOW ABOUT THE SHIPPED BEHAVIOUR** — not defects,
     recorded because each will look like one to whoever meets it first:
