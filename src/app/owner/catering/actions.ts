@@ -1192,6 +1192,7 @@ function mapEventType(r: Record<string, unknown>): CateringEventType {
 
 /** The picker: ACTIVE types only, so a retired one disappears from new bookings. */
 export async function getCateringEventTypes(): Promise<CateringEventType[]> {
+  await requireSales();
   const supabase = await createClient();
   const { data } = await supabase
     .from("catering_event_types")

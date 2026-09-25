@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireHR } from "@/lib/auth";
+import { requireHR, requireHROrAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 
@@ -149,6 +149,7 @@ function toDateStr(d: Date): string {
 // ─── Departments ──────────────────────────────────────────────────────────────
 
 export async function getDepartments(): Promise<Department[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("departments")
@@ -213,6 +214,7 @@ export async function setDepartmentActive(id: string, is_active: boolean): Promi
 // infer an oversight from the code and "fix" it.
 
 export async function getEmployees(): Promise<Employee[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("employees")
@@ -244,6 +246,7 @@ export async function getEmployees(): Promise<Employee[]> {
 }
 
 export async function getEmployee(id: string): Promise<Employee | null> {
+  await requireHR();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("employees")
@@ -347,6 +350,7 @@ export type ProbationAlert = {
 };
 
 export async function getProbationAlerts(): Promise<ProbationAlert[]> {
+  await requireHR();
   const supabase = await createClient();
   const todayStr = bangkokToday();
   const alertDateStr = shiftDay(todayStr, 30);
@@ -371,6 +375,7 @@ export async function getProbationAlerts(): Promise<ProbationAlert[]> {
 // ─── Leave Types ──────────────────────────────────────────────────────────────
 
 export async function getLeaveTypes(): Promise<LeaveType[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("leave_types")
@@ -408,6 +413,7 @@ export async function getLeaveRequests(filters?: {
   employeeId?: string;
   status?: string;
 }): Promise<LeaveRequest[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   let q = supabase
     .from("leave_requests")
@@ -600,6 +606,7 @@ export async function deleteLeaveRequest(id: string): Promise<HrActionResult> {
 // ─── Holidays ─────────────────────────────────────────────────────────────────
 
 export async function getHolidays(year: number): Promise<Holiday[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("holidays")
@@ -641,6 +648,7 @@ export async function deleteHoliday(id: string): Promise<HrActionResult> {
 // ─── Payroll Periods ──────────────────────────────────────────────────────────
 
 export async function getPayrollPeriods(): Promise<PayrollPeriod[]> {
+  await requireHR();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("payroll_periods")
@@ -691,6 +699,7 @@ export async function reopenPayrollPeriod(id: string): Promise<HrActionResult> {
 }
 
 export async function getEmployeePayrollHistory(employeeId: string): Promise<EmployeePayrollHistoryRow[]> {
+  await requireHR();
   const supabase = await createClient();
   const [{ data: periods, error: periodsError }, { data: entries, error: entriesError }, { data: emp }, { data: attendance }, deductibleLeaveTypeIds] = await Promise.all([
     supabase
@@ -771,6 +780,7 @@ export type LeaveDay = {
 };
 
 export async function getApprovedLeavesForWeek(weekStart: string): Promise<LeaveDay[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const weekEnd = new Date(weekStart + "T00:00:00");
   weekEnd.setDate(weekEnd.getDate() + 6);
@@ -798,6 +808,7 @@ export async function getApprovedLeavesForWeek(weekStart: string): Promise<Leave
 }
 
 export async function getSwapDatesForWeek(weekStart: string): Promise<string[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const weekEnd = new Date(weekStart + "T00:00:00");
   weekEnd.setDate(weekEnd.getDate() + 6);
@@ -816,6 +827,7 @@ export async function getSwapDatesForWeek(weekStart: string): Promise<string[]> 
 }
 
 export async function getApprovedLeavesForMonth(year: number, month: number): Promise<LeaveDay[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
@@ -871,6 +883,7 @@ export type ScheduleNote = {
 };
 
 export async function getScheduleWeek(weekStart: string): Promise<ScheduleNote[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const end = new Date(weekStart + "T00:00:00");
   end.setDate(end.getDate() + 6);
@@ -1018,6 +1031,7 @@ async function getDeductibleLeaveTypeIds(supabase: Awaited<ReturnType<typeof cre
 }
 
 export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[]> {
+  await requireHR();
   const supabase = await createClient();
   const [{ data: period }, { data: employees }, { data: entries }, deductibleLeaveTypeIds] = await Promise.all([
     supabase.from("payroll_periods").select("period_year,period_month,period_half").eq("id", periodId).single(),
@@ -1161,6 +1175,7 @@ export async function getAttendanceDailyMonth(
   year: number,
   month: number,
 ): Promise<AttendanceDaily[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const m = String(month).padStart(2, "0");
   const lastDay = new Date(year, month, 0).getDate();
@@ -1252,6 +1267,7 @@ function alQuotaDays(years: number): number {
 }
 
 export async function getLeaveQuotas(year: number): Promise<LeaveQuotaRow[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const [{ data: emps }, { data: types }, { data: adLeave }] = await Promise.all([
     supabase.from("employees").select("id,full_name,nickname,hire_date,sort_order,al_quota_override,departments(sort_order)").eq("is_active", true),
@@ -1361,6 +1377,7 @@ export type CompDayBalance = {
 };
 
 export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[]> {
+  await requireHR();
   const supabase = await createClient();
   let q = supabase
     .from("day_swap_requests")
@@ -1388,6 +1405,7 @@ export async function getDaySwapRequests(year?: number): Promise<DaySwapRequest[
 }
 
 export async function getSwapDatesForMonth(year: number, month: number): Promise<string[]> {
+  await requireHROrAdmin();
   const supabase = await createClient();
   const m = String(month).padStart(2, "0");
   const start = `${year}-${m}-01`;
@@ -1405,6 +1423,7 @@ export async function getSwapDatesForMonth(year: number, month: number): Promise
 }
 
 export async function getCompDayBalances(): Promise<CompDayBalance[]> {
+  await requireHR();
   const supabase = await createClient();
   const today = bangkokToday();
   const [{ data: employees }, { data: swaps }] = await Promise.all([
@@ -1454,6 +1473,7 @@ export type HolidayCompDayBalance = {
 
 // เหมือน getCompDayBalances แต่กรองเฉพาะแถวที่ผูกกับวันนักขัตฤกษ์ (holiday_id ไม่ว่าง)
 export async function getHolidayCompDayBalances(): Promise<HolidayCompDayBalance[]> {
+  await requireHR();
   const supabase = await createClient();
   const today = bangkokToday();
   const { data: swaps } = await supabase
@@ -1525,6 +1545,7 @@ export async function getAttendanceYearSummary(
   employeeId: string,
   year: number,
 ): Promise<AttendanceYearSummary> {
+  await requireHR();
   const supabase = await createClient();
   const { data } = await supabase
     .from("attendance_daily")
@@ -1550,6 +1571,7 @@ export type UnpaidOtBalance = {
 
 // สะสมตลอดกาล ไม่จำกัดช่วงเวลา — ข้อมูลอย่างเดียว ไม่มีผลต่อการหักหรือคำนวณใดๆ
 export async function getUnpaidOtHours(): Promise<UnpaidOtBalance[]> {
+  await requireHR();
   const supabase = await createClient();
   const { data } = await supabase
     .from("attendance_daily")

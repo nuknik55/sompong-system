@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parsePosSalesReport } from "@/lib/pos-parse";
 import { movedSinceRead, routeSales, sourcesQty, validDivisor, type SalesSource } from "@/lib/pos-sales-divisor";
@@ -131,6 +131,7 @@ export async function applyPosSalesImport(
 }
 
 export async function getPosImportMeta(): Promise<{ dateFrom: string; dateTo: string; importedAt: string } | null> {
+  await requireProfile();
   const supabase = await createClient();
   const { data } = await supabase.from("pos_import_meta").select("date_from, date_to, imported_at").eq("id", "last").maybeSingle();
   if (!data) return null;
