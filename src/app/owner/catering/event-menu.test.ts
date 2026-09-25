@@ -167,7 +167,7 @@ test("the price box's dish names: section order, then serving order; nothing dro
 // ── The draft ────────────────────────────────────────────────────────────────
 
 const line = (over: Partial<EventMenuLine> = {}): EventMenuLine => ({
-  id: "L1", name: "ชุด 4,500", tables: 10, pricePerTable: 4500, sourceSetMenuId: "s1", source: "copy",
+  id: "L1", name: "ชุด 4,500", tables: 10, perHead: false, pricePerTable: 4500, sourceSetMenuId: "s1", source: "copy",
   dishes: [dish("A", 250, 5), dish("B", 1000)],
   ...over,
 });
@@ -178,7 +178,7 @@ test("DRAFT: opening the page is not dirty; every kind of edit is; ยกเล�
   const qty = structuredClone(base); qty[0]!.dishes[0]!.quantity = "6";
   const swap = structuredClone(base); swap[0]!.dishes[1] = { ...swap[0]!.dishes[1]!, menu_id: "m-Z", menu_name: "Z", selling_price: 990 };
   const removed = structuredClone(base); removed[0]!.dishes.pop();
-  const added = structuredClone(base); added[0]!.dishes.push({ key: "k", menu_id: "m-N", menu_name: "N", selling_price: 300, quantity: "1", section: "dish", note: null, source_set_menu_id: null, source_event_menu_id: null });
+  const added = structuredClone(base); added[0]!.dishes.push({ key: "k", menu_id: "m-N", dish_name: null, linked_menu_id: null, menu_name: "N", selling_price: 300, quantity: "1", section: "dish", note: null, source_set_menu_id: null, source_event_menu_id: null });
   const price = structuredClone(base); price[0]!.price = "4321";
   const kept = structuredClone(base); kept[0]!.materialize = true;
   for (const [what, d] of Object.entries({ qty, swap, removed, added, price, kept })) assert.equal(draftsEqual(base, d), false, `${what} is a change`);
@@ -543,5 +543,5 @@ test("A NEW SET's tables follow the price box's rule: whole, at least 1 — or t
     assert.match(validateSavePayload([{ event_menu_id: null, set_name: "ชุด", tables, price_per_table: 1, known_item_ids: [], known_price: null, items: [] }])!, /^จำนวน/, `payload ${tables}`);
   }
   assert.equal(validateDrafts([{ ...newCustomLineDraft("n", "ชุด", 100), tables: 10 }]), null);
-  assert.equal(validateSavePayload([{ event_menu_id: null, set_name: "ชุด", tables: 10, price_per_table: 1, known_item_ids: [], known_price: null, items: [] }]), null);
+  assert.equal(validateSavePayload([{ event_menu_id: null, set_name: "ชุด", tables: 10, per_head: false, price_per_table: 1, known_item_ids: [], known_price: null, items: [] }]), null);
 });

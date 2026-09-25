@@ -6,6 +6,7 @@ import {
 } from "@/lib/event-sheet";
 import { readEventMenuDishes, readEventMenus } from "../../menu-read";
 import { EVENT_MENU_SECTION_LIST } from "../../menu-lines";
+import { PER_HEAD_UNIT } from "@/lib/kitchen-sheet";
 import { LOCATION_TYPE_LABEL, VENUE_LABEL } from "../../location";
 import type { DocHeaderEvent, DocHeaderSettings } from "../doc-header";
 
@@ -198,7 +199,8 @@ export async function signImages(paths: (string | null)[]): Promise<Record<strin
   return out;
 }
 
-export type SheetMenu = { name: string; quantity: number; sections: { label: string; dishes: string[] }[] };
+/** unit: what the count counts — "ท่าน" on a per-head line, "โต๊ะ" otherwise (as the sheet always printed). */
+export type SheetMenu = { name: string; quantity: number; unit: string; sections: { label: string; dishes: string[] }[] };
 
 /** Everything the printed sheet shows, and nothing it does not. */
 export type SheetContent = {
@@ -259,6 +261,7 @@ export async function readSheetContent(eventId: string): Promise<SheetContent | 
     sets.push({
       name: m.name,
       quantity: Number(m.quantity),
+      unit: m.per_head ? PER_HEAD_UNIT : "โต๊ะ",
       sections: EVENT_MENU_SECTION_LIST
         .filter((s) => s.value !== "free")
         .map((s) => ({ label: s.label, dishes: dishes.filter((d) => d.section === s.value).map((d) => d.menu_name) }))

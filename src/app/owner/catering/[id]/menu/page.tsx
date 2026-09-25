@@ -51,7 +51,7 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
   let dishCostById: Record<string, DishCost> | null = null;
   if (access === "edit") dishCostById = await computeDishCosts();
 
-  const view = buildEventMenuView({ access, locked: event.cost_locked_at != null, lines, dishCostById });
+  const view = buildEventMenuView({ access, locked: event.cost_locked_at != null, cancelled: event.status === "cancelled", lines, dishCostById });
 
   return (
     <PageShell>
@@ -65,6 +65,7 @@ export default async function EventMenuPage({ params }: { params: Promise<{ id: 
         version={viewVersion(view)}
         header={{ backHref: `/owner/catering/${id}`, backLabel: event.customer_name ?? "การจอง", status: event.status, date: event.event_date }}
         tableCount={event.table_count}
+        guestCount={event.guest_count}
         view={view}
         dishOptions={dishOptions}
         quote={event.quote_number ? { number: event.quote_number, revision: event.quote_revision } : null}

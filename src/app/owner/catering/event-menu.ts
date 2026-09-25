@@ -49,13 +49,14 @@
  * (buildEventMenuView), which is how "sales never receives a cost" is tested
  * rather than asserted.
  */
-import type { EventMenuAccess } from "@/lib/event-menu-access";
+// Relative, with its extension: this file runs under the test runner too.
+import { canEditTypedDishes, type EventMenuAccess } from "../../../lib/event-menu-access.ts";
 import { menuLineQuantityError } from "./booking-lines.ts";
 // The line helpers every printed document shares live in menu-lines.ts, which
 // holds no cost figure, so the menu card can use them without importing this
 // file (foodCostFigure, lineFoodCost). Re-exported: nothing else changes.
-import { isSetLine, EVENT_MENU_SECTIONS, type DishSource, type EventMenuDish } from "./menu-lines.ts";
-export { isSetLine, resolveDishes, EVENT_MENU_SECTIONS, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST } from "./menu-lines.ts";
+import { isSetLine, EVENT_MENU_SECTIONS, recipeMenuId, dishKey, isTypedDish, typedDishNameError, type DishSource, type EventMenuDish } from "./menu-lines.ts";
+export { isSetLine, resolveDishes, EVENT_MENU_SECTIONS, EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST, isTypedDish, recipeMenuId, dishKey, typedDishNameError, TYPED_DISH_MAX } from "./menu-lines.ts";
 export type { DishSource, EventMenuDish, EventMenuSection } from "./menu-lines.ts";
 
 /** A set line of the booking, with what is served at it. */
@@ -63,8 +64,10 @@ export type EventMenuLine = {
   /** catering_event_menus.id */
   id: string;
   name: string;
-  /** catering_event_menus.quantity — tables. */
+  /** catering_event_menus.quantity — tables, or GUESTS on a per-head line. */
   tables: number;
+  /** Priced per guest (Nik, 2026-09-25): the price is per guest and the count is guests. */
+  perHead: boolean;
   /**
    * THE price per table: the linked charge's unit_price. One stored number,
    * read here and by the booking screen's price box; the menu page is where
@@ -83,6 +86,12 @@ export type DishCost = { unit_cost: number; has_unknown_cost: boolean };
 export type EventMenuView = {
   lines: EventMenuLine[];
   canEdit: boolean;
+  /**
+   * May add, edit and remove TYPED dishes (Nik, 2026-09-25, Q1): owner and
+   * admin, and sales — on a booking neither cost-locked nor cancelled.
+   * Nothing else opens with it.
+   */
+  canEditTyped: boolean;
   locked: boolean;
   /**
    * Per dish (menus.id), for every dish the screen may show or add — so the
@@ -104,7 +113,7 @@ const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2
  * the sheets, as before.
  */
 export function buildEventMenuLines(
-  eventMenus: { id: string; set_menu_id: string | null; menu_id: string | null; name: string; quantity: number }[],
+  eventMenus: { id: string; set_menu_id: string | null; menu_id: string | null; name: string; quantity: number; per_head?: boolean }[],
   charges: { event_menu_id: string | null; unit_price: number }[],
   dishesByLine: Map<string, { source: DishSource; dishes: EventMenuDish[] }>,
 ): EventMenuLine[] {
@@ -116,6 +125,7 @@ export function buildEventMenuLines(
       id: m.id,
       name: m.name,
       tables: m.quantity,
+      perHead: m.per_head === true,
       pricePerTable: priceByLine.get(m.id) ?? null,
       sourceSetMenuId: m.set_menu_id,
       source: resolved.source,
@@ -203,21 +213,31 @@ export function foodCostFigure(costPerTable: number, pricePerTable: number | nul
  * A set line's food cost per table from the per-dish costs: Σ portion cost ×
  * portions per table — the same multiplication as dishLineTotal, so the two
  * figures on a card describe the same set. A dish with no cost entry counts
- * as unknown, not as zero-and-silent.
+ * as unknown, not as zero-and-silent. A TYPED dish costs as the menu it is
+ * linked to; an unlinked one has no cost at all, so it makes the figure
+ * unknown and is counted (typedWithoutCost), for the warning to say how many.
  */
 export function lineFoodCost(
-  dishes: { menu_id: string; quantity: number }[],
+  dishes: { menu_id: string | null; linked_menu_id?: string | null; quantity: number }[],
   costById: Record<string, DishCost>,
-): { costPerTable: number; hasUnknownCost: boolean } {
+): { costPerTable: number; hasUnknownCost: boolean; typedWithoutCost: number } {
   let costPerTable = 0;
   let hasUnknownCost = false;
+  let typedWithoutCost = 0;
   for (const d of dishes) {
-    const c = costById[d.menu_id];
+    const id = recipeMenuId(d);
+    if (id == null) { hasUnknownCost = true; typedWithoutCost++; continue; }
+    const c = costById[id];
     if (!c) { hasUnknownCost = true; continue; }
     costPerTable += c.unit_cost * d.quantity;
     if (c.has_unknown_cost) hasUnknownCost = true;
   }
-  return { costPerTable, hasUnknownCost };
+  return { costPerTable, hasUnknownCost, typedWithoutCost };
+}
+
+/** The warning's words: how many typed dishes have no cost yet. */
+export function typedCostWarning(n: number): string | null {
+  return n > 0 ? `มีเมนูที่พิมพ์เอง ${n} รายการยังไม่มีต้นทุน (ผูกกับเมนูในระบบเพื่อให้คิดต้นทุนได้)` : null;
 }
 
 /**
@@ -249,6 +269,8 @@ export function swapWarningText(oldName: string, oldPrice: number, newName: stri
 export function buildEventMenuView(input: {
   access: EventMenuAccess;
   locked: boolean;
+  /** The booking is cancelled: typed dishes are refused on it for everyone. */
+  cancelled?: boolean;
   lines: EventMenuLine[];
   dishCostById: Record<string, DishCost> | null;
 }): EventMenuView {
@@ -256,6 +278,7 @@ export function buildEventMenuView(input: {
   return {
     lines: input.lines,
     canEdit: edit && !input.locked,
+    canEditTyped: canEditTypedDishes(input.access) && !input.locked && input.cancelled !== true,
     locked: input.locked,
     dishCostById: edit ? input.dishCostById : null,
   };
@@ -270,7 +293,7 @@ export function buildEventMenuView(input: {
  * "this booking changed" (review, 2026-09-19).
  */
 export function viewVersion(view: EventMenuView): string {
-  const s = JSON.stringify({ lines: view.lines, locked: view.locked, canEdit: view.canEdit });
+  const s = JSON.stringify({ lines: view.lines, locked: view.locked, canEdit: view.canEdit, canEditTyped: view.canEditTyped });
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return h.toString(36) + ":" + s.length.toString(36);
@@ -279,9 +302,14 @@ export function viewVersion(view: EventMenuView): string {
 // ── The draft: what the screen holds until บันทึก ────────────────────────────
 
 export type DraftDish = {
-  /** Client key, stable while the row is on screen. */
+  /** Client key, stable while the row is on screen. For a row of the booking's copy it IS the row's id. */
   key: string;
-  menu_id: string;
+  /** A menu dish's menus.id; null for a typed dish. */
+  menu_id: string | null;
+  /** A typed dish's name as typed; null for a menu dish. menu_name mirrors it. */
+  dish_name: string | null;
+  /** A typed dish's link to a real menu, for its cost (owner, admin). */
+  linked_menu_id: string | null;
   menu_name: string;
   selling_price: number;
   /** The input's text; parsed by draftDishes. */
@@ -298,7 +326,9 @@ export type LineDraft = {
   eventMenuId: string | null;
   name: string;
   tables: number;
-  /** The input's text for THE price per table. */
+  /** Per guest: the price is per guest and `tables` is guests. Fixed once the line exists. */
+  perHead: boolean;
+  /** The input's text for THE price per table (per guest on a per-head line). */
   price: string;
   sourceSetMenuId: string | null;
   /** What the screen opened with; "shared" is a line whose copy the save will make. */
@@ -337,6 +367,7 @@ export function draftFromLine(line: EventMenuLine): LineDraft {
     eventMenuId: line.id,
     name: line.name,
     tables: line.tables,
+    perHead: line.perHead,
     price: line.pricePerTable == null ? "" : String(line.pricePerTable),
     sourceSetMenuId: line.sourceSetMenuId,
     source: line.source,
@@ -347,6 +378,8 @@ export function draftFromLine(line: EventMenuLine): LineDraft {
     dishes: line.dishes.map((d) => ({
       key: d.id,
       menu_id: d.menu_id,
+      dish_name: d.dish_name ?? null,
+      linked_menu_id: d.linked_menu_id ?? null,
       menu_name: d.menu_name,
       selling_price: d.selling_price,
       quantity: String(d.quantity),
@@ -365,8 +398,16 @@ export function draftFromLine(line: EventMenuLine): LineDraft {
  * nothing). ALWAYS ONE TABLE: the real count is set in the price box on the
  * booking screen, where Nik already sets it (A4, 2026-09-19).
  */
-export function newCustomLineDraft(key: string, name: string, pricePerTable: number): LineDraft {
-  return { key, eventMenuId: null, name: name.trim(), tables: 1, price: String(pricePerTable), sourceSetMenuId: null, source: "none", materialize: true, dishes: [], knownItemIds: [], knownPrice: null, removed: false };
+export function newCustomLineDraft(key: string, name: string, pricePerTable: number, perHead = false, guests = 1): LineDraft {
+  // A per-head set counts guests: it starts at the booking's guest count.
+  const count = perHead && Number.isInteger(guests) && guests >= 1 ? guests : 1;
+  return { key, eventMenuId: null, name: name.trim(), tables: count, perHead, price: String(pricePerTable), sourceSetMenuId: null, source: "none", materialize: true, dishes: [], knownItemIds: [], knownPrice: null, removed: false };
+}
+
+/** A typed dish, new on the screen: not in the menu list, no price, no link. */
+export function newTypedDish(key: string, name: string, section = "dish"): DraftDish {
+  const n = name.trim();
+  return { key, menu_id: null, dish_name: n, linked_menu_id: null, menu_name: n, selling_price: 0, quantity: "1", section, note: null, source_set_menu_id: null, source_event_menu_id: null };
 }
 
 /**
@@ -408,13 +449,15 @@ export function duplicateSetName(drafts: LineDraft[]): string | null {
  */
 export function newLineDraftFromSource(
   key: string,
-  source: { name: string; pricePerTable: number; dishes: EventMenuDish[] },
+  source: { name: string; pricePerTable: number; dishes: EventMenuDish[]; perHead?: boolean },
   tables: number,
   provenance: { set_menu_id: string } | { event_menu_id: string },
   keyFor: (i: number) => string,
 ): LineDraft {
+  // A per-head source makes a per-head line: its price is per guest, and
+  // `tables` is then the guests the caller chose.
   return applySourceDishes(
-    { ...newCustomLineDraft(key, source.name, source.pricePerTable), tables },
+    { ...newCustomLineDraft(key, source.name, source.pricePerTable, source.perHead === true), tables },
     source.dishes,
     provenance,
     keyFor,
@@ -432,7 +475,7 @@ export function draftDishes(d: LineDraft): EventMenuDish[] {
   return d.dishes.map((x, i) => {
     const q = Number(x.quantity);
     return {
-      id: x.key, menu_id: x.menu_id, menu_name: x.menu_name, selling_price: x.selling_price,
+      id: x.key, menu_id: x.menu_id, dish_name: x.dish_name, linked_menu_id: x.linked_menu_id, menu_name: x.menu_name, selling_price: x.selling_price,
       quantity: Number.isFinite(q) && q > 0 ? q : 0, section: x.section, sort_order: (i + 1) * 10, note: x.note,
       source_set_menu_id: x.source_set_menu_id, source_event_menu_id: x.source_event_menu_id,
     };
@@ -457,6 +500,8 @@ export function applySourceDishes(
     dishes: dishes.map((d, i) => ({
       key: keyFor(i),
       menu_id: d.menu_id,
+      dish_name: d.dish_name ?? null,
+      linked_menu_id: d.linked_menu_id ?? null,
       menu_name: d.menu_name,
       selling_price: d.selling_price,
       quantity: String(d.quantity),
@@ -474,12 +519,18 @@ export type EventMenuSaveLine = {
   event_menu_id: string | null;
   set_name: string | null;
   tables: number | null;
+  /** A NEW custom set priced per guest; ignored for an existing line (its basis is fixed). */
+  per_head: boolean;
   price_per_table: number;
   /** The conflict token (LineDraft.knownItemIds / knownPrice); empty and null for a new set. */
   known_item_ids: string[];
   known_price: number | null;
   items: {
-    menu_id: string;
+    /** Exactly one of menu_id and dish_name. */
+    menu_id: string | null;
+    dish_name: string | null;
+    /** Typed dishes only. */
+    linked_menu_id: string | null;
     quantity: number;
     section: string;
     sort_order: number;
@@ -491,8 +542,8 @@ export type EventMenuSaveLine = {
 
 function normalizeLine(d: LineDraft) {
   return JSON.stringify({
-    id: d.eventMenuId, name: d.name, tables: d.tables, price: draftPrice(d), m: d.materialize, rm: d.removed,
-    dishes: d.dishes.map((x) => [x.menu_id, Number(x.quantity), x.section, x.note ?? null]),
+    id: d.eventMenuId, name: d.name, tables: d.tables, ph: d.perHead, price: draftPrice(d), m: d.materialize, rm: d.removed,
+    dishes: d.dishes.map((x) => [x.menu_id, x.dish_name, x.linked_menu_id, Number(x.quantity), x.section, x.note ?? null]),
   });
 }
 
@@ -518,21 +569,33 @@ export function validateDrafts(drafts: LineDraft[]): string | null {
     if (d.eventMenuId == null && d.name.trim() === "") return "ชุดเมนูต้องมีชื่อ";
     // A new set's tables follow the price box's rule — whole, at least 1 —
     // or the booking screen would refuse every later save (booking-lines.ts).
-    const tablesError = d.eventMenuId == null ? menuLineQuantityError("set", d.tables) : null;
+    const tablesError = d.eventMenuId == null ? menuLineQuantityError("set", d.tables, d.perHead ? "ท่าน" : "โต๊ะ") : null;
     if (tablesError) return `${d.name}: ${tablesError}`;
     const price = draftPrice(d);
-    if (price == null || price < 0) return `${d.name}: ราคาต่อโต๊ะต้องเป็นตัวเลข 0 หรือมากกว่า`;
-    const seen = new Set<string>();
-    for (const x of d.dishes) {
-      const q = Number(x.quantity);
-      // A course prints on the kitchen and service sheets at three decimals:
-      // a fourth would print rounded, below 0.001 blank (Nik, 2026-09-21).
-      const qtyError = x.quantity.trim() === "" ? "ต้องมากกว่า 0" : menuLineQuantityError("dish", q);
-      if (qtyError) return `${d.name}: จำนวนต่อโต๊ะของ ${x.menu_name} — ${qtyError}`;
-      if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(x.section)) return `${d.name}: หมวดของ ${x.menu_name} ไม่ถูกต้อง`;
-      if (seen.has(x.menu_id)) return `${d.name}: ${x.menu_name} อยู่ในชุดนี้ซ้ำกัน`;
-      seen.add(x.menu_id);
+    if (price == null || price < 0) return `${d.name}: ราคาต่อ${d.perHead ? "ท่าน" : "โต๊ะ"}ต้องเป็นตัวเลข 0 หรือมากกว่า`;
+    const dishError = validateDraftDishes(d);
+    if (dishError) return dishError;
+  }
+  return null;
+}
+
+/** A line's courses: quantities, sections, typed names, and no course twice. */
+function validateDraftDishes(d: LineDraft): string | null {
+  const seen = new Set<string>();
+  for (const x of d.dishes) {
+    if (x.menu_id == null) {
+      const nameError = typedDishNameError(x.dish_name ?? "");
+      if (nameError) return `${d.name}: ${nameError}`;
     }
+    const q = Number(x.quantity);
+    // A course prints on the kitchen and service sheets at three decimals:
+    // a fourth would print rounded, below 0.001 blank (Nik, 2026-09-21).
+    const qtyError = x.quantity.trim() === "" ? "ต้องมากกว่า 0" : menuLineQuantityError("dish", q);
+    if (qtyError) return `${d.name}: จำนวนต่อ${d.perHead ? "ชุด" : "โต๊ะ"}ของ ${x.menu_name} — ${qtyError}`;
+    if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(x.section)) return `${d.name}: หมวดของ ${x.menu_name} ไม่ถูกต้อง`;
+    const k = dishKey(x);
+    if (seen.has(k)) return `${d.name}: ${x.menu_name} อยู่ในชุดนี้ซ้ำกัน`;
+    seen.add(k);
   }
   return null;
 }
@@ -556,11 +619,14 @@ export function toSavePayload(drafts: LineDraft[], baseline: LineDraft[]): Event
       event_menu_id: d.eventMenuId,
       set_name: d.eventMenuId == null ? d.name.trim() : null,
       tables: d.eventMenuId == null ? d.tables : null,
+      per_head: d.eventMenuId == null ? d.perHead : false,
       price_per_table: draftPrice(d) ?? 0,
       known_item_ids: d.eventMenuId == null ? [] : d.knownItemIds,
       known_price: d.eventMenuId == null ? null : d.knownPrice,
       items: d.dishes.map((x, i) => ({
         menu_id: x.menu_id,
+        dish_name: x.menu_id == null ? (x.dish_name ?? "").trim() : null,
+        linked_menu_id: x.menu_id == null ? x.linked_menu_id : null,
         quantity: Number(x.quantity),
         section: x.section,
         sort_order: (i + 1) * 10,
@@ -635,23 +701,93 @@ export function validateSavePayload(lines: unknown): string | null {
       newNames.add(k);
     }
     if (isNew) {
-      const tablesError = menuLineQuantityError("set", l.tables);
+      const tablesError = menuLineQuantityError("set", l.tables, l.per_head === true ? "ท่าน" : "โต๊ะ");
       if (tablesError) return tablesError;
     }
     if (!isNew && typeof l.event_menu_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
     if (!(typeof l.price_per_table === "number" && Number.isFinite(l.price_per_table) && l.price_per_table >= 0)) return "ราคาต่อโต๊ะต้องเป็นตัวเลข 0 หรือมากกว่า";
     if (!Array.isArray(l.known_item_ids) || (l.known_item_ids as unknown[]).some((x) => typeof x !== "string")) return "รูปแบบข้อมูลไม่ถูกต้อง";
     if (!(l.known_price === null || (typeof l.known_price === "number" && Number.isFinite(l.known_price)))) return "รูปแบบข้อมูลไม่ถูกต้อง";
+    // Absent means per table, as every payload before per head was.
+    if (!(l.per_head === undefined || l.per_head === true || l.per_head === false)) return "รูปแบบข้อมูลไม่ถูกต้อง";
     if (!Array.isArray(l.items)) return "รูปแบบข้อมูลไม่ถูกต้อง";
     const seen = new Set<string>();
     for (const it of l.items as Record<string, unknown>[]) {
-      if (typeof it.menu_id !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
+      if (!it || typeof it !== "object") return "รูปแบบข้อมูลไม่ถูกต้อง";
+      const menu = it.menu_id;
+      const typed = it.dish_name;
+      // Exactly one of a menu dish and a typed name; a link only on a typed one.
+      if (!((typeof menu === "string" && typed == null) || (menu == null && typeof typed === "string"))) return "รูปแบบข้อมูลไม่ถูกต้อง";
+      if (typeof typed === "string" && typedDishNameError(typed)) return typedDishNameError(typed);
+      if (it.linked_menu_id != null && (typeof typed !== "string" || typeof it.linked_menu_id !== "string" || !UUID.test(it.linked_menu_id))) return "ผูกกับเมนูในระบบได้เฉพาะเมนูที่พิมพ์เอง";
       const qtyError = menuLineQuantityError("dish", it.quantity);
       if (qtyError) return `จำนวนต่อโต๊ะ: ${qtyError}`;
       if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(it.section as string)) return "หมวดไม่ถูกต้อง";
-      if (seen.has(it.menu_id)) return "เมนูซ้ำในชุดเดียวกัน";
-      seen.add(it.menu_id);
+      const k = dishKey({ menu_id: typeof menu === "string" ? menu : null, dish_name: typeof typed === "string" ? typed : null });
+      if (seen.has(k)) return "เมนูซ้ำในชุดเดียวกัน";
+      seen.add(k);
     }
+  }
+  return null;
+}
+
+// ── Sales: the typed dishes of one set line, and nothing else ────────────────
+
+/** One typed dish as catering_save_typed_dishes takes it. */
+export type TypedDishSaveItem = { id: string | null; dish_name: string; section: string; quantity: number; note: string | null };
+
+/**
+ * What a SALES save sends for one set line (Nik, 2026-09-25, Q1): its typed
+ * dishes only, whole. A typed dish that is already a row of the booking's
+ * copy carries its id, so its link (owner and admin's) stays; one shown
+ * from a shared set not yet copied carries none, and the database matches
+ * it to the copied row by name. Menu dishes are never sent.
+ */
+export function typedDishesPayload(d: LineDraft): TypedDishSaveItem[] {
+  const own = new Set(d.source === "copy" ? d.knownItemIds : []);
+  return d.dishes.filter((x) => isTypedDish(x)).map((x) => ({
+    id: own.has(x.key) ? x.key : null,
+    dish_name: (x.dish_name ?? "").trim(),
+    section: x.section,
+    quantity: Number(x.quantity),
+    note: x.note?.trim() || null,
+  }));
+}
+
+/**
+ * A sales draft may change typed dishes only: the menu dishes must be the
+ * ones the screen opened with, as they were, and the price and the count
+ * untouched. Null when it may be saved.
+ */
+export function salesDraftError(draft: LineDraft, baseline: LineDraft): string | null {
+  const menuRows = (l: LineDraft) => JSON.stringify(l.dishes.filter((x) => !isTypedDish(x)).map((x) => [x.key, x.menu_id, Number(x.quantity), x.section, x.note ?? null]));
+  if (draft.eventMenuId == null || draft.removed) return "แก้ได้เฉพาะเมนูที่พิมพ์เอง";
+  if (menuRows(draft) !== menuRows(baseline) || draftPrice(draft) !== draftPrice(baseline) || draft.tables !== baseline.tables || draft.name !== baseline.name) {
+    return "แก้ได้เฉพาะเมนูที่พิมพ์เอง";
+  }
+  return validateDraftDishes(draft);
+}
+
+/** The server's own check of a sales payload, on what actually arrived. */
+export function validateTypedPayload(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length > 60) return "รูปแบบข้อมูลไม่ถูกต้อง";
+  const seen = new Set<string>();
+  const ids = new Set<string>();
+  for (const it of items as Record<string, unknown>[]) {
+    if (!it || typeof it !== "object") return "รูปแบบข้อมูลไม่ถูกต้อง";
+    if (Object.keys(it).some((k) => !["id", "dish_name", "section", "quantity", "note"].includes(k))) return "แก้ได้เฉพาะเมนูที่พิมพ์เอง";
+    if (it.id != null && (typeof it.id !== "string" || !UUID.test(it.id) || ids.has(it.id))) return "รูปแบบข้อมูลไม่ถูกต้อง";
+    if (typeof it.id === "string") ids.add(it.id);
+    if (typeof it.dish_name !== "string") return "รูปแบบข้อมูลไม่ถูกต้อง";
+    const nameError = typedDishNameError(it.dish_name);
+    if (nameError) return nameError;
+    if (!(EVENT_MENU_SECTIONS as readonly string[]).includes(it.section as string)) return "หมวดไม่ถูกต้อง";
+    const qtyError = menuLineQuantityError("dish", it.quantity);
+    if (qtyError) return `จำนวน: ${qtyError}`;
+    if (!(it.note === null || (typeof it.note === "string" && it.note.length <= 300))) return "หมายเหตุไม่ถูกต้อง";
+    const k = it.dish_name.trim().toLocaleLowerCase("th");
+    if (seen.has(k)) return `เมนู "${it.dish_name.trim()}" อยู่ในชุดเดียวกันสองครั้ง`;
+    seen.add(k);
   }
   return null;
 }

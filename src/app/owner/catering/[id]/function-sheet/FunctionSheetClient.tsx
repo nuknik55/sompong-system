@@ -3,6 +3,7 @@
 import type { CateringEvent, StaffOption } from "../../actions";
 import type { SheetLine, SheetPackage, MoneyField } from "@/lib/function-sheet";
 import { AmountText } from "../amount-text";
+import { PER_HEAD_UNIT } from "@/lib/kitchen-sheet";
 import {
   thFullDate, timeRange, locationLabel, fmtBaht, staffLabel,
 } from "../../shared-utils";
@@ -150,7 +151,9 @@ export function FunctionSheetClient({
           <div key={p.id} className="fs-avoid-break" style={{ marginBottom: "14px" }}>
             <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
               {p.name}
-              {p.quantity > 1 && <span style={{ fontWeight: 400 }}> × {p.quantity}</span>}
+              {p.perHead
+                ? <span style={{ fontWeight: 400 }}> × {p.quantity} {PER_HEAD_UNIT}</span>
+                : p.quantity > 1 && <span style={{ fontWeight: 400 }}> × {p.quantity}</span>}
               {p.note && <span style={{ fontWeight: 400, fontSize: "13px" }}> — {p.note}</span>}
             </div>
             {p.groups.length === 0 ? (

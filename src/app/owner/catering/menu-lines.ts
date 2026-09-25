@@ -14,9 +14,18 @@
 /** One course of a booking's set: a copied row, or a shared row when falling back. */
 export type EventMenuDish = {
   id: string;
-  menu_id: string;
+  /** menus.id for a dish from the menu list; null for a TYPED dish (Nik, 2026-09-25). */
+  menu_id: string | null;
+  /**
+   * A dish that is not in the menu list, typed by name; null (or absent) for
+   * a menu dish. Exactly one of menu_id and dish_name, as the database checks.
+   */
+  dish_name?: string | null;
+  /** A typed dish linked to a real menu for its COST only (owner, admin); the typed name still prints. */
+  linked_menu_id?: string | null;
+  /** The name every document prints: the typed name, or the menu's. */
   menu_name: string;
-  /** menus.selling_price — a customer price, sales-readable. */
+  /** menus.selling_price — a customer price, sales-readable. 0 for a typed dish, which has none. */
   selling_price: number;
   /** PORTIONS PER TABLE (per set), as catering_set_menu_items.quantity is. */
   quantity: number;
@@ -30,6 +39,43 @@ export type EventMenuDish = {
 };
 
 export type DishSource = "copy" | "shared" | "none";
+
+/** A dish typed by name rather than picked from the menu list. */
+export function isTypedDish(d: { menu_id: string | null }): boolean {
+  return d.menu_id == null;
+}
+
+/**
+ * The menu whose cost a course carries: its own for a menu dish, the link
+ * for a typed dish that owner or admin linked, and none for an unlinked
+ * typed dish, whose cost is unknown.
+ */
+export function recipeMenuId(d: { menu_id: string | null; linked_menu_id?: string | null }): string | null {
+  return d.menu_id ?? d.linked_menu_id ?? null;
+}
+
+/** The one key a course is compared by in a list: its menu, or its typed name case-folded. */
+export function dishKey(d: { menu_id: string | null; dish_name?: string | null; menu_name?: string }): string {
+  return d.menu_id != null ? "m:" + d.menu_id : "t:" + (d.dish_name ?? d.menu_name ?? "").trim().toLocaleLowerCase("th");
+}
+
+/** A typed name's rules, as the database checks them (catering_dish_name_ok): 1-120 characters once trimmed. */
+export const TYPED_DISH_MAX = 120;
+/**
+ * The characters a typed name may not hold, by code point — a tab, a line
+ * break, a no-break space and the zero-width ones: a name of them printed
+ * blank, and two names differing only by one passed the one-name rule
+ * (review, 2026-09-25). Code points, never escapes: an escape can be decoded
+ * into the invisible character itself by the tools that write this file.
+ */
+const UNPRINTABLE = new Set([9, 10, 13, 160, 8203, 8204, 8205, 8288, 65279]);
+export function typedDishNameError(name: string): string | null {
+  const t = name.trim();
+  if (t === "") return "พิมพ์ชื่อเมนู";
+  if (t.length > TYPED_DISH_MAX) return `ชื่อเมนูยาวได้ไม่เกิน ${TYPED_DISH_MAX} ตัวอักษร`;
+  for (const ch of t) if (UNPRINTABLE.has(ch.codePointAt(0) as number)) return "ชื่อเมนูมีอักขระที่พิมพ์ไม่ออก (เว้นวรรคพิเศษหรือขึ้นบรรทัด) — พิมพ์ใหม่";
+  return null;
+}
 
 /**
  * A set line is one copied from a shared set (set_menu_id) or a custom set —

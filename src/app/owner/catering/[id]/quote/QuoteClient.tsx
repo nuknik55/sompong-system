@@ -13,6 +13,8 @@ export type QuoteLine = {
   note: string | null;
   unitPrice: number;
   quantity: number;
+  /** Printed after the quantity: "ท่าน" on a per-head line (Nik, 2026-09-25); none otherwise, as always. */
+  unit?: string;
   amount: number;
 };
 
@@ -159,7 +161,7 @@ export function QuoteClient({
                     {l.note && <div style={{ fontSize: "12px", color: "#555" }}>{l.note}</div>}
                   </td>
                   <td style={{ textAlign: "right" }}>{fmtMoneyDoc(l.unitPrice)}</td>
-                  <td style={{ textAlign: "center" }}>{l.quantity}</td>
+                  <td style={{ textAlign: "center" }}>{l.quantity}{l.unit ? ` ${l.unit}` : ""}</td>
                   <td style={{ textAlign: "right" }}>{fmtMoneyDoc(l.amount)}</td>
                 </tr>
               ))

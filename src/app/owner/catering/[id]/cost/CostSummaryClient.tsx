@@ -104,6 +104,7 @@ export function CostSummaryClient({
   foodCost,
   laborCost,
   hasUnknownFoodCost,
+  costGapLines,
   staleQuote,
   costLockedAt,
   snapshot,
@@ -117,6 +118,8 @@ export function CostSummaryClient({
   foodCost: number;
   laborCost: number;
   hasUnknownFoodCost: boolean;
+  /** What the live figure could not count, in words (./food-cost.ts); empty when locked. */
+  costGapLines: string[];
   /** Set when the issued quotation no longer matches the lines: locking is refused until it is re-issued. */
   staleQuote: { quoted: number; live: number } | null;
   /** catering_events.cost_locked_at — the column every WRITE guard reads. */
@@ -348,6 +351,13 @@ export function CostSummaryClient({
         </div>
         {hasUnknownFoodCost && (
           <p className="mt-2 text-xs text-pending-ink">* มีเมนูบางรายการที่ยังไม่มีต้นทุนวัตถุดิบครบ ตัวเลขนี้อาจต่ำกว่าความจริง</p>
+        )}
+        {costGapLines.length > 0 && (
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-pending-ink">
+            {costGapLines.map((g) => <li key={g}>⚠ {g}</li>)}
+            {/* Q5: the lock goes through with gaps — and says what it will freeze. */}
+            {!costLockedAt && <li>ถ้าล็อกต้นทุนตอนนี้ รายการเหล่านี้จะถูกบันทึกเป็นต้นทุน ฿0 จนกว่าจะปลดล็อก</li>}
+          </ul>
         )}
 
         <div className="mt-4 border-t border-neutral-100 pt-3">

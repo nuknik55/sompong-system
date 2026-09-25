@@ -22,7 +22,7 @@ export default async function SetMenuDesignPage() {
   const [draftsRes, realRes, dishOptions] = await Promise.all([
     supabase
       .from("catering_set_menus")
-      .select("id, name, price_per_set, updated_at, catering_set_menu_items(menu_id, quantity, section, note, sort_order)")
+      .select("id, name, price_per_set, updated_at, catering_set_menu_items(menu_id, dish_name, linked_menu_id, quantity, section, note, sort_order)")
       .eq("is_draft", true)
       .order("created_at")
       .order("id"),
@@ -32,7 +32,7 @@ export default async function SetMenuDesignPage() {
   if (draftsRes.error) throw draftsRes.error;
   if (realRes.error) throw realRes.error;
 
-  type Item = { menu_id: string; quantity: number; section: string; note: string | null; sort_order: number };
+  type Item = { menu_id: string | null; dish_name: string | null; linked_menu_id: string | null; quantity: number; section: string; note: string | null; sort_order: number };
   const drafts: DraftSet[] = (draftsRes.data ?? []).map((r) => ({
     id: r.id as string,
     name: r.name as string,
@@ -40,7 +40,7 @@ export default async function SetMenuDesignPage() {
     updated_at: r.updated_at as string,
     items: ((r.catering_set_menu_items as Item[] | null) ?? [])
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((it) => ({ menu_id: it.menu_id, quantity: Number(it.quantity), section: it.section, note: it.note })),
+      .map((it) => ({ menu_id: it.menu_id, dish_name: it.dish_name, linked_menu_id: it.linked_menu_id, quantity: Number(it.quantity), section: it.section, note: it.note })),
   }));
 
   return (

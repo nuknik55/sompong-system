@@ -22,7 +22,7 @@ import type {
 import { bookingLinesForSave, linesFromCharges, menuLineQuantityOk, priceBoxProblem, type Line, type Section } from "./booking-lines";
 import { canMarkFree, unmarkedZeroLines } from "@/lib/event-sheet";
 import { docMoney } from "@/lib/quote-doc";
-import { setCountUnit } from "@/lib/kitchen-sheet";
+import { setCountUnit, PER_HEAD_UNIT } from "@/lib/kitchen-sheet";
 import { foldSetName } from "./event-menu";
 import { bookingSnapshot, seenAfter, serverViewAction, type SeenView, type ServerView } from "./booking-dirty";
 import { markUnsaved } from "@/lib/unsaved-changes";
@@ -86,6 +86,7 @@ export function BookingScreen({
   dishOptions,
   defaultStaffId,
   dishNamesByMenuLine = {},
+  perHeadMenuLines = [],
 }: {
   event: CateringEvent | null;
   initialCharges: CateringCharge[];
@@ -108,6 +109,8 @@ export function BookingScreen({
    * added on this screen and not yet saved has no entry and shows nothing.
    */
   dishNamesByMenuLine?: Record<string, string[]>;
+  /** Saved set lines priced per guest (catering_event_menus.per_head): their count is guests. */
+  perHeadMenuLines?: string[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -212,6 +215,12 @@ export function BookingScreen({
   const busy = isPending || landing;
   // What a set counts on THIS booking — โต๊ะ, กล่อง or ชุด, the kitchen sheet's word.
   const countUnit = setCountUnit(form.food_format || null);
+  // A PER-HEAD set line counts guests and prices per guest (Nik, 2026-09-25):
+  // a saved one by its stored flag, a new one by its set's.
+  const perHeadSets = new Set(setMenuOptions.filter((s) => s.per_head).map((s) => s.id));
+  const perHeadLines = new Set(perHeadMenuLines);
+  const isPerHead = (l: Line) => l.kind === "set" && (l.eventMenuId ? perHeadLines.has(l.eventMenuId) : l.refId != null && perHeadSets.has(l.refId));
+  const unitOf = (l: Line) => (isPerHead(l) ? PER_HEAD_UNIT : countUnit);
   // A name TYPED rather than picked: which customer the save will take it for
   // (customer-match.ts, the save's own rule), said under the name box before
   // the save, and refused here when it is ambiguous (queue item 50).
@@ -342,8 +351,10 @@ export function BookingScreen({
     // One line per set or dish, loaded lines included. A second pick of a set
     // the booking already has used to make TWO charge rows for one line and
     // print the set twice (review, 2026-09-19); the server refuses it too.
+    // A per-head set counts guests: the message says so.
+    const pickedUnit = kind === "set" && (opt as CateringSetMenuOption).per_head ? PER_HEAD_UNIT : "โต๊ะ";
     if (lines.some((l) => l.kind === kind && l.refId === id)) {
-      setError(`${opt.name} อยู่ในกล่องราคาแล้ว — แก้จำนวนโต๊ะในบรรทัดเดิมแทน`);
+      setError(`${opt.name} อยู่ในกล่องราคาแล้ว — แก้จำนวน${pickedUnit}ในบรรทัดเดิมแทน`);
       return;
     }
     // AND BY NAME, because a set copied in on the menu page is stored as the
@@ -352,14 +363,15 @@ export function BookingScreen({
     // with the same label and price (review, 2026-09-20). The database refuses
     // it too (catering_save_booking_prices, the A5 rule).
     if (kind === "set" && lines.some((l) => l.kind === "set" && foldSetName(l.label) === foldSetName(opt.name))) {
-      setError(`งานนี้มีชุดชื่อ “${opt.name}” อยู่แล้ว — แก้จำนวนโต๊ะในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
+      setError(`งานนี้มีชุดชื่อ “${opt.name}” อยู่แล้ว — แก้จำนวน${pickedUnit}ในบรรทัดเดิม หรือลบชุดเดิมก่อน`);
       return;
     }
     setError(null);
     const price = kind === "set" ? (opt as CateringSetMenuOption).price_per_set : (opt as CateringDishOption).selling_price;
     // A set counts whole tables (booking-lines.ts), so the booking's table
     // count is the default only when it is one; otherwise 1, in plain view.
-    const tables = toNum(form.table_count);
+    // A per-head set counts guests: the booking's guest count, when it is one.
+    const tables = kind === "set" && (opt as CateringSetMenuOption).per_head ? toNum(form.guest_count) : toNum(form.table_count);
     const qty = kind === "set" ? (tables !== null && menuLineQuantityOk("set", tables) ? tables : 1) : 1;
     setLines((ls) => [...ls, {
       key: crypto.randomUUID(), kind, section: "menu", refId: id, eventMenuId: null,
@@ -435,7 +447,7 @@ export function BookingScreen({
     // (booking-lines.ts): a set by whole counts of the booking's own unit, a
     // dish by up to three decimals, every other line by what the database
     // would refuse.
-    const problem = priceBoxProblem(lines, countUnit);
+    const problem = priceBoxProblem(lines, unitOf);
     if (problem) { setError(problem); return; }
     // A typed name that is already a customer's is never guessed: the person
     // picks, or gives the new customer's phone. The save refuses it as well.
@@ -796,6 +808,7 @@ export function BookingScreen({
                         <div className="min-w-0">
                           <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
                           {canMarkFree(l.kind) && <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />}
+                          {isPerHead(l) && <span className="text-xs text-neutral-500">ราคาต่อ{PER_HEAD_UNIT} × จำนวน{PER_HEAD_UNIT}</span>}
                           {/* THE DISH NAMES, under the set (Nik). Comma-separated,
                               clamped to two rows by CSS with the full list in the
                               tooltip — so a long set is cut by the space it has,
@@ -809,14 +822,14 @@ export function BookingScreen({
                       )}
                       <input type="number" className="line-input text-right tabular-nums" value={l.kind === "discount" ? String(Math.abs(toNum(l.unitPrice) ?? 0) || "") : l.unitPrice}
                         disabled={busy || l.kind === "set" || l.kind === "dish"}
-                        title={l.kind === "set" ? "ราคาต่อโต๊ะ — แก้ไขได้ในหน้ารายการอาหารของงาน (ตัวเลขเดียวกัน)" : l.kind === "dish" ? "ราคาตามเมนู" : "ราคาต่อหน่วย"}
+                        title={l.kind === "set" ? `ราคาต่อ${unitOf(l)} — แก้ไขได้ในหน้ารายการอาหารของงาน (ตัวเลขเดียวกัน)` : l.kind === "dish" ? "ราคาตามเมนู" : "ราคาต่อหน่วย"}
                         onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} />
                       {/* A dish takes a quantity above 0 with up to three decimals —
                           half a kilo is 0.5; a set, whole counts of the booking's
                           own unit (booking-lines.ts). */}
                       <input type="number" className="line-input text-right tabular-nums" value={l.quantity} disabled={busy}
                         min={l.kind === "dish" ? 0 : 1} step={l.kind === "dish" ? "any" : undefined}
-                        title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${countUnit} — จำนวนเต็ม` : undefined}
+                        title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${unitOf(l)} — จำนวนเต็ม` : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                       <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-danger" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
                       <Button kind="link" size="sm" onClick={() => removeLine(l.key)} disabled={busy} aria-label="เอาบรรทัดนี้ออก">✕</Button>
@@ -828,7 +841,7 @@ export function BookingScreen({
                         {/* Type to filter: 238 dishes is not a scrollable list. */}
                         <div className="w-56">
                           <SearchSelect
-                            options={setMenuOptions.map((s) => ({ id: s.id, name: s.name, price: s.price_per_set }))}
+                            options={setMenuOptions.map((s) => ({ id: s.id, name: s.per_head ? `${s.name} (ราคาต่อท่าน)` : s.name, price: s.price_per_set }))}
                             placeholder="+ ชุดเมนู × โต๊ะ — พิมพ์เพื่อค้นหา"
                             disabled={busy}
                             onPick={(id) => addMenu("set", id)}

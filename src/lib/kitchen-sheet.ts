@@ -124,6 +124,19 @@ export function setCountUnit(foodFormat: string | null): string {
   return "ชุด";
 }
 
+/** A per-head line's count is guests (Nik, 2026-09-25): never "โต๊ะ". */
+export const PER_HEAD_UNIT = "ท่าน";
+
+/**
+ * What ONE line's count counts: guests for a per-head line, otherwise the
+ * booking's unit. Every document and the price box label a line through
+ * this, so a per-head line reads "ท่าน" everywhere and a per-table line
+ * exactly as before.
+ */
+export function lineUnit(perHead: boolean, foodFormat: string | null): string {
+  return perHead ? PER_HEAD_UNIT : setCountUnit(foodFormat);
+}
+
 /** Between the per-set part and the total; AmountText breaks a line only here. */
 export const AMOUNT_TOTAL_SEPARATOR = " = ";
 

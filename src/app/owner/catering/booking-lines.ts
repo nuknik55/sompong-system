@@ -235,10 +235,11 @@ function chargeFromLine(l: Line): ChargeLine {
  * kind, `unit` being what a set counts on this booking; every other line by
  * chargeLineError. An empty typed row is not a line.
  */
-export function priceBoxProblem(lines: Line[], unit = "โต๊ะ"): string | null {
+export function priceBoxProblem(lines: Line[], unit: string | ((l: Line) => string) = "โต๊ะ"): string | null {
   for (const l of lines) {
     if (l.kind === "set" || l.kind === "dish") {
-      const error = menuLineQuantityError(l.kind, toNum(l.quantity), unit);
+      // A per-head set line counts guests: its own word, not the booking's.
+      const error = menuLineQuantityError(l.kind, toNum(l.quantity), typeof unit === "function" ? unit(l) : unit);
       if (error) return `“${l.label}”: ${error}`;
       const free = freeMarkProblem({ kind: l.kind, label: l.label, amount: toNum(l.amount) ?? 0, free: l.free });
       if (free) return `“${l.label}”: ${free}`;

@@ -27,3 +27,15 @@ export function eventMenuAccess(role: string | null | undefined): EventMenuAcces
   if (role === "sales") return "view";
   return "none";
 }
+
+/**
+ * TYPED DISHES ONLY (Nik, 2026-09-25, Q1): dishes not in the menu list, on a
+ * booking's own menu — add, edit, remove. Owner and admin ("edit") and sales
+ * ("view"). It opens nothing else: menu dishes, prices, counts, links and
+ * shared sets stay "edit" only, and the database's one write for this
+ * (catering_save_typed_dishes) refuses anything but typed dishes, a
+ * cancelled booking and a cost-locked one.
+ */
+export function canEditTypedDishes(access: EventMenuAccess): boolean {
+  return access === "edit" || access === "view";
+}

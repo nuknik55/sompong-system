@@ -3,10 +3,10 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import { requireSales } from "@/lib/auth";
 import { getCateringEvent, getCateringEventMenus, getEventMenuDishes, getWeightSoldMenuIds } from "../../actions";
-import { isSetLine } from "../../event-menu";
+import { isSetLine, isTypedDish } from "../../event-menu";
 import { SET_MENU_SECTIONS } from "../../shared-utils";
 import { groupBySection } from "@/lib/function-sheet";
-import { dishAmount, dishPrice } from "@/lib/kitchen-sheet";
+import { dishAmount, dishPrice, PER_HEAD_UNIT } from "@/lib/kitchen-sheet";
 import { printFont } from "../print-font";
 import { KitchenSheetClient, type KitchenRow, type KitchenBlock } from "./KitchenSheetClient";
 
@@ -77,7 +77,8 @@ export default async function CateringKitchenSheetPage({
       let n = 0;
       return {
         id: m.id,
-        title: m.name,
+        // A per-head line: the guests, since its amounts are blank.
+        title: m.per_head ? `${m.name} — ${m.quantity} ${PER_HEAD_UNIT}` : m.name,
         sections: groups.map((g) => ({
           label: g.label,
           rows: g.lines.map((l): KitchenRow => ({
@@ -87,8 +88,14 @@ export default async function CateringKitchenSheetPage({
             // The size, and then per-set count × sets ordered = the whole
             // job. The count took three readings and the print a fourth —
             // the history is in @/lib/kitchen-sheet, where it is tested.
-            price: isBuffet ? null : dishPrice(dishById.get(l.id)?.selling_price ?? null, dishById.get(l.id)?.menu_id ?? null, weightIds),
-            amount: isBuffet ? null : dishAmount(
+            // A TYPED dish (not in the menu list) has no selling price, so
+            // no portion size: the ราคา cell is blank (Nik, 2026-09-25).
+            price: isBuffet || !dishById.get(l.id) || isTypedDish(dishById.get(l.id)!)
+              ? null
+              : dishPrice(dishById.get(l.id)?.selling_price ?? null, dishById.get(l.id)?.menu_id ?? null, weightIds),
+            // A per-head line has no kitchen count to multiply by: blank, as
+            // a buffet's (no count is invented).
+            amount: isBuffet || m.per_head ? null : dishAmount(
               { quantity: dishById.get(l.id)?.quantity ?? 1, menu_id: dishById.get(l.id)?.menu_id ?? null },
               m.quantity, weightIds, event.food_format,
             ),

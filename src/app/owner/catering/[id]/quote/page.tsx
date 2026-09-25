@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSales } from "@/lib/auth";
-import { getCateringEvent, getCateringCharges, getCateringSettings } from "../../actions";
+import { getCateringEvent, getCateringCharges, getCateringSettings, getCateringEventMenus } from "../../actions";
+import { PER_HEAD_UNIT } from "@/lib/kitchen-sheet";
 import { parseDocState, docMoney, sortForCustomerDoc } from "@/lib/quote-doc";
 import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
@@ -76,6 +77,9 @@ export default async function CateringQuotePage({
   // Nik's paper order, the same order the booking screen's price box renders
   // in (customerDocRank). Insertion order within a kind. The total below is
   // order-independent, so it sums the raw list.
+  // A per-head line's quantity is guests: it prints "30 ท่าน", on the
+  // quotation, the deposit and the invoice alike (one component).
+  const perHeadLines = new Set((await getCateringEventMenus(id)).filter((m) => m.per_head).map((m) => m.id));
   const lines: QuoteLine[] = sortForCustomerDoc(charges).map((c) => ({
     id: c.id,
     // The customer-facing name where the rate has one; the stored label
@@ -84,6 +88,7 @@ export default async function CateringQuotePage({
     note: c.note,
     unitPrice: c.unit_price,
     quantity: c.quantity,
+    unit: c.event_menu_id && perHeadLines.has(c.event_menu_id) ? PER_HEAD_UNIT : undefined,
     amount: c.amount,
   }));
 

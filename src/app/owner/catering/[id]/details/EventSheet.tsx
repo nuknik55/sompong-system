@@ -34,7 +34,7 @@ export function EventSheet({ content, fontClass, printImages }: { content: Sheet
           <div style={heading}>รายการอาหาร</div>
           {sets.map((s, i) => (
             <div key={`${s.name}-${i}`} className="sheet-block" style={{ border: `1px solid ${RULE}`, padding: "6px 10px", marginBottom: "6px" }}>
-              <div style={{ fontWeight: "bold" }}>{s.name} <span style={{ fontWeight: "normal" }}>({qty(s.quantity)} โต๊ะ)</span></div>
+              <div style={{ fontWeight: "bold" }}>{s.name} <span style={{ fontWeight: "normal" }}>({qty(s.quantity)} {s.unit})</span></div>
               {s.sections.map((sec) => (
                 <div key={sec.label} style={{ marginTop: "2px" }}>
                   <span style={{ color: INKG, fontWeight: 500 }}>{sec.label}: </span>

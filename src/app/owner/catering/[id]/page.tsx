@@ -6,6 +6,7 @@ import { requireSales, isAdminOrAbove } from "@/lib/auth";
 import {
   getCateringEvent, getCateringCustomers, getStaffOptions, getCateringCharges, getCateringRates,
   getCateringEventTypes, getCateringSetMenuOptions, getCateringDishOptions, getCateringActivityLog, getEventMenuDishes,
+  getCateringEventMenus,
 } from "../actions";
 import { thDate, BookingStatusBadge } from "../shared-utils";
 import { buttonClass } from "@/components/ui/button";
@@ -32,9 +33,10 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
   const profile = await requireSales();
   const { id } = await params;
 
-  const [event, customers, staffOptions, charges, rates, eventTypes, setMenuOptions, dishOptions, activityLog, dishesByLine] = await Promise.all([
+  const [event, customers, staffOptions, charges, rates, eventTypes, setMenuOptions, dishOptions, activityLog, dishesByLine, eventMenus] = await Promise.all([
     getCateringEvent(id), getCateringCustomers(), getStaffOptions(), getCateringCharges(id), getCateringRates(),
     getCateringEventTypes(), getCateringSetMenuOptions(), getCateringDishOptions(), getCateringActivityLog(id), getEventMenuDishes(id),
+    getCateringEventMenus(id),
   ]);
   if (!event) notFound();
 
@@ -42,6 +44,8 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
   // The same resolver the sheets, the quotation and the menu page read.
   const dishNamesByMenuLine: Record<string, string[]> = {};
   for (const [lineId, served] of dishesByLine) dishNamesByMenuLine[lineId] = dishNamesForPriceBox(served.dishes);
+  // The saved lines priced per guest: the price box labels their count ท่าน.
+  const perHeadMenuLines = eventMenus.filter((m) => m.per_head).map((m) => m.id);
 
   const isAdmin = isAdminOrAbove(profile.role);
 
@@ -83,6 +87,7 @@ export default async function CateringEventPage({ params }: { params: Promise<{ 
         dishOptions={dishOptions}
         defaultStaffId={profile.employee_id}
         dishNamesByMenuLine={dishNamesByMenuLine}
+        perHeadMenuLines={perHeadMenuLines}
       />
 
       {/* ดูข้อมูลเพิ่ม: the pages about this booking, in Nik's order

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import {
-  DESIGN_MAX_COLUMNS, addDish, copyDish, designFigures, moveDish, parseDesignPrice, removeDish, swapDish,
+  DESIGN_MAX_COLUMNS, addDish, copyDish, designFigures, moveDish, parseDesignPrice, removeDish, swapDish, designCostId, typedDesignDish,
   type DesignDish, type DishFacts,
 } from "@/lib/set-design";
 import { EVENT_MENU_SECTION_LIST } from "../../menu-lines";
@@ -394,7 +394,11 @@ function DraftColumn({ col, hiddenOnPhone, others, facts, dishOptions, dirty, pe
         <dt className="text-neutral-600">สั่งแยกจาน</dt><dd className="text-right tabular-nums">฿{baht(fig.dishesTotal)}</dd>
       </dl>
       {comparison && <p className="text-xs text-neutral-600">{comparisonText(comparison)}</p>}
+      {col.items.some((it) => it.menu_id == null) && (
+        <p className="text-xs text-pending-ink">⚠ สั่งแยกจานไม่รวมเมนูที่พิมพ์เอง {col.items.filter((it) => it.menu_id == null).length} รายการ (ไม่มีราคาเมนู)</p>
+      )}
       {fig.hasUnknownCost && <p className="text-xs text-pending-ink">⚠ มีเมนูที่ยังไม่ทราบต้นทุน — ต้นทุนจริงสูงกว่าตัวเลขนี้</p>}
+      {fig.typedWithoutCost > 0 && <p className="text-xs text-pending-ink">⚠ มีเมนูที่พิมพ์เอง {fig.typedWithoutCost} รายการยังไม่มีต้นทุน (ผูกกับเมนูในระบบเพื่อให้คิดต้นทุนได้)</p>}
 
       {EVENT_MENU_SECTION_LIST.map((section) => {
         const rows = col.items.map((it, index) => ({ it, index })).filter(({ it }) => it.section === section.value);
@@ -403,12 +407,19 @@ function DraftColumn({ col, hiddenOnPhone, others, facts, dishOptions, dirty, pe
           <div key={section.value} className="space-y-1.5">
             <h3 className="text-xs font-semibold text-brand-green">{section.label}</h3>
             {rows.map(({ it, index }) => {
-              const f = facts.get(it.menu_id);
+              const costId = designCostId(it);
+              const f = costId ? facts.get(costId) : undefined;
+              const typed = it.menu_id == null;
+              const name = typed ? it.dish_name ?? "" : f?.name ?? "เมนูที่ไม่พบ";
               return (
-                <div key={it.menu_id} className={`rounded-md border p-2 text-sm ${swapIndex === index ? "border-brand-green" : "border-neutral-100"}`}>
+                <div key={`${index}-${it.menu_id ?? it.dish_name}`} className={`rounded-md border p-2 text-sm ${swapIndex === index ? "border-brand-green" : "border-neutral-100"}`}>
                   <div className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1 pt-1.5">{f?.name ?? "เมนูที่ไม่พบ"}{f?.has_unknown_cost && <span className="text-pending-ink" title="ต้นทุนไม่ทราบ"> ⚠</span>}</span>
-                    <QtyInput value={it.quantity} label={`จำนวนต่อโต๊ะ ${f?.name ?? ""}`}
+                    <span className="min-w-0 flex-1 pt-1.5">
+                      {name}
+                      {typed && <span className="ml-1 rounded bg-info-soft px-1 text-[10px] text-info">พิมพ์เอง</span>}
+                      {(f?.has_unknown_cost || (typed && !costId)) && <span className="text-pending-ink" title="ต้นทุนไม่ทราบ"> ⚠</span>}
+                    </span>
+                    <QtyInput value={it.quantity} label={`จำนวนต่อโต๊ะ ${name}`}
                       onValid={(q) => setItems(col.items.map((x, i) => (i === index ? { ...x, quantity: q } : x)))} />
                     <span className="w-20 pt-1.5 text-right text-xs tabular-nums text-neutral-500">฿{baht((f?.unit_cost ?? 0) * it.quantity)}</span>
                   </div>
@@ -420,6 +431,15 @@ function DraftColumn({ col, hiddenOnPhone, others, facts, dishOptions, dirty, pe
                     <button type="button" onClick={() => setSwapIndex(swapIndex === index ? null : index)} className={buttonClass("link", { size: "sm" })}>
                       {swapIndex === index ? "ยกเลิกเปลี่ยน" : "เปลี่ยน"}
                     </button>
+                    {typed && (
+                      // ผูกกับเมนูในระบบ: the cost follows the menu; the typed name still prints.
+                      <select value={it.linked_menu_id ?? ""} aria-label="ผูกกับเมนูในระบบ"
+                        onChange={(e) => setItems(col.items.map((x, i) => (i === index ? { ...x, linked_menu_id: e.target.value || null } : x)))}
+                        className="input-base max-w-40 py-0.5 text-xs">
+                        <option value="">ผูกกับเมนูในระบบ…</option>
+                        {dishOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    )}
                     {others.length > 0 && (
                       <>
                         <select value="" aria-label="คัดลอกไปชุดอื่น" onChange={(e) => e.target.value && onCopyTo(index, e.target.value)} className="input-base max-w-28 py-0.5 text-xs">
@@ -443,8 +463,16 @@ function DraftColumn({ col, hiddenOnPhone, others, facts, dishOptions, dirty, pe
 
       <div className="space-y-1">
         <input value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder={swapping ? `เปลี่ยน “${facts.get(swapping.menu_id)?.name ?? ""}” เป็น… (พิมพ์ชื่อ)` : "+ เพิ่มเมนู (พิมพ์ชื่อ)"}
+          placeholder={swapping ? `เปลี่ยน “${swapping.menu_id ? facts.get(swapping.menu_id)?.name ?? "" : swapping.dish_name ?? ""}” เป็น… (พิมพ์ชื่อ)` : "+ เพิ่มเมนู (พิมพ์ชื่อ)"}
           aria-label={swapping ? "ค้นหาเมนูที่จะเปลี่ยนเป็น" : "ค้นหาเมนูเพื่อเพิ่ม"} className="input-base block w-full text-sm" />
+        {/* + พิมพ์ชื่อเมนูเอง: a dish not in the menu list (Nik, 2026-09-25). */}
+        {!swapping && search.trim() !== "" && (
+          <button type="button" onClick={() => { setItems(addDish(col.items, typedDesignDish(search))); setSearch(""); }}
+            disabled={search.trim().length > 120}
+            className={buttonClass("secondary", { size: "sm" })}>
+            + พิมพ์ชื่อเมนูเอง: “{search.trim()}”
+          </button>
+        )}
         {matches.length > 0 && (
           <ul className="max-h-48 overflow-y-auto rounded-md border border-neutral-200 text-sm">
             {matches.map((d) => (

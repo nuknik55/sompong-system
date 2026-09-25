@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { CateringDishOption, EventMenuActionResult, EventMenuSource, EventMenuSources } from "../../actions";
-import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus } from "../../actions";
+import { getEventMenuSourceDishes, listEventMenuSources, saveEventMenus, saveTypedDishes } from "../../actions";
 import { fmtBaht, toNum, BookingStatusBadge, thDate } from "../../shared-utils";
 import { menuLineQuantityOk } from "../../booking-lines";
 import { markUnsaved } from "@/lib/unsaved-changes";
@@ -11,7 +11,8 @@ import {
   applySourceDishes, comparisonHeadline, comparisonText, COMPARISON_LABEL, dishLineTotalText, dishesTotalPerTable, draftDishes,
   draftFromLine, draftPrice, draftsEqual, foodCostFigure, lineFoodCost, newCustomLineDraft, setVsAlaCarte, swapPriceWarning,
   swapWarningText, toSavePayload, validateDrafts, removedLineIds, isSetNameTaken, newLineDraftFromSource,
-  EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST,
+  EVENT_MENU_SECTION_LABELS, EVENT_MENU_SECTION_LIST, isTypedDish, newTypedDish, typedCostWarning, typedDishNameError,
+  lineDraftsEqual, salesDraftError, typedDishesPayload, TYPED_DISH_MAX, dishKey,
   type DraftDish, type EventMenuSection, type EventMenuView, type LineDraft,
 } from "../../event-menu";
 import { buttonClass } from "@/components/ui/button";
@@ -53,6 +54,8 @@ export function EventMenuClient(props: {
   version: string;
   header: Header;
   tableCount: number | null;
+  /** The booking's จำนวนแขก: what a per-head custom set starts at. */
+  guestCount: number | null;
   view: EventMenuView;
   dishOptions: CateringDishOption[];
   quote: Quote;
@@ -64,13 +67,14 @@ export function EventMenuClient(props: {
 }
 
 function EventMenuEditor({
-  eventId, version, header, tableCount, view, dishOptions, quote, notice, onNotice,
+  eventId, version, header, tableCount, guestCount, view, dishOptions, quote, notice, onNotice,
 }: {
   eventId: string;
   version: string;
   header: Header;
   /** The booking's จำนวนโต๊ะ: what a set line copied into an empty booking starts at. */
   tableCount: number | null;
+  guestCount: number | null;
   view: EventMenuView;
   dishOptions: CateringDishOption[];
   quote: Quote;
@@ -99,8 +103,15 @@ function EventMenuEditor({
     setCreating(false);
   }
   const serverMoved = version !== seenVersion;
-  const problem = validateDrafts(drafts);
   const canEdit = view.canEdit;
+  // SALES MODE (Nik, 2026-09-25, Q1): typed dishes only. Every other control
+  // stays hidden; each changed line is checked to hold nothing else, and is
+  // saved by the typed-dish save, which the database limits the same way.
+  const typedOnly = !canEdit && view.canEditTyped;
+  const baseByKey = new Map(baseline.map((b) => [b.key, b]));
+  const changedLines = drafts.filter((d) => { const b = baseByKey.get(d.key); return !b || !lineDraftsEqual(b, d); });
+  const problem = validateDrafts(drafts)
+    ?? (typedOnly ? changedLines.map((d) => { const b = baseByKey.get(d.key); return b ? salesDraftError(d, b) : "แก้ได้เฉพาะเมนูที่พิมพ์เอง"; }).find((x) => x != null) ?? null : null);
   const pendingRemovals = drafts.filter((d) => d.removed).length;
 
   // ONE CHOOSER FOR THE WHOLE BOOKING (Nik, 2026-09-20). It used to live on a
@@ -161,7 +172,10 @@ function EventMenuEditor({
           // at 1. Either way it stays editable in the price box, which the
           // card says.
           const hasSets = drafts.some((d) => !d.removed);
-          const tables = !hasSets && tableCount != null && menuLineQuantityOk("set", tableCount) ? tableCount : 1;
+          // A per-head source counts guests: the booking's guest count when it is one.
+          const tables = got.perHead
+            ? (guestCount != null && menuLineQuantityOk("set", guestCount) ? guestCount : 1)
+            : !hasSets && tableCount != null && menuLineQuantityOk("set", tableCount) ? tableCount : 1;
           addLine(newLineDraftFromSource(makeKey(), got, tables, prov, () => crypto.randomUUID()));
         }
         setChooserFor(null);
@@ -229,7 +243,17 @@ function EventMenuEditor({
     setError(null);
     startTransition(async () => {
       try {
-        const res: EventMenuActionResult = await saveEventMenus(eventId, toSavePayload(drafts, baseline), removedLineIds(drafts));
+        let res: EventMenuActionResult = { status: "ok" };
+        if (typedOnly) {
+          // One line at a time, each its own transaction; the first refusal
+          // stops the rest and the refresh shows what landed.
+          for (const d of changedLines) {
+            res = await saveTypedDishes(eventId, d.eventMenuId as string, d.source === "copy" ? d.knownItemIds : [], typedDishesPayload(d));
+            if (res.status === "error") break;
+          }
+        } else {
+          res = await saveEventMenus(eventId, toSavePayload(drafts, baseline), removedLineIds(drafts));
+        }
         if (res.status === "error") {
           // The save may have half-landed: the edits go in one transaction,
           // the deletions after it. Fetch what the server actually holds so
@@ -266,8 +290,13 @@ function EventMenuEditor({
           🔒 ต้นทุนของงานนี้ถูกล็อกแล้ว — รายการอาหารและราคาต่อโต๊ะถูกตรึงไว้ แก้ไขไม่ได้จนกว่าจะปลดล็อกในหน้าต้นทุน-กำไร
         </div>
       )}
-      {!view.locked && !canEdit && (
+      {!view.locked && !canEdit && !typedOnly && (
         <p className="text-xs text-neutral-500">ดูได้อย่างเดียว — เจ้าของร้านและผู้จัดการเป็นผู้แก้ไขรายการอาหารของงาน</p>
+      )}
+      {typedOnly && (
+        <p className="text-xs text-neutral-500">
+          เพิ่ม แก้ หรือลบ <b>เมนูที่พิมพ์เอง</b> (เมนูที่ไม่มีในรายการเมนู) ได้ แล้วกด <b>บันทึก</b> — เมนูในระบบ ราคา และจำนวน เจ้าของร้านและผู้จัดการเป็นผู้แก้
+        </p>
       )}
       {canEdit && !view.locked && (
         // The one sentence a first-time user needs. Everything else on the
@@ -311,6 +340,7 @@ function EventMenuEditor({
           key={d.key}
           draft={d}
           canEdit={canEdit}
+          canEditTyped={canEdit || typedOnly}
           costById={view.dishCostById}
           dishOptions={dishOptions}
           isPending={busy}
@@ -342,7 +372,7 @@ function EventMenuEditor({
         </div>
       )}
       {canEdit && creating && (
-        <NewCustomSetForm existingNames={existingNames} isPending={busy} onAdd={addLine} onCancel={() => setCreating(false)} />
+        <NewCustomSetForm existingNames={existingNames} guestCount={guestCount} isPending={busy} onAdd={addLine} onCancel={() => setCreating(false)} />
       )}
       {canEdit && chooserFor && (
         <SourceChooser
@@ -365,7 +395,7 @@ function EventMenuEditor({
         </div>
       )}
 
-      {canEdit && (
+      {(canEdit || typedOnly) && (
         <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
           <p className={`text-sm ${problem ? "text-danger" : pendingRemovals > 0 ? "text-danger" : dirty ? "text-pending-ink" : "text-neutral-500"}`}>
             {problem
@@ -396,10 +426,12 @@ function EventMenuEditor({
 // ── One set line ─────────────────────────────────────────────────────────────
 
 function LineCard({
-  draft, canEdit, costById, dishOptions, isPending, onChange, onRemoveNew, onOpenChooser,
+  draft, canEdit, canEditTyped, costById, dishOptions, isPending, onChange, onRemoveNew, onOpenChooser,
 }: {
   draft: LineDraft;
   canEdit: boolean;
+  /** Typed dishes may be added, edited and removed (owner, admin; sales in its mode). */
+  canEditTyped: boolean;
   costById: EventMenuView["dishCostById"];
   dishOptions: CateringDishOption[];
   isPending: boolean;
@@ -416,6 +448,8 @@ function LineCard({
   const comparison = setVsAlaCarte(alaCarte, price);
   const cost = costById ? lineFoodCost(dishes, costById) : null;
   const legacy = draft.source === "shared" && !draft.materialize;
+  // A per-head line counts guests and prices per guest (Nik, 2026-09-25).
+  const unit = draft.perHead ? "ท่าน" : "โต๊ะ";
 
   function startEmpty() {
     if (draft.dishes.length > 0 && !window.confirm(CLEAR_MSG)) return;
@@ -430,8 +464,24 @@ function LineCard({
     setLocalError(null);
     onChange((d) => ({
       ...d, materialize: true,
-      dishes: [...d.dishes, { key: crypto.randomUUID(), menu_id: opt.id, menu_name: opt.name, selling_price: opt.selling_price, quantity: "1", section: "dish", note: null, source_set_menu_id: null, source_event_menu_id: null }],
+      dishes: [...d.dishes, { key: crypto.randomUUID(), menu_id: opt.id, dish_name: null, linked_menu_id: null, menu_name: opt.name, selling_price: opt.selling_price, quantity: "1", section: "dish", note: null, source_set_menu_id: null, source_event_menu_id: null }],
     }));
+  }
+  // + พิมพ์ชื่อเมนูเอง: a dish that is not in the menu list (Nik, 2026-09-25).
+  function addTyped(name: string): boolean {
+    const err = typedDishNameError(name);
+    if (err) { setLocalError(err); return false; }
+    if (draft.dishes.some((x) => dishKey(x) === dishKey({ menu_id: null, dish_name: name }))) { setLocalError(`${name.trim()} อยู่ในชุดนี้แล้ว`); return false; }
+    setLocalError(null);
+    onChange((d) => ({ ...d, materialize: true, dishes: [...d.dishes, newTypedDish(crypto.randomUUID(), name)] }));
+    return true;
+  }
+  function renameTyped(key: string, name: string) {
+    onChange((d) => ({ ...d, materialize: true, dishes: d.dishes.map((x) => (x.key === key ? { ...x, dish_name: name, menu_name: name } : x)) }));
+  }
+  // ผูกกับเมนูในระบบ (owner, admin): the cost follows the menu; the typed name still prints.
+  function linkTyped(key: string, menuId: string | null) {
+    onChange((d) => ({ ...d, materialize: true, dishes: d.dishes.map((x) => (x.key === key ? { ...x, linked_menu_id: menuId } : x)) }));
   }
   function swapDish(key: string, opt: CateringDishOption) {
     if (draft.dishes.some((x) => x.key !== key && x.menu_id === opt.id)) { setLocalError(`${opt.name} อยู่ในชุดนี้แล้ว`); return; }
@@ -500,8 +550,9 @@ function LineCard({
         <div className="min-w-0">
           <p className="font-medium text-neutral-900">{draft.name}</p>
           <p className="text-xs text-neutral-500 tabular-nums">
-            {fmtBaht(draft.tables)} โต๊ะ
-            {draft.eventMenuId == null && <span className="text-neutral-500"> · ตั้งจำนวนโต๊ะจริงในกล่องราคาของหน้าจองหลังบันทึก</span>}
+            {fmtBaht(draft.tables)} {unit}
+            {draft.perHead && <span className="text-neutral-500"> · คิดราคาต่อท่าน</span>}
+            {draft.eventMenuId == null && <span className="text-neutral-500"> · ตั้งจำนวน{draft.perHead ? "ท่าน" : "โต๊ะ"}จริงในกล่องราคาของหน้าจองหลังบันทึก</span>}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -521,7 +572,7 @@ function LineCard({
           </div>
           {canEdit ? (
             <label className="flex items-center gap-2 text-xs text-neutral-600">
-              ราคาต่อโต๊ะ
+              ราคาต่อ{unit}
               <input
                 type="text" inputMode="decimal" value={draft.price} disabled={isPending}
                 onChange={(e) => onChange((d) => ({ ...d, price: e.target.value.replace(/[^0-9.]/g, "") }))}
@@ -530,7 +581,7 @@ function LineCard({
               />
             </label>
           ) : (
-            <p className="text-sm text-neutral-700 tabular-nums">{price != null ? `฿${fmtBaht(price)} / โต๊ะ` : "ไม่มีราคาต่อโต๊ะ"}</p>
+            <p className="text-sm text-neutral-700 tabular-nums">{price != null ? `฿${fmtBaht(price)} / ${unit}` : `ไม่มีราคาต่อ${unit}`}</p>
           )}
         </div>
       </div>
@@ -570,22 +621,36 @@ function LineCard({
       <div className="px-4 py-3">
         {draft.dishes.length === 0 && (
           <p className="text-sm text-neutral-500">
-            {canEdit ? "ยังไม่มีรายการอาหารในชุดนี้ — เลือกเมนูด้านล่าง หรือคัดลอกจากชุดมาตรฐาน / การจองอื่น" : "ยังไม่มีรายการอาหารในชุดนี้"}
+            {canEdit ? "ยังไม่มีรายการอาหารในชุดนี้ — เลือกเมนูด้านล่าง พิมพ์ชื่อเมนูเอง หรือคัดลอกจากชุดมาตรฐาน / การจองอื่น"
+              : canEditTyped ? "ยังไม่มีรายการอาหารในชุดนี้ — พิมพ์ชื่อเมนูเองได้ด้านล่าง" : "ยังไม่มีรายการอาหารในชุดนี้"}
           </p>
         )}
+        {!canEdit && canEditTyped && localError && <p className="text-xs text-danger">{localError}</p>}
         <ul className="divide-y divide-neutral-100">
-          {draft.dishes.map((x, i) => (
-            <DishRow key={x.key} dish={x} index={i + 1} editable={canEdit} isPending={isPending} dishOptions={dishOptions}
-              onQuantity={(q) => setQuantity(x.key, q)} onSection={(s) => setSection(x.key, s)} onSwap={(opt) => swapDish(x.key, opt)} onRemove={() => removeDish(x.key)} />
-          ))}
+          {draft.dishes.map((x, i) => {
+            // Sales edits a typed dish only; owner and admin edit every row.
+            const editable = canEdit || (canEditTyped && isTypedDish(x));
+            return (
+              <DishRow key={x.key} dish={x} index={i + 1} editable={editable} canLink={canEdit} canSwap={canEdit} perHead={draft.perHead} isPending={isPending} dishOptions={dishOptions}
+                onQuantity={(q) => setQuantity(x.key, q)} onSection={(s) => setSection(x.key, s)} onSwap={(opt) => swapDish(x.key, opt)} onRemove={() => removeDish(x.key)}
+                onRename={(n) => renameTyped(x.key, n)} onLink={(id) => linkTyped(x.key, id)} />
+            );
+          })}
         </ul>
         {canEdit && <AddDishRow isPending={isPending} dishOptions={dishOptions} onAdd={addDish} />}
+        {canEditTyped && <AddTypedRow isPending={isPending} onAdd={addTyped} />}
       </div>
 
       {/* Figures, live from the draft. The à-la-carte total and the comparison
           are customer-price facts and show for every reader; the cost block
           renders only when the view carried the cost map, which it does for
           owner and admin alone. */}
+      {draft.perHead ? (
+        <div className="border-t border-neutral-100 px-4 py-3 text-xs text-neutral-500">
+          ชุดคิดราคาต่อท่าน — ยังเทียบกับราคาสั่งแยกจานไม่ได้ เพราะจำนวนในแต่ละรายการเป็นต่อชุด ไม่ใช่ต่อท่าน
+          {cost && <span className="text-pending-ink"> · ต้นทุนต่อท่านยังคำนวณไม่ได้ (ยังไม่มีจำนวนต่อท่าน) หน้าต้นทุน-กำไรจะแจ้งไว้</span>}
+        </div>
+      ) : (
       <div className="grid gap-3 border-t border-neutral-100 px-4 py-3 sm:grid-cols-3">
         <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm">
           <p className="text-xs text-neutral-500">ราคาสั่งแยกจานรวม / โต๊ะ</p>
@@ -598,6 +663,9 @@ function LineCard({
             {comparisonHeadline(comparison)}
           </p>
           <p className="mt-0.5 text-xs text-neutral-500">{comparisonText(comparison)}</p>
+          {dishes.some((x) => isTypedDish(x)) && (
+            <p className="mt-0.5 text-xs text-pending-ink">⚠ ไม่รวมเมนูที่พิมพ์เอง {dishes.filter((x) => isTypedDish(x)).length} รายการ (ไม่มีราคาเมนู) — การเทียบยังไม่ครบ</p>
+          )}
         </div>
         {cost && (
           <div className="rounded-lg border border-pending/60 bg-pending-soft/60 px-3 py-2 text-sm">
@@ -606,10 +674,13 @@ function LineCard({
               ฿{fmtBaht(cost.costPerTable)} / โต๊ะ
               {foodCostFigure(cost.costPerTable, price).pct != null && <> · {foodCostFigure(cost.costPerTable, price).pct!.toFixed(2)}% ของราคาชุด</>}
             </p>
+            {dishes.length === 0 && <p className="mt-0.5 text-xs text-pending-ink">⚠ ชุดนี้ยังไม่มีรายการอาหาร — คิดต้นทุนไม่ได้</p>}
             {cost.hasUnknownCost && <p className="mt-0.5 text-xs text-pending-ink">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขอาจต่ำกว่าความจริง</p>}
+            {typedCostWarning(cost.typedWithoutCost) && <p className="mt-0.5 text-xs text-pending-ink">⚠ {typedCostWarning(cost.typedWithoutCost)}</p>}
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -670,7 +741,7 @@ function SourceChooser({
               <button type="button" disabled={loading} onClick={() => onPick({ kind: "set", setMenuId: s.id })}
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-neutral-50 disabled:opacity-50">
                 <span className="text-neutral-800">{s.name}</span>
-                <span className="text-xs text-neutral-500 tabular-nums">฿{fmtBaht(s.price_per_set)} · {s.dish_count} รายการ</span>
+                <span className="text-xs text-neutral-500 tabular-nums">฿{fmtBaht(s.price_per_set)}{s.per_head ? " / ท่าน" : ""} · {s.dish_count} รายการ</span>
               </button>
             </li>
           ))}
@@ -693,7 +764,7 @@ function SourceChooser({
                   {b.lines.map((l) => (
                     <button key={l.id} type="button" disabled={loading} onClick={() => onPick({ kind: "line", eventId: b.id, eventMenuId: l.id })}
                       className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50">
-                      {l.name} · {fmtBaht(l.tables)} โต๊ะ
+                      {l.name} · {fmtBaht(l.tables)} {l.perHead ? "ท่าน" : "โต๊ะ"}
                     </button>
                   ))}
                 </div>
@@ -709,18 +780,30 @@ function SourceChooser({
 // ── A course ─────────────────────────────────────────────────────────────────
 
 function DishRow({
-  dish, index, editable, isPending, dishOptions, onQuantity, onSection, onSwap, onRemove,
+  dish, index, editable, canLink, canSwap, perHead = false, isPending, dishOptions, onQuantity, onSection, onSwap, onRemove, onRename, onLink,
 }: {
   dish: DraftDish;
+  /** On a per-head line: its dishes' counts are per set, never "per table". */
+  perHead?: boolean;
   index: number;
   editable: boolean;
+  /** Owner and admin: link a typed dish to a real menu for its cost. */
+  canLink: boolean;
+  /** Owner and admin: swap a menu dish for another. */
+  canSwap: boolean;
   isPending: boolean;
   dishOptions: CateringDishOption[];
   onQuantity: (q: string) => void;
   onSection: (section: string) => void;
   onSwap: (opt: CateringDishOption) => void;
   onRemove: () => void;
+  onRename: (name: string) => void;
+  onLink: (menuId: string | null) => void;
 }) {
+  const typed = isTypedDish(dish);
+  const [linking, setLinking] = useState(false);
+  const [linkPick, setLinkPick] = useState("");
+  const linkedName = typed && dish.linked_menu_id ? dishOptions.find((d) => d.id === dish.linked_menu_id)?.name ?? "เมนูที่ไม่พบในระบบแล้ว" : null;
   const [swapping, setSwapping] = useState(false);
   const [pick, setPick] = useState("");
   const picked = dishOptions.find((d) => d.id === pick);
@@ -732,7 +815,14 @@ function DishRow({
     <li className="py-1.5 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-5 text-right text-xs text-neutral-500 tabular-nums">{index}.</span>
-        <span className="flex-1 text-neutral-800">{dish.menu_name}</span>
+        {typed && editable ? (
+          <input type="text" value={dish.dish_name ?? ""} maxLength={TYPED_DISH_MAX} disabled={isPending}
+            onChange={(e) => onRename(e.target.value)} aria-label="ชื่อเมนูที่พิมพ์เอง"
+            className={`min-w-[8rem] flex-1 rounded border px-1.5 py-0.5 text-sm ${typedDishNameError(dish.dish_name ?? "") ? "border-danger/40" : "border-neutral-300"}`} />
+        ) : (
+          <span className="flex-1 text-neutral-800">{dish.menu_name}</span>
+        )}
+        {typed && <span className="rounded bg-info-soft px-1.5 py-0.5 text-[10px] text-info" title="เมนูที่ไม่มีในรายการเมนู พิมพ์ชื่อเอง">พิมพ์เอง</span>}
         {/* The group this course prints under on the kitchen sheet, the
             function sheet and the quotation. NOT a grouping of this screen
             (A2): the list stays flat and in the order courses were added —
@@ -755,14 +845,17 @@ function DishRow({
           )
         )}
         {/* B7: the row's own arithmetic — "฿250.00 × 5 = ฿1,250.00" — so the rows add up to the total below them. */}
-        <span className="text-xs text-neutral-600 tabular-nums">{figure.quantity > 0 ? dishLineTotalText(figure) : `฿${fmtBaht(dish.selling_price)} × ?`}</span>
+        {/* A typed dish has no selling price: no figure to show. */}
+        {typed
+          ? <span className="text-xs text-neutral-500">ไม่มีราคาเมนู</span>
+          : <span className="text-xs text-neutral-600 tabular-nums">{figure.quantity > 0 ? dishLineTotalText(figure) : `฿${fmtBaht(dish.selling_price)} × ?`}</span>}
         {editable ? (
           <label className="flex items-center gap-1 text-xs text-neutral-500">
             <span>× </span>
             <input
               type="text" inputMode="decimal" value={dish.quantity} disabled={isPending}
               onChange={(e) => onQuantity(e.target.value.replace(/[^0-9.]/g, ""))}
-              title="จำนวนต่อโต๊ะ"
+              title={perHead ? "จำนวนต่อชุด" : "จำนวนต่อโต๊ะ"}
               className={`w-12 rounded border px-1.5 py-0.5 text-right text-xs tabular-nums ${qty != null && qty > 0 ? "border-neutral-300" : "border-danger/40"}`}
             />
           </label>
@@ -771,10 +864,18 @@ function DishRow({
         )}
         {editable && (
           <>
+            {canSwap && !typed && (
             <button type="button" disabled={isPending} onClick={() => { setSwapping((s) => !s); setPick(""); }}
               className={buttonClass("secondary", { size: "sm" })}>
               {swapping ? "ยกเลิก" : "เปลี่ยนเมนู"}
             </button>
+            )}
+            {canLink && typed && (
+              <button type="button" disabled={isPending} onClick={() => { setLinking((s) => !s); setLinkPick(""); }}
+                className={buttonClass("secondary", { size: "sm" })} title="ใช้ต้นทุนของเมนูในระบบ ชื่อที่พิมพ์ยังคงพิมพ์ในเอกสาร">
+                {linking ? "ยกเลิก" : "ผูกกับเมนูในระบบ"}
+              </button>
+            )}
             <button type="button" disabled={isPending} onClick={onRemove}
               className={buttonClass("secondary", { size: "sm" })}>
               ลบ
@@ -783,6 +884,23 @@ function DishRow({
         )}
       </div>
       {dish.note && <p className="ml-7 text-xs text-neutral-500">{dish.note}</p>}
+      {canLink && linkedName && (
+        <p className="ml-7 text-xs text-neutral-500">
+          ต้นทุนตาม: {linkedName}
+          {editable && <button type="button" disabled={isPending} onClick={() => onLink(null)} className={buttonClass("link", { size: "sm", className: "ml-1" })}>เลิกผูก</button>}
+        </p>
+      )}
+      {canLink && typed && !linkedName && <p className="ml-7 text-xs text-pending-ink">ยังไม่มีต้นทุน — ผูกกับเมนูในระบบเพื่อให้คิดต้นทุนได้</p>}
+      {linking && (
+        <div className="ml-7 mt-1.5 flex flex-wrap items-center gap-2">
+          <DishSelect value={linkPick} onChange={setLinkPick} dishOptions={dishOptions} placeholder="เลือกเมนูที่จะใช้ต้นทุน…" />
+          <button type="button" disabled={isPending || !linkPick}
+            onClick={() => { onLink(linkPick); setLinking(false); setLinkPick(""); }}
+            className={buttonClass("primary", { size: "sm" })}>
+            ผูก
+          </button>
+        </div>
+      )}
       {swapping && (
         <div className="ml-7 mt-1.5 space-y-1.5">
           <DishSelect value={pick} onChange={setPick} dishOptions={dishOptions} placeholder="เลือกเมนูที่จะใช้แทน…" />
@@ -823,6 +941,24 @@ function AddDishRow({ isPending, dishOptions, onAdd }: { isPending: boolean; dis
   );
 }
 
+/** + พิมพ์ชื่อเมนูเอง: a dish that is not in the menu list, typed by name. */
+function AddTypedRow({ isPending, onAdd }: { isPending: boolean; onAdd: (name: string) => boolean }) {
+  const [name, setName] = useState("");
+  const submit = () => { if (onAdd(name)) setName(""); };
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <input type="text" value={name} maxLength={TYPED_DISH_MAX} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
+        placeholder="ชื่อเมนูที่ไม่มีในรายการ เช่น ห่อหมกปลากะพง"
+        className="max-w-xs flex-1 rounded border border-neutral-300 px-2 py-1 text-xs" />
+      <button type="button" disabled={isPending || name.trim() === ""} onClick={submit}
+        className={buttonClass("secondary", { size: "sm" })}>
+        + พิมพ์ชื่อเมนูเอง
+      </button>
+    </div>
+  );
+}
+
 /** A native select grouped by category — the dish list is a few hundred rows, and sales-safe (name and customer price only). */
 function DishSelect({ value, onChange, dishOptions, placeholder }: { value: string; onChange: (v: string) => void; dishOptions: CateringDishOption[]; placeholder: string }) {
   const groups = new Map<string, CateringDishOption[]>();
@@ -845,9 +981,11 @@ function DishSelect({ value, onChange, dishOptions, placeholder }: { value: stri
 
 // ── สร้างชุดเมนูเอง: a name and a price; one table until the price box says otherwise ──
 
-function NewCustomSetForm({ existingNames, isPending, onAdd, onCancel }: { existingNames: string[]; isPending: boolean; onAdd: (d: LineDraft) => void; onCancel: () => void }) {
+function NewCustomSetForm({ existingNames, guestCount, isPending, onAdd, onCancel }: { existingNames: string[]; guestCount: number | null; isPending: boolean; onAdd: (d: LineDraft) => void; onCancel: () => void }) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  // Per head (Nik, 2026-09-25): price per guest × guests, starting at the booking's guest count.
+  const [perHead, setPerHead] = useState(false);
   const priceN = toNum(price);
   // A5: the same refusal the save applies, shown before the button is pressed.
   const taken = existingNames.some((n) => n.trim().toLocaleLowerCase("th") === name.trim().toLocaleLowerCase("th")) && name.trim() !== "";
@@ -855,17 +993,23 @@ function NewCustomSetForm({ existingNames, isPending, onAdd, onCancel }: { exist
   return (
     <div className="space-y-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
       <p className="text-sm font-medium text-neutral-800">สร้างชุดเมนูเอง</p>
-      <p className="text-xs text-neutral-500">ตั้งชื่อและราคาต่อโต๊ะ ชุดจะเพิ่มเป็นการ์ดใหม่ว่างๆ ด้านบน — เลือกเมนูเอง หรือคัดลอกจากชุดมาตรฐาน/การจองอื่น แล้วกดบันทึก จำนวนโต๊ะเริ่มที่ 1 ตั้งจำนวนจริงในกล่องราคาของหน้าจอง</p>
+      <p className="text-xs text-neutral-500">{perHead
+        ? "ตั้งชื่อและราคาต่อท่าน ชุดจะเพิ่มเป็นการ์ดใหม่ว่างๆ ด้านบน — เลือกเมนูเอง พิมพ์ชื่อเมนูเอง หรือคัดลอกจากชุดมาตรฐาน/การจองอื่น แล้วกดบันทึก จำนวนท่านเริ่มตามจำนวนแขกของหน้าจอง แก้ได้ในกล่องราคาของหน้าจอง"
+        : "ตั้งชื่อและราคาต่อโต๊ะ ชุดจะเพิ่มเป็นการ์ดใหม่ว่างๆ ด้านบน — เลือกเมนูเอง หรือคัดลอกจากชุดมาตรฐาน/การจองอื่น แล้วกดบันทึก จำนวนโต๊ะเริ่มที่ 1 ตั้งจำนวนจริงในกล่องราคาของหน้าจอง"}</p>
       <div className="flex flex-wrap gap-2 text-sm">
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อชุด เช่น ชุดเจ 3,500"
           className={`min-w-[12rem] flex-1 rounded border px-2 py-1 ${taken ? "border-danger/40" : "border-neutral-300"}`} />
-        <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="ราคา/โต๊ะ"
+        <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={perHead ? "ราคา/ท่าน" : "ราคา/โต๊ะ"}
           className="w-28 rounded border border-neutral-300 px-2 py-1 text-right tabular-nums" />
       </div>
+      <label className="flex items-center gap-2 text-xs text-neutral-700">
+        <input type="checkbox" checked={perHead} onChange={(e) => setPerHead(e.target.checked)} />
+        คิดราคาต่อท่าน (เช่น บุฟเฟต์) — ราคาต่อท่าน × จำนวนแขก{guestCount ? ` (เริ่มที่ ${guestCount} ท่านตามหน้าจอง)` : ""}
+      </label>
       {taken && <p className="text-xs text-danger">มีชุดชื่อ “{name.trim()}” อยู่ในงานนี้แล้ว — ตั้งชื่อชุดใหม่ให้ต่างกัน</p>}
       <div className="flex gap-2">
         <button type="button" disabled={isPending || !valid}
-          onClick={() => onAdd(newCustomLineDraft(`new-${crypto.randomUUID()}`, name, priceN!))}
+          onClick={() => onAdd(newCustomLineDraft(`new-${crypto.randomUUID()}`, name, priceN!, perHead, guestCount ?? 1))}
           className={buttonClass("primary", { size: "sm" })}>
           เพิ่มชุด
         </button>

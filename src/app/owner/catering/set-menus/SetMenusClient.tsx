@@ -8,7 +8,7 @@ import {
 } from "../actions";
 import type { CateringSetMenu } from "../actions";
 import { fmtBaht, toNum, SET_MENU_SECTIONS } from "../shared-utils";
-import { comparisonHeadline, comparisonText, COMPARISON_LABEL, setVsAlaCarte } from "../event-menu";
+import { comparisonHeadline, comparisonText, COMPARISON_LABEL, setVsAlaCarte, dishKey, typedDishNameError, typedCostWarning, TYPED_DISH_MAX } from "../event-menu";
 import { menuLineQuantityError } from "../booking-lines";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
@@ -26,7 +26,12 @@ export type DishCostOption = {
 
 type SetMenuItemRow = {
   _key: string;
-  menu_id: string;
+  /** A menu dish's id; null for a TYPED dish (not in the menu list). */
+  menu_id: string | null;
+  /** A typed dish's name; null for a menu dish. */
+  dish_name: string | null;
+  /** A typed dish linked to a real menu for its cost (the typed name still prints). */
+  linked_menu_id: string | null;
   menu_name: string;
   quantity: string;
   note: string;
@@ -39,12 +44,17 @@ type SetMenuForm = {
   description: string;
   price_per_set: string;
   serves_guests: string;
+  /** Priced per guest (Nik, 2026-09-25): a booking line takes it when made. */
+  per_head: boolean;
   items: SetMenuItemRow[];
 };
 
 function blankForm(): SetMenuForm {
-  return { name: "", description: "", price_per_set: "", serves_guests: "", items: [] };
+  return { name: "", description: "", price_per_set: "", serves_guests: "", per_head: false, items: [] };
 }
+
+/** The menu a row's cost comes from: its own, or a typed dish's link. */
+const costId = (it: SetMenuItemRow) => it.menu_id ?? it.linked_menu_id;
 
 const ALL_CATEGORY = "ทั้งหมด";
 const UNCATEGORIZED = "ไม่มีหมวด";
@@ -222,9 +232,12 @@ export function SetMenusClient({
             description: sm.description ?? "",
             price_per_set: sm.price_per_set.toString(),
             serves_guests: sm.serves_guests?.toString() ?? "",
+            per_head: sm.per_head,
             items: items.map((it) => ({
               _key: it.id,
               menu_id: it.menu_id,
+              dish_name: it.dish_name,
+              linked_menu_id: it.linked_menu_id,
               menu_name: it.menu_name,
               quantity: it.quantity.toString(),
               note: it.note ?? "",
@@ -250,9 +263,22 @@ export function SetMenusClient({
         ? m.form.items.map((it) =>
             it.menu_id === dish.id ? { ...it, quantity: ((toNum(it.quantity) ?? 0) + quantity).toString() } : it,
           )
-        : [...m.form.items, { _key: crypto.randomUUID(), menu_id: dish.id, menu_name: dish.name, quantity: quantity.toString(), note: "", section: "dish" }];
+        : [...m.form.items, { _key: crypto.randomUUID(), menu_id: dish.id, dish_name: null, linked_menu_id: null, menu_name: dish.name, quantity: quantity.toString(), note: "", section: "dish" }];
       return { ...m, form: { ...m.form, items } };
     });
+  }
+
+  // + พิมพ์ชื่อเมนูเอง (Nik, 2026-09-25): a dish that is not in the menu list.
+  const [typedName, setTypedName] = useState("");
+  function addTyped() {
+    const err = typedDishNameError(typedName);
+    if (err) { setError(err); return; }
+    const k = dishKey({ menu_id: null, dish_name: typedName });
+    if ((modal?.form.items ?? []).some((it) => dishKey(it) === k)) { setError(`${typedName.trim()} อยู่ในชุดนี้แล้ว`); return; }
+    setError(null);
+    const name = typedName.trim();
+    setForm({ items: [...(modal?.form.items ?? []), { _key: crypto.randomUUID(), menu_id: null, dish_name: name, linked_menu_id: null, menu_name: name, quantity: "1", note: "", section: "dish" }] });
+    setTypedName("");
   }
 
   function updateItem(key: string, patch: Partial<SetMenuItemRow>) {
@@ -275,10 +301,17 @@ export function SetMenusClient({
     // Every booking that picks this set copies these portions, and the sheets
     // print them at three decimals: the dish rule (booking-lines.ts). A 0 used
     // to save here and then fail every booking's copy of the set.
+    const seen = new Set<string>();
     for (const it of f.items) {
-      if (!it.menu_id) continue;
+      if (it.menu_id == null) {
+        const nameError = typedDishNameError(it.dish_name ?? "");
+        if (nameError) { setError(nameError); return; }
+      }
       const qtyError = menuLineQuantityError("dish", toNum(it.quantity));
       if (qtyError) { setError(`${it.menu_name}: จำนวนต่อชุด — ${qtyError}`); return; }
+      const k = dishKey(it);
+      if (seen.has(k)) { setError(`${it.menu_name} อยู่ในชุดนี้ซ้ำกัน`); return; }
+      seen.add(k);
     }
     setError(null);
     startTransition(async () => {
@@ -289,9 +322,13 @@ export function SetMenusClient({
           description: f.description || null,
           price_per_set: toNum(f.price_per_set) ?? 0,
           serves_guests: toNum(f.serves_guests),
-          items: f.items
-            .filter((it) => it.menu_id)
-            .map((it) => ({ menu_id: it.menu_id, quantity: toNum(it.quantity) ?? 1, note: it.note || null, section: it.section })),
+          per_head: f.per_head,
+          items: f.items.map((it) => ({
+            menu_id: it.menu_id,
+            dish_name: it.menu_id == null ? (it.dish_name ?? "").trim() : null,
+            linked_menu_id: it.menu_id == null ? it.linked_menu_id : null,
+            quantity: toNum(it.quantity) ?? 1, note: it.note || null, section: it.section,
+          })),
         });
         setModal(null);
         router.refresh();
@@ -333,9 +370,12 @@ export function SetMenusClient({
   // already carries each dish's computeMenuCost() result from the server.
   const items = modal?.form.items ?? [];
   const totalCost = items.reduce((s, it) => {
-    const dish = dishById.get(it.menu_id);
+    const id = costId(it);
+    const dish = id ? dishById.get(id) : undefined;
     return s + (dish ? dish.unit_cost * (toNum(it.quantity) ?? 0) : 0);
   }, 0);
+  // Typed dishes with no link have no cost: counted, and the figure is marked incomplete.
+  const typedWithoutCost = items.filter((it) => it.menu_id == null && !it.linked_menu_id).length;
   const pricePerSet = toNum(modal?.form.price_per_set ?? "") ?? 0;
   const foodCostPct = pricePerSet > 0 ? (totalCost / pricePerSet) * 100 : null;
   const profit = pricePerSet - totalCost;
@@ -345,12 +385,17 @@ export function SetMenusClient({
   // against that — above or below, and by how much. Selling prices, not cost
   // — but this screen is admin-only anyway, so the block may sit beside the
   // cost summary.
+  // A typed dish has no selling price: it adds nothing here (a linked one's
+  // link is for cost only, never a price).
   const dishesTotal = items.reduce((s, it) => {
-    const dish = dishById.get(it.menu_id);
+    const dish = it.menu_id ? dishById.get(it.menu_id) : undefined;
     return s + (dish ? dish.selling_price * (toNum(it.quantity) ?? 0) : 0);
   }, 0);
   const comparison = setVsAlaCarte(dishesTotal, pricePerSet > 0 ? pricePerSet : null);
-  const hasUnknownCost = items.some((it) => dishById.get(it.menu_id)?.has_unknown_cost);
+  // A link to a menu no longer in the list costs nothing known either.
+  const hasUnknownCost = typedWithoutCost > 0 || items.some((it) => { const id = costId(it); return id ? (dishById.get(id)?.has_unknown_cost ?? true) : false; });
+  const typedCount = items.filter((it) => it.menu_id == null).length;
+  const perHead = modal?.form.per_head === true;
 
   const realSets = setMenus.filter((sm) => !sm.is_draft);
   const draftSets = setMenus.filter((sm) => sm.is_draft);
@@ -380,7 +425,7 @@ export function SetMenusClient({
                 })}
               </div>
             </div>
-            <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(sm.price_per_set)}</span>
+            <span className="text-sm tabular-nums text-neutral-700">฿{fmtBaht(sm.price_per_set)}{sm.per_head ? " / ท่าน" : ""}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => openEdit(sm)} className={buttonClass("link", { size: "sm" })}>แก้ไข</button>
               {!sm.is_draft && (
@@ -455,11 +500,19 @@ export function SetMenusClient({
                   <input className="input-base" value={modal.form.name} onChange={(e) => setForm({ name: e.target.value })} />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">รายละเอียด</label>
+                  {/* Printed on no document (Nik, 2026-09-25, Q6): dishes go in
+                      the list below, typed by name when not in the menu list. */}
+                  <label className="mb-1 block text-xs font-medium text-neutral-600">โน้ตภายใน (ไม่พิมพ์ในเอกสาร)</label>
                   <textarea className="input-base h-16 resize-none" value={modal.form.description} onChange={(e) => setForm({ description: e.target.value })} />
                 </div>
+                <div className="col-span-2">
+                  <label className="flex items-center gap-2 text-xs text-neutral-700">
+                    <input type="checkbox" checked={modal.form.per_head} onChange={(e) => setForm({ per_head: e.target.checked })} />
+                    คิดราคาต่อท่าน (เช่น บุฟเฟต์) — ราคาต่อท่าน × จำนวนแขก งานที่เพิ่มชุดนี้หลังบันทึกจะคิดแบบนี้ งานที่มีอยู่แล้วไม่เปลี่ยน
+                  </label>
+                </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">ราคาต่อชุด (บาท) *</label>
+                  <label className="mb-1 block text-xs font-medium text-neutral-600">{modal.form.per_head ? "ราคาต่อท่าน (บาท) *" : "ราคาต่อชุด (บาท) *"}</label>
                   <input type="number" min={0} className="input-base" value={modal.form.price_per_set} onChange={(e) => setForm({ price_per_set: e.target.value })} />
                 </div>
                 <div>
@@ -471,7 +524,15 @@ export function SetMenusClient({
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <label className="text-xs font-medium text-neutral-600">เมนูในชุด</label>
-                  <DishPicker dishes={dishOptions} excludeIds={new Set(items.map((it) => it.menu_id))} onAdd={addDish} />
+                  <DishPicker dishes={dishOptions} excludeIds={new Set(items.flatMap((it) => (it.menu_id ? [it.menu_id] : [])))} onAdd={addDish} />
+                </div>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <input className="input-base max-w-xs flex-1" value={typedName} maxLength={TYPED_DISH_MAX}
+                    onChange={(e) => setTypedName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTyped(); } }}
+                    placeholder="เมนูที่ไม่มีในรายการ พิมพ์ชื่อที่นี่" />
+                  <button type="button" onClick={addTyped} disabled={typedName.trim() === ""} className={buttonClass("secondary", { size: "sm" })}>
+                    + พิมพ์ชื่อเมนูเอง
+                  </button>
                 </div>
                 {items.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-500">ยังไม่มีเมนูในชุดนี้</p>
@@ -498,13 +559,27 @@ export function SetMenusClient({
                       </thead>
                       <tbody>
                         {items.map((it) => {
-                          const dish = dishById.get(it.menu_id);
+                          const id = costId(it);
+                          const dish = id ? dishById.get(id) : undefined;
                           const lineCost = (dish?.unit_cost ?? 0) * (toNum(it.quantity) ?? 0);
+                          const typed = it.menu_id == null;
                           return (
                             <tr key={it._key} className="border-b border-neutral-100 last:border-0">
                               <td className="px-2 py-1.5 text-neutral-800">
-                                {it.menu_name}
-                                {dish?.has_unknown_cost && <span className="ml-1 text-pending-ink" title="ต้นทุนไม่ทราบแน่ชัด">⚠</span>}
+                                {typed ? (
+                                  <div className="space-y-1">
+                                    <input className="input-base" value={it.dish_name ?? ""} maxLength={TYPED_DISH_MAX} aria-label="ชื่อเมนูที่พิมพ์เอง"
+                                      onChange={(e) => updateItem(it._key, { dish_name: e.target.value, menu_name: e.target.value })} />
+                                    {/* ผูกกับเมนูในระบบ: the cost follows the menu; the typed name still prints. */}
+                                    <select className="input-base text-xs" value={it.linked_menu_id ?? ""} aria-label="ผูกกับเมนูในระบบ"
+                                      onChange={(e) => updateItem(it._key, { linked_menu_id: e.target.value || null })}>
+                                      <option value="">ผูกกับเมนูในระบบ… (ยังไม่มีต้นทุน)</option>
+                                      {dishOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                    </select>
+                                  </div>
+                                ) : it.menu_name}
+                                {typed && <span className="ml-1 rounded bg-info-soft px-1 text-[10px] text-info">พิมพ์เอง</span>}
+                                {(dish?.has_unknown_cost || (typed && !it.linked_menu_id)) && <span className="ml-1 text-pending-ink" title="ต้นทุนไม่ทราบแน่ชัด">⚠</span>}
                               </td>
                               {/* Which group this row prints under on the three
                                   documents. Defaults to รายการอาหาร, so an
@@ -544,6 +619,13 @@ export function SetMenusClient({
                 )}
               </div>
 
+              {perHead ? (
+                // A per-head set's price is per guest; its dishes are per set.
+                // A per-set comparison or margin against it would be invented.
+                <p className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+                  ชุดคิดราคาต่อท่าน — ยังเทียบราคาชุดกับราคาสั่งแยกจาน และคิดต้นทุนหรือกำไรต่อท่านไม่ได้ เพราะจำนวนในแต่ละรายการเป็นต่อชุด ไม่ใช่ต่อท่าน
+                </p>
+              ) : (<>
               <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
                 <p className="mb-1 text-xs font-medium text-neutral-600">{COMPARISON_LABEL}</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -559,6 +641,7 @@ export function SetMenusClient({
                   </div>
                 </div>
                 <p className="mt-1 text-xs text-neutral-500">{comparisonText(comparison)}</p>
+                {typedCount > 0 && <p className="mt-1 text-xs text-pending-ink">⚠ ไม่รวมเมนูที่พิมพ์เอง {typedCount} รายการ (ไม่มีราคาเมนู) — การเทียบนี้ยังไม่ครบ</p>}
               </div>
 
               {/* Cost and margin — this screen and the per-event menu page (owner/admin) are the places in the catering module that show them; see the comment in page.tsx. */}
@@ -581,7 +664,10 @@ export function SetMenusClient({
                 {hasUnknownCost && (
                   <p className="mt-2 text-xs text-pending-ink">⚠ มีเมนูที่ยังไม่ทราบต้นทุนแน่ชัด ตัวเลขด้านบนอาจต่ำกว่าความจริง</p>
                 )}
+                {typedCostWarning(typedWithoutCost) && <p className="mt-1 text-xs text-pending-ink">⚠ {typedCostWarning(typedWithoutCost)}</p>}
+                {items.length === 0 && <p className="mt-1 text-xs text-pending-ink">⚠ ชุดนี้ยังไม่มีรายการอาหาร — คิดต้นทุนไม่ได้</p>}
               </div>
+              </>)}
 
               {error && <p className="text-sm text-danger">{error}</p>}
             </div>

@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { DESIGN_PRICE_MAX, type DesignDish } from "@/lib/set-design";
+import { DESIGN_PRICE_MAX, designDishKey, type DesignDish } from "@/lib/set-design";
 import { menuLineQuantityError } from "../../booking-lines";
-import { EVENT_MENU_SECTIONS } from "../../menu-lines";
+import { EVENT_MENU_SECTIONS, typedDishNameError } from "../../menu-lines";
 
 // THE SET-MENU DESIGN WORKSPACE's writes (Nik, 2026-09-24). Owner and admin
 // only (requireAdmin; the database's set-menu write policies admit the same
@@ -37,10 +37,18 @@ const NOTE_MAX = 300;
 function itemsProblem(items: unknown): string | null {
   if (!Array.isArray(items) || items.length > 60) return "รายการอาหารไม่ถูกต้อง";
   const seen = new Set<string>();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   for (const it of items as DesignDish[]) {
-    if (!it || typeof it.menu_id !== "string" || !/^[0-9a-f-]{36}$/i.test(it.menu_id)) return "รายการอาหารไม่ถูกต้อง";
-    if (seen.has(it.menu_id)) return "มีเมนูเดียวกันซ้ำในชุด";
-    seen.add(it.menu_id);
+    if (!it || typeof it !== "object") return "รายการอาหารไม่ถูกต้อง";
+    // A menu dish OR a typed name; a link only on a typed one (the database checks the same).
+    const menu = typeof it.menu_id === "string" && uuid.test(it.menu_id);
+    const typed = it.menu_id == null && typeof it.dish_name === "string";
+    if (!(menu && it.dish_name == null && it.linked_menu_id == null) && !typed) return "รายการอาหารไม่ถูกต้อง";
+    if (typed && typedDishNameError(it.dish_name as string)) return typedDishNameError(it.dish_name as string);
+    if (typed && it.linked_menu_id != null && !(typeof it.linked_menu_id === "string" && uuid.test(it.linked_menu_id))) return "รายการอาหารไม่ถูกต้อง";
+    const k = designDishKey(it);
+    if (seen.has(k)) return "มีเมนูเดียวกันซ้ำในชุด";
+    seen.add(k);
     if (typeof it.quantity !== "number") return "จำนวนต่อชุดไม่ถูกต้อง";
     const q = menuLineQuantityError("dish", it.quantity);
     if (q) return `จำนวนต่อชุดไม่ถูกต้อง: ${q}`;
@@ -64,7 +72,12 @@ function refusal(error: { message: string; hint?: string | null }): DesignResult
 }
 
 const itemsForDb = (items: DesignDish[]) =>
-  items.map((it) => ({ menu_id: it.menu_id, quantity: it.quantity, section: it.section, note: it.note?.trim() || null }));
+  items.map((it) => ({
+    menu_id: it.menu_id,
+    dish_name: it.menu_id == null ? (it.dish_name ?? "").trim() : null,
+    linked_menu_id: it.menu_id == null ? it.linked_menu_id ?? null : null,
+    quantity: it.quantity, section: it.section, note: it.note?.trim() || null,
+  }));
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -95,11 +108,14 @@ export async function createDraft(
   } else {
     const { data, error } = await supabase
       .from("catering_set_menus")
-      .select("name, price_per_set, description, serves_guests, is_draft, catering_set_menu_items(menu_id, quantity, section, note, sort_order)")
+      .select("name, price_per_set, description, serves_guests, is_draft, per_head, catering_set_menu_items(menu_id, dish_name, linked_menu_id, quantity, section, note, sort_order)")
       .eq("id", source.id)
       .maybeSingle();
     if (error) return { error: error.message };
     if (!data || data.is_draft !== (source.from === "draft")) return { error: "ไม่พบชุดเมนูที่เลือก" };
+    // The workspace figures cost and price PER TABLE: a per-head set copied
+    // here would come out per table (review, 2026-09-25). Refused, and said.
+    if (data.per_head === true) return { error: "ชุดนี้คิดราคาต่อท่าน — หน้านี้ออกแบบได้เฉพาะชุดราคาต่อโต๊ะ แก้ชุดต่อท่านในหน้าจัดการชุดเมนู" };
     name = `${String(data.name).replace(/ [(]ร่าง[)]$/, "")} (ร่าง)`.slice(0, 200);
     // To the satang, so the price field reads it back (parseDesignPrice takes two decimals).
     price = Math.round(Number(data.price_per_set ?? 0) * 100) / 100;
@@ -108,11 +124,11 @@ export async function createDraft(
     // A copied row is held to the workspace's rules from the start, so what
     // the old editor allowed (a long note, a fourth decimal) cannot make the
     // draft unsaveable.
-    items = ((data.catering_set_menu_items as { menu_id: string; quantity: number; section: string; note: string | null; sort_order: number }[] | null) ?? [])
+    items = ((data.catering_set_menu_items as { menu_id: string | null; dish_name: string | null; linked_menu_id: string | null; quantity: number; section: string; note: string | null; sort_order: number }[] | null) ?? [])
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((it) => {
         const q = Math.round(Number(it.quantity) * 1000) / 1000;
-        return { menu_id: it.menu_id, quantity: q > 0 ? q : 1, section: it.section, note: it.note ? it.note.slice(0, NOTE_MAX) : null };
+        return { menu_id: it.menu_id, dish_name: it.dish_name, linked_menu_id: it.linked_menu_id, quantity: q > 0 ? q : 1, section: it.section, note: it.note ? it.note.slice(0, NOTE_MAX) : null };
       });
   }
   const { data: created, error: insError } = await supabase

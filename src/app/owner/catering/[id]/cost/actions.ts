@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost } from "@/lib/costing";
+import { eventFoodCost } from "./food-cost";
 import { quoteIsStale, staleQuoteMessage } from "@/lib/quote-doc";
 import {
   getCateringEvent, getCateringEventMenus, getCateringCharges, getEventMenuDishes,
@@ -145,44 +146,15 @@ export async function lockCateringEventCost(eventId: string): Promise<LockResult
   const dishesByLine = copied > 0 ? await getEventMenuDishes(eventId) : before;
   const menuById = new Map(menus.map((m) => [m.id, m]));
 
-  let ingredientCost = 0;
-  let qFactorAmount = 0;
-  let hasUnknownCost = false;
-  const lineItems: CateringEventCostSnapshotLineItem[] = [];
-
-  for (const em of eventMenus) {
-    if (em.menu_id) {
-      const menu = menuById.get(em.menu_id);
-      if (!menu) continue;
-      const cost = computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct);
-      ingredientCost += cost.ingredientCost * em.quantity;
-      qFactorAmount += cost.qFactorAmount * em.quantity;
-      if (cost.hasUnknownCost) hasUnknownCost = true;
-      lineItems.push({
-        name: menu.name, quantity: em.quantity,
-        unit_cost: cost.ingredientCost, q_factor_amount: cost.qFactorAmount * em.quantity,
-        total_cost: cost.totalCost * em.quantity, has_unknown_cost: cost.hasUnknownCost,
-      });
-    } else {
-      const items = dishesByLine.get(em.id)?.dishes ?? [];
-      for (const it of items) {
-        const menu = menuById.get(it.menu_id);
-        if (!menu) continue;
-        const qty = it.quantity * em.quantity;
-        const cost = computeMenuCost(menu, menuItems.filter((mi) => mi.menu_id === menu.id), unitCosts, qFactorPct);
-        ingredientCost += cost.ingredientCost * qty;
-        qFactorAmount += cost.qFactorAmount * qty;
-        if (cost.hasUnknownCost) hasUnknownCost = true;
-        lineItems.push({
-          name: menu.name, quantity: qty,
-          unit_cost: cost.ingredientCost, q_factor_amount: cost.qFactorAmount * qty,
-          total_cost: cost.totalCost * qty, has_unknown_cost: cost.hasUnknownCost,
-        });
-      }
-    }
-  }
-
-  const totalFoodCost = ingredientCost + qFactorAmount;
+  // The page's own computation (./food-cost.ts). The lock goes through with
+  // gaps (Nik, 2026-09-25, Q5: typed dishes not yet linked); the snapshot
+  // then records the figure as incomplete, each gap a line of ฿0 marked so.
+  const food = eventFoodCost(eventMenus, dishesByLine, (menuId) => {
+    const menu = menuById.get(menuId);
+    return menu ? computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct) : null;
+  });
+  const { ingredientCost, qFactorAmount, totalFoodCost, hasUnknownCost } = food;
+  const lineItems: CateringEventCostSnapshotLineItem[] = food.lineItems;
   // Equal to liveChargesTotal by the guard above, unless nothing was ever issued.
   const revenue = event.quoted_total ?? liveChargesTotal;
   const laborCost = laborEntries.reduce((s, l) => s + l.amount, 0);

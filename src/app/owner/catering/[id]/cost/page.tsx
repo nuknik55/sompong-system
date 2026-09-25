@@ -11,6 +11,7 @@ import {
 } from "../../actions";
 import { getCateringEventCostSnapshot } from "./actions";
 import { CostSummaryClient } from "./CostSummaryClient";
+import { eventFoodCost, foodCostGapLines, snapshotGapLines } from "./food-cost";
 import { PageHeader, PageShell } from "@/components/ui/page";
 
 // ── One of two places in the catering module allowed to compute/render live
@@ -42,6 +43,10 @@ export default async function CateringEventCostPage({
   let foodCost: number;
   let laborCost: number;
   let hasUnknownFoodCost: boolean;
+  // What the figure could not count, in words: live, by kind (typed dishes
+  // with no cost, sets with no dishes, per-head sets); locked, the items the
+  // snapshot froze at ฿0, by name.
+  let costGapLines: string[] = [];
   // Set only for an UNLOCKED booking whose issued quotation no longer matches
   // its lines. The lock action refuses that (see its comment); this is so the
   // button says why rather than failing when pressed.
@@ -56,6 +61,8 @@ export default async function CateringEventCostPage({
     foodCost = snapshot.total_food_cost;
     laborCost = snapshot.labor_cost;
     hasUnknownFoodCost = snapshot.has_unknown_cost;
+    // What the frozen figure counted as ฿0, by name.
+    costGapLines = snapshotGapLines(snapshot.line_items ?? []);
   } else {
     const [eventMenus, charges, { menus, menuItems, unitCosts, qFactorPct }] = await Promise.all([
       getCateringEventMenus(id),
@@ -69,27 +76,15 @@ export default async function CateringEventCostPage({
     // per-event menus), or the shared set for a booking from before the copy.
     const dishesByLine = await getEventMenuDishes(id);
     const menuById = new Map(menus.map((m) => [m.id, m]));
-
-    let computedFoodCost = 0;
-    let computedHasUnknown = false;
-    for (const em of eventMenus) {
-      if (em.menu_id) {
-        const menu = menuById.get(em.menu_id);
-        if (!menu) continue;
-        const cost = computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct);
-        computedFoodCost += cost.totalCost * em.quantity;
-        if (cost.hasUnknownCost) computedHasUnknown = true;
-      } else {
-        const items = dishesByLine.get(em.id)?.dishes ?? [];
-        for (const it of items) {
-          const menu = menuById.get(it.menu_id);
-          if (!menu) continue;
-          const cost = computeMenuCost(menu, menuItems.filter((mi) => mi.menu_id === menu.id), unitCosts, qFactorPct);
-          computedFoodCost += cost.totalCost * it.quantity * em.quantity;
-          if (cost.hasUnknownCost) computedHasUnknown = true;
-        }
-      }
-    }
+    // ONE computation with the lock (./food-cost.ts): typed dishes, empty
+    // sets and per-head sets are gaps, never ฿0.
+    const computed = eventFoodCost(eventMenus, dishesByLine, (menuId) => {
+      const menu = menuById.get(menuId);
+      return menu ? computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct) : null;
+    });
+    const computedFoodCost = computed.totalFoodCost;
+    const computedHasUnknown = computed.hasUnknownCost;
+    costGapLines = foodCostGapLines(computed.gaps);
 
     // Same formula ChargesSection already computes client-side from in-progress
     // edits — this is the server-side equivalent from the persisted rows, used
@@ -119,6 +114,7 @@ export default async function CateringEventCostPage({
         foodCost={foodCost}
         laborCost={laborCost}
         hasUnknownFoodCost={hasUnknownFoodCost}
+        costGapLines={costGapLines}
         staleQuote={staleQuote}
         costLockedAt={event.cost_locked_at}
         snapshot={snapshot}

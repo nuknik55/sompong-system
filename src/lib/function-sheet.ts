@@ -38,6 +38,8 @@ export type SheetPackage = {
   id: string;
   name: string;
   quantity: number;
+  /** Priced per guest: the count prints as "× 30 ท่าน", and no dish amount is invented. */
+  perHead?: boolean;
   note: string | null;
   groups: SheetGroup[];
 };

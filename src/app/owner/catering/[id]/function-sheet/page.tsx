@@ -64,6 +64,7 @@ export default async function CateringFunctionSheetPage({
         id: m.id,
         name: m.name,
         quantity: m.quantity,
+        perHead: m.per_head,
         note: m.note,
         // Grouped here rather than in the client so the client renders what
         // it is given: a group that reaches it is a group with rows in it.
@@ -76,7 +77,9 @@ export default async function CateringFunctionSheetPage({
           ...g,
           lines: g.lines.map((l) => ({
             ...l,
-            amount: dishAmount({ quantity: l.quantity, menu_id: menuById.get(l.id) ?? null }, m.quantity, weightIds, event.food_format),
+            // A per-head line has no kitchen count to multiply by (Nik,
+            // 2026-09-25: none is invented), so its amounts print blank.
+            amount: m.per_head ? null : dishAmount({ quantity: l.quantity, menu_id: menuById.get(l.id) ?? null }, m.quantity, weightIds, event.food_format),
           })),
         })),
       };

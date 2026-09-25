@@ -7,11 +7,12 @@ import { swapSortOrder } from "@/lib/reorder";
 import { findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
-import { eventMenuAccess } from "@/lib/event-menu-access";
+import { canEditTypedDishes, eventMenuAccess } from "@/lib/event-menu-access";
 import { setCountUnit, weightSoldMenuIds } from "@/lib/kitchen-sheet";
 import { fetchAllRows } from "@/lib/data";
-import { isSetLine, validateRemoveIds, validateSavePayload, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
+import { isSetLine, validateRemoveIds, validateSavePayload, validateTypedPayload, type TypedDishSaveItem, type DishSource, type EventMenuDish, type EventMenuRemoveLine, type EventMenuSaveLine } from "./event-menu";
 import { bookingLinesProblem, menuLineQuantityError } from "./booking-lines";
+import { dishKey, typedDishNameError } from "./menu-lines";
 import { readEventMenus, readEventMenuDishes, readSetMenuItemsForSets, isMissingSchemaError, toEventMenuDish, type CateringEventMenu, type CateringSetMenuItem } from "./menu-read";
 import { assertCostNotLocked } from "./cost-lock";
 import { logCateringActivity } from "./activity-log";
@@ -187,6 +188,8 @@ export type CateringSetMenuOption = {
   id: string;
   name: string;
   price_per_set: number;
+  /** price_per_set is per guest; a line made from it counts guests (Nik, 2026-09-25). */
+  per_head?: boolean;
 };
 
 /** Sales-safe: name + sale price only, from the existing menus table. */
@@ -207,6 +210,8 @@ export type CateringSetMenu = {
   is_active: boolean;
   /** A trial set from the design workspace: listed apart, never offered to a booking. */
   is_draft: boolean;
+  /** price_per_set is per GUEST and a booking line's count is guests (Nik, 2026-09-25). */
+  per_head: boolean;
   /**
    * Rows per section, keyed by section value — the list row shows the whole
    * breakdown so an incomplete package is visible without opening it.
@@ -818,17 +823,19 @@ export async function deleteCateringActivityLine(eventId: string, lineId: string
 export async function getCateringSetMenuOptions(): Promise<CateringSetMenuOption[]> {
   await requireSales();
   const supabase = await createClient();
-  const read = (draftAware: boolean) => {
-    const q = supabase.from("catering_set_menus").select("id, name, price_per_set").eq("is_active", true);
+  const read = (draftAware: boolean, perHead: boolean) => {
+    const q = supabase.from("catering_set_menus").select((perHead ? "id, name, price_per_set, per_head" : "id, name, price_per_set") as string).eq("is_active", true);
     // A trial set is never offered to a booking (the database also hides it
     // from sales and refuses it as a booking line).
     return (draftAware ? q.eq("is_draft", false) : q).order("name");
   };
-  // Before the event-sheet migration there is no is_draft, and no draft.
-  let { data, error } = await read(true);
-  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
+  // Newest first, one at a time: no per_head before the typed-dishes
+  // migration; no is_draft (and no draft) before the event-sheet one.
+  let { data, error } = await read(true, true);
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(true, false));
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false, false));
   if (error) throw error;
-  return (data ?? []) as CateringSetMenuOption[];
+  return (data ?? []) as unknown as CateringSetMenuOption[];
 }
 
 /** menus already grants SELECT to sales (sales_read_menus) — same query shape. */
@@ -848,16 +855,18 @@ export async function getCateringDishOptions(): Promise<CateringDishOption[]> {
 export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const read = (draftAware: boolean) => supabase
+  const read = (cols: string) => supabase
     .from("catering_set_menus")
     // section rather than count(): the list needs the breakdown, not a total,
     // and counting in JS avoids one embedded aggregate per section. A package
     // holds of the order of ten rows, so this is cheaper than it looks.
-    .select((draftAware ? "id, name, description, price_per_set, serves_guests, is_active, is_draft, catering_set_menu_items(section)" : "id, name, description, price_per_set, serves_guests, is_active, catering_set_menu_items(section)") as string)
+    .select(`id, name, description, price_per_set, serves_guests, is_active${cols}, catering_set_menu_items(section)`)
     .order("created_at", { ascending: false });
-  // Before the event-sheet migration there is no is_draft, and no draft.
-  let { data, error } = await read(true);
-  if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
+  // Newest columns fall away one at a time: before the typed-dishes
+  // migration no per_head; before the event-sheet one no is_draft (no draft).
+  let { data, error } = await read(", is_draft, per_head");
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(", is_draft"));
+  if (error && isMissingSchemaError(error)) ({ data, error } = await read(""));
   if (error) throw error;
   return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
     const rows = (r.catering_set_menu_items as { section: string }[] | null) ?? [];
@@ -871,6 +880,7 @@ export async function getCateringSetMenus(): Promise<CateringSetMenu[]> {
       serves_guests: r.serves_guests as number | null,
       is_active: r.is_active as boolean,
       is_draft: r.is_draft === true,
+      per_head: r.per_head === true,
       section_counts,
     };
   });
@@ -881,15 +891,18 @@ export async function getCateringSetMenuItems(setMenuId: string): Promise<Cateri
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_set_menu_items")
-    .select("id, menu_id, quantity, note, section, menus(name, selling_price)")
+    .select("id, menu_id, dish_name, linked_menu_id, quantity, note, section, menus(name, selling_price)")
     .eq("set_menu_id", setMenuId)
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
-    menu_id: r.menu_id as string,
-    menu_name: (r.menus as { name: string; selling_price: number } | null)?.name ?? "-",
-    selling_price: (r.menus as { selling_price: number } | null)?.selling_price ?? 0,
+    menu_id: (r.menu_id as string | null) ?? null,
+    dish_name: (r.dish_name as string | null) ?? null,
+    linked_menu_id: (r.linked_menu_id as string | null) ?? null,
+    // A typed dish prints as typed and has no selling price of its own.
+    menu_name: (r.dish_name as string | null) ?? (r.menus as { name: string; selling_price: number } | null)?.name ?? "-",
+    selling_price: r.dish_name != null ? 0 : (r.menus as { selling_price: number } | null)?.selling_price ?? 0,
     quantity: r.quantity as number,
     note: r.note as string | null,
     section: r.section as string,
@@ -907,7 +920,10 @@ export async function saveCateringSetMenu(data: {
   description: string | null;
   price_per_set: number;
   serves_guests: number | null;
-  items: { menu_id: string; quantity: number; note: string | null; section: string }[];
+  /** Priced per guest; a booking line takes it when made. */
+  per_head?: boolean;
+  /** Each a menu dish (menu_id) OR a typed name (dish_name, optionally linked for its cost). */
+  items: { menu_id: string | null; dish_name?: string | null; linked_menu_id?: string | null; quantity: number; note: string | null; section: string }[];
 }): Promise<string> {
   await requireAdmin();
   // The screen's rule again (booking-lines.ts): a 0 would fail every
@@ -915,6 +931,18 @@ export async function saveCateringSetMenu(data: {
   // print three decimals.
   const badItem = data.items.find((it) => menuLineQuantityError("dish", it.quantity) !== null);
   if (badItem) throw new Error(`จำนวนต่อชุดไม่ถูกต้อง: ${menuLineQuantityError("dish", badItem.quantity)}`);
+  // A course is a menu dish OR a typed name (the table's CHECK says so too);
+  // a link only on a typed one; no course twice.
+  const seen = new Set<string>();
+  for (const it of data.items) {
+    const typed = it.dish_name == null ? null : it.dish_name.trim();
+    if ((it.menu_id == null) === (typed == null)) throw new Error("รายการอาหารหนึ่งรายการต้องเป็นอย่างใดอย่างหนึ่ง: เมนูในระบบ หรือชื่อเมนูที่พิมพ์เอง");
+    if (typed != null && typedDishNameError(typed)) throw new Error(typedDishNameError(typed) as string);
+    if (it.linked_menu_id != null && typed == null) throw new Error("ผูกกับเมนูในระบบได้เฉพาะเมนูที่พิมพ์เอง");
+    const k = dishKey({ menu_id: it.menu_id, dish_name: typed });
+    if (seen.has(k)) throw new Error(`${typed ?? "เมนู"} อยู่ในชุดนี้ซ้ำกัน`);
+    seen.add(k);
+  }
   const supabase = await createClient();
 
   const payload = {
@@ -922,6 +950,7 @@ export async function saveCateringSetMenu(data: {
     description: data.description?.trim() || null,
     price_per_set: data.price_per_set,
     serves_guests: data.serves_guests,
+    per_head: data.per_head === true,
   };
 
   let setMenuId = data.id;
@@ -947,15 +976,30 @@ export async function saveCateringSetMenu(data: {
   // silently and the insert below succeeds, the set ends up with the new rows
   // ON TOP of the old ones rather than instead of them. Duplication is worse
   // than the save failing outright — it looks like success.
+  // Every link must name a menu that exists, BEFORE anything is deleted.
+  const links = [...new Set(data.items.flatMap((it) => (it.menu_id == null && it.linked_menu_id ? [it.linked_menu_id] : [])))];
+  if (links.length > 0) {
+    const { data: found, error } = await supabase.from("menus").select("id").in("id", links);
+    if (error) throw error;
+    if ((found ?? []).length !== links.length) throw new Error("มีเมนูที่ผูกไว้ซึ่งไม่มีในระบบแล้ว — เลือกเมนูที่จะผูกใหม่ หรือเลิกผูก");
+  }
+  // The rows as they were, to put back if the insert below fails.
+  const { data: before, error: beforeError } = await supabase
+    .from("catering_set_menu_items")
+    .select("set_menu_id, menu_id, dish_name, linked_menu_id, quantity, note, section, sort_order")
+    .eq("set_menu_id", setMenuId);
+  if (beforeError) throw beforeError;
   {
     const { error } = await supabase.from("catering_set_menu_items").delete().eq("set_menu_id", setMenuId);
     if (error) throw error;
   }
   if (data.items.length > 0) {
-    const { error } = await supabase.from("catering_set_menu_items").insert(
+    const { error: insertError } = await supabase.from("catering_set_menu_items").insert(
       data.items.map((it, i) => ({
         set_menu_id: setMenuId,
         menu_id: it.menu_id,
+        dish_name: it.menu_id == null ? (it.dish_name ?? "").trim() : null,
+        linked_menu_id: it.menu_id == null ? it.linked_menu_id ?? null : null,
         quantity: it.quantity,
         note: it.note?.trim() || null,
         // Sent explicitly rather than left to the column default: this is a
@@ -965,7 +1009,14 @@ export async function saveCateringSetMenu(data: {
         sort_order: (i + 1) * 10,
       })),
     );
-    if (error) throw error;
+    if (insertError) {
+      // Put the set back as it was: a failed save must not leave it empty.
+      if ((before ?? []).length > 0) {
+        const { error: restoreError } = await supabase.from("catering_set_menu_items").insert(before ?? []);
+        if (restoreError) throw new Error(`${insertError.message} — และคืนรายการเดิมไม่สำเร็จ: ${restoreError.message}`);
+      }
+      throw insertError;
+    }
   }
 
   revalidatePath("/owner/catering/set-menus");
@@ -2227,10 +2278,50 @@ export async function saveEventMenus(
   }
 }
 
+/**
+ * TYPED DISHES of one set line, whole (Nik, 2026-09-25, Q1): what a SALES
+ * session may change on a booking's own menu, and nothing more. Owner and
+ * admin may use it too. The database (catering_save_typed_dishes) is the
+ * authority: it never touches a menu dish or a link, refuses a cancelled or
+ * cost-locked booking for everyone, and refuses a stale screen.
+ */
+export async function saveTypedDishes(
+  eventId: string,
+  eventMenuId: string,
+  knownItemIds: string[],
+  items: TypedDishSaveItem[],
+): Promise<EventMenuActionResult> {
+  const profile = await requireSales();
+  if (!canEditTypedDishes(eventMenuAccess(profile.role))) return { status: "error", message: "ไม่มีสิทธิ์แก้รายการอาหารของงาน" };
+  const problem = validateTypedPayload(items);
+  if (problem) return { status: "error", message: problem };
+  if (!Array.isArray(knownItemIds) || knownItemIds.some((x) => typeof x !== "string")) return { status: "error", message: "รูปแบบข้อมูลไม่ถูกต้อง" };
+  const supabase = await createClient();
+  try {
+    await assertCostNotLocked(supabase, eventId);
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : "ต้นทุนของงานนี้ถูกล็อกแล้ว" };
+  }
+  // The line must be one of THIS booking's (the function derives the booking
+  // from the line; this keeps the history and the paths it refreshes right).
+  const { data: line, error: lineError } = await supabase
+    .from("catering_event_menus").select("id").eq("id", eventMenuId).eq("event_id", eventId).maybeSingle();
+  if (lineError) return eventMenuError(new Error(lineError.message), "บันทึกรายการอาหารไม่สำเร็จ");
+  if (!line) return { status: "error", message: "ไม่พบรายการชุดเมนูของงานนี้" };
+  const { error } = await supabase.rpc("catering_save_typed_dishes", {
+    p_event_menu_id: eventMenuId, p_known_item_ids: knownItemIds, p_items: items,
+  });
+  if (error) return eventMenuError(new Error(error.message), "บันทึกรายการอาหารไม่สำเร็จ");
+  await logCateringActivity(supabase, eventId, profile.id, "menu_edited",
+    `แก้เมนูที่พิมพ์เอง: ${items.length} รายการ${items.length > 0 ? ` (${items.map((i) => i.dish_name.trim()).join(", ")})` : ""}`);
+  revalidateEventMenu(eventId);
+  return { status: "ok" };
+}
+
 // ── The chooser: what a set line may be filled from ─────────────────────────
 
 /** A standard set menu, as the chooser lists it. Sales-safe fields, but the chooser itself is for "edit". */
-export type EventMenuSourceSet = { id: string; name: string; price_per_set: number; dish_count: number };
+export type EventMenuSourceSet = { id: string; name: string; price_per_set: number; dish_count: number; per_head?: boolean };
 
 /** Another booking with at least one set line, as the chooser lists it. ALL of them, newest first — no window (Nik). */
 export type EventMenuSourceBooking = {
@@ -2238,11 +2329,11 @@ export type EventMenuSourceBooking = {
   event_date: string;
   customer_name: string | null;
   status: string;
-  lines: { id: string; name: string; tables: number }[];
+  lines: { id: string; name: string; tables: number; perHead?: boolean }[];
 };
 
 /** What a chooser pick will create when the booking has no line to fill: name, price, courses. */
-export type EventMenuSourcePreview = { name: string; pricePerTable: number; dishes: EventMenuDish[] };
+export type EventMenuSourcePreview = { name: string; pricePerTable: number; dishes: EventMenuDish[]; /** Priced per guest: the new line counts guests too. */ perHead?: boolean };
 
 export type EventMenuSources = { sets: EventMenuSourceSet[]; bookings: EventMenuSourceBooking[] };
 
@@ -2257,29 +2348,31 @@ export async function listEventMenuSources(eventId: string): Promise<EventMenuSo
   if (eventMenuAccess(profile.role) !== "edit") throw new Error(EDIT_REFUSED);
   const supabase = await createClient();
 
-  const readSets = (draftAware: boolean) => {
-    const q = supabase.from("catering_set_menus").select("id, name, price_per_set, catering_set_menu_items(id)").eq("is_active", true);
+  const readSets = (draftAware: boolean, perHead: boolean) => {
+    const q = supabase.from("catering_set_menus").select((perHead ? "id, name, price_per_set, per_head, catering_set_menu_items(id)" : "id, name, price_per_set, catering_set_menu_items(id)") as string).eq("is_active", true);
     return (draftAware ? q.eq("is_draft", false) : q).order("name");
   };
-  // Before the event-sheet migration there is no is_draft, and no draft.
-  let { data: setRows, error: setError } = await readSets(true);
-  if (setError && isMissingSchemaError(setError)) ({ data: setRows, error: setError } = await readSets(false));
+  // Newest first, one at a time: per_head, then is_draft.
+  let { data: setRows, error: setError } = await readSets(true, true);
+  if (setError && isMissingSchemaError(setError)) ({ data: setRows, error: setError } = await readSets(true, false));
+  if (setError && isMissingSchemaError(setError)) ({ data: setRows, error: setError } = await readSets(false, false));
   if (setError) throw setError;
-  const sets: EventMenuSourceSet[] = (setRows ?? []).map((r: Record<string, unknown>) => ({
+  const sets: EventMenuSourceSet[] = ((setRows ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
     id: r.id as string,
     name: r.name as string,
     price_per_set: Number(r.price_per_set),
     dish_count: ((r.catering_set_menu_items as { id: string }[] | null) ?? []).length,
+    per_head: r.per_head === true,
   }));
 
   type Line = {
     id: string; set_menu_id: string | null; menu_id: string | null; set_name: string | null; quantity: number; sort_order: number;
-    catering_set_menus: { name: string } | null; catering_event_charges: { label: string }[] | null;
+    per_head?: boolean; catering_set_menus: { name: string } | null; catering_event_charges: { label: string }[] | null;
   };
   const rows = await fetchAllRows<Record<string, unknown>>(({ from, to }) =>
     supabase
       .from("catering_events")
-      .select("id, event_date, status, catering_customers(name), catering_event_menus(id, set_menu_id, menu_id, set_name, quantity, sort_order, catering_set_menus(name), catering_event_charges(label))")
+      .select("id, event_date, status, catering_customers(name), catering_event_menus(id, set_menu_id, menu_id, set_name, quantity, sort_order, per_head, catering_set_menus(name), catering_event_charges(label))")
       .neq("id", eventId)
       .order("event_date", { ascending: false })
       .order("id")
@@ -2294,6 +2387,7 @@ export async function listEventMenuSources(eventId: string): Promise<EventMenuSo
         id: m.id,
         name: m.set_name ?? m.catering_set_menus?.name ?? m.catering_event_charges?.[0]?.label ?? "ชุดเมนูของงาน",
         tables: Number(m.quantity),
+        perHead: m.per_head === true,
       }));
     if (lines.length === 0) continue;
     bookings.push({
@@ -2324,14 +2418,14 @@ export async function getEventMenuSourceDishes(source: EventMenuSource): Promise
     const supabase = await createClient();
     const read = (draftAware: boolean) => supabase
       .from("catering_set_menus")
-      .select((draftAware ? "name, price_per_set, is_draft" : "name, price_per_set") as string)
+      .select((draftAware ? "name, price_per_set, is_draft, per_head" : "name, price_per_set") as string)
       .eq("id", source.setMenuId)
       .maybeSingle();
     // Before the event-sheet migration there is no is_draft, and no draft.
     let { data, error } = await read(true);
     if (error && isMissingSchemaError(error)) ({ data, error } = await read(false));
     if (error) throw error;
-    const set = data as unknown as { name: string; price_per_set: number | null; is_draft?: boolean } | null;
+    const set = data as unknown as { name: string; price_per_set: number | null; is_draft?: boolean; per_head?: boolean } | null;
     if (!set) throw new Error("ไม่พบชุดเมนูที่เลือก");
     if (set.is_draft === true) throw new Error(DRAFT_SET_REFUSED);
     const items = (await getCateringSetMenuItemsForSets([source.setMenuId])).get(source.setMenuId) ?? [];
@@ -2339,6 +2433,7 @@ export async function getEventMenuSourceDishes(source: EventMenuSource): Promise
       name: set.name,
       pricePerTable: Number(set.price_per_set ?? 0),
       dishes: items.map((it, i) => toEventMenuDish(it, (i + 1) * 10, source.setMenuId)),
+      perHead: set.per_head === true,
     };
   }
   const lines = await getCateringEventMenus(source.eventId);
@@ -2347,5 +2442,5 @@ export async function getEventMenuSourceDishes(source: EventMenuSource): Promise
   const charges = await getCateringCharges(source.eventId);
   const linked = charges.find((c) => c.event_menu_id === source.eventMenuId);
   const served = (await getEventMenuDishes(source.eventId)).get(source.eventMenuId);
-  return { name: line.name, pricePerTable: Number(linked?.unit_price ?? 0), dishes: served?.dishes ?? [] };
+  return { name: line.name, pricePerTable: Number(linked?.unit_price ?? 0), dishes: served?.dishes ?? [], perHead: line.per_head };
 }
