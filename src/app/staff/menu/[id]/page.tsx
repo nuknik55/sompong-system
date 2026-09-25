@@ -111,7 +111,7 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
         initialItems={items.map((it) => ({ id: it.id, ingredient_id: it.ingredient_id, quantity: it.quantity, unit: null }))}
         ingredients={ingredients.map((i) => ({ id: i.id, name: i.name, category: i.category, usage_unit: i.usage_unit, is_prep: i.is_prep }))}
         unitCosts={canEdit ? unitCostsObj : {}}
-        qFactorPct={qFactorPct}
+        qFactorPct={canEdit ? qFactorPct : 0}
         sellingPrice={menu.selling_price}
         canEditPrice={isAdmin}
         onSavePrice={isAdmin ? updateMenuSellingPrice : undefined}
