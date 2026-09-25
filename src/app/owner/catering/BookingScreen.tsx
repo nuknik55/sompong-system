@@ -304,7 +304,10 @@ export function BookingScreen({
   // A new booking a partial save already created does not clash with itself
   // (review, 2026-09-21: the retry's save button was disabled by it).
   const excludeId = event?.id ?? createdId;
-  const conflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue];
+  // A booking set to ยกเลิก holds no room: no clash is looked for, so none is
+  // shown (review of item 40: the amber warning said "allowed because nothing
+  // moved" on a cancelled booking even when something had).
+  const conflictEligible = form.location_type === "in_house" && !!ROOM_CONFLICTS[form.venue] && form.status !== "cancelled";
   const [candidates, setCandidates] = useState<RoomConflictCandidate[]>([]);
   useEffect(() => {
     if (!conflictEligible || !form.event_date) {

@@ -102,6 +102,8 @@ test("item 40: a save that MOVES the booking into a conflict is still refused", 
   assert.equal(conflictBlocksSave(at({ start_time: null, end_time: null }), at()), true, "times added");
   assert.equal(conflictBlocksSave(at(), at({ venue: "room_v1_v2" })), true, "another room");
   assert.equal(conflictBlocksSave(at({ location_type: "offsite", venue: null }), at()), true, "brought in-house");
+  // Only the location type differs: the comparison of location_type alone must catch it.
+  assert.equal(conflictBlocksSave(at({ location_type: "offsite" }), at()), true, "the same room name, but it was off-site");
   assert.equal(conflictBlocksSave(at({ cancelled: true }), at()), true, "a cancelled booking taken back holds the room again");
 });
 
@@ -109,4 +111,20 @@ test("item 40: cancelling is never refused for a conflict", () => {
   assert.equal(conflictBlocksSave(at(), at({ cancelled: true })), false);
   assert.equal(conflictBlocksSave(null, at({ cancelled: true })), false);
   assert.equal(conflictBlocksSave(at(), at({ cancelled: true, start_time: "09:00" })), false);
+});
+
+test("item 40: the server compares the STORED placement with what the save writes, in that order", async () => {
+  // Nothing else would fail if upsertCateringEvent passed the new placement as
+  // `before` (every save would then look unmoved) or skipped the read.
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "actions.ts"), "utf8");
+  const calls = src.split("conflictBlocksSave(").slice(1).map((rest) => rest.slice(0, rest.indexOf(")) {") + 1));
+  assert.equal(calls.length, 1, "one call, in upsertCateringEvent");
+  const [first, second] = [calls[0].slice(0, calls[0].lastIndexOf(",")), calls[0].slice(calls[0].lastIndexOf(",") + 1)];
+  assert.match(first, /storedPlacement\(supabase, data\.id\)/, "before is the row as stored");
+  assert.match(first, /data\.id \?/, "a new booking (no id) has no stored placement");
+  assert.equal(second.trim(), "after)", "after is what this save writes");
+  assert.match(src, /cancelled: payload\.status === "cancelled"/, "after says whether this save cancels");
 });
