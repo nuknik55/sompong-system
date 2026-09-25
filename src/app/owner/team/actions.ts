@@ -234,23 +234,29 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   const lastActive = await lastActiveCheck(supabase, current, "ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่ลบ", "ลบ");
   if (lastActive) return { error: lastActive };
 
-  // Best-effort: remove auth.users entry (needs SUPABASE_SERVICE_ROLE_KEY in Vercel)
+  // THE LOGIN FIRST, and its answer read (audit, 2026-09-25). It used to be
+  // "best-effort": a failed call — above all a missing or rotated
+  // SUPABASE_SERVICE_ROLE_KEY in Vercel (queue item 45) — was ignored, the
+  // profile below was deleted, and the screen said done while the login
+  // could still sign in and read every table whose policy asks only "signed
+  // in". Now a failure stops here and nothing is deleted. A login that is
+  // already gone (404) goes on, so an orphaned profile can still be removed.
   const adminClient = createAdminClient();
-  await adminClient.auth.admin.deleteUser(userId);
+  const { error: authErr } = await adminClient.auth.admin.deleteUser(userId);
+  if (authErr && authErr.status !== 404) {
+    return { error: `ลบบัญชีเข้าระบบไม่สำเร็จ — ยังไม่ได้ลบอะไร: ${authErr.message}` };
+  }
 
-  // Authoritative step: delete profile row using the session client.
-  // Works as long as Supabase has the DELETE policy for owner/admin roles:
-  //   CREATE POLICY owner_admin_delete_profiles ON profiles FOR DELETE TO authenticated
-  //   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('owner','admin')));
-  const { error: profileErr, count } = await supabase
-    .from("profiles")
-    .delete({ count: "exact" })
-    .eq("id", userId);
-
+  // The profile. profiles.id references auth.users ON DELETE CASCADE
+  // (0001_init.sql), so it is normally gone already and this deletes 0 rows:
+  // that is success, not the failure it used to be reported as. What counts
+  // is that no profile is left.
+  const { error: profileErr } = await supabase.from("profiles").delete().eq("id", userId);
   if (profileErr) return { error: `ลบโปรไฟล์ไม่สำเร็จ: ${profileErr.message}` };
-  if ((count ?? 0) === 0) return { error: "ลบไม่สำเร็จ: กรุณารัน SQL policy ใน Supabase ก่อน (ดูใน actions.ts)" };
+  const { data: left, error: leftErr } = await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();
+  if (leftErr) return { error: `ตรวจผลการลบไม่สำเร็จ: ${leftErr.message}` };
+  if (left) return { error: "ลบบัญชีเข้าระบบแล้ว แต่โปรไฟล์ยังอยู่ — แจ้งเจ้าของร้าน" };
 
-  // Profile deleted — user is locked out even if auth.users entry remains.
   revalidatePath("/owner/team");
   return {};
 }
