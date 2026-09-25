@@ -5,9 +5,9 @@
  * copy of them, so a refusal is said before anything is sent.
  *
  * The sheet is customer-facing and goes with the quotation: the dishes, the
- * free items, the job notes, and blocks picked from the library (terms text,
- * room photos, layout diagrams). It carries no price, no cost and no kitchen
- * note.
+ * free items, the job notes, terms texts and images picked from the two
+ * libraries, and images picked from the computer for one print only (never
+ * uploaded). It carries no price, no cost and no kitchen note.
  */
 
 export const SHEET_NOTES_MAX = 4000;
@@ -16,59 +16,61 @@ export const BLOCK_BODY_MAX = 4000;
 export const CAPTION_MAX = 300;
 export const VENUE_TAGS_MAX = 20;
 export const VENUE_TAG_MAX_LENGTH = 60;
-/** Images on one booking's sheet, library images included (the database's cap). */
-export const SHEET_MAX_IMAGES = 6;
-/** The long side an image is resized to in the browser before upload. */
+export const BLOCKS_PER_SHEET_MAX = 40;
+/** Library images one sheet may show (the database function's limit). */
+export const IMAGES_PER_SHEET_MAX = 40;
+/** Images picked from the computer for one print (never uploaded). */
+export const PRINT_IMAGES_MAX = 6;
+/** Files the image library's bucket may hold (the upload policy's cap). */
+export const LIBRARY_FILES_MAX = 100;
+/** The long side a library image is resized to in the browser before upload. */
 export const IMAGE_LONG_SIDE = 1600;
 /** The bucket's own limit (file_size_limit). */
 export const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-export const BLOCKS_PER_SHEET_MAX = 40;
+/** What the library takes, and what the print page offers to pick. */
+export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
-export type BlockKind = "terms" | "photo" | "diagram";
-export const BLOCK_KINDS: readonly BlockKind[] = ["terms", "photo", "diagram"];
-export const BLOCK_KIND_LABEL: Record<BlockKind, string> = {
-  terms: "ข้อตกลง / เงื่อนไข",
-  photo: "รูปภาพ",
-  diagram: "แผนผัง",
-};
-
-/** A library block, as the screens read it. */
+/** A terms text in the library, as the screens read it. */
 export type LibraryBlock = {
   id: string;
-  kind: BlockKind;
   title: string;
-  body: string | null;
-  image_path: string | null;
+  body: string;
   venue_tags: string[];
   sort_order: number;
 };
 
-/** One block on a booking's sheet: a copy of a library block, or the booking's own image. */
+/** A terms text on a booking's sheet: a copy of a library block. */
 export type SheetBlock = {
   id: string;
-  block_id: string | null;
-  kind: BlockKind;
+  block_id: string;
   title: string;
-  body: string | null;
-  image_path: string | null;
+  body: string;
+};
+
+/** An image in the library: a file of the private bucket, with a default caption. */
+export type LibraryImage = {
+  id: string;
+  name: string;
+  caption: string | null;
+  image_path: string;
+  venue_tags: string[];
+  sort_order: number;
+};
+
+/** A library image on a booking's sheet, with this booking's caption (null prints the library's). */
+export type SheetImage = {
+  id: string;
+  image_id: string;
   caption: string | null;
 };
 
-// The names the app gives uploads, and the only ones the bucket accepts
-// (catering_detail_upload_allowed): a timestamp of 10–16 digits, a dash,
-// 4–16 lower-case letters or digits, and .jpg or .png.
-const FILE = "[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)";
-const LIB_PATH = new RegExp(`^lib/${FILE}$`);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The names the app gives library uploads, and the only ones the bucket
+// accepts (catering_detail_upload_allowed): lib/, a timestamp of 10–16
+// digits, a dash, 4–16 lower-case letters or digits, and .jpg, .png or .webp.
+const LIB_PATH = /^lib\/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png|webp)$/;
 
 export function isLibraryImagePath(p: unknown): p is string {
   return typeof p === "string" && LIB_PATH.test(p);
-}
-
-/** A path in THIS booking's folder; never another booking's. */
-export function isEventImagePath(eventId: string, p: unknown): p is string {
-  if (typeof p !== "string" || !UUID.test(eventId)) return false;
-  return new RegExp(`^evt/${eventId}/${FILE}$`).test(p);
 }
 
 /** 8 lower-case letters or digits, from any random source that gives numbers in [0, 1). */
@@ -79,12 +81,8 @@ export function randomName(random: () => number = Math.random): string {
   return out;
 }
 
-export function libraryImagePath(ext: "jpg" | "png", now: number, rand: string): string {
+export function libraryImagePath(ext: "jpg" | "png" | "webp", now: number, rand: string): string {
   return `lib/${now}-${rand}.${ext}`;
-}
-
-export function eventImagePath(eventId: string, ext: "jpg" | "png", now: number, rand: string): string {
-  return `evt/${eventId}/${now}-${rand}.${ext}`;
 }
 
 /** The job notes, one per line, as they print: numbered, blank lines dropped, a typed "1." not doubled. */
@@ -127,9 +125,10 @@ export function venueTagsProblem(tags: unknown): string | null {
 const tagKey = (t: string) => t.replace(/\s+/g, "").toLowerCase();
 
 /**
- * The library for one booking: blocks tagged with one of the booking's venue
+ * A library for one booking: entries tagged with one of the booking's venue
  * names first, then the rest, each group in the library's own order. A tag
- * matches a name ignoring case and spaces ("ห้อง v1" is "ห้อง V1").
+ * matches a name ignoring case and spaces ("ห้อง v1" is "ห้อง V1"). The same
+ * for terms and for images.
  */
 export function blocksForVenue<T extends { venue_tags: string[] }>(blocks: T[], venueNames: string[]): { matching: T[]; others: T[] } {
   const names = new Set(venueNames.filter(Boolean).map(tagKey));
@@ -139,34 +138,27 @@ export function blocksForVenue<T extends { venue_tags: string[] }>(blocks: T[], 
   return { matching, others };
 }
 
-/**
- * Why a block cannot be stored, in Thai; null when it can. The database's
- * shape rule: terms text has a body and no image; a photo or a diagram has an
- * image. `imageOk` is the path rule of where the block lives (the library's
- * folder, or the booking's own or the library's).
- */
-export function blockProblem(
-  b: { kind: unknown; title: unknown; body: unknown; image_path: unknown; caption?: unknown },
-  imageOk: (p: unknown) => boolean,
-): string | null {
-  if (!(BLOCK_KINDS as readonly unknown[]).includes(b.kind)) return "ชนิดของหัวข้อไม่ถูกต้อง";
+/** Why a terms text cannot be stored, in Thai; null when it can (the database's CHECKs). */
+export function blockProblem(b: { title: unknown; body: unknown }): string | null {
   if (typeof b.title !== "string" || b.title.trim() === "") return "ใส่ชื่อหัวข้อ";
   if (b.title.trim().length > BLOCK_TITLE_MAX) return `ชื่อหัวข้อยาวเกิน ${BLOCK_TITLE_MAX} ตัวอักษร`;
-  if (b.body !== null && typeof b.body !== "string") return "ข้อความไม่ถูกต้อง";
-  if (typeof b.body === "string" && b.body.length > BLOCK_BODY_MAX) return `ข้อความยาวเกิน ${BLOCK_BODY_MAX.toLocaleString("th-TH")} ตัวอักษร`;
-  if (b.caption !== undefined && b.caption !== null && (typeof b.caption !== "string" || b.caption.length > CAPTION_MAX)) {
-    return `คำอธิบายรูปยาวเกิน ${CAPTION_MAX} ตัวอักษร`;
-  }
-  if (b.kind === "terms") {
-    if (typeof b.body !== "string" || b.body.trim() === "") return `“${b.title.trim()}”: ใส่ข้อความ`;
-    if (b.image_path !== null) return "ข้อตกลงไม่มีรูป";
-    return null;
-  }
-  if (!imageOk(b.image_path)) return `“${b.title.trim()}”: ต้องมีรูป`;
+  if (typeof b.body !== "string" || b.body.trim() === "") return `“${b.title.trim()}”: ใส่ข้อความ`;
+  if (b.body.length > BLOCK_BODY_MAX) return `ข้อความยาวเกิน ${BLOCK_BODY_MAX.toLocaleString("th-TH")} ตัวอักษร`;
   return null;
 }
 
-export const imageCount = (blocks: { image_path: string | null }[]) => blocks.filter((b) => b.image_path !== null).length;
+/** Why a caption cannot be stored; null when it can. */
+export function captionProblem(c: unknown): string | null {
+  if (c === null) return null;
+  return typeof c === "string" && c.length <= CAPTION_MAX ? null : `คำอธิบายรูปยาวเกิน ${CAPTION_MAX} ตัวอักษร`;
+}
+
+/** The caption a sheet prints for a library image: this booking's, else the library's default. */
+export function printedCaption(own: string | null, fallback: string | null): string | null {
+  const t = own?.trim();
+  return t ? t : fallback?.trim() || null;
+}
+
 
 /** A price-box line as the free mark reads it. */
 export type FreeMarkLine = { kind: string; label: string; amount: number; free: boolean; unitPrice?: number };

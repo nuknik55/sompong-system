@@ -2,27 +2,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  blockProblem, blocksForVenue, eventImagePath, freeItemLines, freeMarkProblem, imageCount, isEventImagePath,
-  isLibraryImagePath, libraryImagePath, parseVenueTags, randomName, sheetNoteLines, sheetNotesProblem,
-  unmarkedZeroLines, venueTagsProblem,
+  blockProblem, blocksForVenue, captionProblem, freeItemLines, freeMarkProblem, isLibraryImagePath, libraryImagePath,
+  parseVenueTags, printedCaption, randomName, sheetNoteLines, sheetNotesProblem, unmarkedZeroLines, venueTagsProblem,
 } from "./event-sheet.ts";
 
-const EVT = "0f8b3c2a-1d4e-4f5a-9b6c-7d8e9f0a1b2c";
-const OTHER = "11111111-2222-4333-8444-555555555555";
-
-test("the upload names are the ones the bucket accepts, and only in their own folder", () => {
+test("library uploads are named as the bucket accepts, in the library folder only", () => {
   const rand = randomName(() => 0.5);
   assert.match(rand, /^[0-9a-z]{8}$/);
-  const lib = libraryImagePath("jpg", 1790000000000, rand);
-  const evt = eventImagePath(EVT, "png", 1790000000000, rand);
-  assert.ok(isLibraryImagePath(lib));
-  assert.ok(isEventImagePath(EVT, evt));
-  assert.ok(!isEventImagePath(OTHER, evt), "another booking's folder");
-  assert.ok(!isLibraryImagePath(evt));
-  for (const bad of [`evt/${EVT}/../lib/1790000000000-abcd.jpg`, `evt/${EVT}/1790000000000-abcd.gif`, `lib/1790000000000-ABCD.jpg`, `lib/x/1790000000000-abcd.jpg`, `/lib/1790000000000-abcd.jpg`]) {
-    assert.ok(!isLibraryImagePath(bad) && !isEventImagePath(EVT, bad), bad);
+  for (const ext of ["jpg", "png", "webp"] as const) assert.ok(isLibraryImagePath(libraryImagePath(ext, 1790000000000, rand)), ext);
+  for (const bad of ["lib/1790000000000-abcd.gif", "lib/1790000000000-ABCD.jpg", "lib/x/1790000000000-abcd.jpg", "/lib/1790000000000-abcd.jpg",
+    "lib/../1790000000000-abcd.jpg", "evt/0f8b3c2a-1d4e-4f5a-9b6c-7d8e9f0a1b2c/1790000000000-abcd.jpg", "lib/1790000000000-abcd.jpg\n"]) {
+    assert.ok(!isLibraryImagePath(bad), bad);
   }
-  assert.ok(!isEventImagePath("not-a-uuid", `evt/not-a-uuid/1790000000000-abcd.jpg`));
 });
 
 test("job notes print numbered: blank lines dropped, a typed number not doubled", () => {
@@ -53,16 +44,22 @@ test("venue tags: typed freely, each once; the booking's venue first, ignoring c
   assert.deepEqual(others.map((b) => b.id), ["a", "c"]);
 });
 
-test("a block's shape: terms have text and no image; a photo or a diagram has an image of its own folder", () => {
-  const lib = (p: unknown) => isLibraryImagePath(p);
-  assert.equal(blockProblem({ kind: "terms", title: "การจัดโต๊ะ", body: "โต๊ะจีน 10 ที่", image_path: null }, lib), null);
-  assert.ok(blockProblem({ kind: "terms", title: "การจัดโต๊ะ", body: " ", image_path: null }, lib));
-  assert.ok(blockProblem({ kind: "terms", title: "x", body: "y", image_path: "lib/1790000000000-abcd.jpg" }, lib));
-  assert.ok(blockProblem({ kind: "photo", title: "ห้อง V1", body: null, image_path: `evt/${EVT}/1790000000000-abcd.jpg` }, lib));
-  assert.equal(blockProblem({ kind: "photo", title: "ห้อง V1", body: null, image_path: "lib/1790000000000-abcd.jpg" }, lib), null);
-  assert.ok(blockProblem({ kind: "video", title: "x", body: null, image_path: null }, lib));
-  assert.ok(blockProblem({ kind: "photo", title: "x", body: null, image_path: "lib/1790000000000-abcd.jpg", caption: "c".repeat(301) }, lib));
-  assert.equal(imageCount([{ image_path: null }, { image_path: "a" }, { image_path: "b" }]), 2);
+test("a terms text has a title and a body within the database's limits", () => {
+  assert.equal(blockProblem({ title: "การจัดโต๊ะ", body: "โต๊ะจีน 10 ที่" }), null);
+  assert.ok(blockProblem({ title: "การจัดโต๊ะ", body: "  " }));
+  assert.ok(blockProblem({ title: " ", body: "x" }));
+  assert.ok(blockProblem({ title: "x".repeat(201), body: "x" }));
+  assert.ok(blockProblem({ title: "x", body: "x".repeat(4001) }));
+});
+
+test("a library image's caption: this booking's when typed, else the library's; 300 characters at most", () => {
+  assert.equal(printedCaption("ผังงานนี้", "ผังมาตรฐาน"), "ผังงานนี้");
+  assert.equal(printedCaption("  ", "ผังมาตรฐาน"), "ผังมาตรฐาน");
+  assert.equal(printedCaption(null, null), null);
+  assert.equal(captionProblem(null), null);
+  assert.equal(captionProblem("x".repeat(300)), null);
+  assert.ok(captionProblem("x".repeat(301)));
+  assert.ok(captionProblem(3));
 });
 
 test("THE FREE MARK: a ฿0 charge, or any dish (the mark prices it ฿0); never a set or the discount; a ฿0 line alone is only warned about", () => {

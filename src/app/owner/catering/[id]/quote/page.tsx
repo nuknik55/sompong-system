@@ -9,6 +9,7 @@ import { printFont } from "../print-font";
 import { QuoteClient, type QuoteLine } from "./QuoteClient";
 import { readSheetContent, sheetIsEmpty } from "../details/sheet-data";
 import { EventSheet } from "../details/EventSheet";
+import { PrintImages } from "../details/PrintImages";
 
 // ── ใบเสนอราคา / ใบมัดจำ / ใบแจ้งหนี้ (document C) ─────────────────────────
 //
@@ -100,7 +101,7 @@ export default async function CateringQuotePage({
     ? await readSheetContent(id).catch((err: unknown) => { console.error("event sheet read failed:", err); return null; })
     : null;
   const sheet = sheetContent && !sheetIsEmpty(sheetContent)
-    ? <EventSheet content={sheetContent} fontClass={printFont.className} />
+    ? <EventSheet content={sheetContent} fontClass={printFont.className} printImages={<PrintImages />} />
     : null;
 
   return <QuoteClient event={event} doc={doc} lines={lines} money={money} settings={settings} fontClass={printFont.className} sheet={sheet} />;

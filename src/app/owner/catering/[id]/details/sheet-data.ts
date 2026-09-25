@@ -1,7 +1,9 @@
 import "server-only";
 import { requireSales } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { freeItemLines, sheetNoteLines, type BlockKind, type LibraryBlock, type SheetBlock } from "@/lib/event-sheet";
+import {
+  freeItemLines, printedCaption, sheetNoteLines, type LibraryBlock, type LibraryImage, type SheetBlock, type SheetImage,
+} from "@/lib/event-sheet";
 import { readEventMenuDishes, readEventMenus } from "../../menu-read";
 import { EVENT_MENU_SECTION_LIST } from "../../menu-lines";
 import { LOCATION_TYPE_LABEL, VENUE_LABEL } from "../../location";
@@ -87,27 +89,51 @@ export function venueNames(e: { location_type: string; venue: string | null }): 
 }
 
 export type StoredSheetBlock = SheetBlock & { updated_at: string };
+/** A booking's library image as the screens read it: the pick, its library entry, and its version. */
+export type StoredSheetImage = SheetImage & { updated_at: string; name: string; default_caption: string | null; image_path: string };
 
 export async function readSheetBlocks(eventId: string): Promise<StoredSheetBlock[]> {
   await requireSales();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_event_detail_blocks")
-    .select("id, block_id, kind, title, body, image_path, caption, updated_at")
+    .select("id, block_id, title, body, updated_at")
     .eq("event_id", eventId)
     .order("sort_order")
     .order("id");
   if (error) throw error;
   return (data ?? []).map((r) => ({
     id: r.id as string,
-    block_id: (r.block_id as string | null) ?? null,
-    kind: r.kind as BlockKind,
+    block_id: r.block_id as string,
     title: r.title as string,
-    body: (r.body as string | null) ?? null,
-    image_path: (r.image_path as string | null) ?? null,
-    caption: (r.caption as string | null) ?? null,
+    body: r.body as string,
     updated_at: r.updated_at as string,
   }));
+}
+
+export async function readSheetImages(eventId: string): Promise<StoredSheetImage[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_event_detail_images")
+    .select("id, image_id, caption, updated_at, catering_detail_images(name, caption, image_path)")
+    .eq("event_id", eventId)
+    .order("sort_order")
+    .order("id");
+  if (error) throw error;
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+    const raw = r.catering_detail_images as { name: string; caption: string | null; image_path: string } | { name: string; caption: string | null; image_path: string }[] | null;
+    const lib = Array.isArray(raw) ? raw[0] ?? null : raw;
+    return {
+      id: r.id as string,
+      image_id: r.image_id as string,
+      caption: (r.caption as string | null) ?? null,
+      updated_at: r.updated_at as string,
+      name: lib?.name ?? "",
+      default_caption: lib?.caption ?? null,
+      image_path: lib?.image_path ?? "",
+    };
+  });
 }
 
 export async function readLibraryBlocks(): Promise<LibraryBlock[]> {
@@ -115,35 +141,54 @@ export async function readLibraryBlocks(): Promise<LibraryBlock[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("catering_detail_blocks")
-    .select("id, kind, title, body, image_path, venue_tags, sort_order")
+    .select("id, title, body, venue_tags, sort_order")
     .order("sort_order")
     .order("title")
     .order("id");
   if (error) throw error;
   return (data ?? []).map((r) => ({
     id: r.id as string,
-    kind: r.kind as BlockKind,
     title: r.title as string,
-    body: (r.body as string | null) ?? null,
-    image_path: (r.image_path as string | null) ?? null,
+    body: r.body as string,
+    venue_tags: (r.venue_tags as string[] | null) ?? [],
+    sort_order: Number(r.sort_order ?? 0),
+  }));
+}
+
+export async function readLibraryImages(): Promise<LibraryImage[]> {
+  await requireSales();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("catering_detail_images")
+    .select("id, name, caption, image_path, venue_tags, sort_order")
+    .order("sort_order")
+    .order("name")
+    .order("id");
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    caption: (r.caption as string | null) ?? null,
+    image_path: r.image_path as string,
     venue_tags: (r.venue_tags as string[] | null) ?? [],
     sort_order: Number(r.sort_order ?? 0),
   }));
 }
 
 /**
- * The sheet's conflict token: its notes and every block's id and last change.
- * A save sends the token its screen opened with and is refused when the sheet
- * has changed since, so two people cannot silently overwrite each other.
+ * The sheet's conflict token: its notes and every block's and image's id and
+ * last change. A save sends the token its screen opened with and is refused
+ * when the sheet has changed since, so two people cannot silently overwrite
+ * each other.
  */
-export function sheetToken(notes: string | null, blocks: { id: string; updated_at: string }[]): string {
-  return JSON.stringify([notes, blocks.map((b) => `${b.id}@${b.updated_at}`)]);
+export function sheetToken(notes: string | null, blocks: { id: string; updated_at: string }[], images: { id: string; updated_at: string }[]): string {
+  return JSON.stringify([notes, blocks.map((b) => `${b.id}@${b.updated_at}`), images.map((g) => `${g.id}@${g.updated_at}`)]);
 }
 
-/** Signed links for the bucket's private images, read with the caller's own session (its read policy decides). */
+/** Signed links for the library's private images, made with the caller's own session (its read policy decides). */
 export async function signImages(paths: (string | null)[]): Promise<Record<string, string>> {
   await requireSales();
-  const unique = [...new Set(paths.filter((p): p is string => typeof p === "string"))];
+  const unique = [...new Set(paths.filter((p): p is string => typeof p === "string" && p !== ""))];
   if (unique.length === 0) return {};
   const supabase = await createClient();
   const { data, error } = await supabase.storage.from(DETAILS_BUCKET).createSignedUrls(unique, SIGNED_URL_SECONDS);
@@ -163,15 +208,17 @@ export type SheetContent = {
   extras: { name: string; quantity: number }[];
   free: string[];
   notes: string[];
-  blocks: (SheetBlock & { url: string | null })[];
+  blocks: SheetBlock[];
+  /** Library images, each with the caption it prints and a signed link (null when it cannot be read). */
+  images: { id: string; name: string; caption: string | null; url: string | null }[];
 };
 
 /** A booking id as the address bar may carry it: anything else is a page not found, never a database error. */
 export const isBookingId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
 
-/** Nothing to print: no food, no free item, no note, no block. The quotation appends the sheet otherwise. */
+/** Nothing to print: no food, no free item, no note, no terms, no library image. The quotation appends the sheet otherwise. */
 export function sheetIsEmpty(c: SheetContent): boolean {
-  return c.sets.length === 0 && c.extras.length === 0 && c.free.length === 0 && c.notes.length === 0 && c.blocks.length === 0;
+  return c.sets.length === 0 && c.extras.length === 0 && c.free.length === 0 && c.notes.length === 0 && c.blocks.length === 0 && c.images.length === 0;
 }
 
 export async function readSheetContent(eventId: string): Promise<SheetContent | null> {
@@ -179,11 +226,12 @@ export async function readSheetContent(eventId: string): Promise<SheetContent | 
   const event = await readSheetEvent(eventId);
   if (!event) return null;
   const supabase = await createClient();
-  const [settings, menus, dishesByLine, blocks, freeRes] = await Promise.all([
+  const [settings, menus, dishesByLine, blocks, images, freeRes] = await Promise.all([
     readSheetSettings(),
     readEventMenus(eventId),
     readEventMenuDishes(eventId),
     readSheetBlocks(eventId),
+    readSheetImages(eventId),
     // The lines marked แถมฟรี: their names and counts only, never a price.
     // A rate's line by the rate's customer name, as the quotation prints it.
     supabase
@@ -222,7 +270,7 @@ export async function readSheetContent(eventId: string): Promise<SheetContent | 
     .filter((m) => m.kind !== "set" && !freeLineIds.has(m.id))
     .map((m) => ({ name: m.name, quantity: Number(m.quantity) }));
 
-  const urls = await signImages(blocks.map((b) => b.image_path));
+  const urls = await signImages(images.map((g) => g.image_path));
   return {
     event,
     settings,
@@ -230,9 +278,7 @@ export async function readSheetContent(eventId: string): Promise<SheetContent | 
     extras,
     free: freeItemLines(freeCharges.map((c) => ({ label: c.label, quantity: Number(c.quantity) })), setFree),
     notes: sheetNoteLines(event.sheet_notes),
-    blocks: blocks.map((b) => ({
-      id: b.id, block_id: b.block_id, kind: b.kind, title: b.title, body: b.body, image_path: b.image_path, caption: b.caption,
-      url: b.image_path ? urls[b.image_path] ?? null : null,
-    })),
+    blocks: blocks.map((b) => ({ id: b.id, block_id: b.block_id, title: b.title, body: b.body })),
+    images: images.map((g) => ({ id: g.id, name: g.name, caption: printedCaption(g.caption, g.default_caption), url: urls[g.image_path] ?? null })),
   };
 }

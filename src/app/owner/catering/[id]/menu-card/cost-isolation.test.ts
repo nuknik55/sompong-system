@@ -128,12 +128,13 @@ const DETAILS = path.join(HERE, "../details");
 const SHEET = [
   path.join(DETAILS, "page.tsx"), path.join(DETAILS, "DetailsClient.tsx"), path.join(DETAILS, "actions.ts"),
   path.join(DETAILS, "print/page.tsx"), path.join(DETAILS, "PrintToolbar.tsx"), path.join(DETAILS, "EventSheet.tsx"),
+  path.join(DETAILS, "PrintImages.tsx"),
   path.join(DETAILS, "sheet-data.ts"), path.join(HERE, "../doc-header.tsx"),
 ];
 
 test("the walk reads what it should: the sheet reaches its data, the shared reads and the header, not the cost-bearing modules", () => {
   const reached = rel(walk(SHEET).reached);
-  for (const f of ["app/owner/catering/[id]/details/sheet-data.ts", "app/owner/catering/menu-read.ts", "app/owner/catering/[id]/doc-header.tsx", "lib/event-sheet.ts", "app/owner/catering/detail-image.ts", "app/owner/catering/activity-log.ts"]) {
+  for (const f of ["app/owner/catering/[id]/details/sheet-data.ts", "app/owner/catering/menu-read.ts", "app/owner/catering/[id]/doc-header.tsx", "lib/event-sheet.ts", "app/owner/catering/[id]/details/PrintImages.tsx", "app/owner/catering/activity-log.ts"]) {
     assert.ok(reached.includes(f), `${f} not reached: ${reached.join(", ")}`);
   }
   for (const f of ["app/owner/catering/actions.ts", "app/owner/catering/event-menu.ts", "app/owner/catering/shared-utils.tsx"]) {

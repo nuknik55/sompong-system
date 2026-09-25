@@ -1,30 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { thaiDate } from "@/lib/thai-date";
 import {
-  BLOCK_KIND_LABEL, CAPTION_MAX, SHEET_MAX_IMAGES, SHEET_NOTES_MAX, blockProblem, imageCount, isEventImagePath,
-  isLibraryImagePath, sheetNoteLines, type LibraryBlock, type SheetBlock,
+  CAPTION_MAX, SHEET_NOTES_MAX, blockProblem, captionProblem, printedCaption, sheetNoteLines,
+  type LibraryBlock, type LibraryImage, type SheetBlock, type SheetImage,
 } from "@/lib/event-sheet";
-import { uploadDetailImage } from "../../detail-image";
 import { saveEventSheet } from "./actions";
 
+type Split<T> = { matching: T[]; others: T[] };
+
 export function DetailsClient({
-  eventId, token: initialToken, notes: initialNotes, blocks: initialBlocks, matching, others, venueNames, urls,
-  readOnly, customerName, eventDate,
+  eventId, token: initialToken, notes: initialNotes, blocks: initialBlocks, images: initialImages,
+  terms, library, venueNames, urls, readOnly, customerName, eventDate,
 }: {
   eventId: string;
   token: string;
   notes: string;
   blocks: SheetBlock[];
-  matching: LibraryBlock[];
-  others: LibraryBlock[];
+  images: SheetImage[];
+  /** The terms library, this booking's venue first. */
+  terms: Split<LibraryBlock>;
+  /** The image library, this booking's venue first. */
+  library: Split<LibraryImage>;
   venueNames: string[];
-  /** Signed links for every image the page shows, by stored path. */
+  /** Signed links for the library's images, by stored path. */
   urls: Record<string, string>;
   readOnly: "cancelled" | "locked" | null;
   customerName: string | null;
@@ -35,20 +39,16 @@ export function DetailsClient({
   const [token, setToken] = useState(initialToken);
   const [notes, setNotes] = useState(initialNotes);
   const [blocks, setBlocks] = useState<SheetBlock[]>(initialBlocks);
-  const [saved, setSaved] = useState(() => JSON.stringify([initialNotes, initialBlocks]));
+  const [images, setImages] = useState<SheetImage[]>(initialImages);
+  const [saved, setSaved] = useState(() => JSON.stringify([initialNotes, initialBlocks, initialImages]));
   const [message, setMessage] = useState<{ error: boolean; text: string; conflict?: boolean } | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadKind, setUploadKind] = useState<"photo" | "diagram">("photo");
-  const [uploadTitle, setUploadTitle] = useState("");
-  // Previews of images uploaded on this screen, before a save signs them.
-  const [localUrls, setLocalUrls] = useState<Record<string, string>>({});
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const dirty = JSON.stringify([notes, blocks]) !== saved;
-  const images = imageCount(blocks);
+  const snapshot = JSON.stringify([notes, blocks, images]);
+  const dirty = snapshot !== saved;
   const disabled = readOnly !== null || pending;
-  const picked = useMemo(() => new Set(blocks.map((b) => b.block_id).filter(Boolean)), [blocks]);
-  const src = (p: string | null) => (p ? localUrls[p] ?? urls[p] ?? null : null);
+  const imageById = useMemo(() => new Map([...library.matching, ...library.others].map((g) => [g.id, g])), [library]);
+  const pickedBlocks = new Set(blocks.map((b) => b.block_id));
+  const pickedImages = new Set(images.map((g) => g.image_id));
 
   useEffect(() => {
     if (!dirty) return;
@@ -57,63 +57,29 @@ export function DetailsClient({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const update = (id: string, patch: Partial<SheetBlock>) => setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-  const move = (index: number, by: -1 | 1) => setBlocks((bs) => {
+  function moveIn<T>(list: T[], index: number, by: -1 | 1): T[] {
     const j = index + by;
-    if (j < 0 || j >= bs.length) return bs;
-    const next = [...bs];
+    if (j < 0 || j >= list.length) return list;
+    const next = [...list];
     [next[index], next[j]] = [next[j], next[index]];
     return next;
-  });
-
-  function addFromLibrary(lib: LibraryBlock) {
-    if (lib.image_path && images >= SHEET_MAX_IMAGES) {
-      setMessage({ error: true, text: `ใบรายละเอียดงานมีรูปได้ไม่เกิน ${SHEET_MAX_IMAGES} รูป` });
-      return;
-    }
-    setMessage(null);
-    setBlocks((bs) => [...bs, {
-      id: crypto.randomUUID(), block_id: lib.id, kind: lib.kind, title: lib.title,
-      body: lib.kind === "terms" ? lib.body : null, image_path: lib.kind === "terms" ? null : lib.image_path, caption: null,
-    }]);
-  }
-
-  async function upload(file: File) {
-    if (images >= SHEET_MAX_IMAGES) {
-      setMessage({ error: true, text: `ใบรายละเอียดงานมีรูปได้ไม่เกิน ${SHEET_MAX_IMAGES} รูป` });
-      return;
-    }
-    setMessage(null);
-    setUploading(true);
-    try {
-      const path = await uploadDetailImage(file, { eventId });
-      setLocalUrls((u) => ({ ...u, [path]: URL.createObjectURL(file) }));
-      setBlocks((bs) => [...bs, {
-        id: crypto.randomUUID(), block_id: null, kind: uploadKind,
-        title: uploadTitle.trim() || BLOCK_KIND_LABEL[uploadKind], body: null, image_path: path, caption: null,
-      }]);
-      setUploadTitle("");
-      setMessage({ error: false, text: "อัปโหลดรูปแล้ว — กดบันทึกเพื่อเก็บไว้ในใบรายละเอียดงาน" });
-    } catch (err) {
-      setMessage({ error: true, text: err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ" });
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
   }
 
   function save() {
-    const imageOk = (p: unknown) => isLibraryImagePath(p) || isEventImagePath(eventId, p);
     for (const b of blocks) {
-      const problem = blockProblem(b, imageOk);
+      const problem = blockProblem(b);
+      if (problem) { setMessage({ error: true, text: problem }); return; }
+    }
+    for (const g of images) {
+      const problem = captionProblem(g.caption);
       if (problem) { setMessage({ error: true, text: problem }); return; }
     }
     setMessage(null);
     // What is SENT becomes "saved": an edit made while the save runs stays unsaved.
-    const sent = JSON.stringify([notes, blocks]);
+    const sent = snapshot;
     startTransition(async () => {
       try {
-        const r = await saveEventSheet(eventId, token, { notes, blocks });
+        const r = await saveEventSheet(eventId, token, { notes, blocks, images });
         if (r.error) { setMessage({ error: true, text: r.error, conflict: r.conflict }); return; }
         if (r.token) setToken(r.token);
         setSaved(sent);
@@ -125,21 +91,39 @@ export function DetailsClient({
     });
   }
 
-  const libraryRow = (lib: LibraryBlock) => (
+  const venueHeading = (split: { matching: unknown[] }) =>
+    split.matching.length > 0 ? `ตรงกับสถานที่ของงานนี้ (${venueNames.join(", ")})` : null;
+
+  const termRow = (lib: LibraryBlock) => (
     <li key={lib.id} className="flex items-start gap-3 py-2">
-      {lib.image_path && src(lib.image_path) ? (
-        // eslint-disable-next-line @next/next/no-img-element -- a signed link to a private image
-        <img src={src(lib.image_path)!} alt="" className="h-14 w-20 flex-none rounded border border-neutral-200 object-cover" />
-      ) : (
-        <span className="flex h-14 w-20 flex-none items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">{BLOCK_KIND_LABEL[lib.kind]}</span>
-      )}
       <div className="min-w-0 flex-1 text-sm">
         <div className="font-medium text-neutral-800">{lib.title}</div>
-        {lib.body && <p className="line-clamp-2 text-xs text-neutral-600">{lib.body}</p>}
+        <p className="line-clamp-2 text-xs text-neutral-600">{lib.body}</p>
         {lib.venue_tags.length > 0 && <p className="text-xs text-neutral-500">{lib.venue_tags.join(" · ")}</p>}
       </div>
-      <button type="button" disabled={disabled || picked.has(lib.id)} onClick={() => addFromLibrary(lib)} className={buttonClass("secondary", { size: "sm" })}>
-        {picked.has(lib.id) ? "เพิ่มแล้ว" : "+ เพิ่ม"}
+      <button type="button" disabled={disabled || pickedBlocks.has(lib.id)} className={buttonClass("secondary", { size: "sm" })}
+        onClick={() => setBlocks((bs) => [...bs, { id: crypto.randomUUID(), block_id: lib.id, title: lib.title, body: lib.body }])}>
+        {pickedBlocks.has(lib.id) ? "เพิ่มแล้ว" : "+ เพิ่ม"}
+      </button>
+    </li>
+  );
+
+  const imageRow = (lib: LibraryImage) => (
+    <li key={lib.id} className="flex items-start gap-3 py-2">
+      {urls[lib.image_path] ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a signed link to a private library image
+        <img src={urls[lib.image_path]} alt="" className="h-14 w-20 flex-none rounded border border-neutral-200 object-cover" />
+      ) : (
+        <span className="flex h-14 w-20 flex-none items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">ไม่มีรูป</span>
+      )}
+      <div className="min-w-0 flex-1 text-sm">
+        <div className="font-medium text-neutral-800">{lib.name}</div>
+        {lib.caption && <p className="line-clamp-2 text-xs text-neutral-600">{lib.caption}</p>}
+        {lib.venue_tags.length > 0 && <p className="text-xs text-neutral-500">{lib.venue_tags.join(" · ")}</p>}
+      </div>
+      <button type="button" disabled={disabled || pickedImages.has(lib.id)} className={buttonClass("secondary", { size: "sm" })}
+        onClick={() => setImages((gs) => [...gs, { id: crypto.randomUUID(), image_id: lib.id, caption: null }])}>
+        {pickedImages.has(lib.id) ? "เพิ่มแล้ว" : "+ เพิ่ม"}
       </button>
     </li>
   );
@@ -168,80 +152,83 @@ export function DetailsClient({
       </section>
 
       <section className="space-y-3 rounded-xl border border-neutral-300 bg-white p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-heading text-base font-semibold text-neutral-900">หัวข้อบนใบรายละเอียดงาน</h2>
-          <span className="text-xs text-neutral-600">รูป {images}/{SHEET_MAX_IMAGES}</span>
-        </div>
-        {blocks.length === 0 && <p className="text-sm text-neutral-500">ยังไม่มีหัวข้อ — เพิ่มจากคลังด้านล่าง หรืออัปโหลดรูปของงานนี้</p>}
+        <h2 className="font-heading text-base font-semibold text-neutral-900">ข้อตกลง / เงื่อนไขบนใบรายละเอียดงาน</h2>
+        {blocks.length === 0 && <p className="text-sm text-neutral-500">ยังไม่มีหัวข้อ — เพิ่มจากคลังด้านล่าง</p>}
         <ol className="space-y-3">
           {blocks.map((b, i) => (
             <li key={b.id} className="space-y-2 rounded-lg border border-neutral-200 p-3">
               <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600">
-                <span className="rounded bg-neutral-100 px-1.5 py-0.5">{BLOCK_KIND_LABEL[b.kind]}</span>
-                <span>{b.block_id ? "จากคลัง — แก้ที่นี่เปลี่ยนเฉพาะงานนี้" : "รูปของงานนี้"}</span>
+                <span>จากคลัง — แก้ที่นี่เปลี่ยนเฉพาะงานนี้</span>
                 <span className="ml-auto flex gap-1">
-                  <button type="button" disabled={disabled || i === 0} onClick={() => move(i, -1)} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนขึ้น">▲</button>
-                  <button type="button" disabled={disabled || i === blocks.length - 1} onClick={() => move(i, 1)} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนลง">▼</button>
+                  <button type="button" disabled={disabled || i === 0} onClick={() => setBlocks((bs) => moveIn(bs, i, -1))} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนขึ้น">▲</button>
+                  <button type="button" disabled={disabled || i === blocks.length - 1} onClick={() => setBlocks((bs) => moveIn(bs, i, 1))} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนลง">▼</button>
                   <button type="button" disabled={disabled} onClick={() => setBlocks((bs) => bs.filter((x) => x.id !== b.id))} className={buttonClass("link", { size: "sm", dangerHover: true })}>เอาออก</button>
                 </span>
               </div>
-              <input value={b.title} onChange={(e) => update(b.id, { title: e.target.value })} disabled={disabled} aria-label="หัวข้อ" className="input-base w-full font-medium" />
-              {b.kind === "terms" ? (
-                <textarea value={b.body ?? ""} onChange={(e) => update(b.id, { body: e.target.value })} disabled={disabled} aria-label="ข้อความ" className="input-base h-28 w-full text-sm" />
-              ) : (
-                <div className="space-y-1.5">
-                  {src(b.image_path) ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- a signed link to a private image
-                    <img src={src(b.image_path)!} alt={b.caption ?? b.title} className="max-h-56 rounded border border-neutral-200 object-contain" />
-                  ) : (
-                    <p className="text-xs text-neutral-500">เปิดรูปไม่ได้</p>
-                  )}
-                  <input value={b.caption ?? ""} onChange={(e) => update(b.id, { caption: e.target.value })} disabled={disabled} maxLength={CAPTION_MAX}
-                    placeholder="คำอธิบายรูป (ไม่ใส่ก็ได้)" aria-label="คำอธิบายรูป" className="input-base w-full text-sm" />
-                </div>
-              )}
+              <input value={b.title} disabled={disabled} aria-label="หัวข้อ" className="input-base w-full font-medium"
+                onChange={(e) => setBlocks((bs) => bs.map((x) => (x.id === b.id ? { ...x, title: e.target.value } : x)))} />
+              <textarea value={b.body} disabled={disabled} aria-label="ข้อความ" className="input-base h-28 w-full text-sm"
+                onChange={(e) => setBlocks((bs) => bs.map((x) => (x.id === b.id ? { ...x, body: e.target.value } : x)))} />
             </li>
           ))}
         </ol>
-
         {readOnly === null && (
-          <div className="flex flex-wrap items-end gap-2 border-t border-neutral-100 pt-3">
-            <label className="text-sm text-neutral-700">อัปโหลดรูปของงานนี้
-              <select value={uploadKind} onChange={(e) => setUploadKind(e.target.value as "photo" | "diagram")} className="input-base ml-2" disabled={disabled || uploading}>
-                <option value="photo">รูปภาพ</option>
-                <option value="diagram">แผนผัง</option>
-              </select>
-            </label>
-            <input value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="หัวข้อ เช่น ผังโต๊ะ" aria-label="หัวข้อของรูป"
-              className="input-base w-48" disabled={disabled || uploading} />
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
-            <button type="button" disabled={disabled || uploading || images >= SHEET_MAX_IMAGES} onClick={() => fileRef.current?.click()} className={buttonClass("secondary", { size: "sm" })}>
-              {uploading ? "กำลังอัปโหลด…" : "เลือกไฟล์ (JPEG/PNG)"}
-            </button>
-            <span className="text-xs text-neutral-500">ย่อเหลือด้านยาว 1600 px ก่อนอัปโหลด; อัปโหลดแล้วลบไฟล์ไม่ได้ แต่เอาออกจากใบได้</span>
+          <div className="space-y-1 border-t border-neutral-100 pt-3">
+            <h3 className="text-sm font-semibold text-neutral-800">เพิ่มจากคลังข้อตกลง</h3>
+            {venueHeading(terms) && <p className="text-xs font-semibold text-brand-green">{venueHeading(terms)}</p>}
+            <ul className="divide-y divide-neutral-100">{terms.matching.map(termRow)}</ul>
+            {terms.others.length > 0 && <p className="text-xs font-semibold text-neutral-600">{terms.matching.length > 0 ? "อื่น ๆ ในคลัง" : "ในคลัง"}</p>}
+            <ul className="divide-y divide-neutral-100">{terms.others.map(termRow)}</ul>
+            {terms.matching.length + terms.others.length === 0 && <p className="text-sm text-neutral-500">คลังข้อตกลงยังว่าง — เจ้าของร้านหรือผู้จัดการเพิ่มได้ที่ ตั้งค่าจัดเลี้ยง › คลังรายละเอียดงาน</p>}
           </div>
         )}
       </section>
 
-      {readOnly === null && (
-        <section className="space-y-2 rounded-xl border border-neutral-300 bg-white p-4">
-          <h2 className="font-heading text-base font-semibold text-neutral-900">เพิ่มจากคลัง</h2>
-          {matching.length > 0 && (
-            <>
-              <h3 className="text-xs font-semibold text-brand-green">ตรงกับสถานที่ของงานนี้ ({venueNames.join(", ")})</h3>
-              <ul className="divide-y divide-neutral-100">{matching.map(libraryRow)}</ul>
-            </>
-          )}
-          {others.length > 0 && (
-            <>
-              <h3 className="text-xs font-semibold text-neutral-600">{matching.length > 0 ? "อื่น ๆ ในคลัง" : "ในคลัง"}</h3>
-              <ul className="divide-y divide-neutral-100">{others.map(libraryRow)}</ul>
-            </>
-          )}
-          {matching.length === 0 && others.length === 0 && <p className="text-sm text-neutral-500">คลังยังว่าง — เจ้าของร้านหรือผู้จัดการเพิ่มได้ที่ ตั้งค่า › คลังรายละเอียดงาน</p>}
-        </section>
-      )}
+      <section className="space-y-3 rounded-xl border border-neutral-300 bg-white p-4">
+        <h2 className="font-heading text-base font-semibold text-neutral-900">รูปจากคลังรูป</h2>
+        <p className="text-xs text-neutral-600">รูปห้องและผังโต๊ะจากคลัง บันทึกไว้กับงานนี้ พิมพ์ซ้ำได้ — รูปเฉพาะงานนี้ให้เลือกจากเครื่องตอนพิมพ์ (ระบบไม่เก็บไว้)</p>
+        {images.length === 0 && <p className="text-sm text-neutral-500">ยังไม่มีรูปจากคลัง</p>}
+        <ol className="space-y-3">
+          {images.map((g, i) => {
+            const lib = imageById.get(g.image_id);
+            return (
+              <li key={g.id} className="flex flex-wrap items-start gap-3 rounded-lg border border-neutral-200 p-3">
+                {lib && urls[lib.image_path] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- a signed link to a private library image
+                  <img src={urls[lib.image_path]} alt={lib.name} className="h-24 w-36 flex-none rounded border border-neutral-200 object-contain" />
+                ) : (
+                  <span className="flex h-24 w-36 flex-none items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">เปิดรูปไม่ได้</span>
+                )}
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-neutral-800">{lib?.name ?? "รูปในคลัง"}</span>
+                    <span className="ml-auto flex gap-1">
+                      <button type="button" disabled={disabled || i === 0} onClick={() => setImages((gs) => moveIn(gs, i, -1))} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนขึ้น">▲</button>
+                      <button type="button" disabled={disabled || i === images.length - 1} onClick={() => setImages((gs) => moveIn(gs, i, 1))} className={buttonClass("link", { size: "sm" })} aria-label="เลื่อนลง">▼</button>
+                      <button type="button" disabled={disabled} onClick={() => setImages((gs) => gs.filter((x) => x.id !== g.id))} className={buttonClass("link", { size: "sm", dangerHover: true })}>เอาออก</button>
+                    </span>
+                  </div>
+                  <input value={g.caption ?? ""} disabled={disabled} maxLength={CAPTION_MAX} aria-label="คำอธิบายรูปสำหรับงานนี้"
+                    placeholder={lib?.caption ? `ค่าเดิม: ${lib.caption}` : "คำอธิบายรูป (ไม่ใส่ก็ได้)"}
+                    onChange={(e) => setImages((gs) => gs.map((x) => (x.id === g.id ? { ...x, caption: e.target.value === "" ? null : e.target.value } : x)))}
+                    className="input-base w-full text-sm" />
+                  <p className="text-xs text-neutral-500">พิมพ์ว่า: {printedCaption(g.caption, lib?.caption ?? null) ?? "(ไม่มีคำอธิบาย)"}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        {readOnly === null && (
+          <div className="space-y-1 border-t border-neutral-100 pt-3">
+            <h3 className="text-sm font-semibold text-neutral-800">เพิ่มจากคลังรูป</h3>
+            {venueHeading(library) && <p className="text-xs font-semibold text-brand-green">{venueHeading(library)}</p>}
+            <ul className="divide-y divide-neutral-100">{library.matching.map(imageRow)}</ul>
+            {library.others.length > 0 && <p className="text-xs font-semibold text-neutral-600">{library.matching.length > 0 ? "อื่น ๆ ในคลัง" : "ในคลัง"}</p>}
+            <ul className="divide-y divide-neutral-100">{library.others.map(imageRow)}</ul>
+            {library.matching.length + library.others.length === 0 && <p className="text-sm text-neutral-500">คลังรูปยังว่าง — เจ้าของร้านหรือผู้จัดการเพิ่มได้ที่ ตั้งค่าจัดเลี้ยง › คลังรายละเอียดงาน</p>}
+          </div>
+        )}
+      </section>
 
       {message && (
         <p role={message.error ? "alert" : "status"} className={message.error ? "rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" : "text-sm text-neutral-700"}>

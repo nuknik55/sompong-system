@@ -5,6 +5,7 @@ import type { CateringEvent, CateringSettings } from "../../actions";
 import type { DocState, DocMoney } from "@/lib/quote-doc";
 import { DOC_TITLE, conditionsFor, moneyRowsFor, fmtMoneyDoc } from "@/lib/quote-doc";
 import { BAND, RULE, INKG, DocHeader } from "../doc-header";
+import { printWhenImagesReady } from "../print-ready";
 
 export type QuoteLine = {
   id: string;
@@ -110,7 +111,7 @@ export function QuoteClient({
           </label>
         )}
         <button
-          onClick={() => window.print()}
+          onClick={() => void printWhenImagesReady()}
           className="rounded-lg bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           พิมพ์
@@ -218,7 +219,9 @@ export function QuoteClient({
       </div>
 
       {/* The event-details sheet: a new page after the quotation, same print job. */}
-      {sheet && withSheet && <div style={{ breakBefore: "page" }}>{sheet}</div>}
+      {/* Hidden rather than taken off when left out, so the images picked on
+          it for this print (PrintImages) survive unticking and ticking again. */}
+      {sheet && <div style={{ breakBefore: "page", display: withSheet ? undefined : "none" }}>{sheet}</div>}
     </>
   );
 }
