@@ -28,6 +28,7 @@ import { bookingSnapshot, seenAfter, serverViewAction, type SeenView, type Serve
 import { markUnsaved } from "@/lib/unsaved-changes";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/page";
+import { Badge } from "@/components/ui/badge";
 import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
@@ -786,10 +787,10 @@ export function BookingScreen({
         {/* On a phone the price rows are wider than the screen (a 9rem label
             beside five fixed columns, since be8ea1c), which made the WHOLE
             page scroll sideways and the phone shrink it to fit. The rows now
-            scroll inside the box instead, like the booking table; from 36rem
+            scroll inside the box instead, like the booking table; from 39rem
             of width up, nothing changes (2026-09-22). */}
         <div className="-mx-1 overflow-x-auto px-1">
-        <div className="min-w-[36rem] divide-y divide-neutral-200">
+        <div className="min-w-[39rem] divide-y divide-neutral-200">
           {SECTIONS.map((sec) => {
             const rows = lines.filter((l) => l.section === sec.key);
             const sectionRates = sec.rateType ? rates.filter((r) => r.rate_type === sec.rateType) : [];
@@ -798,16 +799,18 @@ export function BookingScreen({
                 <div className="pt-1.5 text-sm font-medium text-neutral-700">{sec.title}</div>
                 <div className="space-y-1.5">
                   {rows.map((l) => (
-                    <div key={l.key} className="grid grid-cols-[1fr_6rem_4.5rem_7rem_2rem] items-center gap-2">
+                    <div key={l.key} className="grid grid-cols-[1fr_6rem_4.5rem_7rem_2.75rem_2rem] items-center gap-2">
                       {l.kind === "manual" ? (
-                        <div className="min-w-0">
-                          <input className="line-input w-full" placeholder="รายการ" value={l.label} disabled={busy} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
-                          <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <input className="line-input w-full min-w-0" placeholder="รายการ" value={l.label} disabled={busy} onChange={(e) => updateLine(l.key, { label: e.target.value })} />
+                          {l.free && <FreeBadge />}
                         </div>
                       ) : (
                         <div className="min-w-0">
-                          <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
-                          {canMarkFree(l.kind) && <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />}
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className="block truncate text-sm text-neutral-800" title={l.label}>{l.label}</span>
+                            {l.free && <FreeBadge />}
+                          </div>
                           {isPerHead(l) && <span className="text-xs text-neutral-500">ราคาต่อ{PER_HEAD_UNIT} × จำนวน{PER_HEAD_UNIT}</span>}
                           {/* THE DISH NAMES, under the set (Nik). Comma-separated,
                               clamped to two rows by CSS with the full list in the
@@ -832,6 +835,9 @@ export function BookingScreen({
                         title={l.kind === "dish" ? "จำนวน — ใส่ทศนิยมได้ไม่เกิน 3 ตำแหน่ง เช่น 0.5" : l.kind === "set" ? `จำนวน${unitOf(l)} — จำนวนเต็ม` : undefined}
                         onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                       <span className={`text-right text-sm tabular-nums ${l.kind === "discount" ? "text-danger" : "text-neutral-900"}`}>{money(toNum(l.amount) ?? 0)}</span>
+                      {canMarkFree(l.kind)
+                        ? <FreeMark line={l} disabled={busy} onChange={(free) => markFree(l, free)} />
+                        : <span aria-hidden="true" />}
                       <Button kind="link" size="sm" onClick={() => removeLine(l.key)} disabled={busy} aria-label="เอาบรรทัดนี้ออก">✕</Button>
                     </div>
                   ))}
@@ -1010,10 +1016,23 @@ export function BookingScreen({
  * is not free, and the screen only warns about it.
  */
 function FreeMark({ line, disabled, onChange }: { line: Line; disabled: boolean; onChange: (free: boolean) => void }) {
+  // A compact toggle at the end of the line's own row (Nik, 2026-09-25: a
+  // checkbox row under every line cluttered the box). Same state, same
+  // markFree: only where it sits and how it looks changed.
+  const tip = line.free
+    ? "แถมฟรีอยู่ — กดอีกครั้งเพื่อยกเลิกแถมฟรี (กลับเป็นราคาเดิม)"
+    : "แถมฟรี — กดแล้วบรรทัดนี้เป็น ฿0 และพิมพ์ใต้ “รายการแถมฟรี” ในใบรายละเอียดงาน";
   return (
-    <label className="mt-0.5 inline-flex items-center gap-1 text-xs text-neutral-600">
-      <input type="checkbox" checked={line.free} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      แถมฟรี
-    </label>
+    <button type="button" aria-pressed={line.free} aria-label="แถมฟรี" title={tip} disabled={disabled}
+      onClick={() => onChange(!line.free)}
+      className={`justify-self-center rounded-full border px-2 py-0.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 ${
+        line.free ? "border-primary bg-primary-soft text-primary" : "border-neutral-300 bg-white text-neutral-600 hover:border-neutral-500 hover:text-neutral-800"}`}>
+      ฟรี
+    </button>
   );
+}
+
+/** Beside the name of a line marked แถมฟรี. */
+function FreeBadge() {
+  return <Badge tone="info" className="shrink-0">แถมฟรี</Badge>;
 }
