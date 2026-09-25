@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
-import { findRoomConflict } from "./conflict";
-import type { RoomConflictCandidate } from "./conflict";
+import { conflictBlocksSave, findRoomConflict } from "./conflict";
+import type { RoomConflictCandidate, RoomPlacement } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { canEditTypedDishes, eventMenuAccess } from "@/lib/event-menu-access";
 import { setCountUnit, weightSoldMenuIds } from "@/lib/kitchen-sheet";
@@ -1501,6 +1501,28 @@ export async function deleteCateringEventLabor(id: string, eventId: string): Pro
 
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
+/**
+ * Where a saved booking sits, as STORED (the room rule's `before`); null
+ * when the row cannot be read, which the rule treats as a new booking.
+ */
+async function storedPlacement(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<RoomPlacement | null> {
+  const { data, error } = await supabase
+    .from("catering_events")
+    .select("event_date, start_time, end_time, location_type, venue, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    event_date: data.event_date as string,
+    start_time: (data.start_time as string | null) ?? null,
+    end_time: (data.end_time as string | null) ?? null,
+    location_type: (data.location_type as string | null) ?? null,
+    venue: (data.venue as string | null) ?? null,
+    cancelled: data.status === "cancelled",
+  };
+}
+
 async function upsertCateringEvent(data: {
   id?: string;
   /** The customer picked from the list: the booking is exactly theirs. */
@@ -1623,11 +1645,18 @@ async function upsertCateringEvent(data: {
 
   // Same rule the client already warned with (see conflict.ts) — enforced
   // again here so two people racing to save around the same time can't both
-  // pass the client-side check and land a genuine double-booking.
+  // pass the client-side check and land a genuine double-booking. A conflict
+  // refuses only a save that MOVES the booking into it (queue item 40,
+  // conflictBlocksSave): one that leaves the booking where it is stored, or
+  // cancels it, changes no room and goes through.
   if (payload.location_type === "in_house" && payload.venue) {
     const candidates = await getRoomConflictCandidates(payload.event_date, data.id ?? null);
     const conflict = findRoomConflict(payload.venue, payload.start_time, payload.end_time, candidates);
-    if (conflict) {
+    const after: RoomPlacement = {
+      event_date: payload.event_date, start_time: payload.start_time, end_time: payload.end_time,
+      location_type: payload.location_type, venue: payload.venue, cancelled: payload.status === "cancelled",
+    };
+    if (conflict && conflictBlocksSave(data.id ? await storedPlacement(supabase, data.id) : null, after)) {
       throw new Error(
         `ห้องชนกับการจองอื่น: ${conflict.customer_name ?? "-"} ในวันเดียวกัน — ไม่สามารถบันทึกได้`,
       );

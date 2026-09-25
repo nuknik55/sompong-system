@@ -29,7 +29,7 @@ import { markUnsaved } from "@/lib/unsaved-changes";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
-import { ROOM_CONFLICTS, findRoomConflict } from "./conflict";
+import { ROOM_CONFLICTS, conflictBlocksSave, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
   LOCATION_TYPE_OPTIONS, VENUE_OPTIONS, BOOKING_TYPE_OPTIONS, FOOD_FORMAT_OPTIONS, STATUS_OPTIONS,
@@ -321,6 +321,14 @@ export function BookingScreen({
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.event_date, excludeId, conflictEligible]);
   const conflict = conflictEligible ? findRoomConflict(form.venue, form.start_time, form.end_time, candidates) : null;
+  // Item 40 (2026-09-25): the conflict blocks the save only when the save
+  // would MOVE the booking into it — as the server decides (conflictBlocksSave).
+  // A booking left where it is stored can still be corrected, re-issued and
+  // cost-locked; the screen warns instead.
+  const conflictBlocks = conflict !== null && conflictBlocksSave(
+    event ? { event_date: event.event_date, start_time: event.start_time, end_time: event.end_time, location_type: event.location_type, venue: event.venue, cancelled: event.status === "cancelled" } : null,
+    { event_date: form.event_date, start_time: form.start_time || null, end_time: form.end_time || null, location_type: form.location_type, venue: form.venue || null, cancelled: form.status === "cancelled" },
+  );
 
   // ── Price box helpers ──
   const total = lines.reduce((s, l) => s + (toNum(l.amount) ?? 0), 0);
@@ -417,7 +425,7 @@ export function BookingScreen({
   }
 
   // ── Save ──
-  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflict;
+  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflictBlocks;
   // 7.7: a silently greyed-out save button is the same "is this broken?"
   // confusion the print links caused. Name what is missing, right where the
   // buttons are. The room conflict has its own louder message elsewhere.
@@ -669,10 +677,17 @@ export function BookingScreen({
           )}
         </div>
 
-        {conflict && (
+        {conflict && conflictBlocks && (
           <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger">
             <p className="font-medium">⚠ ไม่สามารถบันทึกได้ — ห้องชนกับการจองอื่น</p>
             <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
+          </div>
+        )}
+        {conflict && !conflictBlocks && (
+          <div role="status" className="rounded-lg border border-pending/50 bg-pending-soft px-3 py-2 text-sm text-pending-ink">
+            <p className="font-medium">⚠ ห้องชนกับการจองอื่น (ชนอยู่ก่อนแล้ว)</p>
+            <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
+            <p className="text-xs">บันทึกงานนี้ได้ เพราะไม่ได้เปลี่ยนวัน เวลา หรือห้อง — แต่ควรแก้การจองใดการจองหนึ่งให้ไม่ชนกัน ถ้าเปลี่ยนวัน เวลา หรือห้อง ต้องไม่ชนกับการจองอื่น</p>
           </div>
         )}
 

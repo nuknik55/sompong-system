@@ -79,3 +79,44 @@ export function findRoomConflict(
   }
   return null;
 }
+
+/** Where and when a booking sits: the fields the room rule reads, and whether it is cancelled. */
+export type RoomPlacement = {
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  location_type: string | null;
+  venue: string | null;
+  cancelled: boolean;
+};
+
+function samePlacement(a: RoomPlacement, b: RoomPlacement): boolean {
+  return a.event_date === b.event_date
+    && normTime(a.start_time || null) === normTime(b.start_time || null)
+    && normTime(a.end_time || null) === normTime(b.end_time || null)
+    && (a.location_type ?? "") === (b.location_type ?? "")
+    && (a.venue ?? "") === (b.venue ?? "");
+}
+
+/**
+ * Does a room conflict REFUSE this save? (Queue item 40, 2026-09-25.)
+ *
+ * The rule exists to stop a save from CREATING a double booking. It used to
+ * refuse every save of a booking in conflict, so a booking the other one
+ * had moved onto, or that an unrelated inquiry with no times had "hit",
+ * could not be corrected, re-issued or cost-locked at all. Now a conflict
+ * refuses only a save that puts the booking somewhere it was not: a new
+ * booking, a different date, time, room or location type, or a cancelled
+ * booking taken back. A save that leaves the booking exactly where it was
+ * stored changes no room, so it goes through (the screen still warns). A
+ * save that cancels never holds a room, so a conflict never refuses it.
+ *
+ * `before` is the booking as STORED (null for a new one); `after` is what
+ * this save writes. Callers ask only when there is a conflict.
+ */
+export function conflictBlocksSave(before: RoomPlacement | null, after: RoomPlacement): boolean {
+  if (after.cancelled) return false;
+  if (!before) return true;
+  if (before.cancelled) return true;
+  return !samePlacement(before, after);
+}

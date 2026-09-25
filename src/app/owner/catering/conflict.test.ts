@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findRoomConflict, ROOM_CONFLICTS, type RoomConflictCandidate } from "./conflict.ts";
+import { conflictBlocksSave, findRoomConflict, ROOM_CONFLICTS, type RoomConflictCandidate, type RoomPlacement } from "./conflict.ts";
 
 const cand = (venue: string, start: string | null, end: string | null): RoomConflictCandidate => ({
   id: "x", customer_name: "A", venue, start_time: start, end_time: end,
@@ -78,4 +78,35 @@ test("end equal to start clamps to end-of-day too — per the stated rule, end <
   // A zero-length booking is a data-entry oddity; reading it as
   // start-to-close is the conservative side, like the missing-times rule.
   assert.equal(hit("room_v1", "19:00", "20:00", cand("room_v1", "18:00", "18:00")), true);
+});
+
+// ── Item 40 (2026-09-25): a conflict refuses only a save that MOVES the booking ──
+const at = (over: Partial<RoomPlacement> = {}): RoomPlacement => ({
+  event_date: "2026-10-18", start_time: "11:00", end_time: "14:00", location_type: "in_house", venue: "room_v1", cancelled: false, ...over,
+});
+
+test("item 40: a save that leaves the booking where it is stored is never refused for a conflict", () => {
+  assert.equal(conflictBlocksSave(at(), at()), false);
+  // The database gives times as HH:MM:SS; the screen sends HH:MM. Same place.
+  assert.equal(conflictBlocksSave(at({ start_time: "11:00:00", end_time: "14:00:00" }), at()), false);
+  // No times on either side, as stored: still the same place.
+  assert.equal(conflictBlocksSave(at({ start_time: null, end_time: null }), at({ start_time: null, end_time: null })), false);
+  assert.equal(conflictBlocksSave(at({ start_time: null }), at({ start_time: "" })), false);
+});
+
+test("item 40: a save that MOVES the booking into a conflict is still refused", () => {
+  assert.equal(conflictBlocksSave(null, at()), true, "a new booking");
+  assert.equal(conflictBlocksSave(at(), at({ event_date: "2026-10-19" })), true, "another date");
+  assert.equal(conflictBlocksSave(at(), at({ start_time: "12:00" })), true, "another start");
+  assert.equal(conflictBlocksSave(at(), at({ end_time: "15:00" })), true, "another end");
+  assert.equal(conflictBlocksSave(at({ start_time: null, end_time: null }), at()), true, "times added");
+  assert.equal(conflictBlocksSave(at(), at({ venue: "room_v1_v2" })), true, "another room");
+  assert.equal(conflictBlocksSave(at({ location_type: "offsite", venue: null }), at()), true, "brought in-house");
+  assert.equal(conflictBlocksSave(at({ cancelled: true }), at()), true, "a cancelled booking taken back holds the room again");
+});
+
+test("item 40: cancelling is never refused for a conflict", () => {
+  assert.equal(conflictBlocksSave(at(), at({ cancelled: true })), false);
+  assert.equal(conflictBlocksSave(null, at({ cancelled: true })), false);
+  assert.equal(conflictBlocksSave(at(), at({ cancelled: true, start_time: "09:00" })), false);
 });
