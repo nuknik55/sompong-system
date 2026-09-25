@@ -1,7 +1,10 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { isMaintenanceHead, type MaintenanceStatus } from "@/lib/maintenance-rules";
 
-export type MaintenanceStatus = "new" | "in_progress" | "done";
+// The status type and the rules live in the plain module, so the client
+// components import them from there, never from this server-only file.
+export type { MaintenanceStatus };
 
 export type MaintenanceReport = {
   id: string;
@@ -20,6 +23,10 @@ export type MaintenanceReport = {
   resolverNote: string | null;
   /** Copied at accept/done like reporterName; NULL on rows closed before the column existed. */
   resolverName: string | null;
+  /** Set only on a cancelled report (maint_cancel); the name is copied like reporterName. */
+  cancelledAt: string | null;
+  cancelledByName: string | null;
+  cancelNote: string | null;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,6 +47,9 @@ function mapRow(d: any): MaintenanceReport {
     resolvedAt: d.resolved_at ?? null,
     resolverNote: d.resolver_note ?? null,
     resolverName: d.resolver_name ?? null,
+    cancelledAt: d.cancelled_at ?? null,
+    cancelledByName: d.cancelled_by_name ?? null,
+    cancelNote: d.cancel_note ?? null,
   };
 }
 
@@ -53,16 +63,18 @@ export async function getMaintenanceReports(): Promise<MaintenanceReport[]> {
 }
 
 /**
- * The roles that act on a report — the same three the RLS update policy
- * admits (011_maintenance_reports.sql). The pages and actions still carry
- * their own inline copies of this list; this one exists for the layouts.
+ * The roles that act on a report — the same three the maint_* functions
+ * admit (part C of catering_typed_dishes_per_head_and_maintenance_migration.sql).
+ * The one list is isMaintenanceHead in maintenance-rules; this name stays
+ * for the layouts.
  */
 export function canManageMaintenance(role: string): boolean {
-  return role === "owner" || role === "admin" || role === "editor";
+  return isMaintenanceHead(role);
 }
 
 /**
- * Open = new + in_progress: the count on the แจ้งซ่อม nav entry. Shown only
+ * Open = new + in_progress (isOpen in maintenance-rules; cancelled and done
+ * are closed): the count on the แจ้งซ่อม nav entry. Shown only
  * to the roles that act — the layouts pass 0 for everyone else, and zero
  * hides the badge. It exists because the one real reporter got no response
  * three times: nothing told the people who act that anything was waiting.

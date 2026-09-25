@@ -3,7 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Zap, Droplets, UtensilsCrossed, MoreHorizontal, AlertTriangle, Plus } from "lucide-react";
-import type { MaintenanceReport, MaintenanceStatus } from "@/lib/maintenance-data";
+import type { MaintenanceReport } from "@/lib/maintenance-data";
+import {
+  MAINTENANCE_STATUSES, STATUS_CLASS, STATUS_LABEL, canEditReport, canMarkDone, type MaintenanceStatus,
+} from "@/lib/maintenance-rules";
 import { buttonClass } from "@/components/ui/button";
 import { thaiDate } from "@/lib/thai-date";
 
@@ -25,32 +28,21 @@ const CAT_ICON: Record<string, React.ReactNode> = {
   อื่นๆ: <MoreHorizontal className="h-3.5 w-3.5 text-neutral-500" />,
 };
 
-const STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  new: "แจ้งแล้ว",
-  in_progress: "กำลังซ่อม",
-  done: "เสร็จแล้ว",
-};
-const STATUS_CLS: Record<MaintenanceStatus, string> = {
-  new: "bg-pending-soft text-pending-ink",
-  in_progress: "bg-info-soft text-info",
-  done: "bg-success-soft text-success-ink",
-};
-
+// ทั้งหมด, then one tab per status in the order they run; ยกเลิก last, so a
+// cancelled report can still be found.
 type Tab = "all" | MaintenanceStatus;
 const TABS: { key: Tab; label: string }[] = [
   { key: "all", label: "ทั้งหมด" },
-  { key: "new", label: "แจ้งแล้ว" },
-  { key: "in_progress", label: "กำลังซ่อม" },
-  { key: "done", label: "เสร็จแล้ว" },
+  ...MAINTENANCE_STATUSES.map((s) => ({ key: s, label: STATUS_LABEL[s] })),
 ];
 
 export function MaintenanceListClient({
   reports,
-  canManage,
+  role,
   currentUserId,
 }: {
   reports: MaintenanceReport[];
-  canManage: boolean;
+  role: string;
   currentUserId: string;
 }) {
   const [tab, setTab] = useState<Tab>("all");
@@ -85,20 +77,29 @@ export function MaintenanceListClient({
       ) : (
         <ul className="space-y-3">
           {filtered.map((r) => {
-            const canEdit = r.reporterId === currentUserId && r.status === "new";
+            // Every control by the rules module, the screen's mirror of the
+            // maint_* functions; never an inline role list.
+            const canEdit = canEditReport(role, r.reporterId === currentUserId, r.status);
+            const manage = canMarkDone(role, r.status);
+            // A cancelled report: grey, its title struck through (neutral,
+            // never red — AGENTS.md colour roles).
+            const cancelled = r.status === "cancelled";
             return (
-              <li key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4 space-y-2">
+              <li
+                key={r.id}
+                className={`rounded-xl border p-4 space-y-2 ${cancelled ? "border-neutral-200 bg-neutral-50" : "border-neutral-200 bg-white"}`}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-sm font-medium text-neutral-800">
-                      {CAT_ICON[r.category] ?? CAT_ICON["อื่นๆ"]}
-                      <span>{r.category} — {r.location || "ไม่ระบุจุด"}</span>
+                    <div className={`flex items-center gap-1.5 text-sm font-medium ${cancelled ? "text-neutral-500" : "text-neutral-800"}`}>
+                      <span className="shrink-0">{CAT_ICON[r.category] ?? CAT_ICON["อื่นๆ"]}</span>
+                      <span className={`min-w-0 break-words ${cancelled ? "line-through" : ""}`}>{r.category} — {r.location || "ไม่ระบุจุด"}</span>
                     </div>
                     {r.description && (
                       <p className="mt-0.5 text-xs text-neutral-500 line-clamp-2">{r.description}</p>
                     )}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLS[r.status]}`}>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASS[r.status]}`}>
                     {STATUS_LABEL[r.status]}
                   </span>
                 </div>
@@ -122,10 +123,13 @@ export function MaintenanceListClient({
                     </span>
                     {/* "ไม่ระบุชื่อ" is the truth for rows accepted before the
                         column existed — the roof leak — not a rendering gap. */}
-                    {r.status !== "new" && (
+                    {(r.status === "in_progress" || r.status === "done") && (
                       <span className="text-xs text-neutral-500">
                         {r.status === "done" ? "ซ่อมโดย" : "รับเรื่องโดย"} {r.resolverName || "ไม่ระบุชื่อ"}
                       </span>
+                    )}
+                    {cancelled && (
+                      <span className="text-xs text-neutral-500">ยกเลิกโดย {r.cancelledByName || "ไม่ระบุชื่อ"}</span>
                     )}
                   </div>
                   <div className="flex shrink-0 gap-1.5">
@@ -139,9 +143,9 @@ export function MaintenanceListClient({
                     )}
                     <Link
                       href={`/maintenance/${r.id}`}
-                      className={buttonClass(canManage && r.status !== "done" ? "primary" : "secondary", { size: "sm" })}
+                      className={buttonClass(manage ? "primary" : "secondary", { size: "sm" })}
                     >
-                      {canManage && r.status !== "done" ? "จัดการ" : "ดู"}
+                      {manage ? "จัดการ" : "ดู"}
                     </Link>
                   </div>
                 </div>

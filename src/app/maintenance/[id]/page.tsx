@@ -13,14 +13,13 @@ export default async function MaintenanceDetailPage({
   const [profile, report] = await Promise.all([requireProfile(), getMaintenanceReport(id)]);
   if (!report) notFound();
 
-  const canManage = ["owner", "admin", "editor"].includes(profile.role);
-  const isOwn = report.reporterId === profile.id;
+  const isReporter = report.reporterId === profile.id;
 
   return (
     // The page header (← รายการแจ้งซ่อม, the report, its status) is in
     // MaintenanceDetailClient, beside the actions it drives.
     <PageShell>
-      <MaintenanceDetailClient report={report} canManage={canManage} isOwn={isOwn} />
+      <MaintenanceDetailClient report={report} role={profile.role} isReporter={isReporter} />
     </PageShell>
   );
 }

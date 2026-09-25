@@ -11,8 +11,6 @@ export default async function MaintenancePage() {
     getMaintenanceReports(),
   ]);
 
-  const canManage = ["owner", "admin", "editor"].includes(profile.role);
-
   return (
     <PageShell>
       <PageHeader
@@ -24,7 +22,7 @@ export default async function MaintenancePage() {
           </Link>
         }
       />
-      <MaintenanceListClient reports={reports} canManage={canManage} currentUserId={profile.id} />
+      <MaintenanceListClient reports={reports} role={profile.role} currentUserId={profile.id} />
     </PageShell>
   );
 }
