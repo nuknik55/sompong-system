@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canOrder } from "@/lib/order-rules";
@@ -14,7 +15,12 @@ export type Profile = {
   employee_id: string | null;
 };
 
-export async function getCurrentProfile(): Promise<Profile | null> {
+// ONE lookup per request (React cache): every guard calls this, and a page
+// that runs a dozen guarded reads at once (the HR employee page, since each
+// read action guards itself, 2026-09-25) would otherwise ask the auth server
+// and the profiles table a dozen times. Outside a render (a server action) it
+// simply runs each time.
+export const getCurrentProfile = cache(async function getCurrentProfile(): Promise<Profile | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -35,7 +41,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   if (error) throw new Error(`อ่านข้อมูลผู้ใช้ไม่สำเร็จ: ${error.message}`);
 
   return profile ?? null;
-}
+});
 
 export async function requireProfile(): Promise<Profile> {
   const profile = await getCurrentProfile();

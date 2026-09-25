@@ -240,17 +240,20 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   // profile below was deleted, and the screen said done while the login
   // could still sign in and read every table whose policy asks only "signed
   // in". Now a failure stops here and nothing is deleted. A login that is
-  // already gone (404) goes on, so an orphaned profile can still be removed.
+  // already gone (user_not_found) goes on, so an orphaned profile can still be removed.
   const adminClient = createAdminClient();
   const { error: authErr } = await adminClient.auth.admin.deleteUser(userId);
-  if (authErr && authErr.status !== 404) {
+  if (authErr && authErr.code !== "user_not_found") {
     return { error: `ลบบัญชีเข้าระบบไม่สำเร็จ — ยังไม่ได้ลบอะไร: ${authErr.message}` };
   }
 
   // The profile. profiles.id references auth.users ON DELETE CASCADE
   // (0001_init.sql), so it is normally gone already and this deletes 0 rows:
   // that is success, not the failure it used to be reported as. What counts
-  // is that no profile is left.
+  // is that no profile is left. The delete runs under the live policy the
+  // README and profile_employee_link_migration.sql refer to:
+  //   CREATE POLICY owner_admin_delete_profiles ON profiles FOR DELETE TO authenticated
+  //   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('owner','admin')));
   const { error: profileErr } = await supabase.from("profiles").delete().eq("id", userId);
   if (profileErr) return { error: `ลบโปรไฟล์ไม่สำเร็จ: ${profileErr.message}` };
   const { data: left, error: leftErr } = await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();

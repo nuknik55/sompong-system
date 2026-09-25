@@ -54,6 +54,8 @@ function load(source: string, current: { who: Who }) {
   };
   const stubs: Record<string, unknown> = {
     "server-only": {},
+    // React's request cache: a pass-through here, so every call is fresh.
+    react: { cache: <T,>(f: T) => f },
     "next/navigation": { redirect: (to: string) => { throw new Redirected(to); } },
     "@/lib/supabase/server": { createClient: async () => client },
     "@/lib/order-rules": orderRules,
