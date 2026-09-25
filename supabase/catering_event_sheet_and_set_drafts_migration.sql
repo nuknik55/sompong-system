@@ -8,20 +8,36 @@
 -- re-run: every ADD is IF NOT EXISTS, every function CREATE OR REPLACE,
 -- every policy dropped and re-made, the bucket upserted.
 --
+-- SECOND VERSION (2026-09-24). The first, committed in 5811ec3, stopped on
+-- its first run with "Nothing applied" (checked read-only afterwards: no new
+-- table, column, function or bucket in production). Its test S21 simulated
+-- the storage API's upsert with INSERT ... ON CONFLICT (bucket_id, name),
+-- for which the live storage.objects has no matching unique constraint.
+-- This file simulates no storage internals: it tests the policies on
+-- storage.objects (as read from pg_policies), inserts and reads as each
+-- role, and the library's cap. Nik's decisions since: the bucket holds the
+-- IMAGE LIBRARY only; an image for one booking is never uploaded (it is
+-- picked on the print page for that print, in the browser).
+--
 -- Needs the catering module as it stands on 2026-09-24:
 -- catering_booking_prices_save_migration.sql and
 -- catering_event_menu_items_migration.sql (the two functions this file
--- replaces), catering_sales_limits_migration.sql (the lock), and the
--- storage schema. Step 0 stops if any of them is missing.
+-- replaces), catering_sales_limits_migration.sql (the lock),
+-- permissions_batch_2026_09_17.sql part D (sop-photos uploads) and the
+-- storage schema. Step 0 stops if any of them is missing, AND if either
+-- function it replaces is not the body those files applied (an md5 of the
+-- live body; this file's own body is accepted too, for a re-run):
+-- replacing a function that changed since would silently undo the change.
 --
--- WHY (Nik, 2026-09-24, every recommendation of the proposal approved):
+-- WHY (Nik, 2026-09-24):
 --   A. THE EVENT-DETAILS SHEET. Sales makes a second page by hand today and
 --      sends it with the quotation: the dishes, the free items, the job's
---      notes, the standard terms of the venue, a room photo, a table-layout
---      diagram. The app makes it now, from a LIBRARY of reusable blocks
---      (terms, photos, diagrams, tagged by the venues they suit) that owner
---      and admin keep, and that sales picks from for a booking and edits
---      there — the library copy never changes.
+--      notes, the venue's standard terms, a room photo, a table layout. The
+--      app makes it now, from two LIBRARIES that owner and admin keep —
+--      terms texts, and images (room photos and layout diagrams), each
+--      tagged by the venues it suits — that sales picks from for a booking.
+--      A picked terms text and a picked image's caption can be edited for
+--      that booking only; the library never changes.
 --   B. THE FREE MARK. A free item is marked "แถมฟรี" on its price-box line,
 --      never guessed from a ฿0 price. Only marked lines (and a set's own
 --      "free" section, unchanged) print under รายการแถมฟรี.
@@ -29,26 +45,33 @@
 --      sets side by side with their cost. A trial set is a normal set with
 --      is_draft = true. Sales must never reach one, and none may reach a
 --      booking or a document.
+--   D. sop-photos: the dashboard's warning that a broad SELECT policy lets
+--      clients list every file. The bucket is public and needs none.
 --
 -- WHAT IT CHANGES
---   A. catering_detail_blocks — the library: kind (terms | photo |
---      diagram), title, body, image_path (lib/…), venue_tags (free text, no
---      fixed list), sort_order. Owner, admin and sales read it; owner and
---      admin write it.
---      catering_event_detail_blocks — a booking's picked blocks, each a COPY
---      (title, body, image, caption) with the library block it came from
---      (ON DELETE RESTRICT: a library block a booking uses cannot be
---      removed), or a booking's own image (no library block). At most 6
---      images per booking. An image path is the library's (lib/…) or this
---      booking's own folder (evt/<booking id>/…), never another booking's.
---      Owner, admin and sales, under the booking's cost lock, as every
---      booking table.
+--   A. catering_detail_blocks — the terms library: title, body, venue_tags
+--      (free text, no fixed list), sort_order.
+--      catering_detail_images — the image library: name, default caption,
+--      image_path (lib/…, one file of the bucket), venue_tags, sort_order.
+--      Both: owner, admin and sales read; owner and admin write.
+--      catering_event_detail_blocks and catering_event_detail_images — a
+--      booking's picks: a copy of a terms text (title, body), a library
+--      image with this booking's caption. ON DELETE RESTRICT: a library
+--      block or image a booking uses cannot be removed. Owner, admin and
+--      sales, under the booking's cost lock, as every booking table.
 --      catering_events.sheet_notes — the job's numbered notes, one per line.
---      Bucket catering-details: PRIVATE; JPEG and PNG only, 2 MB a file.
---      Signed-in owner, admin and sales read it (signed URLs); uploads only
---      under the app's names — lib/<digits>-<letters>.jpg|png by owner and
---      admin, evt/<open booking id>/<digits>-<letters>.jpg|png by owner,
---      admin and sales; nobody overwrites or deletes through the API.
+--      catering_save_event_sheet (owner, admin, sales): notes, terms and
+--      images saved whole, in one transaction, the booking row locked;
+--      refused when someone saved the sheet since the screen opened it, on a
+--      cancelled booking, and on a cost-locked one for everyone.
+--      Bucket catering-details: PRIVATE; JPEG, PNG and WebP; 2 MB a file.
+--      Signed-in owner, admin and sales read it (signed URLs); owner and
+--      admin upload, under the app's names lib/<digits>-<letters>.<ext>
+--      only, while it holds fewer than 100 current files (live
+--      storage.objects is versioned: archived versions and delete markers
+--      do not count, and no upload may be one); no app role updates or
+--      deletes a file in it (the service key bypasses row security, as it
+--      does everywhere). A file whose image is deleted still counts.
 --   B. catering_event_charges.is_free, with a CHECK: a free line is ฿0 a
 --      unit and ฿0 in all, and not a discount. catering_save_booking_prices
 --      is REPLACED with the free mark carried on its lines (a set line
@@ -63,46 +86,52 @@
 --      A draft's save (name, price and dishes) and its making real are each
 --      ONE function, one transaction, under a version check:
 --      catering_save_set_draft and catering_make_set_real (owner, admin).
---   A. A booking's sheet is saved by ONE function too,
---      catering_save_event_sheet (owner, admin, sales): its notes and blocks
---      in one transaction, refused when someone saved it since the screen
---      opened, on a cancelled booking, and on a cost-locked one for everyone.
---      Uploads are capped per folder: 30 files for a booking, 500 for the
---      library (catering_detail_folder_has_room), so abandoned uploads cannot
---      grow without end.
+--   D. DROP POLICY "sop photos public read" on storage.objects. Its files
+--      stay served by their public URLs; uploads keep "sop photos upload by
+--      role".
 --
 -- CHANGES NO DATA. Every test write happens inside a block that always rolls
 -- back; Step 5 checks every count afterwards. The bucket row is the one
 -- thing written outside the tests, and it is part of the change.
 --
 -- STATEMENTS THE EDITOR MAY CALL DESTRUCTIVE: ALTER TABLE ADD COLUMN ×3 and
--- ADD CONSTRAINT ×2 (only when missing); CREATE TABLE ×2 with their indexes;
--- CREATE OR REPLACE FUNCTION ×10 in public (two of them replacements) and the
--- pg_temp helpers; CREATE TRIGGER ×6 (each dropped first if it exists);
+-- ADD CONSTRAINT ×2 (only when missing); CREATE TABLE ×4 with their indexes;
+-- CREATE OR REPLACE FUNCTION ×9 in public (two of them replacements) and the
+-- pg_temp helpers; CREATE TRIGGER ×8 (each dropped first if it exists);
+-- ALTER TABLE … ENABLE ROW LEVEL SECURITY on the four new tables; COMMENT ON
+-- the new tables, columns and functions;
 -- DROP POLICY IF EXISTS / CREATE POLICY on catering_set_menus,
--- catering_set_menu_items, the two new tables and storage.objects (the
--- caps for THIS bucket only); GRANT and REVOKE on the two new tables and
--- the new functions; INSERT … ON CONFLICT on storage.buckets (the new
--- bucket); after COMMIT, DROP FUNCTION IF EXISTS on the pg_temp helpers;
--- inside the always-aborting test block, the test writes, a probe bucket and
--- a probe policy "probe open" on storage.objects (to prove the caps hold
--- beside an open policy; rolled back with the rest). Anything else is
--- unexpected: stop and send it. Never "Run and enable RLS".
+-- catering_set_menu_items, the four new tables and storage.objects (for
+-- catering-details only); DROP POLICY IF EXISTS "sop photos public read"
+-- on storage.objects; GRANT and REVOKE on the four new tables and the new
+-- functions; INSERT … ON CONFLICT (id) on storage.buckets (the new bucket);
+-- after COMMIT, DROP FUNCTION IF EXISTS on the pg_temp helpers; inside the
+-- always-aborting test block, the test writes, a probe bucket and a probe
+-- policy "probe open" on storage.objects (to prove the caps hold beside an
+-- open policy; rolled back with the rest). Anything else is unexpected:
+-- stop and send it. Never "Run and enable RLS".
 --
 -- WHAT SQL CANNOT TEST, AND IS LEFT TO THE APP AND THE CHECKS AFTER:
---   the storage API's own size and type limits (this file sets them on the
---   bucket row and reads them back; only an upload through the API applies
---   them); signed URLs, whose lifetime the CALLER chooses (any owner, admin
---   or sales session can make a long-lived link to any image in the bucket,
---   as it can download the image); signed UPLOAD URLs, whose token the
---   storage server honours on its own (an upsert through one, or a late
---   upload after the booking is locked, is not stopped by these policies);
---   a copy from another bucket (whether the API re-checks type and size);
---   the content of a file (the API trusts the declared type); the browser's
---   resize to 1600 px; a real anonymous HTTP request (tested here as the
---   anon database role).
+--   the storage API itself: its type and size limits (this file sets them
+--   on the bucket row and reads them back), signed links (their lifetime is
+--   the caller's choice), signed UPLOAD links and copies between buckets
+--   (the storage server honours those on its own), a file's real content,
+--   and how the API decides a permission (this file tests the policies it
+--   is decided by); the browser's resize to 1600 px; the print page's
+--   images for one booking (they never leave the browser); a real
+--   anonymous HTTP request (tested here as the anon database role); how
+--   the storage server writes versions, archives and delete markers, and
+--   any trigger it keeps on storage.objects (this file inserts plain rows,
+--   as its first run did, and checks the columns it relies on in Step 0).
 --
--- RUN IT WHILE NOBODY IS SAVING A BOOKING'S PRICE BOX OR A SET MENU.
+-- RUN IT WHILE NOBODY IS SAVING A BOOKING'S PRICE BOX OR A SET MENU, OR
+-- UPLOADING A SOP OR MAINTENANCE PHOTO (Step 5 compares the photo count).
+--
+-- AFTER IT RUNS: upload one SOP photo and one maintenance photo. SQL cannot
+-- show whether the storage server's upload needs the dropped read policy
+-- (the documented rule and the server's source say it does not). If either
+-- fails, this puts the old read back, unchanged:
+--   CREATE POLICY "sop photos public read" ON storage.objects FOR SELECT USING (bucket_id = 'sop-photos');
 --
 -- THE RESULT is the table the last statement prints. Copy it back whole.
 -- ============================================================================
@@ -346,9 +375,35 @@ BEGIN
     PERFORM 'public.catering_event_unlocked(uuid)'::regprocedure;
     PERFORM 'public.current_role()'::regprocedure;
     PERFORM 'public.touch_updated_at()'::regprocedure;
+    PERFORM 'public.sop_photo_upload_allowed(text)'::regprocedure;
   EXCEPTION WHEN undefined_function THEN
-    RAISE EXCEPTION 'a catering function is missing (the booking price box, the set copy, the lock, the role or the updated_at trigger): %. Nothing changed.', SQLERRM;
+    RAISE EXCEPTION 'a function this file needs is missing (the booking price box, the set copy, the lock, the role, the updated_at trigger or the sop-photos upload rule): %. Nothing changed.', SQLERRM;
   END;
+  -- THE TWO FUNCTIONS THIS FILE REPLACES must be the bodies it copied: those
+  -- catering_booking_prices_save_migration.sql and
+  -- catering_event_menu_items_migration.sql applied (or this file's own, on
+  -- a re-run). Anything else is a change this file would silently undo.
+  -- Carriage returns are ignored, as the editor may send either line ending.
+  IF md5(replace((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'public.catering_save_booking_prices(uuid, jsonb, jsonb, boolean)'::regprocedure), chr(13), ''))
+       NOT IN ('ef27e1fe74082355cb22c91ba18b306c', '4ec24b9393483e62948d84bcd3b69a66') THEN
+    RAISE EXCEPTION 'the live catering_save_booking_prices is not the body this file copied (live md5 %). Nothing changed.',
+      md5(replace((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'public.catering_save_booking_prices(uuid, jsonb, jsonb, boolean)'::regprocedure), chr(13), ''));
+  END IF;
+  IF md5(replace((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'public.catering_copy_set_menu(uuid)'::regprocedure), chr(13), ''))
+       NOT IN ('a5e38cbf51806ce585779d1891ed7bf1', '9f18d23339caa6a9c8703d03535dea10') THEN
+    RAISE EXCEPTION 'the live catering_copy_set_menu is not the body this file copied (live md5 %). Nothing changed.',
+      md5(replace((SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'public.catering_copy_set_menu(uuid)'::regprocedure), chr(13), ''));
+  END IF;
+  -- LIVE storage.objects IS VERSIONED (Nik's read-only query, 2026-09-25):
+  -- the cap counts current files by archived_at and is_delete_marker. If
+  -- they are not there as that query showed them, stop: this file does not
+  -- guess at another shape.
+  IF (SELECT count(*) FROM information_schema.columns c
+       WHERE c.table_schema = 'storage' AND c.table_name = 'objects'
+         AND ((c.column_name = 'archived_at' AND c.data_type LIKE 'timestamp%')
+           OR (c.column_name = 'is_delete_marker' AND c.data_type = 'boolean'))) <> 2 THEN
+    RAISE EXCEPTION 'storage.objects has no archived_at (a timestamp) and is_delete_marker (a boolean): it is not the versioned table this file was written for. Nothing changed.';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'catering_events' AND column_name = 'cost_locked_at') THEN
     RAISE EXCEPTION 'catering_events.cost_locked_at is missing: the cost lock has not been installed. Nothing changed.';
@@ -381,16 +436,17 @@ BEGIN
   PERFORM set_config('sheet.n_charges', (SELECT count(*) FROM public.catering_event_charges)::text, false);
   PERFORM set_config('sheet.n_log',     (SELECT count(*) FROM public.catering_event_activity_log)::text, false);
   PERFORM set_config('sheet.n_objects', (SELECT count(*) FROM storage.objects WHERE bucket_id = 'catering-details')::text, false);
+  PERFORM set_config('sheet.n_sop',     (SELECT count(*) FROM storage.objects WHERE bucket_id = 'sop-photos')::text, false);
   PERFORM set_config('sheet.fp_events',
     (SELECT md5(COALESCE(string_agg(id::text || status || updated_at::text || COALESCE(cost_locked_at::text, ''), ',' ORDER BY id), ''))
        FROM public.catering_events), false);
   PERFORM set_config('sheet.fp_charges',
     (SELECT md5(COALESCE(string_agg(id::text || label || unit_price::text || quantity::text || amount::text, ',' ORDER BY id), ''))
        FROM public.catering_event_charges), false);
-  PERFORM pg_temp.note(format('before  bookings %s, sets %s (dish rows %s), booking lines %s (copied dishes %s), charges %s, history %s, files in catering-details %s; is_draft exists: %s, is_free exists: %s, library exists: %s (a re-run says true, true, true)',
+  PERFORM pg_temp.note(format('before  bookings %s, sets %s (dish rows %s), booking lines %s (copied dishes %s), charges %s, history %s, files in catering-details %s, in sop-photos %s; the two replaced functions are the bodies copied; storage.objects versioned as expected; is_draft exists: %s, is_free exists: %s, library exists: %s (a re-run says true, true, true)',
     current_setting('sheet.n_events'), current_setting('sheet.n_sets'), current_setting('sheet.n_setitems'),
     current_setting('sheet.n_lines'), current_setting('sheet.n_copies'), current_setting('sheet.n_charges'),
-    current_setting('sheet.n_log'), current_setting('sheet.n_objects'),
+    current_setting('sheet.n_log'), current_setting('sheet.n_objects'), current_setting('sheet.n_sop'),
     EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'catering_set_menus' AND column_name = 'is_draft'),
     EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'catering_event_charges' AND column_name = 'is_free'),
     to_regclass('public.catering_detail_blocks') IS NOT NULL));
@@ -433,51 +489,69 @@ COMMENT ON COLUMN public.catering_events.sheet_notes IS
 
 CREATE TABLE IF NOT EXISTS public.catering_detail_blocks (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind        text NOT NULL CHECK (kind IN ('terms', 'photo', 'diagram')),
   title       text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 200),
-  body        text CHECK (body IS NULL OR char_length(body) <= 4000),
-  image_path  text CHECK (image_path IS NULL OR image_path ~ '^lib/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)$'),
+  body        text NOT NULL CHECK (btrim(body) <> '' AND char_length(body) <= 4000),
   venue_tags  text[] NOT NULL DEFAULT ARRAY[]::text[] CHECK (cardinality(venue_tags) <= 20),
   sort_order  integer NOT NULL DEFAULT 0,
   created_by  uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT catering_detail_blocks_shape CHECK (
-    (kind = 'terms' AND body IS NOT NULL AND image_path IS NULL)
-    OR (kind IN ('photo', 'diagram') AND image_path IS NOT NULL))
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE public.catering_detail_blocks IS
-  'The event-details sheet''s library (Nik, 2026-09-24): standard terms, room photos, layout diagrams, tagged by the venues they suit. Owner and admin keep it; sales picks copies onto a booking.';
+  'The event-details sheet''s library (Nik, 2026-09-24): standard terms texts, tagged by the venues they suit. Owner and admin keep it; sales picks copies onto a booking. Images have their own library (catering_detail_images).';
 
 CREATE TABLE IF NOT EXISTS public.catering_event_detail_blocks (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id    uuid NOT NULL REFERENCES public.catering_events(id) ON DELETE CASCADE,
-  -- The library block this copy came from; NULL for the booking's own image.
-  -- RESTRICT: a library block a booking uses cannot be removed.
-  block_id    uuid REFERENCES public.catering_detail_blocks(id) ON DELETE RESTRICT,
-  kind        text NOT NULL CHECK (kind IN ('terms', 'photo', 'diagram')),
+  -- The library block this copy came from. RESTRICT: a library block a
+  -- booking uses cannot be removed.
+  block_id    uuid NOT NULL REFERENCES public.catering_detail_blocks(id) ON DELETE RESTRICT,
   title       text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 200),
-  body        text CHECK (body IS NULL OR char_length(body) <= 4000),
-  -- The library's images, or this booking's own folder: never another booking's.
-  image_path  text CHECK (image_path IS NULL
-                          OR image_path ~ '^lib/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)$'
-                          OR image_path ~ ('^evt/' || event_id::text || '/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)$')),
-  caption     text CHECK (caption IS NULL OR char_length(caption) <= 300),
+  body        text NOT NULL CHECK (btrim(body) <> '' AND char_length(body) <= 4000),
   sort_order  integer NOT NULL DEFAULT 0,
   created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT catering_event_detail_blocks_shape CHECK (
-    (kind = 'terms' AND body IS NOT NULL AND image_path IS NULL)
-    OR (kind IN ('photo', 'diagram') AND image_path IS NOT NULL))
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_catering_event_detail_blocks_event ON public.catering_event_detail_blocks(event_id);
 CREATE INDEX IF NOT EXISTS idx_catering_event_detail_blocks_block ON public.catering_event_detail_blocks(block_id);
 COMMENT ON TABLE public.catering_event_detail_blocks IS
-  'A booking''s event-details sheet blocks: a copy of a library block (edited for this booking only) or the booking''s own image. At most 6 images per booking.';
+  'A booking''s event-details sheet terms: each a copy of a library block, edited for this booking only.';
+
+CREATE TABLE IF NOT EXISTS public.catering_detail_images (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 200),
+  -- The default caption; a booking may print its own.
+  caption     text CHECK (caption IS NULL OR char_length(caption) <= 300),
+  -- A file in the library's folder of the private bucket catering-details.
+  image_path  text NOT NULL UNIQUE CHECK (image_path ~ '^lib/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png|webp)$'),
+  venue_tags  text[] NOT NULL DEFAULT ARRAY[]::text[] CHECK (cardinality(venue_tags) <= 20),
+  sort_order  integer NOT NULL DEFAULT 0,
+  created_by  uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE public.catering_detail_images IS
+  'The event-details sheet''s image library (Nik, 2026-09-24): room photos and table-layout diagrams, each with a name, a default caption and the venues it suits. Owner and admin keep it; sales picks from it for a booking.';
+
+CREATE TABLE IF NOT EXISTS public.catering_event_detail_images (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id    uuid NOT NULL REFERENCES public.catering_events(id) ON DELETE CASCADE,
+  -- RESTRICT: a library image a booking uses cannot be removed from the library.
+  image_id    uuid NOT NULL REFERENCES public.catering_detail_images(id) ON DELETE RESTRICT,
+  -- This booking's caption; NULL prints the library's default.
+  caption     text CHECK (caption IS NULL OR char_length(caption) <= 300),
+  sort_order  integer NOT NULL DEFAULT 0,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (event_id, image_id)
+);
+CREATE INDEX IF NOT EXISTS idx_catering_event_detail_images_image ON public.catering_event_detail_images(image_id);
+COMMENT ON TABLE public.catering_event_detail_images IS
+  'A booking''s event-details sheet images: library images it prints, each with an optional caption for this booking. Images for one booking only are never stored: they are picked on the print page for that print.';
 
 DO $do$
 BEGIN
-  PERFORM pg_temp.note('ok      the library (catering_detail_blocks) and a booking''s picks (catering_event_detail_blocks) are there');
+  PERFORM pg_temp.note('ok      the terms and image libraries (catering_detail_blocks, catering_detail_images) and a booking''s picks of each are there');
 END
 $do$;
 
@@ -522,72 +596,46 @@ BEGIN
 END
 $fn$;
 
--- A. At most 6 images on a booking's sheet. One booking's picks are counted
--- under a transaction lock of their own, so two uploads at once cannot both
--- be the sixth.
-CREATE OR REPLACE FUNCTION public.catering_detail_image_cap()
+-- A. Who may upload to catering-details, and whether the library has room:
+-- owner and admin, under a name the app makes
+-- (lib/<digits>-<letters>.jpg|png|webp), while the bucket holds fewer than
+-- 100 CURRENT files. storage.objects is versioned: an archived version
+-- (archived_at set) or a delete marker is not a file anyone sees, so it
+-- does not count. SECURITY INVOKER on purpose: owner and admin read the
+-- whole bucket, so the count is every file in it; a role that cannot read
+-- it cannot upload either.
+CREATE OR REPLACE FUNCTION public.catering_detail_upload_allowed(p_name text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $fn$
+  SELECT COALESCE(
+    p_name ~ '^lib/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png|webp)$'
+    AND public.current_role() IN ('owner', 'admin')
+    AND (SELECT count(*) FROM storage.objects o
+          WHERE o.bucket_id = 'catering-details' AND o.archived_at IS NULL AND o.is_delete_marker IS NOT TRUE) < 100,
+    false);
+$fn$;
+
+-- B. A library image's file is fixed once saved: changing it would swap the
+-- picture on every booking that picked it. A new picture is a new image.
+CREATE OR REPLACE FUNCTION public.catering_detail_images_path_fixed()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = public
 AS $fn$
 BEGIN
-  IF NEW.image_path IS NULL THEN
-    RETURN NEW;
-  END IF;
-  PERFORM pg_advisory_xact_lock(hashtext('catering_event_detail_blocks:' || NEW.event_id::text));
-  IF (SELECT count(*) FROM public.catering_event_detail_blocks b
-       WHERE b.event_id = NEW.event_id AND b.image_path IS NOT NULL AND b.id <> NEW.id) >= 6 THEN
-    RAISE EXCEPTION 'ใบรายละเอียดงานมีรูปได้ไม่เกิน 6 รูป';
+  IF NEW.image_path IS DISTINCT FROM OLD.image_path THEN
+    RAISE EXCEPTION 'เปลี่ยนไฟล์ของรูปในคลังไม่ได้ — เพิ่มเป็นรูปใหม่แทน';
   END IF;
   RETURN NEW;
 END
 $fn$;
 
--- A. Room in the folder an upload goes to: 30 files for a booking, 500 for
--- the library. SECURITY INVOKER on purpose: owner, admin and sales read the
--- whole bucket, so the count is every file there; a role that cannot read
--- it cannot upload either.
-CREATE OR REPLACE FUNCTION public.catering_detail_folder_has_room(p_name text)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SET search_path = public
-AS $fn$
-  SELECT CASE
-    WHEN left(p_name, 4) = 'lib/'
-      THEN (SELECT count(*) FROM storage.objects o WHERE o.bucket_id = 'catering-details' AND left(o.name, 4) = 'lib/') < 500
-    WHEN left(p_name, 4) = 'evt/'
-      THEN (SELECT count(*) FROM storage.objects o WHERE o.bucket_id = 'catering-details' AND left(o.name, 41) = left(p_name, 41)) < 30
-    ELSE false END;
-$fn$;
-
--- A. Who may upload what to catering-details: a name the app makes, tied to
--- a role — the library's images by owner and admin; a booking's by owner,
--- admin and sales, into the folder of a booking that exists, is not
--- cancelled and is not cost-locked. Anything else, nobody.
-CREATE OR REPLACE FUNCTION public.catering_detail_upload_allowed(p_name text)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $fn$
-  SELECT COALESCE(CASE
-    WHEN p_name ~ '^lib/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)$'
-      THEN public.current_role() IN ('owner', 'admin')
-    WHEN p_name ~ '^evt/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]{10,16}-[0-9a-z]{4,16}[.](jpg|png)$'
-      THEN public.current_role() IN ('owner', 'admin', 'sales')
-       AND EXISTS (SELECT 1 FROM public.catering_events e
-                    WHERE e.id = substring(p_name from 5 for 36)::uuid
-                      AND e.status <> 'cancelled' AND e.cost_locked_at IS NULL)
-    ELSE false END, false);
-$fn$;
-
-REVOKE EXECUTE ON FUNCTION public.catering_set_menus_draft_guard(), public.catering_no_draft_on_booking(),
-  public.catering_detail_image_cap() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.catering_detail_upload_allowed(text), public.catering_detail_folder_has_room(text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.catering_detail_upload_allowed(text), public.catering_detail_folder_has_room(text) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.catering_set_menus_draft_guard(), public.catering_no_draft_on_booking(), public.catering_detail_images_path_fixed() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.catering_detail_upload_allowed(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.catering_detail_upload_allowed(text) TO authenticated;
 
 DROP TRIGGER IF EXISTS trg_catering_set_menus_draft_guard ON public.catering_set_menus;
 CREATE TRIGGER trg_catering_set_menus_draft_guard BEFORE UPDATE OF is_draft ON public.catering_set_menus
@@ -598,14 +646,20 @@ CREATE TRIGGER trg_catering_event_menus_no_draft BEFORE INSERT OR UPDATE OF set_
 DROP TRIGGER IF EXISTS trg_catering_event_menu_items_no_draft ON public.catering_event_menu_items;
 CREATE TRIGGER trg_catering_event_menu_items_no_draft BEFORE INSERT OR UPDATE OF source_set_menu_id ON public.catering_event_menu_items
   FOR EACH ROW EXECUTE FUNCTION public.catering_no_draft_on_booking();
-DROP TRIGGER IF EXISTS trg_catering_event_detail_blocks_image_cap ON public.catering_event_detail_blocks;
-CREATE TRIGGER trg_catering_event_detail_blocks_image_cap BEFORE INSERT OR UPDATE OF image_path, event_id ON public.catering_event_detail_blocks
-  FOR EACH ROW EXECUTE FUNCTION public.catering_detail_image_cap();
 DROP TRIGGER IF EXISTS trg_touch_updated_at ON public.catering_detail_blocks;
 CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.catering_detail_blocks
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 DROP TRIGGER IF EXISTS trg_touch_updated_at ON public.catering_event_detail_blocks;
 CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.catering_event_detail_blocks
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+DROP TRIGGER IF EXISTS trg_touch_updated_at ON public.catering_detail_images;
+CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.catering_detail_images
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+DROP TRIGGER IF EXISTS trg_catering_detail_images_path_fixed ON public.catering_detail_images;
+CREATE TRIGGER trg_catering_detail_images_path_fixed BEFORE UPDATE OF image_path ON public.catering_detail_images
+  FOR EACH ROW EXECUTE FUNCTION public.catering_detail_images_path_fixed();
+DROP TRIGGER IF EXISTS trg_touch_updated_at ON public.catering_event_detail_images;
+CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.catering_event_detail_images
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- C. The set copy refuses a draft itself as well (the trigger above already
@@ -1253,20 +1307,20 @@ BEGIN
 END
 $fn$;
 
--- A. A BOOKING'S SHEET, saved whole: its job notes and its blocks, in the
--- order given, in ONE transaction. Refused on a cancelled booking and on a
--- cost-locked one FOR EVERYONE (the app's rule for the booking's non-price
--- fields), and when the sheet changed since the screen opened it: p_seen is
--- the notes and every block's id and last change as the screen read them.
--- The booking row is locked (not changed) so two saves take turns. A block
--- the sheet holds is updated as a row of THIS booking; a new one is added
--- with the id the screen gave it; one another booking holds is refused. A
--- library image is one a library block holds, or one this booking already
--- shows (a library block may have changed its image since). SECURITY
+-- A. A BOOKING'S SHEET, saved whole: its job notes, its picked terms and
+-- its picked library images, in the order given, in ONE transaction.
+-- Refused on a cancelled booking and on a cost-locked one FOR EVERYONE (the
+-- app's rule for the booking's non-price fields), and when the sheet changed
+-- since the screen opened it: p_seen is the notes and every block's and
+-- image's id and last change as the screen read them. The booking row is
+-- locked (not changed) so two saves take turns. A row the sheet holds is
+-- updated as a row of THIS booking; a new one is added with the id the
+-- screen gave it; one another booking holds is refused; every block names a
+-- library block, every image a library image, that exists. SECURITY
 -- INVOKER: the tables' own policies apply as well. Returns the sheet's new
 -- version, read inside the same transaction, so a screen never takes
 -- someone else's later save for its own.
-CREATE OR REPLACE FUNCTION public.catering_save_event_sheet(p_event_id uuid, p_seen jsonb, p_notes text, p_blocks jsonb)
+CREATE OR REPLACE FUNCTION public.catering_save_event_sheet(p_event_id uuid, p_seen jsonb, p_notes text, p_blocks jsonb, p_images jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SET search_path = public
@@ -1280,14 +1334,21 @@ DECLARE
   v_want   jsonb;
   v_b      jsonb;
   v_ids    uuid[] := ARRAY[]::uuid[];
+  v_imgs   uuid[] := ARRAY[]::uuid[];
+  v_pics   uuid[] := ARRAY[]::uuid[];
   v_id     uuid;
-  v_path   text;
   v_i      integer := 0;
   c_uuid   constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  c_stale  constant text := 'ใบรายละเอียดงานนี้ถูกแก้จากที่อื่นหลังจากเปิดหน้านี้ — โหลดหน้าใหม่แล้วแก้อีกครั้ง';
 BEGIN
   IF v_role IS NULL OR v_role NOT IN ('owner', 'admin', 'sales') THEN
     RAISE EXCEPTION 'ไม่มีสิทธิ์แก้ใบรายละเอียดงาน';
   END IF;
+  -- The booking locked FIRST, so a cost lock or a cancellation cannot commit
+  -- between the checks below and the writes. (Under the lock policies a
+  -- locked booking is no row here for sales: no lock is taken, and the check
+  -- below refuses it.)
+  PERFORM 1 FROM public.catering_events e WHERE e.id = p_event_id FOR UPDATE;
   SELECT e.status, e.cost_locked_at INTO v_status, v_locked FROM public.catering_events e WHERE e.id = p_event_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'ไม่พบข้อมูลงาน';
@@ -1298,25 +1359,34 @@ BEGIN
   IF v_locked IS NOT NULL THEN
     RAISE EXCEPTION 'ต้นทุนของงานนี้ถูกล็อกแล้ว ปลดล็อกก่อนจึงจะแก้ใบรายละเอียดงานได้';
   END IF;
-  PERFORM 1 FROM public.catering_events e WHERE e.id = p_event_id FOR UPDATE;
   SELECT e.sheet_notes INTO v_notes FROM public.catering_events e WHERE e.id = p_event_id;
 
+  -- THE VERSION the screen opened with.
   IF jsonb_typeof(p_seen) IS DISTINCT FROM 'object'
-     OR jsonb_typeof(COALESCE(p_seen->'blocks', '[]'::jsonb)) IS DISTINCT FROM 'array' THEN
-    RAISE EXCEPTION 'ใบรายละเอียดงานนี้ถูกแก้จากที่อื่นหลังจากเปิดหน้านี้ — โหลดหน้าใหม่แล้วแก้อีกครั้ง' USING HINT = 'conflict';
+     OR jsonb_typeof(COALESCE(p_seen->'blocks', '[]'::jsonb)) IS DISTINCT FROM 'array'
+     OR jsonb_typeof(COALESCE(p_seen->'images', '[]'::jsonb)) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION '%', c_stale USING HINT = 'conflict';
   END IF;
   SELECT COALESCE(jsonb_agg(jsonb_build_array(b.id::text, b.updated_at) ORDER BY b.id::text), '[]'::jsonb) INTO v_cur
     FROM public.catering_event_detail_blocks b WHERE b.event_id = p_event_id;
   SELECT COALESCE(jsonb_agg(jsonb_build_array(x->>'id', (x->>'updated_at')::timestamptz) ORDER BY x->>'id'), '[]'::jsonb) INTO v_want
     FROM jsonb_array_elements(COALESCE(p_seen->'blocks', '[]'::jsonb)) x;
   IF v_cur IS DISTINCT FROM v_want OR (p_seen->>'notes') IS DISTINCT FROM v_notes THEN
-    RAISE EXCEPTION 'ใบรายละเอียดงานนี้ถูกแก้จากที่อื่นหลังจากเปิดหน้านี้ — โหลดหน้าใหม่แล้วแก้อีกครั้ง' USING HINT = 'conflict';
+    RAISE EXCEPTION '%', c_stale USING HINT = 'conflict';
+  END IF;
+  SELECT COALESCE(jsonb_agg(jsonb_build_array(g.id::text, g.updated_at) ORDER BY g.id::text), '[]'::jsonb) INTO v_cur
+    FROM public.catering_event_detail_images g WHERE g.event_id = p_event_id;
+  SELECT COALESCE(jsonb_agg(jsonb_build_array(x->>'id', (x->>'updated_at')::timestamptz) ORDER BY x->>'id'), '[]'::jsonb) INTO v_want
+    FROM jsonb_array_elements(COALESCE(p_seen->'images', '[]'::jsonb)) x;
+  IF v_cur IS DISTINCT FROM v_want THEN
+    RAISE EXCEPTION '%', c_stale USING HINT = 'conflict';
   END IF;
 
   IF p_notes IS NOT NULL AND char_length(p_notes) > 4000 THEN
     RAISE EXCEPTION 'บันทึกงานยาวเกิน 4,000 ตัวอักษร';
   END IF;
-  IF jsonb_typeof(p_blocks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_blocks) > 40 THEN
+  IF jsonb_typeof(p_blocks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_blocks) > 40
+     OR jsonb_typeof(p_images) IS DISTINCT FROM 'array' OR jsonb_array_length(p_images) > 40 THEN
     RAISE EXCEPTION 'รูปแบบข้อมูลไม่ถูกต้อง';
   END IF;
   FOR v_b IN SELECT value FROM jsonb_array_elements(p_blocks) LOOP
@@ -1331,63 +1401,93 @@ BEGIN
       RAISE EXCEPTION 'หัวข้อนี้เป็นของงานอื่น';
     END IF;
     v_ids := v_ids || v_id;
-    IF jsonb_typeof(v_b->'block_id') = 'string' THEN
-      IF NOT ((v_b->>'block_id') ~ c_uuid)
-         OR NOT EXISTS (SELECT 1 FROM public.catering_detail_blocks l WHERE l.id = (v_b->>'block_id')::uuid) THEN
-        RAISE EXCEPTION 'ไม่พบหัวข้อนี้ในคลังแล้ว';
-      END IF;
-    ELSIF COALESCE(jsonb_typeof(v_b->'block_id'), 'null') <> 'null' THEN
+    IF NOT (COALESCE(v_b->>'block_id', '') ~ c_uuid)
+       OR NOT EXISTS (SELECT 1 FROM public.catering_detail_blocks l WHERE l.id = (v_b->>'block_id')::uuid) THEN
+      RAISE EXCEPTION 'ไม่พบหัวข้อนี้ในคลังแล้ว';
+    END IF;
+    IF jsonb_typeof(v_b->'title') IS DISTINCT FROM 'string' OR char_length(btrim(v_b->>'title')) NOT BETWEEN 1 AND 200 THEN
+      RAISE EXCEPTION 'ใส่ชื่อหัวข้อ (ไม่เกิน 200 ตัวอักษร)';
+    END IF;
+    IF jsonb_typeof(v_b->'body') IS DISTINCT FROM 'string' OR btrim(v_b->>'body') = '' OR char_length(v_b->>'body') > 4000 THEN
+      RAISE EXCEPTION '"%": ใส่ข้อความ (ไม่เกิน 4,000 ตัวอักษร)', btrim(v_b->>'title');
+    END IF;
+  END LOOP;
+  FOR v_b IN SELECT value FROM jsonb_array_elements(p_images) LOOP
+    IF jsonb_typeof(v_b) IS DISTINCT FROM 'object' OR NOT (COALESCE(v_b->>'id', '') ~ c_uuid) THEN
       RAISE EXCEPTION 'รูปแบบข้อมูลไม่ถูกต้อง';
     END IF;
-    v_path := v_b->>'image_path';
-    IF left(COALESCE(v_path, ''), 4) = 'lib/'
-       AND NOT EXISTS (SELECT 1 FROM public.catering_detail_blocks l WHERE l.image_path = v_path)
-       AND NOT EXISTS (SELECT 1 FROM public.catering_event_detail_blocks b WHERE b.event_id = p_event_id AND b.image_path = v_path) THEN
-      RAISE EXCEPTION 'ไม่พบรูปนี้ในคลัง';
+    v_id := (v_b->>'id')::uuid;
+    IF v_id = ANY (v_imgs) THEN
+      RAISE EXCEPTION 'มีรูปซ้ำในใบรายละเอียดงาน';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.catering_event_detail_images g WHERE g.id = v_id AND g.event_id <> p_event_id) THEN
+      RAISE EXCEPTION 'รูปนี้เป็นของงานอื่น';
+    END IF;
+    v_imgs := v_imgs || v_id;
+    IF NOT (COALESCE(v_b->>'image_id', '') ~ c_uuid)
+       OR NOT EXISTS (SELECT 1 FROM public.catering_detail_images l WHERE l.id = (v_b->>'image_id')::uuid) THEN
+      RAISE EXCEPTION 'ไม่พบรูปนี้ในคลังรูปแล้ว';
+    END IF;
+    -- A pick keeps its image: the screen changes only its caption and place.
+    IF EXISTS (SELECT 1 FROM public.catering_event_detail_images g
+                WHERE g.id = v_id AND g.image_id <> (v_b->>'image_id')::uuid) THEN
+      RAISE EXCEPTION 'รูปที่เลือกไว้แล้วเปลี่ยนเป็นรูปอื่นไม่ได้ — เอาออกแล้วเลือกรูปใหม่';
+    END IF;
+    IF (v_b->>'image_id')::uuid = ANY (v_pics) THEN
+      RAISE EXCEPTION 'เลือกรูปเดียวกันซ้ำในใบรายละเอียดงาน';
+    END IF;
+    v_pics := v_pics || (v_b->>'image_id')::uuid;
+    IF COALESCE(jsonb_typeof(v_b->'caption'), 'null') NOT IN ('null', 'string') OR char_length(COALESCE(v_b->>'caption', '')) > 300 THEN
+      RAISE EXCEPTION 'คำอธิบายรูปยาวเกิน 300 ตัวอักษร';
     END IF;
   END LOOP;
 
   UPDATE public.catering_events e SET sheet_notes = p_notes
    WHERE e.id = p_event_id AND e.sheet_notes IS DISTINCT FROM p_notes;
   DELETE FROM public.catering_event_detail_blocks b WHERE b.event_id = p_event_id AND NOT (b.id = ANY (v_ids));
+  DELETE FROM public.catering_event_detail_images g WHERE g.event_id = p_event_id AND NOT (g.id = ANY (v_imgs));
   FOR v_b IN SELECT value FROM jsonb_array_elements(p_blocks) LOOP
     v_i := v_i + 1;
     v_id := (v_b->>'id')::uuid;
     UPDATE public.catering_event_detail_blocks b
-       SET block_id = (v_b->>'block_id')::uuid,
-           kind = v_b->>'kind',
-           title = btrim(v_b->>'title'),
-           body = CASE WHEN v_b->>'kind' = 'terms' THEN v_b->>'body' END,
-           image_path = CASE WHEN v_b->>'kind' = 'terms' THEN NULL ELSE v_b->>'image_path' END,
-           caption = CASE WHEN v_b->>'kind' = 'terms' THEN NULL ELSE nullif(btrim(v_b->>'caption'), '') END,
-           sort_order = v_i * 10
+       SET block_id = (v_b->>'block_id')::uuid, title = btrim(v_b->>'title'), body = v_b->>'body', sort_order = v_i * 10
      WHERE b.id = v_id AND b.event_id = p_event_id;
     IF NOT FOUND THEN
-      INSERT INTO public.catering_event_detail_blocks (id, event_id, block_id, kind, title, body, image_path, caption, sort_order)
-      VALUES (v_id, p_event_id, (v_b->>'block_id')::uuid, v_b->>'kind', btrim(v_b->>'title'),
-              CASE WHEN v_b->>'kind' = 'terms' THEN v_b->>'body' END,
-              CASE WHEN v_b->>'kind' = 'terms' THEN NULL ELSE v_b->>'image_path' END,
-              CASE WHEN v_b->>'kind' = 'terms' THEN NULL ELSE nullif(btrim(v_b->>'caption'), '') END,
-              v_i * 10);
+      INSERT INTO public.catering_event_detail_blocks (id, event_id, block_id, title, body, sort_order)
+      VALUES (v_id, p_event_id, (v_b->>'block_id')::uuid, btrim(v_b->>'title'), v_b->>'body', v_i * 10);
+    END IF;
+  END LOOP;
+  v_i := 0;
+  FOR v_b IN SELECT value FROM jsonb_array_elements(p_images) LOOP
+    v_i := v_i + 1;
+    v_id := (v_b->>'id')::uuid;
+    UPDATE public.catering_event_detail_images g
+       SET caption = nullif(btrim(v_b->>'caption'), ''), sort_order = v_i * 10
+     WHERE g.id = v_id AND g.event_id = p_event_id;
+    IF NOT FOUND THEN
+      INSERT INTO public.catering_event_detail_images (id, event_id, image_id, caption, sort_order)
+      VALUES (v_id, p_event_id, (v_b->>'image_id')::uuid, nullif(btrim(v_b->>'caption'), ''), v_i * 10);
     END IF;
   END LOOP;
   RETURN jsonb_build_object(
     'notes', (SELECT e.sheet_notes FROM public.catering_events e WHERE e.id = p_event_id),
     'blocks', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'updated_at', b.updated_at) ORDER BY b.id::text)
-                         FROM public.catering_event_detail_blocks b WHERE b.event_id = p_event_id), '[]'::jsonb));
+                         FROM public.catering_event_detail_blocks b WHERE b.event_id = p_event_id), '[]'::jsonb),
+    'images', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'updated_at', g.updated_at) ORDER BY g.id::text)
+                         FROM public.catering_event_detail_images g WHERE g.event_id = p_event_id), '[]'::jsonb));
 END
 $fn$;
 
 REVOKE EXECUTE ON FUNCTION public.catering_save_set_draft(uuid, timestamptz, text, numeric, jsonb),
   public.catering_make_set_real(uuid, timestamptz, text, numeric),
-  public.catering_save_event_sheet(uuid, jsonb, text, jsonb) FROM PUBLIC, anon;
+  public.catering_save_event_sheet(uuid, jsonb, text, jsonb, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.catering_save_set_draft(uuid, timestamptz, text, numeric, jsonb),
   public.catering_make_set_real(uuid, timestamptz, text, numeric),
-  public.catering_save_event_sheet(uuid, jsonb, text, jsonb) TO authenticated;
+  public.catering_save_event_sheet(uuid, jsonb, text, jsonb, jsonb) TO authenticated;
 
 DO $do$
 BEGIN
-  PERFORM pg_temp.note('ok      the functions: the draft guard, the no-draft-on-a-booking trigger, the 6-image cap, the upload rule and the folder room, the set copy and the price-box save (replaced), the draft''s save and make-real, the sheet''s save');
+  PERFORM pg_temp.note('ok      the functions: the draft guard, the no-draft-on-a-booking trigger, the library upload rule, the fixed file of a library image, the set copy and the price-box save (replaced), the draft''s save and make-real, the sheet''s save');
 END
 $do$;
 
@@ -1444,17 +1544,59 @@ CREATE POLICY catering_event_detail_blocks_lock_delete ON public.catering_event_
   AS RESTRICTIVE FOR DELETE TO public
   USING (public.current_role() IN ('owner', 'admin') OR public.catering_event_unlocked(event_id));
 
--- A. The bucket: private, JPEG and PNG, 2 MB a file (the storage API applies
--- these two limits; SQL can only set them).
+-- A. The image library: owner, admin and sales read; owner and admin write.
+ALTER TABLE public.catering_detail_images ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.catering_detail_images FROM PUBLIC, anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.catering_detail_images TO authenticated;
+DROP POLICY IF EXISTS catering_detail_images_read ON public.catering_detail_images;
+CREATE POLICY catering_detail_images_read ON public.catering_detail_images
+  FOR SELECT TO authenticated
+  USING (public.current_role() IN ('owner', 'admin', 'sales'));
+DROP POLICY IF EXISTS catering_detail_images_write ON public.catering_detail_images;
+CREATE POLICY catering_detail_images_write ON public.catering_detail_images
+  FOR ALL TO authenticated
+  USING (public.current_role() IN ('owner', 'admin'))
+  WITH CHECK (public.current_role() IN ('owner', 'admin'));
+
+-- A. A booking's picked images: owner, admin and sales, under the booking's
+-- cost lock, exactly as its picked terms.
+ALTER TABLE public.catering_event_detail_images ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.catering_event_detail_images FROM PUBLIC, anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.catering_event_detail_images TO authenticated;
+DROP POLICY IF EXISTS catering_event_detail_images_rw ON public.catering_event_detail_images;
+CREATE POLICY catering_event_detail_images_rw ON public.catering_event_detail_images
+  FOR ALL TO authenticated
+  USING (public.current_role() IN ('owner', 'admin', 'sales'))
+  WITH CHECK (public.current_role() IN ('owner', 'admin', 'sales'));
+DROP POLICY IF EXISTS catering_event_detail_images_lock_insert ON public.catering_event_detail_images;
+CREATE POLICY catering_event_detail_images_lock_insert ON public.catering_event_detail_images
+  AS RESTRICTIVE FOR INSERT TO public
+  WITH CHECK (public.current_role() IN ('owner', 'admin') OR public.catering_event_unlocked(event_id));
+DROP POLICY IF EXISTS catering_event_detail_images_lock_update ON public.catering_event_detail_images;
+CREATE POLICY catering_event_detail_images_lock_update ON public.catering_event_detail_images
+  AS RESTRICTIVE FOR UPDATE TO public
+  USING      (public.current_role() IN ('owner', 'admin') OR public.catering_event_unlocked(event_id))
+  WITH CHECK (public.current_role() IN ('owner', 'admin') OR public.catering_event_unlocked(event_id));
+DROP POLICY IF EXISTS catering_event_detail_images_lock_delete ON public.catering_event_detail_images;
+CREATE POLICY catering_event_detail_images_lock_delete ON public.catering_event_detail_images
+  AS RESTRICTIVE FOR DELETE TO public
+  USING (public.current_role() IN ('owner', 'admin') OR public.catering_event_unlocked(event_id));
+
+-- A. The library's bucket: PRIVATE; JPEG, PNG and WebP; 2 MB a file (the
+-- storage API applies these two limits; SQL can only set them and read them
+-- back). The library only: nothing for one booking is ever uploaded.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('catering-details', 'catering-details', false, 2097152, ARRAY['image/jpeg', 'image/png'])
+VALUES ('catering-details', 'catering-details', false, 2097152, ARRAY['image/jpeg', 'image/png', 'image/webp'])
 ON CONFLICT (id) DO UPDATE
   SET public = false, file_size_limit = EXCLUDED.file_size_limit, allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- Reading: signed-in owner, admin and sales. Uploading: the app's names only.
--- The caps are RESTRICTIVE and name only this bucket: whatever other policy
--- storage.objects has, these hold for catering-details, and nothing else
--- changes for any other bucket.
+-- Reading: signed-in owner, admin and sales (the app signs links with the
+-- caller's own session). Uploading: owner and admin, the app's names only,
+-- 100 current files at most, and an upload is a plain current file: never
+-- a delete marker or an archived version (storage.objects is versioned).
+-- The caps are RESTRICTIVE and name only this bucket:
+-- whatever other policy storage.objects has, these hold for catering-details,
+-- and no role can update or delete a file in it.
 DROP POLICY IF EXISTS "catering details read" ON storage.objects;
 CREATE POLICY "catering details read" ON storage.objects
   FOR SELECT TO authenticated
@@ -1462,7 +1604,7 @@ CREATE POLICY "catering details read" ON storage.objects
 DROP POLICY IF EXISTS "catering details upload" ON storage.objects;
 CREATE POLICY "catering details upload" ON storage.objects
   FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'catering-details' AND public.catering_detail_upload_allowed(name) AND public.catering_detail_folder_has_room(name));
+  WITH CHECK (bucket_id = 'catering-details' AND public.catering_detail_upload_allowed(name));
 DROP POLICY IF EXISTS "catering details read cap" ON storage.objects;
 CREATE POLICY "catering details read cap" ON storage.objects
   AS RESTRICTIVE FOR SELECT TO public
@@ -1470,9 +1612,10 @@ CREATE POLICY "catering details read cap" ON storage.objects
 DROP POLICY IF EXISTS "catering details upload cap" ON storage.objects;
 CREATE POLICY "catering details upload cap" ON storage.objects
   AS RESTRICTIVE FOR INSERT TO public
-  WITH CHECK (bucket_id <> 'catering-details' OR (public.catering_detail_upload_allowed(name) AND public.catering_detail_folder_has_room(name)));
-DROP POLICY IF EXISTS "catering details no overwrite" ON storage.objects;
-CREATE POLICY "catering details no overwrite" ON storage.objects
+  WITH CHECK (bucket_id <> 'catering-details'
+              OR (public.catering_detail_upload_allowed(name) AND archived_at IS NULL AND is_delete_marker IS NOT TRUE));
+DROP POLICY IF EXISTS "catering details no update" ON storage.objects;
+CREATE POLICY "catering details no update" ON storage.objects
   AS RESTRICTIVE FOR UPDATE TO public
   USING (bucket_id <> 'catering-details')
   WITH CHECK (bucket_id <> 'catering-details');
@@ -1481,9 +1624,19 @@ CREATE POLICY "catering details no delete" ON storage.objects
   AS RESTRICTIVE FOR DELETE TO public
   USING (bucket_id <> 'catering-details');
 
+-- sop-photos (Nik, 2026-09-24): the dashboard warns that "a broad SELECT
+-- policy on storage.objects allows clients to retrieve a full list of
+-- files". It is "sop photos public read" (migrations/004_sop_module.sql).
+-- The bucket is PUBLIC, so its files are served by URL without any policy;
+-- the app never lists it; and an upload needs only the INSERT policy (the
+-- storage server's permission check is an INSERT without RETURNING, and the
+-- write itself runs as the storage admin). So it goes. Uploads keep "sop
+-- photos upload by role" (permissions_batch_2026_09_17.sql, part D).
+DROP POLICY IF EXISTS "sop photos public read" ON storage.objects;
+
 DO $do$
 BEGIN
-  PERFORM pg_temp.note('ok      the policies: drafts hidden from sales (sets and their dish rows), the library, a booking''s picks under the cost lock, and the bucket (read, upload, and caps: no overwrite, no delete)');
+  PERFORM pg_temp.note('ok      the policies: drafts hidden from sales (sets and their dish rows), the library, the image library, a booking''s picks under the cost lock, the library bucket (read, upload, caps: no update, no delete), and sop-photos'' broad read dropped');
 END
 $do$;
 
@@ -1497,7 +1650,7 @@ DECLARE
   editor_ uuid := current_setting('sheet.editor')::uuid;
   staff_  uuid := current_setting('sheet.staff')::uuid;
   v_open   uuid;   -- an open booking
-  v_bk2    uuid;   -- a second open booking (the free mark, the image cap)
+  v_bk2    uuid;   -- a second open booking (the free mark, another booking's picks)
   v_locked uuid;   -- a cost-locked booking
   v_cancel uuid;   -- a cancelled booking
   v_dish   uuid;   -- a dish with a price
@@ -1511,12 +1664,18 @@ DECLARE
   v_seen   jsonb;  -- a sheet's version, as a screen holds it
   v_newpick uuid := gen_random_uuid();
   v_other  uuid;   -- a block of another booking
+  v_image  uuid;   -- a library image
+  v_image2 uuid;   -- another library image
+  v_newimg uuid := gen_random_uuid();
+  v_otherimg uuid; -- an image pick of another booking
   v_i      integer;
   v_log    text;
   v_body   text := 'ข้อกำหนดทดสอบ';
 BEGIN
   PERFORM set_config('sheet.n_blocks', (SELECT count(*) FROM public.catering_detail_blocks)::text, false);
   PERFORM set_config('sheet.n_picks',  (SELECT count(*) FROM public.catering_event_detail_blocks)::text, false);
+  PERFORM set_config('sheet.n_images', (SELECT count(*) FROM public.catering_detail_images)::text, false);
+  PERFORM set_config('sheet.n_imgpicks', (SELECT count(*) FROM public.catering_event_detail_images)::text, false);
   BEGIN
     -- ── Setup, as the file's own role; the block always rolls back ──
     INSERT INTO public.catering_events (event_date, location_type, venue, booking_type, status, detail_note)
@@ -1532,22 +1691,21 @@ BEGIN
     INSERT INTO public.catering_set_menu_items (set_menu_id, menu_id, quantity, section) VALUES (v_real, v_dish, 1, 'dish');
     INSERT INTO public.catering_set_menus (name, price_per_set, is_draft) VALUES ('probe-draft-set', 2000, true) RETURNING id INTO v_draft;
     INSERT INTO public.catering_set_menu_items (set_menu_id, menu_id, quantity, section) VALUES (v_draft, v_dish, 1, 'dish');
-    INSERT INTO public.catering_detail_blocks (kind, title, body, venue_tags) VALUES ('terms', 'probe-terms', v_body, ARRAY['ภายในร้าน'])
+    INSERT INTO public.catering_detail_blocks (title, body, venue_tags) VALUES ('probe-terms', v_body, ARRAY['ภายในร้าน'])
       RETURNING id INTO v_block;
+    INSERT INTO public.catering_event_detail_blocks (event_id, block_id, title, body) VALUES (v_bk2, v_block, 'probe-other', 'x')
+      RETURNING id INTO v_other;
     INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000000-probe.jpg');
-    FOR v_i IN 1 .. 6 LOOP
-      INSERT INTO public.catering_event_detail_blocks (event_id, kind, title, image_path)
-      VALUES (v_bk2, 'photo', 'probe-image-' || v_i, format('evt/%s/17000000000%s0-probe.jpg', v_bk2, v_i));
-    END LOOP;
+    INSERT INTO public.catering_detail_images (name, caption, image_path, venue_tags) VALUES ('probe-image', 'ห้อง', 'lib/1700000000000-probe.jpg', ARRAY['ห้อง V1'])
+      RETURNING id INTO v_image;
+    INSERT INTO public.catering_detail_images (name, image_path) VALUES ('probe-image-2', 'lib/1700000000010-probe.png')
+      RETURNING id INTO v_image2;
+    INSERT INTO public.catering_event_detail_images (event_id, image_id) VALUES (v_bk2, v_image) RETURNING id INTO v_otherimg;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('sop-photos', '1700000000000-probesop.jpg');
     INSERT INTO public.catering_set_menus (name, price_per_set, is_draft) VALUES ('probe-draft-d', 1500, true) RETURNING id INTO v_draft3;
     INSERT INTO public.catering_set_menu_items (set_menu_id, menu_id, quantity, section) VALUES (v_draft3, v_dish, 1, 'dish');
     INSERT INTO public.catering_set_menus (name, price_per_set, is_draft) VALUES ('probe-draft-empty', 1500, true) RETURNING id INTO v_draft4;
-    -- A booking folder already holding 30 files: the next upload has no room.
-    FOR v_i IN 1 .. 30 LOOP
-      INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', format('evt/%s/1700000000%s-fill.jpg', v_bk2, lpad(v_i::text, 3, '0')));
-    END LOOP;
-    SELECT id INTO v_other FROM public.catering_event_detail_blocks WHERE event_id = v_bk2 ORDER BY id LIMIT 1;
-    PERFORM pg_temp.note('ok      test data made: four bookings (open, open, cost-locked, cancelled), a real set and three drafts (one empty), a library block, a library image, six images and thirty files on one booking; all rolled back');
+    PERFORM pg_temp.note('ok      test data made: four bookings (open, open, cost-locked, cancelled), a real set and three drafts (one empty), a terms block and two library images, another booking''s picks of them, a library file and a sop-photos file; all rolled back');
 
     -- ── C. Drafts: sales never reaches one ──
     PERFORM pg_temp.t('C1 owner puts the REAL set on a booking through the price box (kept)', owner_, 'owner',
@@ -1706,13 +1864,13 @@ BEGIN
       format($q$INSERT INTO public.catering_event_charges (event_id, label, charge_type, unit_price, quantity, amount, is_free) VALUES (%L, 'probe', 'drink', 100, 0, 0, true)$q$, v_bk2),
       ARRAY['check-refused']);
 
-    -- ── A. The library ──
+    -- ── A. The terms library ──
     PERFORM pg_temp.t('A1 owner adds a terms block', owner_, 'owner',
-      $q$INSERT INTO public.catering_detail_blocks (kind, title, body, venue_tags) VALUES ('terms', 'probe', 'probe', ARRAY['นอกสถานที่'])$q$, ARRAY['rows=1']);
-    PERFORM pg_temp.t('A2 admin adds a photo block with a library image', admin_, 'admin',
-      $q$INSERT INTO public.catering_detail_blocks (kind, title, image_path) VALUES ('photo', 'probe', 'lib/1700000000000-probe.jpg')$q$, ARRAY['rows=1']);
+      $q$INSERT INTO public.catering_detail_blocks (title, body, venue_tags) VALUES ('probe', 'probe', ARRAY['นอกสถานที่'])$q$, ARRAY['rows=1']);
+    PERFORM pg_temp.t('A2 admin adds a block with no text', admin_, 'admin',
+      $q$INSERT INTO public.catering_detail_blocks (title, body) VALUES ('probe', '   ')$q$, ARRAY['check-refused']);
     PERFORM pg_temp.t('A3 sales adds a library block', sales_, 'sales',
-      $q$INSERT INTO public.catering_detail_blocks (kind, title, body) VALUES ('terms', 'probe', 'probe')$q$, ARRAY['denied']);
+      $q$INSERT INTO public.catering_detail_blocks (title, body) VALUES ('probe', 'probe')$q$, ARRAY['denied']);
     PERFORM pg_temp.t('A4 sales changes a library block', sales_, 'sales',
       format($q$UPDATE public.catering_detail_blocks SET body = 'x' WHERE id = %L$q$, v_block), ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('A5 sales reads the library', sales_, 'sales',
@@ -1721,146 +1879,218 @@ BEGIN
       format($q$SELECT id FROM public.catering_detail_blocks WHERE id = %L$q$, v_block), ARRAY['rows=0']);
     PERFORM pg_temp.t('A7 an anonymous visitor reads the library', NULL, 'anon',
       format($q$SELECT id FROM public.catering_detail_blocks WHERE id = %L$q$, v_block), ARRAY['denied', 'rows=0']);
-    PERFORM pg_temp.t('A8 admin gives a library block a booking''s image', admin_, 'admin',
-      format($q$INSERT INTO public.catering_detail_blocks (kind, title, image_path) VALUES ('photo', 'probe', 'evt/%s/1700000000000-probe.jpg')$q$, v_open),
-      ARRAY['check-refused']);
 
-    -- ── A. A booking's sheet ──
-    PERFORM pg_temp.t('A9 sales picks the library block onto a booking (a copy) (kept)', sales_, 'sales',
-      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, kind, title, body) VALUES (%L, %L, 'terms', 'probe-terms', %L)$q$, v_open, v_block, v_body),
+    -- ── A. A booking's picked terms ──
+    PERFORM pg_temp.t('A8 sales picks the library block onto a booking (a copy) (kept)', sales_, 'sales',
+      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, title, body) VALUES (%L, %L, 'probe-terms', %L)$q$, v_open, v_block, v_body),
       ARRAY['rows=1'], NULL, true);
-    PERFORM pg_temp.t('A10 sales edits the booking''s copy: the library copy does not change', sales_, 'sales',
+    PERFORM pg_temp.t('A9 sales edits the booking''s copy: the library copy does not change', sales_, 'sales',
       format($q$UPDATE public.catering_event_detail_blocks SET body = 'แก้สำหรับงานนี้' WHERE event_id = %L AND block_id = %L$q$, v_open, v_block),
       ARRAY['rows=1 check=1'],
       format($q$SELECT 1 FROM public.catering_detail_blocks WHERE id = %L AND body = %L$q$, v_block, v_body));
-    PERFORM pg_temp.t('A11 owner removes the library block a booking uses', owner_, 'owner',
+    PERFORM pg_temp.t('A10 owner removes the library block a booking uses', owner_, 'owner',
       format($q$DELETE FROM public.catering_detail_blocks WHERE id = %L$q$, v_block), ARRAY['fk-refused']);
-    PERFORM pg_temp.t('A12 sales picks a block onto the cost-locked booking', sales_, 'sales',
-      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, kind, title, body) VALUES (%L, %L, 'terms', 'probe', 'probe')$q$, v_locked, v_block),
+    PERFORM pg_temp.t('A11 sales picks a block onto the cost-locked booking', sales_, 'sales',
+      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, title, body) VALUES (%L, %L, 'probe', 'probe')$q$, v_locked, v_block),
       ARRAY['denied']);
-    PERFORM pg_temp.t('A13 editor picks a block onto a booking', editor_, 'editor',
-      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, kind, title, body) VALUES (%L, %L, 'terms', 'probe', 'probe')$q$, v_open, v_block),
+    PERFORM pg_temp.t('A12 editor picks a block onto a booking', editor_, 'editor',
+      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, block_id, title, body) VALUES (%L, %L, 'probe', 'probe')$q$, v_open, v_block),
       ARRAY['denied']);
-    PERFORM pg_temp.t('A14 staff reads a booking''s sheet', staff_, 'staff',
+    PERFORM pg_temp.t('A13 staff reads a booking''s sheet', staff_, 'staff',
       format($q$SELECT id FROM public.catering_event_detail_blocks WHERE event_id = %L$q$, v_open), ARRAY['rows=0']);
-    PERFORM pg_temp.t('A15 sales puts ANOTHER booking''s image on this sheet', sales_, 'sales',
-      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, kind, title, image_path) VALUES (%L, 'photo', 'probe', 'evt/%s/1700000000000-probe.jpg')$q$, v_open, v_bk2),
-      ARRAY['check-refused']);
-    PERFORM pg_temp.t('A16 sales adds a 7th image to a booking that has 6', sales_, 'sales',
-      format($q$INSERT INTO public.catering_event_detail_blocks (event_id, kind, title, image_path) VALUES (%L, 'photo', 'probe', 'evt/%s/1700000000077-probe.jpg')$q$, v_bk2, v_bk2),
-      ARRAY['refused']);
-    PERFORM pg_temp.t('A17 sales writes the job notes of an open booking', sales_, 'sales',
+    PERFORM pg_temp.t('A14 sales writes the job notes of an open booking', sales_, 'sales',
       format($q$UPDATE public.catering_events SET sheet_notes = 'จัดโต๊ะก่อน 2 ชั่วโมง' WHERE id = %L$q$, v_open), ARRAY['rows=1']);
-    PERFORM pg_temp.t('A18 sales writes the job notes of the cost-locked booking', sales_, 'sales',
+    PERFORM pg_temp.t('A15 sales writes the job notes of the cost-locked booking', sales_, 'sales',
       format($q$UPDATE public.catering_events SET sheet_notes = 'x' WHERE id = %L$q$, v_locked), ARRAY['rows=0', 'denied']);
 
+    -- ── I. The image library and a booking's picked images ──
+    PERFORM pg_temp.t('I1 owner adds a library image', owner_, 'owner',
+      $q$INSERT INTO public.catering_detail_images (name, caption, image_path, venue_tags) VALUES ('probe', 'probe', 'lib/1700000000009-abcd.webp', ARRAY['ห้อง V1'])$q$, ARRAY['rows=1']);
+    PERFORM pg_temp.t('I2 admin adds an image whose file is outside the library folder', admin_, 'admin',
+      $q$INSERT INTO public.catering_detail_images (name, image_path) VALUES ('probe', 'evt/1700000000009-abcd.jpg')$q$, ARRAY['check-refused']);
+    PERFORM pg_temp.t('I3 sales adds a library image', sales_, 'sales',
+      $q$INSERT INTO public.catering_detail_images (name, image_path) VALUES ('probe', 'lib/1700000000008-abcd.jpg')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('I4 sales reads the image library', sales_, 'sales',
+      format($q$SELECT id FROM public.catering_detail_images WHERE id = %L$q$, v_image), ARRAY['rows=1']);
+    PERFORM pg_temp.t('I5 editor reads the image library', editor_, 'editor',
+      format($q$SELECT id FROM public.catering_detail_images WHERE id = %L$q$, v_image), ARRAY['rows=0']);
+    PERFORM pg_temp.t('I6 an anonymous visitor reads the image library', NULL, 'anon',
+      format($q$SELECT id FROM public.catering_detail_images WHERE id = %L$q$, v_image), ARRAY['denied', 'rows=0']);
+    PERFORM pg_temp.t('I7 sales picks a library image onto a booking with its own caption (kept)', sales_, 'sales',
+      format($q$INSERT INTO public.catering_event_detail_images (event_id, image_id, caption) VALUES (%L, %L, 'ผังงานนี้')$q$, v_open, v_image),
+      ARRAY['rows=1'], NULL, true);
+    PERFORM pg_temp.t('I8 owner removes the library image a booking uses', owner_, 'owner',
+      format($q$DELETE FROM public.catering_detail_images WHERE id = %L$q$, v_image), ARRAY['fk-refused']);
+    PERFORM pg_temp.t('I11 owner points a library image at another file', owner_, 'owner',
+      format($q$UPDATE public.catering_detail_images SET image_path = 'lib/1700000000011-abcd.jpg' WHERE id = %L$q$, v_image), ARRAY['refused']);
+    PERFORM pg_temp.said('I11', 'เปลี่ยนไฟล์ของรูปในคลังไม่ได้');
+    PERFORM pg_temp.t('I12 owner renames a library image and its caption (the control: other changes go)', owner_, 'owner',
+      format($q$UPDATE public.catering_detail_images SET name = 'probe-renamed', caption = 'ห้อง V1' WHERE id = %L$q$, v_image), ARRAY['rows=1']);
+    PERFORM pg_temp.t('I9 sales picks an image onto the cost-locked booking', sales_, 'sales',
+      format($q$INSERT INTO public.catering_event_detail_images (event_id, image_id) VALUES (%L, %L)$q$, v_locked, v_image),
+      ARRAY['denied']);
+    PERFORM pg_temp.t('I10 staff reads a booking''s images', staff_, 'staff',
+      format($q$SELECT id FROM public.catering_event_detail_images WHERE event_id = %L$q$, v_open), ARRAY['rows=0']);
+
     -- ── E. A booking's sheet, saved whole: ONE transaction, under a version check ──
-    SELECT jsonb_build_object('notes', e.sheet_notes, 'blocks', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'updated_at', b.updated_at))
-             FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id), '[]'::jsonb))
+    SELECT jsonb_build_object('notes', e.sheet_notes,
+             'blocks', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'updated_at', b.updated_at))
+                                   FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id), '[]'::jsonb),
+             'images', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'updated_at', g.updated_at))
+                                   FROM public.catering_event_detail_images g WHERE g.event_id = e.id), '[]'::jsonb))
       INTO v_seen FROM public.catering_events e WHERE e.id = v_open;
-    PERFORM pg_temp.t('E1 sales saves the sheet: notes, a new block, the old one dropped (kept)', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'เข้าจัดสถานที่ 15.30 น.', %L::jsonb)$q$, v_open, v_seen::text,
-        jsonb_build_array(jsonb_build_object('id', v_newpick, 'block_id', v_block, 'kind', 'terms', 'title', 'probe-e1',
-          'body', 'แก้สำหรับงานนี้', 'image_path', NULL, 'caption', NULL))::text),
+    PERFORM pg_temp.t('E1 sales saves the sheet: notes, a new block and image, the old ones dropped (kept)', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'เข้าจัดสถานที่ 15.30 น.', %L::jsonb, %L::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', v_newpick, 'block_id', v_block, 'title', 'probe-e1', 'body', 'แก้สำหรับงานนี้'))::text,
+        jsonb_build_array(jsonb_build_object('id', v_newimg, 'image_id', v_image2, 'caption', 'ห้องงานนี้'))::text),
       ARRAY['rows=1 check=1'],
-      format($q$SELECT 1 FROM public.catering_events e WHERE e.id = %L AND e.sheet_notes = 'เข้าจัดสถานที่ 15.30 น.' AND (SELECT count(*) FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id) = 1 AND EXISTS (SELECT 1 FROM public.catering_event_detail_blocks b WHERE b.id = %L AND b.title = 'probe-e1')$q$, v_open, v_newpick),
+      format($q$SELECT 1 FROM public.catering_events e WHERE e.id = %L AND e.sheet_notes = 'เข้าจัดสถานที่ 15.30 น.'
+                 AND (SELECT count(*) FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id) = 1
+                 AND EXISTS (SELECT 1 FROM public.catering_event_detail_blocks b WHERE b.id = %L AND b.title = 'probe-e1')
+                 AND (SELECT count(*) FROM public.catering_event_detail_images g WHERE g.event_id = e.id) = 1
+                 AND EXISTS (SELECT 1 FROM public.catering_event_detail_images g WHERE g.id = %L AND g.image_id = %L AND g.caption = 'ห้องงานนี้')$q$,
+        v_open, v_newpick, v_newimg, v_image2),
       true);
     PERFORM pg_temp.t('E2 sales saves over a newer version (a stale screen)', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb)$q$, v_open, v_seen::text), ARRAY['refused']);
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb, '[]'::jsonb)$q$, v_open, v_seen::text), ARRAY['refused']);
     PERFORM pg_temp.said('E2', 'ถูกแก้จากที่อื่น');
     PERFORM pg_temp.t('E3 sales saves a cancelled booking''s sheet', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, '{"notes": null, "blocks": []}'::jsonb, 'x', '[]'::jsonb)$q$, v_cancel), ARRAY['refused']);
+      format($q$SELECT public.catering_save_event_sheet(%L, '{"notes": null, "blocks": [], "images": []}'::jsonb, 'x', '[]'::jsonb, '[]'::jsonb)$q$, v_cancel), ARRAY['refused']);
     PERFORM pg_temp.said('E3', 'ยกเลิก');
     PERFORM pg_temp.t('E4 owner saves the cost-locked booking''s sheet', owner_, 'owner',
-      format($q$SELECT public.catering_save_event_sheet(%L, '{"notes": null, "blocks": []}'::jsonb, 'x', '[]'::jsonb)$q$, v_locked), ARRAY['refused']);
+      format($q$SELECT public.catering_save_event_sheet(%L, '{"notes": null, "blocks": [], "images": []}'::jsonb, 'x', '[]'::jsonb, '[]'::jsonb)$q$, v_locked), ARRAY['refused']);
     PERFORM pg_temp.said('E4', 'ล็อก');
-    SELECT jsonb_build_object('notes', e.sheet_notes, 'blocks', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'updated_at', b.updated_at))
-             FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id), '[]'::jsonb))
+    SELECT jsonb_build_object('notes', e.sheet_notes,
+             'blocks', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', b.id, 'updated_at', b.updated_at))
+                                   FROM public.catering_event_detail_blocks b WHERE b.event_id = e.id), '[]'::jsonb),
+             'images', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'updated_at', g.updated_at))
+                                   FROM public.catering_event_detail_images g WHERE g.event_id = e.id), '[]'::jsonb))
       INTO v_seen FROM public.catering_events e WHERE e.id = v_open;
-    PERFORM pg_temp.t('E5 sales shows a library image no library block holds', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb)$q$, v_open, v_seen::text,
-        jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'block_id', NULL, 'kind', 'photo', 'title', 'probe',
-          'body', NULL, 'image_path', 'lib/1700000000999-nope.jpg', 'caption', NULL))::text),
+    PERFORM pg_temp.t('E5 sales saves a block no library block stands behind', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb, '[]'::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'block_id', gen_random_uuid(), 'title', 'probe', 'body', 'x'))::text),
       ARRAY['refused']);
-    PERFORM pg_temp.said('E5', 'ไม่พบรูปนี้ในคลัง');
+    PERFORM pg_temp.said('E5', 'ไม่พบหัวข้อนี้ในคลังแล้ว');
     PERFORM pg_temp.t('E6 sales saves ANOTHER booking''s block into this sheet', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb)$q$, v_open, v_seen::text,
-        jsonb_build_array(jsonb_build_object('id', v_other, 'block_id', NULL, 'kind', 'terms', 'title', 'probe',
-          'body', 'x', 'image_path', NULL, 'caption', NULL))::text),
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb, '[]'::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', v_other, 'block_id', v_block, 'title', 'probe', 'body', 'x'))::text),
       ARRAY['refused']);
     PERFORM pg_temp.said('E6', 'เป็นของงานอื่น');
-    PERFORM pg_temp.t('E7 sales saves seven images on one sheet', sales_, 'sales',
-      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb)$q$, v_open, v_seen::text,
-        (SELECT jsonb_agg(jsonb_build_object('id', gen_random_uuid(), 'block_id', NULL, 'kind', 'photo', 'title', 'probe-' || g,
-           'body', NULL, 'image_path', format('evt/%s/1700000001%s00-eeee.jpg', v_open, g), 'caption', NULL))
-           FROM generate_series(1, 7) g)::text),
+    PERFORM pg_temp.t('E7 sales saves a block with no text', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', %L::jsonb, '[]'::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'block_id', v_block, 'title', 'probe', 'body', '  '))::text),
       ARRAY['refused']);
-    PERFORM pg_temp.said('E7', '6 รูป');
+    PERFORM pg_temp.said('E7', 'ใส่ข้อความ');
+    PERFORM pg_temp.t('E8 sales saves an image no library image stands behind', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb, %L::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'image_id', gen_random_uuid(), 'caption', NULL))::text),
+      ARRAY['refused']);
+    PERFORM pg_temp.said('E8', 'ไม่พบรูปนี้ในคลังรูปแล้ว');
+    PERFORM pg_temp.t('E9 sales picks the same library image twice', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb, %L::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'image_id', v_image, 'caption', NULL),
+                          jsonb_build_object('id', gen_random_uuid(), 'image_id', v_image, 'caption', NULL))::text),
+      ARRAY['refused']);
+    PERFORM pg_temp.said('E9', 'เลือกรูปเดียวกันซ้ำ');
+    PERFORM pg_temp.t('E10 sales turns a saved pick into another image', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb, %L::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', v_newimg, 'image_id', v_image, 'caption', NULL))::text),
+      ARRAY['refused']);
+    PERFORM pg_temp.said('E10', 'เปลี่ยนเป็นรูปอื่นไม่ได้');
+    PERFORM pg_temp.t('E11 sales saves ANOTHER booking''s image into this sheet', sales_, 'sales',
+      format($q$SELECT public.catering_save_event_sheet(%L, %L::jsonb, 'x', '[]'::jsonb, %L::jsonb)$q$, v_open, v_seen::text,
+        jsonb_build_array(jsonb_build_object('id', v_otherimg, 'image_id', v_image, 'caption', NULL))::text),
+      ARRAY['refused']);
+    PERFORM pg_temp.said('E11', 'รูปนี้เป็นของงานอื่น');
 
-    -- ── A. The image bucket ──
-    PERFORM pg_temp.t('S1 sales uploads into an open booking''s folder', sales_, 'sales',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000001-abcd.jpg')$q$, v_open), ARRAY['rows=1']);
-    PERFORM pg_temp.t('S2 sales uploads a library image', sales_, 'sales',
-      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000002-abcd.jpg')$q$, ARRAY['denied']);
-    PERFORM pg_temp.t('S3 admin uploads a library image (PNG)', admin_, 'admin',
-      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000003-abcd.png')$q$, ARRAY['rows=1']);
-    PERFORM pg_temp.t('S4 sales uploads into a cancelled booking''s folder', sales_, 'sales',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000004-abcd.jpg')$q$, v_cancel), ARRAY['denied']);
-    PERFORM pg_temp.t('S5 owner uploads into the cost-locked booking''s folder', owner_, 'owner',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000005-abcd.jpg')$q$, v_locked), ARRAY['denied']);
+    -- ── S. The image bucket, as each role. The storage API is not simulated:
+    -- these are the policies on storage.objects that the API decides by. ──
+    PERFORM pg_temp.t('S1 admin uploads a PNG to the library', admin_, 'admin',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000001-abcd.png')$q$, ARRAY['rows=1']);
+    PERFORM pg_temp.t('S2 owner uploads a WebP to the library', owner_, 'owner',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000002-abcd.webp')$q$, ARRAY['rows=1']);
+    PERFORM pg_temp.t('S3 sales uploads a library image', sales_, 'sales',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000003-abcd.jpg')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('S4 editor uploads a library image', editor_, 'editor',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000004-abcd.jpg')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('S5 an anonymous visitor uploads', NULL, 'anon',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000005-abcd.jpg')$q$, ARRAY['denied']);
     PERFORM pg_temp.t('S6 owner uploads a GIF', owner_, 'owner',
       $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000006-abcd.gif')$q$, ARRAY['denied']);
-    PERFORM pg_temp.t('S7 sales uploads a forged path (../lib)', sales_, 'sales',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/../lib/1700000000007-abcd.jpg')$q$, v_open), ARRAY['denied']);
-    PERFORM pg_temp.t('S8 editor uploads into an open booking''s folder', editor_, 'editor',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000008-abcd.jpg')$q$, v_open), ARRAY['denied']);
-    PERFORM pg_temp.t('S9 an anonymous visitor uploads', NULL, 'anon',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000009-abcd.jpg')$q$, v_open), ARRAY['denied']);
-    PERFORM pg_temp.t('S10 sales reads a library image', sales_, 'sales',
+    PERFORM pg_temp.t('S7 owner uploads outside the library folder (a booking''s)', owner_, 'owner',
+      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000007-abcd.jpg')$q$, v_open), ARRAY['denied']);
+    PERFORM pg_temp.t('S8 owner uploads a forged path (lib/../)', owner_, 'owner',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/../1700000000008-abcd.jpg')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('S9 sales reads a library file', sales_, 'sales',
       $q$SELECT id FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=1']);
-    PERFORM pg_temp.t('S11 staff reads it', staff_, 'staff',
+    PERFORM pg_temp.t('S10 staff reads it', staff_, 'staff',
       $q$SELECT id FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
-    PERFORM pg_temp.t('S12 an anonymous visitor reads it', NULL, 'anon',
+    PERFORM pg_temp.t('S11 an anonymous visitor reads it', NULL, 'anon',
       $q$SELECT id FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('S13 admin overwrites it', admin_, 'admin',
-      $q$UPDATE storage.objects SET name = name WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
+    PERFORM pg_temp.t('S12 admin renames it', admin_, 'admin',
+      $q$UPDATE storage.objects SET name = 'lib/1700000000888-abcd.jpg' WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
     -- Newer storage versions refuse ANY direct delete unless this is set, so
     -- the policy is what the test reads, not that guard.
     PERFORM set_config('storage.allow_delete_query', 'true', true);
-    PERFORM pg_temp.t('S14 owner deletes it', owner_, 'owner',
+    PERFORM pg_temp.t('S13 owner deletes it', owner_, 'owner',
       $q$DELETE FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
     PERFORM set_config('storage.allow_delete_query', '', true);
-    PERFORM pg_temp.t('S15 sales uploads into a booking folder that already holds 30 files', sales_, 'sales',
-      format($q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'evt/%s/1700000000999-abcd.jpg')$q$, v_bk2), ARRAY['denied']);
+    -- An upload is a plain current file: not a delete marker, not an
+    -- archived version (live storage.objects is versioned).
+    PERFORM pg_temp.t('S21 owner writes a delete marker for a library name', owner_, 'owner',
+      $q$INSERT INTO storage.objects (bucket_id, name, is_delete_marker) VALUES ('catering-details', 'lib/1700000000021-abcd.jpg', true)$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('S22 admin writes an archived version of a library name', admin_, 'admin',
+      $q$INSERT INTO storage.objects (bucket_id, name, archived_at) VALUES ('catering-details', 'lib/1700000000022-abcd.jpg', now())$q$, ARRAY['denied']);
+    -- THE CAP: the library filled to 99 CURRENT files (as the file's own
+    -- role); the 100th is allowed, the 101st is not. Archived versions and
+    -- delete markers already there would not count.
+    FOR v_i IN 1 .. GREATEST(0, 99 - (SELECT count(*) FROM storage.objects
+                                      WHERE bucket_id = 'catering-details' AND archived_at IS NULL AND is_delete_marker IS NOT TRUE)::integer) LOOP
+      INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', format('lib/1700000001%s-fill.jpg', lpad(v_i::text, 3, '0')));
+    END LOOP;
+    PERFORM pg_temp.t('S20 admin uploads the 100th file (kept)', admin_, 'admin',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000020-abcd.jpg')$q$, ARRAY['rows=1'], NULL, true);
+    PERFORM pg_temp.t('S14 admin uploads to a library that holds 100 files', admin_, 'admin',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000014-abcd.jpg')$q$, ARRAY['denied']);
+
+    -- ── P. sop-photos without its broad read: nobody lists it; uploads still go ──
+    PERFORM pg_temp.t('P1 an anonymous visitor lists sop-photos', NULL, 'anon',
+      $q$SELECT id FROM storage.objects WHERE bucket_id = 'sop-photos'$q$, ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('P2 staff lists sop-photos', staff_, 'staff',
+      $q$SELECT id FROM storage.objects WHERE bucket_id = 'sop-photos'$q$, ARRAY['rows=0']);
+    PERFORM pg_temp.t('P3 owner lists sop-photos', owner_, 'owner',
+      $q$SELECT id FROM storage.objects WHERE bucket_id = 'sop-photos'$q$, ARRAY['rows=0']);
+    -- P4 proves only that the INSERT rule still admits staff. Whether the
+    -- storage server's upload needs a read policy is not visible from SQL:
+    -- it is checked by uploading a SOP and a maintenance photo after the run.
+    PERFORM pg_temp.t('P4 staff inserts a maintenance photo row into sop-photos (the insert rule stands)', staff_, 'staff',
+      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('sop-photos', 'maint-1700000000000-probep4.jpg')$q$, ARRAY['rows=1']);
 
     -- ── S. The caps hold beside an OPEN policy (made here, rolled back) ──
-    -- Without it, S11, S13 and S14 would pass with or without the caps: no
+    -- Without it, S10, S12 and S13 would pass with or without the caps: no
     -- permissive policy admits those reads and writes to begin with.
     INSERT INTO storage.buckets (id, name, public) VALUES ('probe-other', 'probe-other', false);
     INSERT INTO storage.objects (bucket_id, name) VALUES ('probe-other', 'probe.jpg');
     CREATE POLICY "probe open" ON storage.objects FOR ALL TO authenticated USING (true) WITH CHECK (true);
-    PERFORM pg_temp.t('S16 staff reads a catering-details file beside an open policy', staff_, 'staff',
+    PERFORM pg_temp.t('S15 staff reads a library file beside an open policy', staff_, 'staff',
       $q$SELECT id FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
-    PERFORM pg_temp.t('S17 staff reads another bucket''s file beside it (the control: the open policy works)', staff_, 'staff',
+    PERFORM pg_temp.t('S16 staff reads another bucket''s file beside it (the control: the open policy works)', staff_, 'staff',
       $q$SELECT id FROM storage.objects WHERE bucket_id = 'probe-other' AND name = 'probe.jpg'$q$, ARRAY['rows=1']);
-    PERFORM pg_temp.t('S18 admin renames a catering-details file beside it', admin_, 'admin',
+    PERFORM pg_temp.t('S17 admin renames a library file beside it', admin_, 'admin',
       $q$UPDATE storage.objects SET name = 'lib/1700000000888-abcd.jpg' WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
     PERFORM set_config('storage.allow_delete_query', 'true', true);
-    PERFORM pg_temp.t('S19 owner deletes a catering-details file beside it', owner_, 'owner',
+    PERFORM pg_temp.t('S18 owner deletes a library file beside it', owner_, 'owner',
       $q$DELETE FROM storage.objects WHERE bucket_id = 'catering-details' AND name = 'lib/1700000000000-probe.jpg'$q$, ARRAY['rows=0']);
     PERFORM set_config('storage.allow_delete_query', '', true);
-    PERFORM pg_temp.t('S20 sales uploads a name the app never makes, beside it', sales_, 'sales',
+    PERFORM pg_temp.t('S19 sales uploads a name the app never makes, beside it', sales_, 'sales',
       $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'anything.jpg')$q$, ARRAY['denied']);
-    PERFORM pg_temp.t('S21 admin upserts over a library file (the API''s upsert), beside it', admin_, 'admin',
-      $q$INSERT INTO storage.objects (bucket_id, name) VALUES ('catering-details', 'lib/1700000000000-probe.jpg') ON CONFLICT (bucket_id, name) DO UPDATE SET owner = NULL$q$,
-      ARRAY['denied']);
 
     v_log := current_setting('orders.log', true);
     RAISE EXCEPTION USING ERRCODE = 'U0002';
   EXCEPTION
     WHEN SQLSTATE 'U0002' THEN
       PERFORM set_config('orders.log', COALESCE(v_log, ''), false);
-      PERFORM pg_temp.note('ok      every test write rolled back (the bookings, the sets, the lines and copies, the charges, the library, the picks, the files)');
+      PERFORM pg_temp.note('ok      every test write rolled back (the bookings, the sets, the lines and copies, the charges, the libraries, the picks, the files, the probe policy)');
   END;
 END
 $do$;
@@ -1871,10 +2101,11 @@ DO $do$
 DECLARE
   v_rows bigint;
   v_bucket record;
+  v_n bigint;
   v_missing text[];
   -- Every row the file is supposed to emit, counted by the checker's rule
   -- (a t() or a note() is one row). Change a test, change this.
-  c_expected constant bigint := 97;
+  c_expected constant bigint := 116;
 BEGIN
   IF (SELECT count(*) FROM public.catering_events)::text <> current_setting('sheet.n_events')
      OR (SELECT count(*) FROM public.catering_set_menus)::text <> current_setting('sheet.n_sets')
@@ -1884,8 +2115,12 @@ BEGIN
      OR (SELECT count(*) FROM public.catering_event_charges)::text <> current_setting('sheet.n_charges')
      OR (SELECT count(*) FROM public.catering_event_activity_log)::text <> current_setting('sheet.n_log')
      OR (SELECT count(*) FROM storage.objects WHERE bucket_id = 'catering-details')::text <> current_setting('sheet.n_objects')
+     OR (SELECT count(*) FROM storage.objects WHERE bucket_id = 'sop-photos')::text <> current_setting('sheet.n_sop')
+     OR to_regclass('storage.buckets') IS NULL OR EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'probe-other')
      OR (SELECT count(*) FROM public.catering_detail_blocks)::text <> current_setting('sheet.n_blocks')
      OR (SELECT count(*) FROM public.catering_event_detail_blocks)::text <> current_setting('sheet.n_picks')
+     OR (SELECT count(*) FROM public.catering_detail_images)::text <> current_setting('sheet.n_images')
+     OR (SELECT count(*) FROM public.catering_event_detail_images)::text <> current_setting('sheet.n_imgpicks')
      OR (SELECT md5(COALESCE(string_agg(id::text || status || updated_at::text || COALESCE(cost_locked_at::text, ''), ',' ORDER BY id), ''))
            FROM public.catering_events) <> current_setting('sheet.fp_events')
      OR (SELECT md5(COALESCE(string_agg(id::text || label || unit_price::text || quantity::text || amount::text, ',' ORDER BY id), ''))
@@ -1898,19 +2133,23 @@ BEGIN
 
   SELECT public, file_size_limit, allowed_mime_types INTO v_bucket FROM storage.buckets WHERE id = 'catering-details';
   IF v_bucket IS NULL OR v_bucket.public IS DISTINCT FROM false OR v_bucket.file_size_limit IS DISTINCT FROM 2097152
-     OR v_bucket.allowed_mime_types IS DISTINCT FROM ARRAY['image/jpeg', 'image/png'] THEN
-    RAISE EXCEPTION 'FAIL    the bucket catering-details is not private, 2 MB, JPEG and PNG. Nothing applied.';
+     OR v_bucket.allowed_mime_types IS DISTINCT FROM ARRAY['image/jpeg', 'image/png', 'image/webp'] THEN
+    RAISE EXCEPTION 'FAIL    the bucket catering-details is not private, 2 MB, JPEG, PNG and WebP. Nothing applied.';
   END IF;
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.catering_detail_blocks'::regclass)
      OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.catering_event_detail_blocks'::regclass)
+     OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.catering_detail_images'::regclass)
+     OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.catering_event_detail_images'::regclass)
+     OR has_table_privilege('anon', 'public.catering_detail_images', 'SELECT')
+     OR has_table_privilege('anon', 'public.catering_event_detail_images', 'SELECT')
      OR has_table_privilege('anon', 'public.catering_detail_blocks', 'SELECT')
      OR has_table_privilege('anon', 'public.catering_event_detail_blocks', 'SELECT')
      OR has_function_privilege('anon', 'public.catering_detail_upload_allowed(text)', 'EXECUTE')
      OR NOT has_function_privilege('authenticated', 'public.catering_detail_upload_allowed(text)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.catering_save_set_draft(uuid, timestamptz, text, numeric, jsonb)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.catering_make_set_real(uuid, timestamptz, text, numeric)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.catering_save_event_sheet(uuid, jsonb, text, jsonb)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.catering_detail_folder_has_room(text)', 'EXECUTE') THEN
+     OR has_function_privilege('anon', 'public.catering_save_event_sheet(uuid, jsonb, text, jsonb, jsonb)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.catering_save_event_sheet(uuid, jsonb, text, jsonb, jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL    row security or a privilege on the new tables or the upload rule is not as written. Nothing applied.';
   END IF;
   SELECT array_agg(p) INTO v_missing FROM unnest(ARRAY[
@@ -1918,20 +2157,56 @@ BEGIN
     'catering_detail_blocks_read', 'catering_detail_blocks_write',
     'catering_event_detail_blocks_rw', 'catering_event_detail_blocks_lock_insert',
     'catering_event_detail_blocks_lock_update', 'catering_event_detail_blocks_lock_delete',
-    'catering details read', 'catering details upload', 'catering details read cap',
-    'catering details upload cap', 'catering details no overwrite', 'catering details no delete']) AS p
+    'catering_detail_images_read', 'catering_detail_images_write',
+    'catering_event_detail_images_rw', 'catering_event_detail_images_lock_insert',
+    'catering_event_detail_images_lock_update', 'catering_event_detail_images_lock_delete']) AS p
    WHERE NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = p);
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL    policies missing: %. Nothing applied.', v_missing;
   END IF;
   SELECT array_agg(g) INTO v_missing FROM unnest(ARRAY[
     'trg_catering_set_menus_draft_guard', 'trg_catering_event_menus_no_draft', 'trg_catering_event_menu_items_no_draft',
-    'trg_catering_event_detail_blocks_image_cap']) AS g
+    'trg_catering_detail_images_path_fixed']) AS g
    WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = g AND NOT tgisinternal);
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL    triggers missing: %. Nothing applied.', v_missing;
   END IF;
-  PERFORM pg_temp.note(format('ok      counts and fingerprints as before (bookings %s, sets %s, lines %s, charges %s, history %s, files %s); no draft on a booking; the bucket private, 2 MB, JPEG and PNG; row security on, anon shut out; 14 policies and 4 guard triggers in place',
+  -- THE POLICIES ON storage.objects, as the catalog holds them: the six for
+  -- catering-details, each of the right kind, command and roles, the two
+  -- that forbid updates and deletes exactly "bucket_id <> 'catering-details'"
+  -- and restrictive for every role (so no other policy can admit an update or
+  -- a delete of a library file); no permissive UPDATE, DELETE or ALL policy
+  -- naming the bucket; no permissive SELECT or ALL policy naming sop-photos,
+  -- whose uploads keep their own policy.
+  SELECT count(*) INTO v_n FROM pg_policies p
+   WHERE p.schemaname = 'storage' AND p.tablename = 'objects'
+     AND ((p.policyname = 'catering details read'        AND p.permissive = 'PERMISSIVE'  AND p.cmd = 'SELECT' AND p.roles = '{authenticated}')
+       OR (p.policyname = 'catering details upload'      AND p.permissive = 'PERMISSIVE'  AND p.cmd = 'INSERT' AND p.roles = '{authenticated}')
+       OR (p.policyname = 'catering details read cap'    AND p.permissive = 'RESTRICTIVE' AND p.cmd = 'SELECT' AND p.roles = '{public}')
+       OR (p.policyname = 'catering details upload cap'  AND p.permissive = 'RESTRICTIVE' AND p.cmd = 'INSERT' AND p.roles = '{public}')
+       OR (p.policyname = 'catering details no update'   AND p.permissive = 'RESTRICTIVE' AND p.cmd = 'UPDATE' AND p.roles = '{public}'
+           AND regexp_replace(p.qual, '[()[:space:]]', '', 'g') = 'bucket_id<>''catering-details''::text'
+           AND regexp_replace(p.with_check, '[()[:space:]]', '', 'g') = 'bucket_id<>''catering-details''::text')
+       OR (p.policyname = 'catering details no delete'   AND p.permissive = 'RESTRICTIVE' AND p.cmd = 'DELETE' AND p.roles = '{public}'
+           AND regexp_replace(p.qual, '[()[:space:]]', '', 'g') = 'bucket_id<>''catering-details''::text'));
+  IF v_n <> 6 THEN
+    RAISE EXCEPTION 'FAIL    of the six catering-details policies on storage.objects, % are as written. Nothing applied.', v_n;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies p
+              WHERE p.schemaname = 'storage' AND p.tablename = 'objects' AND p.permissive = 'PERMISSIVE'
+                AND p.cmd IN ('UPDATE', 'DELETE', 'ALL')
+                AND (COALESCE(p.qual, '') LIKE '%catering-details%' OR COALESCE(p.with_check, '') LIKE '%catering-details%')) THEN
+    RAISE EXCEPTION 'FAIL    a permissive UPDATE, DELETE or ALL policy names catering-details. Nothing applied.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies p
+              WHERE p.schemaname = 'storage' AND p.tablename = 'objects' AND p.permissive = 'PERMISSIVE'
+                AND p.cmd IN ('SELECT', 'ALL') AND COALESCE(p.qual, '') LIKE '%sop-photos%')
+     OR NOT EXISTS (SELECT 1 FROM pg_policies p
+                     WHERE p.schemaname = 'storage' AND p.tablename = 'objects' AND p.policyname = 'sop photos upload by role') THEN
+    RAISE EXCEPTION 'FAIL    a permissive read policy still names sop-photos, or its upload policy is gone. Nothing applied.';
+  END IF;
+  PERFORM pg_temp.note('ok      K1 storage.objects, read from pg_policies: the six catering-details policies as written (no update, no delete, restrictive for every role); no permissive UPDATE, DELETE or ALL policy names the bucket; no permissive read names sop-photos, and its upload policy stands');
+  PERFORM pg_temp.note(format('ok      counts and fingerprints as before (bookings %s, sets %s, lines %s, charges %s, history %s, library files %s); no draft on a booking; the bucket private, 2 MB, JPEG, PNG and WebP; row security on, anon shut out; 14 table policies and 4 guard triggers in place',
     current_setting('sheet.n_events'), current_setting('sheet.n_sets'), current_setting('sheet.n_lines'),
     current_setting('sheet.n_charges'), current_setting('sheet.n_log'), current_setting('sheet.n_objects')));
 
