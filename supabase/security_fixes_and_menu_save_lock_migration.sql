@@ -1,82 +1,85 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- security_fixes_and_menu_save_lock_migration.sql
+-- security_fixes_and_menu_save_lock_migration.sql — SECOND VERSION
 --
--- NOT APPLIED. Written 2026-09-25 in an unattended run while Nik was away,
--- from a read-only security audit and queue item 48. One transaction: it
--- applies entirely, or nothing. Run it in the Supabase SQL editor as it is.
+-- NOT APPLIED. The first version (03a3a17) stopped at S2 on 2026-09-26 with
+-- "Nothing applied": live pos_price_aliases has no row, and the tests
+-- required live rows. This version's tests make their OWN rows inside the
+-- block that always rolls back, and it carries Nik's decisions of
+-- 2026-09-26 (SOP writes for editors too; salaries for owner and hr only;
+-- staff see ingredient names and units, never purchase prices). One
+-- transaction: it applies entirely, or nothing.
 --
--- EXPECTED RESULT: 86 rows, every line starting "ok", "survey" or "note",
--- the last one:
---   row count verified: 85 evidence rows emitted, as expected (this line makes 86)
+-- EXPECTED RESULT: 124 rows, every line starting "ok", "survey",
+-- "note" or "skip", the last one:
+--   row count verified: 123 evidence rows emitted, as expected (this line makes 124)
 -- Anything that starts "FAIL" stops the file and NOTHING is applied.
 --
 -- WHAT IT DOES (each is tested below as the real accounts, rolled back):
 --  1. Queue item 48: catering_save_event_menus (the menu page's save) locks
 --     the booking row first (FOR UPDATE), the lock catering_save_booking_prices
---     (the booking screen's save) already takes, so the two saves wait for
---     each other instead of interleaving. The live body is checked by md5
---     first (the one 224848f applied).
---  2. Public sign-up (audit C1, CRITICAL): the auth setting "Allow new users
---     to sign up" was found ON (GET /auth/v1/settings, 2026-09-25), and
---     handle_new_user() gave EVERY new login a 'staff' profile. It now makes a
---     profile only for the app's own logins, <username>@staff.local — what
---     the team page creates (all 13 profiled logins today). A stranger who
---     signs up with a real address gets no profile, and with (3) no profile
---     means no data; one who signs up AS x@staff.local gets a profile but can
---     never confirm that address (no such mailbox), so never signs in while
---     email confirmation stays on. TURNING SIGN-UP OFF IN THE DASHBOARD IS
---     STILL THE FIRST FIX; this is the second lock.
+--     already takes, so the two saves wait for each other. md5-guarded
+--     against the body 224848f applied.
+--  2. Sign-up (audit C1): handle_new_user() gave EVERY new login a 'staff'
+--     profile, and public sign-up was found on. It now makes a profile only
+--     for the app's own <username>@staff.local logins (the team page's).
+--     md5-guarded against migrations/0001_init.sql.
 --  3. A login with no profile (audit H3): the read policies that asked only
---     "signed in" (auth.uid() IS NOT NULL, or USING (true)) now ask for a
---     profile (public.current_role() IS NOT NULL). Each is altered only if
---     it exists live and is a SELECT policy; every one is reported.
---  4. SOPs (audit H1): "sop write auth" / "sop notes write auth" / "sop steps
---     write auth" let EVERY signed-in account rewrite or delete any SOP. Now
---     only owner and admin write (editors file a request, as the app does).
---  5. Purchase-price history (audit H2): readable by every signed-in account,
---     sales included. Now owner, admin and editor (the one screen that reads
---     it is requireAdminOrEditor). The trigger that writes it is SECURITY
---     DEFINER and is not affected.
---  6. suppliers and pos_price_aliases (audit H4): made outside the repo, with
---     policies no file records. The live policies are PRINTED (survey rows),
---     then replaced by owner/admin read and write — exactly who the app lets
---     use them. suppliers holds bank account numbers.
---  7. templates and template_items (audit, service-key review M1): the live
---     write policies are printed, then replaced by owner/admin/editor write.
---     The code live now writes them with the service key (unaffected); the
---     branch that moves those writes to the user's own session NEEDS this.
---  8. anon may no longer EXECUTE the functions that write: import_pos_month,
---     import_budget69_month, import_outsource_month, next_catering_quote_seq,
---     catering_copy_set_menu, catering_save_booking_prices,
---     catering_save_event_menus (their own checks refused anon already).
---  9. prevent_owner_role_change / prevent_owner_delete (SECURITY DEFINER)
---     get SET search_path = public (audit L3).
--- 10. The sop-photos bucket takes JPEG only, at most 2 MB a file (audit ST-1;
---     the app sends 1200 px JPEGs at quality 0.8).
+--     "signed in" now ask for a profile (public.current_role() IS NOT NULL).
+--  4. SOPs (audit H1; Nik 2026-09-26): the SOP tables were writable by EVERY
+--     signed-in account. Now owner, admin and EDITOR write (เวช writes SOPs).
+--  5. Purchase-price history (audit H2): owner, admin and editor read it.
+--  6. suppliers and pos_price_aliases (audit H4): their live policies are
+--     printed, then replaced by owner/admin read and write.
+--  7. templates and template_items: written by owner, admin and editor.
+--  8. anon may no longer EXECUTE the seven functions that write.
+--  9. prevent_owner_role_change / prevent_owner_delete: SET search_path.
+-- 10. sop-photos takes JPEG only, at most 2 MB a file.
+-- 11. SALARIES, OWNER AND HR ONLY (Nik 2026-09-26). employees keeps its rows
+--     for admin (attendance, leave, schedules, the team page), but its four
+--     pay columns — base_salary, position_allowance, social_security_monthly,
+--     daily_wage — are no longer selectable by any signed-in account; owner
+--     and hr read them through the new view employee_pay. payroll_periods and
+--     payroll_entries were already owner/hr (hr_role_patch.sql); tested here.
+-- 12. STAFF SEE NO PURCHASE PRICES (Nik 2026-09-26). ingredients keeps its rows
+--     for staff (names, units, par levels: ordering, templates, recipes), but
+--     purchase_cost, receive_qty and yield_qty are no longer selectable by any
+--     signed-in account; owner, admin and editor read them through the new
+--     view ingredient_costs. prep_unit_costs() (every prep's cost) and the POS
+--     receipt costs (pos_receipt_deliveries) drop staff. prep_unit_costs is
+--     md5-guarded against prep_recipe_access_migration.sql.
 --
 -- STATEMENTS THE EDITOR MAY CALL DESTRUCTIVE — the complete list; anything
 -- else is unexpected:
---   CREATE OR REPLACE FUNCTION public.catering_save_event_menus, public.handle_new_user
+--   CREATE OR REPLACE FUNCTION public.catering_save_event_menus, public.handle_new_user, public.prep_unit_costs
+--   CREATE OR REPLACE VIEW public.employee_pay, public.ingredient_costs
 --   ALTER FUNCTION public.prevent_owner_role_change, public.prevent_owner_delete (search_path only)
 --   DROP POLICY "sop write auth", "sop notes write auth", "sop steps write auth",
---     ingredient_price_history_read_all, and EVERY policy on public.suppliers
---     and public.pos_price_aliases, and every NON-SELECT policy on
---     public.templates and public.template_items (each named in a survey row
---     before it is dropped)
+--     ingredient_price_history_read_all, pos_receipt_deliveries_select (re-made
+--     without staff), EVERY policy on public.suppliers and public.pos_price_aliases,
+--     and every NON-SELECT policy on public.templates and public.template_items
+--     (each named in a survey row before it is dropped)
 --   ALTER POLICY (USING only) on the read policies listed in Step 2
 --   ALTER TABLE public.suppliers / public.pos_price_aliases ENABLE ROW LEVEL SECURITY
 --   REVOKE ALL ON public.suppliers, public.pos_price_aliases FROM anon
---   REVOKE EXECUTE ON FUNCTION ... FROM anon (the seven in 8)
+--   REVOKE SELECT ON public.employees, public.ingredients FROM PUBLIC, anon,
+--     authenticated, then GRANT SELECT on every column but the pay / cost ones
+--   REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon (the seven in 8)
 --   UPDATE storage.buckets (one row: sop-photos' size and type limits)
--- The tests write inside a block that always rolls back: each write touches
--- one row, except the sign-up test, whose one auth.users row fires the
--- trigger under test (that is the point of it).
+-- The tests write inside a block that always rolls back, on rows they make
+-- there; each test write touches one row, except the sign-up test, whose
+-- auth.users row fires the trigger under test.
 --
--- DEPLOY ORDER: this file first, whenever. The code live when it runs keeps
--- working (checked for each change above: nothing the app does as its roles
--- is refused). Then the branch code that needs it (templates on the user's
--- session). Rolling this back means re-creating the dropped policies; the
--- survey rows print what they were.
+-- DEPLOY ORDER: THE CODE FIRST, then this file. The app must read pay and
+-- purchase costs through the new views before the columns close:
+-- `c88c44a` (salaries) and `d9829c4` (ingredient costs) do, and fall back to
+-- the old reads while the views do not exist. Push them, check the deploy,
+-- then run this. After it: the branch commit that moves the template writes
+-- to the user's session (it needs the policies of 7).
+--
+-- FROM NOW ON: a column added to public.employees or public.ingredients is
+-- NOT readable by the app until a GRANT SELECT (that_column) ... TO
+-- authenticated says so (the table-wide SELECT is gone). Say which side of
+-- the line a new column is on when you add it.
 --
 -- Never "Run and enable RLS": every table this touches already has RLS, and a
 -- policy the editor invents is not one anyone reviewed.
@@ -190,6 +193,9 @@ BEGIN
       END IF;
       IF SQLERRM LIKE 'permission denied for table %' THEN
         RETURN COALESCE(v_role, '?') || ' denied:' || substring(SQLERRM from 'permission denied for table ([[:alnum:]_]+)');
+      END IF;
+      IF SQLERRM LIKE 'permission denied for view %' THEN
+        RETURN COALESCE(v_role, '?') || ' denied:' || substring(SQLERRM from 'permission denied for view ([[:alnum:]_]+)');
       END IF;
       IF SQLERRM LIKE 'permission denied for function %' THEN
         RETURN COALESCE(v_role, '?') || ' no-execute';
@@ -339,24 +345,36 @@ DECLARE
   v_n    bigint;
 BEGIN
   FOREACH v_t IN ARRAY ARRAY['public.profiles', 'public.menus', 'public.menu_sops', 'public.menu_sop_steps',
-      'public.menu_sop_ingredient_notes', 'public.ingredient_price_history', 'public.suppliers',
+      'public.menu_sop_ingredient_notes', 'public.ingredients', 'public.ingredient_price_history', 'public.suppliers',
       'public.pos_price_aliases', 'public.templates', 'public.template_items', 'public.catering_events',
-      'public.maintenance_reports', 'public.coa', 'storage.buckets'] LOOP
+      'public.maintenance_reports', 'public.coa', 'public.employees', 'public.payroll_periods', 'public.payroll_entries',
+      'public.prep_recipes', 'public.pos_receipt_deliveries', 'storage.buckets'] LOOP
     IF to_regclass(v_t) IS NULL THEN
       RAISE EXCEPTION 'FAIL    S0 % does not exist. Nothing applied.', v_t;
     END IF;
   END LOOP;
   -- suppliers and pos_price_aliases get row security switched on below; the
-  -- others must have it already, or a policy change means nothing.
+  -- others must have it already, or a policy or column change means nothing.
   FOREACH v_t IN ARRAY ARRAY['public.templates', 'public.template_items', 'public.menu_sops', 'public.menu_sop_steps',
-      'public.menu_sop_ingredient_notes', 'public.ingredient_price_history', 'public.profiles', 'public.menus'] LOOP
+      'public.menu_sop_ingredient_notes', 'public.ingredient_price_history', 'public.profiles', 'public.menus',
+      'public.employees', 'public.payroll_periods', 'public.payroll_entries', 'public.ingredients', 'public.pos_receipt_deliveries'] LOOP
     IF NOT (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass(v_t)) THEN
       RAISE EXCEPTION 'FAIL    S0 % has row security OFF. Nothing applied.', v_t;
     END IF;
   END LOOP;
-  PERFORM pg_temp.note('ok      S0 the tables this file reads or changes exist, and row security is on where the file relies on it');
+  -- The columns this file takes away must be there, or the grant below would
+  -- quietly leave a real pay or cost column readable under another name.
+  IF (SELECT count(*) FROM information_schema.columns c
+       WHERE c.table_schema = 'public' AND c.table_name = 'employees'
+         AND c.column_name IN ('base_salary', 'position_allowance', 'social_security_monthly', 'daily_wage')) <> 4
+     OR (SELECT count(*) FROM information_schema.columns c
+          WHERE c.table_schema = 'public' AND c.table_name = 'ingredients'
+            AND c.column_name IN ('purchase_cost', 'receive_qty', 'yield_qty')) <> 3 THEN
+    RAISE EXCEPTION 'FAIL    S0 employees lacks one of its four pay columns, or ingredients one of its three cost columns. Nothing applied.';
+  END IF;
+  PERFORM pg_temp.note('ok      S0 the tables this file reads or changes exist, row security is on where it relies on it, and the four pay and three cost columns are where it expects them');
 
-  -- The two functions replaced: the bodies the files applied, or this file's own (a re-run).
+  -- The three functions replaced: the bodies the files applied, or this file's own (a re-run).
   SELECT md5(replace(p.prosrc, chr(13), '')) INTO v_md5
     FROM pg_proc p WHERE p.oid = to_regprocedure('public.catering_save_event_menus(uuid, jsonb)');
   IF v_md5 IS NULL OR v_md5 NOT IN ('e778edbac45e5ca9f9800e7841b89be7', 'b22c172dbb7b62403ded306f86e6b11e') THEN
@@ -367,13 +385,19 @@ BEGIN
   IF v_md5 IS NULL OR v_md5 NOT IN ('e2cb9d70f85ff5b7243ac555a6836b43', 'b832816dd984aa38c095fae9cff91651') THEN
     RAISE EXCEPTION 'FAIL    S1 handle_new_user is not the body migrations/0001_init.sql applied (md5 %): read it live before replacing it (AGENTS.md, rule 4). Nothing applied.', COALESCE(v_md5, 'missing');
   END IF;
+  SELECT md5(replace(p.prosrc, chr(13), '')) INTO v_md5
+    FROM pg_proc p WHERE p.oid = to_regprocedure('public.prep_unit_costs()');
+  IF v_md5 IS NULL OR v_md5 NOT IN ('5c592e15e3f312b7d90354d9ffebd977', '05ac62a2674d1f5b0b9ef06460cf5c5b') THEN
+    RAISE EXCEPTION 'FAIL    S1 prep_unit_costs is not the body prep_recipe_access_migration.sql applied (md5 %): read it live before replacing it (AGENTS.md, rule 4). Nothing applied.', COALESCE(v_md5, 'missing');
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger g
                   WHERE g.tgname = 'on_auth_user_created' AND g.tgrelid = to_regclass('auth.users') AND NOT g.tgisinternal) THEN
     RAISE EXCEPTION 'FAIL    S1 the trigger on_auth_user_created on auth.users is missing: new logins would get no profile at all. Nothing applied.';
   END IF;
-  PERFORM pg_temp.note('ok      S1 catering_save_event_menus and handle_new_user are the bodies the files applied (md5), or this file''s own; on_auth_user_created fires handle_new_user');
+  PERFORM pg_temp.note('ok      S1 catering_save_event_menus, handle_new_user and prep_unit_costs are the bodies the files applied (md5), or this file''s own; on_auth_user_created fires handle_new_user');
 
-  -- One account per role, to test as.
+  -- One account per role, to test as. The tests make every ROW they need;
+  -- the accounts they cannot make (a profile needs a login).
   FOREACH v_role IN ARRAY ARRAY['owner', 'admin', 'editor', 'staff', 'hr', 'sales'] LOOP
     SELECT p.id INTO v_id FROM public.profiles p WHERE p.role = v_role ORDER BY p.id LIMIT 1;
     IF v_id IS NULL THEN
@@ -381,14 +405,8 @@ BEGIN
     END IF;
     PERFORM set_config('sec.' || v_role, v_id::text, false);
   END LOOP;
-
-  -- One row of each table a test writes, and every count, so no test is vacuous.
-  PERFORM set_config('sec.step',     COALESCE((SELECT s.id FROM public.menu_sop_steps s ORDER BY s.id LIMIT 1)::text, ''), false);
-  PERFORM set_config('sec.sop',      COALESCE((SELECT s.id FROM public.menu_sops s ORDER BY s.id LIMIT 1)::text, ''), false);
-  PERFORM set_config('sec.supplier', COALESCE((SELECT s.id FROM public.suppliers s ORDER BY s.id LIMIT 1)::text, ''), false);
-  PERFORM set_config('sec.alias',    COALESCE((SELECT a.id FROM public.pos_price_aliases a ORDER BY a.id LIMIT 1)::text, ''), false);
-  PERFORM set_config('sec.template', COALESCE((SELECT t.id FROM public.templates t ORDER BY t.id LIMIT 1)::text, ''), false);
-  PERFORM set_config('sec.titem',    COALESCE((SELECT i.id FROM public.template_items i ORDER BY i.id LIMIT 1)::text, ''), false);
+  -- Counts and fingerprints, to prove after that nothing the tests did stayed.
+  -- Compared, never printed: suppliers hold bank details, employees pay.
   PERFORM set_config('sec.n_steps',     (SELECT count(*) FROM public.menu_sop_steps)::text, false);
   PERFORM set_config('sec.n_sops',      (SELECT count(*) FROM public.menu_sops)::text, false);
   PERFORM set_config('sec.n_notes',     (SELECT count(*) FROM public.menu_sop_ingredient_notes)::text, false);
@@ -399,26 +417,22 @@ BEGIN
   PERFORM set_config('sec.n_titems',    (SELECT count(*) FROM public.template_items)::text, false);
   PERFORM set_config('sec.n_menus',     (SELECT count(*) FROM public.menus)::text, false);
   PERFORM set_config('sec.n_profiles',  (SELECT count(*) FROM public.profiles)::text, false);
-  PERFORM set_config('sec.n_maint',     (SELECT count(*) FROM public.maintenance_reports)::text, false);
   PERFORM set_config('sec.n_events',    (SELECT count(*) FROM public.catering_events)::text, false);
-  IF current_setting('sec.step') = '' OR current_setting('sec.sop') = '' OR current_setting('sec.supplier') = ''
-     OR current_setting('sec.alias') = '' OR current_setting('sec.template') = '' OR current_setting('sec.titem') = ''
-     OR current_setting('sec.n_hist') = '0' OR current_setting('sec.n_menus') = '0' THEN
-    RAISE EXCEPTION 'FAIL    S2 a table the tests need is empty (SOP steps %, suppliers %, aliases %, templates %, template lines %, price history %, menus %): a test there would prove nothing. Nothing applied.',
-      current_setting('sec.n_steps'), current_setting('sec.n_suppliers'), current_setting('sec.n_aliases'),
-      current_setting('sec.n_templates'), current_setting('sec.n_titems'), current_setting('sec.n_hist'), current_setting('sec.n_menus');
-  END IF;
-  -- Fingerprints of what the tests write, to prove after that nothing stayed.
-  -- Compared, never printed: suppliers holds bank details.
+  PERFORM set_config('sec.n_emp',       (SELECT count(*) FROM public.employees)::text, false);
+  PERFORM set_config('sec.n_pe',        (SELECT count(*) FROM public.payroll_entries)::text, false);
+  PERFORM set_config('sec.n_pp',        (SELECT count(*) FROM public.payroll_periods)::text, false);
+  PERFORM set_config('sec.n_ing',       (SELECT count(*) FROM public.ingredients)::text, false);
+  PERFORM set_config('sec.n_prep',      (SELECT count(*) FROM public.prep_recipes)::text, false);
+  PERFORM set_config('sec.n_del',       (SELECT count(*) FROM public.pos_receipt_deliveries)::text, false);
   PERFORM set_config('sec.fp_steps',     (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.menu_sop_steps t), false);
-  PERFORM set_config('sec.fp_sops',      (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.menu_sops t), false);
   PERFORM set_config('sec.fp_suppliers', (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.suppliers t), false);
-  PERFORM set_config('sec.fp_aliases',   (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.pos_price_aliases t), false);
   PERFORM set_config('sec.fp_templates', (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.templates t), false);
   PERFORM set_config('sec.fp_titems',    (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.template_items t), false);
   PERFORM set_config('sec.fp_profiles',  (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.profiles t), false);
   PERFORM set_config('sec.fp_events',    (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.catering_events t), false);
-  PERFORM pg_temp.note(format('ok      S2 test accounts found for owner, admin, editor, staff, hr and sales; one row of each table a test writes; counts and fingerprints recorded'));
+  PERFORM set_config('sec.fp_emp',       (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.employees t), false);
+  PERFORM set_config('sec.fp_ing',       (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.ingredients t), false);
+  PERFORM pg_temp.note('ok      S2 test accounts found for owner, admin, editor, staff, hr and sales; counts and fingerprints recorded (the tests make their own rows)');
 
   -- THE LIVE POLICIES of the four tables made outside the repo, printed
   -- before any of them is dropped: the record no file has. One line each.
@@ -426,6 +440,10 @@ BEGIN
   PERFORM pg_temp.note(pg_temp.survey('pos_price_aliases'));
   PERFORM pg_temp.note(pg_temp.survey('templates'));
   PERFORM pg_temp.note(pg_temp.survey('template_items'));
+  -- And the salary and cost tables this file narrows.
+  PERFORM pg_temp.note(pg_temp.survey('employees'));
+  PERFORM pg_temp.note(pg_temp.survey('payroll_entries'));
+  PERFORM pg_temp.note(pg_temp.survey('pos_receipt_deliveries'));
   SELECT format('survey  sop-photos bucket before: public %s, file_size_limit %s, allowed_mime_types %s',
            b.public, COALESCE(b.file_size_limit::text, 'none'), COALESCE(array_to_string(b.allowed_mime_types, ','), 'any'))
     INTO v_line FROM storage.buckets b WHERE b.id = 'sop-photos';
@@ -441,10 +459,11 @@ BEGIN
     v_line := 'survey  logins with no profile: not readable by this role here';
   END;
   PERFORM pg_temp.note(v_line);
-  PERFORM pg_temp.note(format('note    before: SOPs %s, SOP steps %s, SOP notes %s, price history %s, suppliers %s, POS aliases %s, templates %s, template lines %s, menus %s, profiles %s',
-    current_setting('sec.n_sops'), current_setting('sec.n_steps'), current_setting('sec.n_notes'), current_setting('sec.n_hist'),
+  PERFORM pg_temp.note(format('note    before: SOPs %s, SOP steps %s, price history %s, suppliers %s, POS aliases %s, templates %s, template lines %s, menus %s, profiles %s, employees %s, payroll lines %s, ingredients %s, preps %s, POS receipts %s',
+    current_setting('sec.n_sops'), current_setting('sec.n_steps'), current_setting('sec.n_hist'),
     current_setting('sec.n_suppliers'), current_setting('sec.n_aliases'), current_setting('sec.n_templates'),
-    current_setting('sec.n_titems'), current_setting('sec.n_menus'), current_setting('sec.n_profiles')));
+    current_setting('sec.n_titems'), current_setting('sec.n_menus'), current_setting('sec.n_profiles'),
+    current_setting('sec.n_emp'), current_setting('sec.n_pe'), current_setting('sec.n_ing'), current_setting('sec.n_prep'), current_setting('sec.n_del')));
 END
 $do$;
 
@@ -645,6 +664,79 @@ BEGIN
 END
 $fn$;
 
+CREATE OR REPLACE FUNCTION public.prep_unit_costs()
+RETURNS TABLE (prep_recipe_id uuid, unit_cost numeric)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+  WITH RECURSIVE
+  -- Mirrors rawUnitCost() in src/lib/costing.ts, branch for branch.
+  raw_cost AS (
+    SELECT i.id,
+           CASE
+             WHEN i.purchase_cost IS NULL THEN NULL
+             WHEN i.yield_qty IS NULL OR i.yield_qty = 0 OR COALESCE(i.receive_qty, 1) = 0
+               THEN CASE WHEN COALESCE(i.receive_qty, 1) > 0
+                         THEN i.purchase_cost / COALESCE(i.receive_qty, 1)
+                         ELSE i.purchase_cost END
+             ELSE CASE WHEN (i.yield_qty / COALESCE(i.receive_qty, 1)) > 0
+                       THEN i.purchase_cost / (i.yield_qty / COALESCE(i.receive_qty, 1))
+                       ELSE NULL END
+           END AS unit_cost
+      FROM public.ingredients i
+     WHERE i.is_prep = false
+  ),
+  -- One row per (prep, component) at every depth. The LEFT JOIN is what makes
+  -- a prep with NO items emit a single NULL-ingredient row instead of
+  -- vanishing — vanishing would read as "costs nothing".
+  expanded AS (
+    SELECT p.id             AS root_id,
+           pi.ingredient_id AS ingredient_id,
+           CASE WHEN p.batch_yield_qty > 0 AND pi.id IS NOT NULL
+                THEN pi.quantity / p.batch_yield_qty END AS factor,
+           1                AS depth
+      FROM public.prep_recipes p
+      LEFT JOIN public.prep_recipe_items pi ON pi.prep_recipe_id = p.id
+    UNION ALL
+    SELECT e.root_id,
+           pi.ingredient_id,
+           CASE WHEN p2.batch_yield_qty > 0 AND pi.id IS NOT NULL
+                THEN e.factor * (pi.quantity / p2.batch_yield_qty) END,
+           e.depth + 1
+      FROM expanded e
+      JOIN public.ingredients  ing ON ing.id = e.ingredient_id AND ing.is_prep
+      JOIN public.prep_recipes p2  ON p2.id  = ing.prep_recipe_id
+      LEFT JOIN public.prep_recipe_items pi ON pi.prep_recipe_id = p2.id
+     WHERE e.depth < 10
+  ),
+  leaf AS (
+    SELECT e.root_id,
+           CASE
+             -- a prep with no items, at any depth
+             WHEN e.ingredient_id IS NULL THEN NULL
+             -- an internal node: its children carry the value, it carries none
+             WHEN ing.is_prep AND ing.prep_recipe_id IS NOT NULL AND e.depth < 10 THEN 0
+             -- a prep with no recipe, or a branch that hit the depth cap
+             WHEN ing.is_prep THEN NULL
+             -- a raw leaf; NULL if unpriced, or if any ancestor yield was <= 0
+             ELSE e.factor * rc.unit_cost
+           END AS contribution
+      FROM expanded e
+      LEFT JOIN public.ingredients ing ON ing.id = e.ingredient_id
+      LEFT JOIN raw_cost           rc ON rc.id  = e.ingredient_id
+  )
+  SELECT p.id,
+         CASE WHEN bool_or(l.contribution IS NULL) THEN NULL
+              ELSE sum(l.contribution) END
+    FROM public.prep_recipes p
+    LEFT JOIN leaf l ON l.root_id = p.id
+   -- Staff see no purchase prices (Nik, 2026-09-26): a prep's cost is one.
+   WHERE public.current_role() IN ('owner', 'admin', 'editor')
+   GROUP BY p.id;
+$fn$;
+
 DO $do$
 DECLARE
   v_f text;
@@ -666,14 +758,14 @@ BEGIN
 END
 $do$;
 
--- ── Step 2: the policies and grants ────────────────────────────────────────
+-- ── Step 2: the policies, grants and views ─────────────────────────────────
 
 DO $do$
 DECLARE
   v_p   text[];
   v_n   int := 0;
 BEGIN
-  -- H1: SOP writes, owner and admin only.
+  -- H1 and Nik 2026-09-26: SOP writes, owner, admin and editor.
   FOREACH v_p SLICE 1 IN ARRAY ARRAY[
       ARRAY['menu_sops', 'sop write auth', 'sop_write'],
       ARRAY['menu_sop_ingredient_notes', 'sop notes write auth', 'sop_notes_write'],
@@ -684,9 +776,9 @@ BEGIN
     END IF;
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_p[3], v_p[1]);
     EXECUTE format($q$CREATE POLICY %I ON public.%I FOR ALL TO authenticated
-      USING (public.current_role() IN ('owner', 'admin')) WITH CHECK (public.current_role() IN ('owner', 'admin'))$q$, v_p[3], v_p[1]);
+      USING (public.current_role() IN ('owner', 'admin', 'editor')) WITH CHECK (public.current_role() IN ('owner', 'admin', 'editor'))$q$, v_p[3], v_p[1]);
   END LOOP;
-  PERFORM pg_temp.note(format('ok      P0 SOP writes: %s of the three "… write auth" policies were there and are dropped; sop_write, sop_notes_write and sop_steps_write (owner, admin) in place', v_n));
+  PERFORM pg_temp.note(format('ok      P0 SOP writes: %s of the three "… write auth" policies were there and are dropped; sop_write, sop_notes_write and sop_steps_write (owner, admin, editor) in place', v_n));
 
   -- H2: the purchase-price history, owner, admin and editor.
   DROP POLICY IF EXISTS ingredient_price_history_read_all ON public.ingredient_price_history;
@@ -694,6 +786,12 @@ BEGIN
   CREATE POLICY ingredient_price_history_select ON public.ingredient_price_history FOR SELECT TO authenticated
     USING (public.current_role() IN ('owner', 'admin', 'editor'));
   PERFORM pg_temp.note('ok      Q0 price history: read by owner, admin and editor only (ingredient_price_history_select)');
+
+  -- 12: the POS receipt costs, owner, admin and editor (staff dropped).
+  DROP POLICY IF EXISTS pos_receipt_deliveries_select ON public.pos_receipt_deliveries;
+  CREATE POLICY pos_receipt_deliveries_select ON public.pos_receipt_deliveries FOR SELECT TO authenticated
+    USING (public.current_role() IN ('owner', 'admin', 'editor'));
+  PERFORM pg_temp.note('ok      D0 POS receipt costs: read by owner, admin and editor only (pos_receipt_deliveries_select)');
 END
 $do$;
 
@@ -778,6 +876,52 @@ BEGIN
 END
 $do$;
 
+-- 11 and 12: the pay columns and the purchase-cost columns close, for every
+-- signed-in account; the rest of each table stays readable under its row
+-- policies. The two views hand the closed columns back to whom Nik named.
+DO $do$
+DECLARE
+  v_cols text;
+BEGIN
+  REVOKE SELECT ON public.employees FROM PUBLIC, anon, authenticated;
+  SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position) INTO v_cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'employees'
+     AND c.column_name NOT IN ('base_salary', 'position_allowance', 'social_security_monthly', 'daily_wage');
+  EXECUTE format('GRANT SELECT (%s) ON public.employees TO authenticated', v_cols);
+  PERFORM pg_temp.note(format('ok      M0 employees: signed-in accounts read every column but base_salary, position_allowance, social_security_monthly and daily_wage (%s)', v_cols));
+
+  REVOKE SELECT ON public.ingredients FROM PUBLIC, anon, authenticated;
+  SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position) INTO v_cols
+    FROM information_schema.columns c
+   WHERE c.table_schema = 'public' AND c.table_name = 'ingredients'
+     AND c.column_name NOT IN ('purchase_cost', 'receive_qty', 'yield_qty');
+  EXECUTE format('GRANT SELECT (%s) ON public.ingredients TO authenticated', v_cols);
+  PERFORM pg_temp.note(format('ok      N0 ingredients: signed-in accounts read every column but purchase_cost, receive_qty and yield_qty (%s)', v_cols));
+END
+$do$;
+
+-- The views run as their owner (the file's own role), so the columns are
+-- there for them; each answers only the roles named, and security_barrier
+-- keeps a caller's own conditions from being evaluated before that test.
+CREATE OR REPLACE VIEW public.employee_pay WITH (security_barrier = true) AS
+  SELECT e.id AS employee_id, e.base_salary, e.position_allowance, e.social_security_monthly, e.daily_wage
+    FROM public.employees e
+   WHERE public.current_role() IN ('owner', 'hr');
+REVOKE ALL ON public.employee_pay FROM PUBLIC, anon;
+GRANT SELECT ON public.employee_pay TO authenticated, service_role;
+COMMENT ON VIEW public.employee_pay IS
+  'The four pay figures of every employee, for owner and hr only (Nik, 2026-09-26). The columns themselves are not selectable by signed-in accounts. security_fixes_and_menu_save_lock_migration.sql.';
+
+CREATE OR REPLACE VIEW public.ingredient_costs WITH (security_barrier = true) AS
+  SELECT i.id AS ingredient_id, i.purchase_cost, i.receive_qty, i.yield_qty
+    FROM public.ingredients i
+   WHERE public.current_role() IN ('owner', 'admin', 'editor');
+REVOKE ALL ON public.ingredient_costs FROM PUBLIC, anon;
+GRANT SELECT ON public.ingredient_costs TO authenticated, service_role;
+COMMENT ON VIEW public.ingredient_costs IS
+  'Every ingredient''s purchase cost, for owner, admin and editor only (Nik, 2026-09-26: staff see names and units). The columns themselves are not selectable by signed-in accounts. security_fixes_and_menu_save_lock_migration.sql.';
+
 -- Functions that write: signed-in accounts only (every overload).
 DO $do$
 DECLARE
@@ -821,7 +965,7 @@ BEGIN
 END
 $do$;
 
--- ── Step 4: tests, as the real accounts, every write rolled back ───────────
+-- ── Step 4: tests, as the real accounts, on rows they make, all rolled back ──
 
 DO $do$
 DECLARE
@@ -834,18 +978,66 @@ DECLARE
   -- A login with no profile row: a uuid no profile has. Signed in as far as
   -- the database can tell (the probe sets its claims), current_role() NULL.
   nobody_ uuid := gen_random_uuid();
-  v_step  text := current_setting('sec.step');
-  v_sop   text := current_setting('sec.sop');
-  v_sup   text := current_setting('sec.supplier');
-  v_alias text := current_setting('sec.alias');
-  v_titem text := current_setting('sec.titem');
-  v_event uuid;
+  v_event uuid;   -- a probe booking
+  v_menu  uuid;   -- a probe menu, for the probe SOP
+  v_sop   uuid;   -- a probe SOP
+  v_step  uuid;   -- its step
+  v_ing   uuid;   -- a probe ingredient, priced
+  v_alias uuid;   -- a probe POS alias
+  v_sup   uuid;   -- a probe supplier
+  v_tpl   uuid;   -- a probe template
+  v_titem uuid;   -- its line
+  v_emp   uuid;   -- a probe employee, paid
+  v_per   uuid;   -- a probe payroll period
+  v_del   uuid;   -- a probe POS receipt line
   v_u1    uuid := gen_random_uuid();
   v_u2    uuid := gen_random_uuid();
+  -- Counts taken after the probe rows exist, as the file's own role.
+  n_steps bigint; n_hist bigint; n_menus bigint; n_profiles bigint; n_maint bigint;
+  n_tpl bigint; n_titems bigint; n_sup bigint; n_alias bigint; n_emp bigint; n_pe bigint;
+  n_pp bigint; n_ing bigint; n_nonprep bigint; n_prep bigint; n_del bigint;
   v_src   text;
   v_log   text;
 BEGIN
   BEGIN
+    -- ── The rows the tests need, made here (never live data's) ──
+    INSERT INTO public.catering_events (event_date, location_type, venue, booking_type, status, detail_note)
+    VALUES (DATE '2099-03-02', 'in_house', 'air_shared', 'catering', 'confirmed', 'probe-sec') RETURNING id INTO v_event;
+    INSERT INTO public.menus (name, selling_price) VALUES ('probe-sec ' || gen_random_uuid(), 0) RETURNING id INTO v_menu;
+    INSERT INTO public.menu_sops (menu_id) VALUES (v_menu) RETURNING id INTO v_sop;
+    INSERT INTO public.menu_sop_steps (sop_id, section, sort_order, text) VALUES (v_sop, 'prep', 1, 'probe-sec') RETURNING id INTO v_step;
+    INSERT INTO public.ingredients (name, purchase_cost, receive_qty) VALUES ('probe-sec ' || gen_random_uuid(), 10, 1) RETURNING id INTO v_ing;
+    UPDATE public.ingredients SET purchase_cost = 11 WHERE id = v_ing;   -- its trigger writes one price-history row
+    INSERT INTO public.pos_price_aliases (pos_ingredient_name, ingredient_id) VALUES ('probe-sec ' || gen_random_uuid(), v_ing) RETURNING id INTO v_alias;
+    INSERT INTO public.suppliers (name) VALUES ('probe-sec') RETURNING id INTO v_sup;
+    INSERT INTO public.templates (name) VALUES ('probe-sec') RETURNING id INTO v_tpl;
+    INSERT INTO public.template_items (template_id, ingredient_id) VALUES (v_tpl, v_ing) RETURNING id INTO v_titem;
+    INSERT INTO public.employees (full_name, base_salary) VALUES ('probe-sec', 12345) RETURNING id INTO v_emp;
+    INSERT INTO public.payroll_periods (period_year, period_month, period_half) VALUES (2099, 1, 'first') RETURNING id INTO v_per;
+    INSERT INTO public.payroll_entries (payroll_period_id, employee_id) VALUES (v_per, v_emp);
+    INSERT INTO public.pos_receipt_deliveries (material_code, material_name, document_number, document_date, unit_name, qty, total_cost_inc_vat, total_cost_exc_vat)
+    VALUES ('PROBE-SEC', 'probe-sec', 'PROBE-SEC-' || gen_random_uuid(), DATE '2099-01-01', 'x', 1, 1, 1) RETURNING id INTO v_del;
+    SELECT count(*) INTO n_steps FROM public.menu_sop_steps;
+    SELECT count(*) INTO n_hist FROM public.ingredient_price_history;
+    SELECT count(*) INTO n_menus FROM public.menus;
+    SELECT count(*) INTO n_profiles FROM public.profiles;
+    SELECT count(*) INTO n_maint FROM public.maintenance_reports;
+    SELECT count(*) INTO n_tpl FROM public.templates;
+    SELECT count(*) INTO n_titems FROM public.template_items;
+    SELECT count(*) INTO n_sup FROM public.suppliers;
+    SELECT count(*) INTO n_alias FROM public.pos_price_aliases;
+    SELECT count(*) INTO n_emp FROM public.employees;
+    SELECT count(*) INTO n_pe FROM public.payroll_entries;
+    SELECT count(*) INTO n_pp FROM public.payroll_periods;
+    SELECT count(*) INTO n_ing FROM public.ingredients;
+    SELECT count(*) INTO n_nonprep FROM public.ingredients WHERE NOT is_prep;
+    SELECT count(*) INTO n_prep FROM public.prep_recipes;
+    SELECT count(*) INTO n_del FROM public.pos_receipt_deliveries;
+    IF n_hist = 0 OR n_alias = 0 OR n_pe = 0 THEN
+      RAISE EXCEPTION 'FAIL    T0 a probe row was not made (price history %, aliases %, payroll lines %): the tests would prove nothing. Nothing applied.', n_hist, n_alias, n_pe;
+    END IF;
+    PERFORM pg_temp.note('ok      T0 the probe rows are made (a booking, a menu with an SOP and a step, a priced ingredient with its price-history row, a POS alias, a supplier, a template with a line, a paid employee with a payroll line, a POS receipt line)');
+
     -- ── Item 48: the menu-page save locks the booking first ──
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure('public.catering_save_event_menus(uuid, jsonb)');
     IF position('FROM public.catering_events e WHERE e.id = p_event_id FOR UPDATE' IN v_src) = 0
@@ -854,15 +1046,12 @@ BEGIN
       RAISE EXCEPTION 'FAIL    F1 catering_save_event_menus does not lock the booking row before its first write. Nothing applied.';
     END IF;
     PERFORM pg_temp.note('ok      F1 catering_save_event_menus locks the booking row (FOR UPDATE) before its first write, as catering_save_booking_prices does');
-    INSERT INTO public.catering_events (event_date, location_type, venue, booking_type, status, detail_note)
-    VALUES (DATE '2099-03-02', 'in_house', 'air_shared', 'catering', 'confirmed', 'probe-sec') RETURNING id INTO v_event;
     PERFORM pg_temp.t('F2 sales calls the menu-page save', sales_, 'sales',
       format($q$SELECT public.catering_save_event_menus(%L::uuid, '[]'::jsonb)$q$, v_event), ARRAY['refused']);
     PERFORM pg_temp.said('F2', 'เฉพาะเจ้าของร้านและผู้จัดการ');
     PERFORM pg_temp.t('F3 owner saves a booking that does not exist', owner_, 'owner',
       format($q$SELECT public.catering_save_event_menus(%L::uuid, '[]'::jsonb)$q$, gen_random_uuid()), ARRAY['refused']);
     PERFORM pg_temp.said('F3', 'ไม่พบข้อมูลงาน');
-    -- Past the lock (it runs as the caller, under row security) to the next check.
     PERFORM pg_temp.t('F4 owner: the lock is taken, and the save goes on to its next check', owner_, 'owner',
       format($q$SELECT public.catering_save_event_menus(%L::uuid, '[]'::jsonb)$q$, v_event), ARRAY['refused']);
     PERFORM pg_temp.said('F4', 'ไม่มีรายการที่เปลี่ยนแปลง');
@@ -870,60 +1059,58 @@ BEGIN
       format($q$SELECT public.catering_save_event_menus(%L::uuid, '[]'::jsonb)$q$, v_event), ARRAY['refused']);
     PERFORM pg_temp.said('F5', 'ไม่มีรายการที่เปลี่ยนแปลง');
 
-    -- ── H1: SOPs ──
+    -- ── SOPs: owner, admin and editor write ──
     PERFORM pg_temp.t('P1 staff rewrites an SOP step', staff_, 'staff',
       format('UPDATE public.menu_sop_steps SET text = text WHERE id = %L', v_step), ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('P2 editor rewrites an SOP step directly (editors file a request)', editor_, 'editor',
-      format('UPDATE public.menu_sop_steps SET text = text WHERE id = %L', v_step), ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('P3 sales deletes an SOP step', sales_, 'sales',
-      format('DELETE FROM public.menu_sop_steps WHERE id = %L', v_step), ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('P4 hr adds an SOP step', hr_, 'hr',
-      format($q$INSERT INTO public.menu_sop_steps (sop_id, section, sort_order, text) VALUES (%L, 'prep', 9999, 'probe-sec')$q$, v_sop), ARRAY['denied']);
-    PERFORM pg_temp.t('P5 staff rewrites an SOP', staff_, 'staff',
-      format('UPDATE public.menu_sops SET updated_at = updated_at WHERE id = %L', v_sop), ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('P6 admin rewrites an SOP step', admin_, 'admin',
+    PERFORM pg_temp.t('P2 editor rewrites an SOP step (เวช writes SOPs)', editor_, 'editor',
       format('UPDATE public.menu_sop_steps SET text = text WHERE id = %L', v_step), ARRAY['rows=1']);
-    PERFORM pg_temp.t('P7 owner deletes an SOP step', owner_, 'owner',
+    PERFORM pg_temp.t('P3 editor adds an SOP step', editor_, 'editor',
+      format($q$INSERT INTO public.menu_sop_steps (sop_id, section, sort_order, text) VALUES (%L, 'cook', 2, 'probe-sec')$q$, v_sop), ARRAY['rows=1']);
+    PERFORM pg_temp.t('P4 sales deletes an SOP step', sales_, 'sales',
+      format('DELETE FROM public.menu_sop_steps WHERE id = %L', v_step), ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('P5 hr adds an SOP step', hr_, 'hr',
+      format($q$INSERT INTO public.menu_sop_steps (sop_id, section, sort_order, text) VALUES (%L, 'prep', 3, 'probe-sec')$q$, v_sop), ARRAY['denied']);
+    PERFORM pg_temp.t('P6 staff rewrites an SOP', staff_, 'staff',
+      format('UPDATE public.menu_sops SET updated_at = updated_at WHERE id = %L', v_sop), ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('P7 admin rewrites an SOP step', admin_, 'admin',
+      format('UPDATE public.menu_sop_steps SET text = text WHERE id = %L', v_step), ARRAY['rows=1']);
+    PERFORM pg_temp.t('P8 owner deletes an SOP step', owner_, 'owner',
       format('DELETE FROM public.menu_sop_steps WHERE id = %L', v_step), ARRAY['rows=1']);
-    PERFORM pg_temp.t('P8 staff still reads every SOP step', staff_, 'staff',
-      'SELECT id FROM public.menu_sop_steps', ARRAY['rows=' || current_setting('sec.n_steps')]);
-    PERFORM pg_temp.t('P9 a login with no profile reads no SOP step', nobody_, 'no-profile',
+    PERFORM pg_temp.t('P9 staff still reads every SOP step', staff_, 'staff',
+      'SELECT id FROM public.menu_sop_steps', ARRAY['rows=' || n_steps]);
+    PERFORM pg_temp.t('P10 a login with no profile reads no SOP step', nobody_, 'no-profile',
       'SELECT id FROM public.menu_sop_steps', ARRAY['rows=0']);
 
-    -- ── H2: purchase-price history ──
+    -- ── Purchase-price history ──
     PERFORM pg_temp.t('Q1 sales reads the price history', sales_, 'sales', 'SELECT id FROM public.ingredient_price_history', ARRAY['rows=0']);
     PERFORM pg_temp.t('Q2 staff reads the price history', staff_, 'staff', 'SELECT id FROM public.ingredient_price_history', ARRAY['rows=0']);
     PERFORM pg_temp.t('Q3 hr reads the price history', hr_, 'hr', 'SELECT id FROM public.ingredient_price_history', ARRAY['rows=0']);
     PERFORM pg_temp.t('Q4 a login with no profile reads the price history', nobody_, 'no-profile', 'SELECT id FROM public.ingredient_price_history', ARRAY['rows=0']);
     PERFORM pg_temp.t('Q5 editor reads the price history (the ingredients screen)', editor_, 'editor',
-      'SELECT id FROM public.ingredient_price_history', ARRAY['rows=' || current_setting('sec.n_hist')]);
+      'SELECT id FROM public.ingredient_price_history', ARRAY['rows=' || n_hist]);
     PERFORM pg_temp.t('Q6 admin reads the price history', admin_, 'admin',
-      'SELECT id FROM public.ingredient_price_history', ARRAY['rows=' || current_setting('sec.n_hist')]);
+      'SELECT id FROM public.ingredient_price_history', ARRAY['rows=' || n_hist]);
 
-    -- ── H3: a login with no profile ──
+    -- ── A login with no profile ──
     PERFORM pg_temp.t('R1 a login with no profile reads the menus', nobody_, 'no-profile', 'SELECT id FROM public.menus', ARRAY['rows=0']);
-    PERFORM pg_temp.t('R2 staff reads the menus', staff_, 'staff', 'SELECT id FROM public.menus', ARRAY['rows=' || current_setting('sec.n_menus')]);
+    PERFORM pg_temp.t('R2 staff reads the menus', staff_, 'staff', 'SELECT id FROM public.menus', ARRAY['rows=' || n_menus]);
     PERFORM pg_temp.t('R3 a login with no profile lists the accounts', nobody_, 'no-profile', 'SELECT id FROM public.profiles', ARRAY['rows=0']);
     PERFORM pg_temp.t('R4 sales lists the accounts (the live read everyone has)', sales_, 'sales',
-      'SELECT id FROM public.profiles', ARRAY['rows=' || current_setting('sec.n_profiles')]);
+      'SELECT id FROM public.profiles', ARRAY['rows=' || n_profiles]);
     PERFORM pg_temp.t('R5 a login with no profile reads แจ้งซ่อม', nobody_, 'no-profile', 'SELECT id FROM public.maintenance_reports', ARRAY['rows=0']);
-    PERFORM pg_temp.t('R6 staff reads แจ้งซ่อม', staff_, 'staff',
-      'SELECT id FROM public.maintenance_reports', ARRAY['rows=' || current_setting('sec.n_maint')]);
+    PERFORM pg_temp.t('R6 staff reads แจ้งซ่อม', staff_, 'staff', 'SELECT id FROM public.maintenance_reports', ARRAY['rows=' || n_maint]);
     PERFORM pg_temp.t('R7 a login with no profile reads the chart of accounts', nobody_, 'no-profile', 'SELECT code FROM public.coa', ARRAY['rows=0']);
     PERFORM pg_temp.t('R8 a login with no profile reads the order templates', nobody_, 'no-profile', 'SELECT id FROM public.templates', ARRAY['rows=0']);
-    PERFORM pg_temp.t('R9 hr reads the order templates', hr_, 'hr',
-      'SELECT id FROM public.templates', ARRAY['rows=' || current_setting('sec.n_templates')]);
+    PERFORM pg_temp.t('R9 hr reads the order templates', hr_, 'hr', 'SELECT id FROM public.templates', ARRAY['rows=' || n_tpl]);
 
-    -- ── H4: suppliers (bank details) and POS aliases ──
+    -- ── Suppliers (bank details) and POS aliases ──
     PERFORM pg_temp.t('V1 staff reads the suppliers', staff_, 'staff', 'SELECT id FROM public.suppliers', ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V2 sales reads the suppliers', sales_, 'sales', 'SELECT id FROM public.suppliers', ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V3 editor reads the suppliers', editor_, 'editor', 'SELECT id FROM public.suppliers', ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V4 hr reads the suppliers', hr_, 'hr', 'SELECT id FROM public.suppliers', ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V5 a visitor who is not signed in reads the suppliers', NULL, 'anon', 'SELECT id FROM public.suppliers', ARRAY['denied']);
-    PERFORM pg_temp.t('V6 admin reads the suppliers (the accounting screen)', admin_, 'admin',
-      'SELECT id FROM public.suppliers', ARRAY['rows=' || current_setting('sec.n_suppliers')]);
-    PERFORM pg_temp.t('V7 owner reads the suppliers', owner_, 'owner',
-      'SELECT id FROM public.suppliers', ARRAY['rows=' || current_setting('sec.n_suppliers')]);
+    PERFORM pg_temp.t('V6 admin reads the suppliers (the accounting screen)', admin_, 'admin', 'SELECT id FROM public.suppliers', ARRAY['rows=' || n_sup]);
+    PERFORM pg_temp.t('V7 owner reads the suppliers', owner_, 'owner', 'SELECT id FROM public.suppliers', ARRAY['rows=' || n_sup]);
     PERFORM pg_temp.t('V8 staff changes a supplier', staff_, 'staff',
       format('UPDATE public.suppliers SET name = name WHERE id = %L', v_sup), ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V9 admin changes a supplier', admin_, 'admin',
@@ -931,18 +1118,14 @@ BEGIN
     PERFORM pg_temp.t('V10 editor reads the POS aliases', editor_, 'editor', 'SELECT id FROM public.pos_price_aliases', ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('V11 staff deletes a POS alias', staff_, 'staff',
       format('DELETE FROM public.pos_price_aliases WHERE id = %L', v_alias), ARRAY['rows=0', 'denied']);
-    PERFORM pg_temp.t('V12 admin reads the POS aliases (the POS import)', admin_, 'admin',
-      'SELECT id FROM public.pos_price_aliases', ARRAY['rows=' || current_setting('sec.n_aliases')]);
+    PERFORM pg_temp.t('V12 admin reads the POS aliases (the POS import)', admin_, 'admin', 'SELECT id FROM public.pos_price_aliases', ARRAY['rows=' || n_alias]);
     PERFORM pg_temp.t('V13 admin changes a POS alias', admin_, 'admin',
       format('UPDATE public.pos_price_aliases SET pos_ingredient_name = pos_ingredient_name WHERE id = %L', v_alias), ARRAY['rows=1']);
 
     -- ── Templates: written by owner, admin and editor ──
-    PERFORM pg_temp.t('W1 staff makes a template', staff_, 'staff',
-      $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['denied']);
-    PERFORM pg_temp.t('W2 sales makes a template', sales_, 'sales',
-      $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['denied']);
-    PERFORM pg_temp.t('W3 editor makes a template', editor_, 'editor',
-      $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['rows=1']);
+    PERFORM pg_temp.t('W1 staff makes a template', staff_, 'staff', $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('W2 sales makes a template', sales_, 'sales', $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['denied']);
+    PERFORM pg_temp.t('W3 editor makes a template', editor_, 'editor', $q$INSERT INTO public.templates (name) VALUES ('probe-sec')$q$, ARRAY['rows=1']);
     PERFORM pg_temp.t('W4 staff changes a template line', staff_, 'staff',
       format('UPDATE public.template_items SET default_qty = default_qty WHERE id = %L', v_titem), ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('W5 editor changes a template line', editor_, 'editor',
@@ -951,6 +1134,50 @@ BEGIN
       format('DELETE FROM public.template_items WHERE id = %L', v_titem), ARRAY['rows=0', 'denied']);
     PERFORM pg_temp.t('W7 admin deletes a template line', admin_, 'admin',
       format('DELETE FROM public.template_items WHERE id = %L', v_titem), ARRAY['rows=1']);
+
+    -- ── Salaries: owner and hr only ──
+    PERFORM pg_temp.t('M1 admin lists the employees (attendance, leave, schedules)', admin_, 'admin',
+      'SELECT id, employee_code, full_name, nickname, phone, department_id, position, employment_type, hire_date, start_date, weekly_day_off, citizenship_type, is_active, takes_bookings, sort_order, al_quota_override, probation_end_date FROM public.employees',
+      ARRAY['rows=' || n_emp]);
+    PERFORM pg_temp.t('M2 admin reads a salary', admin_, 'admin', 'SELECT base_salary FROM public.employees', ARRAY['denied']);
+    PERFORM pg_temp.t('M3 admin reads a daily wage', admin_, 'admin', 'SELECT daily_wage FROM public.employees', ARRAY['denied']);
+    PERFORM pg_temp.t('M4 admin reads social security', admin_, 'admin', 'SELECT social_security_monthly FROM public.employees', ARRAY['denied']);
+    PERFORM pg_temp.t('M5 admin reads the pay view', admin_, 'admin', 'SELECT employee_id FROM public.employee_pay', ARRAY['rows=0']);
+    PERFORM pg_temp.t('M6 hr reads the pay view', hr_, 'hr', 'SELECT employee_id, base_salary FROM public.employee_pay', ARRAY['rows=' || n_emp]);
+    PERFORM pg_temp.t('M7 owner reads the pay view', owner_, 'owner', 'SELECT employee_id, daily_wage FROM public.employee_pay', ARRAY['rows=' || n_emp]);
+    PERFORM pg_temp.t('M8 hr reads a salary from the table itself (the view is the way)', hr_, 'hr', 'SELECT base_salary FROM public.employees', ARRAY['denied']);
+    PERFORM pg_temp.t('M9 staff reads the pay view', staff_, 'staff', 'SELECT employee_id FROM public.employee_pay', ARRAY['rows=0']);
+    PERFORM pg_temp.t('M10 admin reads the payroll lines', admin_, 'admin', 'SELECT id FROM public.payroll_entries', ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('M11 admin reads the payroll periods', admin_, 'admin', 'SELECT id FROM public.payroll_periods', ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('M12 hr reads the payroll lines', hr_, 'hr', 'SELECT id FROM public.payroll_entries', ARRAY['rows=' || n_pe]);
+    PERFORM pg_temp.t('M13 hr sets a salary (the employee page)', hr_, 'hr',
+      format('UPDATE public.employees SET base_salary = 20000 WHERE id = %L', v_emp), ARRAY['rows=1']);
+    PERFORM pg_temp.t('M14 admin sets a salary', admin_, 'admin',
+      format('UPDATE public.employees SET base_salary = 20000 WHERE id = %L', v_emp), ARRAY['rows=0', 'denied']);
+    PERFORM pg_temp.t('M15 a visitor reads the pay view', NULL, 'anon', 'SELECT employee_id FROM public.employee_pay', ARRAY['denied']);
+
+    -- ── Staff: ingredient names and units, no purchase prices ──
+    PERFORM pg_temp.t('N1 staff reads the stock list (names, units, par levels: ordering)', staff_, 'staff',
+      'SELECT id, name, name_mm, category, par_level, safety_note, purchase_unit_label, usage_unit FROM public.ingredients WHERE NOT is_prep',
+      ARRAY['rows=' || n_nonprep]);
+    PERFORM pg_temp.t('N2 staff runs the recipe pages'' ingredient read', staff_, 'staff',
+      'SELECT id, name, category, is_prep, purchase_unit_label, usage_unit, prep_recipe_id, par_level FROM public.ingredients',
+      ARRAY['rows=' || n_ing]);
+    PERFORM pg_temp.t('N3 staff runs a template''s ingredient read', staff_, 'staff',
+      'SELECT t.id, i.name, i.category, i.usage_unit, i.purchase_unit_label FROM public.template_items t JOIN public.ingredients i ON i.id = t.ingredient_id',
+      ARRAY['rows=' || n_titems]);
+    PERFORM pg_temp.t('N4 staff reads a purchase price', staff_, 'staff', 'SELECT purchase_cost FROM public.ingredients', ARRAY['denied']);
+    PERFORM pg_temp.t('N5 staff reads a yield', staff_, 'staff', 'SELECT yield_qty FROM public.ingredients', ARRAY['denied']);
+    PERFORM pg_temp.t('N6 staff reads the cost view', staff_, 'staff', 'SELECT ingredient_id FROM public.ingredient_costs', ARRAY['rows=0']);
+    PERFORM pg_temp.t('N7 editor reads the cost view', editor_, 'editor', 'SELECT ingredient_id, purchase_cost FROM public.ingredient_costs', ARRAY['rows=' || n_ing]);
+    PERFORM pg_temp.t('N8 admin reads the cost view', admin_, 'admin', 'SELECT ingredient_id, receive_qty FROM public.ingredient_costs', ARRAY['rows=' || n_ing]);
+    PERFORM pg_temp.t('N9 sales reads the cost view', sales_, 'sales', 'SELECT ingredient_id FROM public.ingredient_costs', ARRAY['rows=0']);
+    PERFORM pg_temp.t('N10 staff asks every prep''s cost', staff_, 'staff', 'SELECT * FROM public.prep_unit_costs()', ARRAY['rows=0']);
+    PERFORM pg_temp.t('N11 editor asks every prep''s cost', editor_, 'editor', 'SELECT * FROM public.prep_unit_costs()', ARRAY['rows=' || n_prep]);
+    PERFORM pg_temp.t('N12 staff reads the POS receipt costs', staff_, 'staff', 'SELECT id FROM public.pos_receipt_deliveries', ARRAY['rows=0']);
+    PERFORM pg_temp.t('N13 editor reads the POS receipt costs', editor_, 'editor', 'SELECT id FROM public.pos_receipt_deliveries', ARRAY['rows=' || n_del]);
+    PERFORM pg_temp.t('N14 admin sets a purchase price (the ingredients page)', admin_, 'admin',
+      format('UPDATE public.ingredients SET purchase_cost = 12 WHERE id = %L', v_ing), ARRAY['rows=1']);
 
     -- ── Functions that write: not for anon ──
     PERFORM pg_temp.t('E1 a visitor calls the menu-page save', NULL, 'anon',
@@ -961,7 +1188,6 @@ BEGIN
       $q$SELECT public.next_catering_quote_seq('9912')$q$, ARRAY['rows=1']);
 
     -- Last: U2 makes a profile, which would change the counts the tests above expect.
-    -- ── C1: which new logins get a profile ──
     BEGIN
       INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES (v_u1, 'probe-' || v_u1 || '@example.com', '{"full_name": "probe"}'::jsonb);
       IF EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = v_u1) THEN
@@ -983,7 +1209,7 @@ BEGIN
   EXCEPTION
     WHEN SQLSTATE 'U0002' THEN
       PERFORM set_config('orders.log', COALESCE(v_log, ''), false);
-      PERFORM pg_temp.note('ok      every test write rolled back (the probe booking, the two probe logins, the SOP, supplier, alias and template writes, the quotation number)');
+      PERFORM pg_temp.note('ok      every test write rolled back, the probe rows with them');
   END;
 END
 $do$;
@@ -996,7 +1222,7 @@ DECLARE
   v_name text;
   -- Every row the file is supposed to emit, counted by the checker's rule
   -- (a t() or a note() is one row). Change a test, change this.
-  c_expected constant bigint := 85;
+  c_expected constant bigint := 123;
 BEGIN
   IF (SELECT count(*) FROM public.menu_sop_steps)::text <> current_setting('sec.n_steps')
      OR (SELECT count(*) FROM public.menu_sops)::text <> current_setting('sec.n_sops')
@@ -1007,19 +1233,24 @@ BEGIN
      OR (SELECT count(*) FROM public.template_items)::text <> current_setting('sec.n_titems')
      OR (SELECT count(*) FROM public.profiles)::text <> current_setting('sec.n_profiles')
      OR (SELECT count(*) FROM public.catering_events)::text <> current_setting('sec.n_events')
+     OR (SELECT count(*) FROM public.menus)::text <> current_setting('sec.n_menus')
+     OR (SELECT count(*) FROM public.employees)::text <> current_setting('sec.n_emp')
+     OR (SELECT count(*) FROM public.payroll_entries)::text <> current_setting('sec.n_pe')
+     OR (SELECT count(*) FROM public.payroll_periods)::text <> current_setting('sec.n_pp')
+     OR (SELECT count(*) FROM public.ingredients)::text <> current_setting('sec.n_ing')
+     OR (SELECT count(*) FROM public.pos_receipt_deliveries)::text <> current_setting('sec.n_del')
      OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.menu_sop_steps t) <> current_setting('sec.fp_steps')
-     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.menu_sops t) <> current_setting('sec.fp_sops')
      OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.suppliers t) <> current_setting('sec.fp_suppliers')
-     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.pos_price_aliases t) <> current_setting('sec.fp_aliases')
      OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.templates t) <> current_setting('sec.fp_templates')
      OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.template_items t) <> current_setting('sec.fp_titems')
      OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.profiles t) <> current_setting('sec.fp_profiles')
-     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.catering_events t) <> current_setting('sec.fp_events') THEN
-    RAISE EXCEPTION 'FAIL    K0 a count or a fingerprint changed: a test write survived. Nothing applied.';
+     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.catering_events t) <> current_setting('sec.fp_events')
+     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.employees t) <> current_setting('sec.fp_emp')
+     OR (SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) FROM public.ingredients t) <> current_setting('sec.fp_ing') THEN
+    RAISE EXCEPTION 'FAIL    K0 a count or a fingerprint changed: a test write or a probe row survived. Nothing applied.';
   END IF;
-  PERFORM pg_temp.note('ok      K0 every count and fingerprint as before (SOPs, steps, price history, suppliers, aliases, templates, template lines, profiles, bookings)');
+  PERFORM pg_temp.note('ok      K0 every count and fingerprint as before (SOPs, steps, price history, suppliers, aliases, templates, template lines, profiles, bookings, menus, employees, payroll, ingredients, POS receipts)');
 
-  -- K1: no SOP table has a write policy but owner/admin's.
   SELECT string_agg(p.tablename || '."' || p.policyname || '"', ', ') INTO v_name
     FROM pg_policies p
    WHERE p.schemaname = 'public' AND p.tablename IN ('menu_sops', 'menu_sop_steps', 'menu_sop_ingredient_notes')
@@ -1028,9 +1259,8 @@ BEGIN
   IF v_name IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL    K1 another write policy is on the SOP tables: % — it would still let others write. Nothing applied.', v_name;
   END IF;
-  PERFORM pg_temp.note('ok      K1 the SOP tables: no write policy but sop_write, sop_notes_write and sop_steps_write (owner, admin)');
+  PERFORM pg_temp.note('ok      K1 the SOP tables: no write policy but sop_write, sop_notes_write and sop_steps_write (owner, admin, editor)');
 
-  -- K2: the price history is read through one policy only.
   SELECT string_agg('"' || p.policyname || '"', ', ') INTO v_name
     FROM pg_policies p
    WHERE p.schemaname = 'public' AND p.tablename = 'ingredient_price_history' AND p.permissive = 'PERMISSIVE'
@@ -1040,13 +1270,12 @@ BEGIN
   END IF;
   PERFORM pg_temp.note('ok      K2 the price history: no read policy but ingredient_price_history_select');
 
-  -- K3: the two new bodies say what they are meant to.
-  IF position('@staff.local' IN (SELECT p.prosrc FROM pg_proc p WHERE p.oid = to_regprocedure('public.handle_new_user()'))) = 0 THEN
-    RAISE EXCEPTION 'FAIL    K3 handle_new_user is not the new body. Nothing applied.';
+  IF position('@staff.local' IN (SELECT p.prosrc FROM pg_proc p WHERE p.oid = to_regprocedure('public.handle_new_user()'))) = 0
+     OR position('''staff''' IN (SELECT p.prosrc FROM pg_proc p WHERE p.oid = to_regprocedure('public.prep_unit_costs()'))) > 0 THEN
+    RAISE EXCEPTION 'FAIL    K3 handle_new_user or prep_unit_costs is not the new body. Nothing applied.';
   END IF;
-  PERFORM pg_temp.note('ok      K3 handle_new_user makes a profile only for <username>@staff.local');
+  PERFORM pg_temp.note('ok      K3 handle_new_user makes a profile only for <username>@staff.local; prep_unit_costs no longer answers staff');
 
-  -- K4: suppliers and aliases hold exactly the two policies each, row security on, nothing for anon.
   IF (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename IN ('suppliers', 'pos_price_aliases')) <> 4
      OR NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'suppliers' AND p.policyname = 'suppliers_select')
      OR NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'suppliers' AND p.policyname = 'suppliers_write')
@@ -1060,7 +1289,6 @@ BEGIN
   END IF;
   PERFORM pg_temp.note('ok      K4 suppliers and pos_price_aliases: exactly the owner/admin read and write policies, row security on, no privilege for anon');
 
-  -- K5: templates written through the heads' policies only.
   SELECT string_agg(p.tablename || '."' || p.policyname || '"', ', ') INTO v_name
     FROM pg_policies p
    WHERE p.schemaname = 'public' AND p.tablename IN ('templates', 'template_items')
@@ -1072,7 +1300,6 @@ BEGIN
   END IF;
   PERFORM pg_temp.note('ok      K5 templates and template_items: no write policy but the heads'' insert, update and delete');
 
-  -- K6: no function that writes is executable by anon; every one still is by signed-in accounts.
   SELECT string_agg(p.oid::regprocedure::text, ', ') INTO v_name
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
@@ -1084,12 +1311,34 @@ BEGIN
   END IF;
   PERFORM pg_temp.note('ok      K6 the seven functions that write: not executable by anon, still by signed-in accounts');
 
-  -- K7: the sop-photos limits.
   IF NOT EXISTS (SELECT 1 FROM storage.buckets b WHERE b.id = 'sop-photos' AND b.file_size_limit = 2097152
                    AND b.allowed_mime_types = ARRAY['image/jpeg']) THEN
     RAISE EXCEPTION 'FAIL    K7 the sop-photos limits are not set. Nothing applied.';
   END IF;
   PERFORM pg_temp.note('ok      K7 sop-photos: JPEG only, 2 MB');
+
+  -- K8: the closed columns are closed for every signed-in account and anon,
+  -- and the rest of each table is open to signed-in accounts.
+  IF has_column_privilege('authenticated', 'public.employees', 'base_salary', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.employees', 'position_allowance', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.employees', 'social_security_monthly', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.employees', 'daily_wage', 'SELECT')
+     OR has_column_privilege('anon', 'public.employees', 'base_salary', 'SELECT')
+     OR NOT has_column_privilege('authenticated', 'public.employees', 'full_name', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.ingredients', 'purchase_cost', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.ingredients', 'receive_qty', 'SELECT')
+     OR has_column_privilege('authenticated', 'public.ingredients', 'yield_qty', 'SELECT')
+     OR has_column_privilege('anon', 'public.ingredients', 'purchase_cost', 'SELECT')
+     OR NOT has_column_privilege('authenticated', 'public.ingredients', 'name', 'SELECT')
+     OR has_table_privilege('anon', 'public.employee_pay', 'SELECT')
+     OR has_table_privilege('anon', 'public.ingredient_costs', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'public.employee_pay', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'public.ingredient_costs', 'SELECT')
+     OR NOT has_table_privilege('service_role', 'public.employees', 'SELECT')
+     OR NOT has_table_privilege('service_role', 'public.ingredients', 'SELECT') THEN
+    RAISE EXCEPTION 'FAIL    K8 the pay or cost columns, or their views, are not as written. Nothing applied.';
+  END IF;
+  PERFORM pg_temp.note('ok      K8 the four pay and three cost columns: not selectable by signed-in accounts or anon; the other columns are; employee_pay and ingredient_costs readable by signed-in accounts only (each answers its own roles); the service key keeps the whole tables');
 
   v_rows := pg_temp.logged();
   IF v_rows <> c_expected THEN
@@ -1113,17 +1362,16 @@ DROP FUNCTION IF EXISTS
   pg_temp.probe(uuid, text, text, boolean),
   pg_temp.logged(),
   pg_temp.said(text, text),
+  pg_temp.survey(text),
   pg_temp.note(text);
 
 SELECT n, line FROM pg_temp.batch_result() ORDER BY n;
 
 -- ═══ After it runs ════════════════════════════════════════════════════════
 --
--- 1. Nothing changes for owner, admin, editor, staff, hr or sales in the app
---    live now: check the SOP editor saves (owner or admin), the ingredients
---    page's price history (admin or editor), the accounting suppliers list
---    (admin), a POS import alias (admin), an order template edit (editor).
--- 2. Then push the branch task2-security-fixes (templates on the user's own
---    session need step 7's policies).
--- 3. The dashboard: Authentication → Sign In / Providers → turn OFF "Allow
---    new users to sign up", if it is still on.
+-- 1. As hr open the employees and payroll pages (salaries shown); as admin
+--    open attendance, leave and the schedule (no salary anywhere); as staff
+--    open an order form, a template and a recipe (names, no prices); as
+--    editor save an SOP; as admin open the ingredients page (prices shown).
+-- 2. Then push the branch commit that moves the template writes to the
+--    user's session (it needs the policies of 7).
