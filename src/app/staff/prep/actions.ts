@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
+import { BATCH_YIELD_REFUSAL } from "@/components/sop-rules";
 import { savePendingChange } from "@/lib/pending-data";
 import { createClient } from "@/lib/supabase/server";
 import { canSeePrep, PREP_FORBIDDEN, prepInsertErrorMessage } from "@/lib/prep-access";
@@ -118,6 +119,12 @@ export async function updatePrepYield(
 ): Promise<PrepSaveResult> {
   const profile = await requireAdminOrEditor();
   if (!(await canSeePrep(prepId))) return { status: "error", message: PREP_FORBIDDEN };
+  // Queue item 44: never a yield of 0, a negative, or not a number — every
+  // dish using the prep would show a missing cost. Refused before anything
+  // is saved or filed for approval.
+  if (typeof batchYieldQty !== "number" || !Number.isFinite(batchYieldQty) || batchYieldQty <= 0) {
+    return { status: "error", message: BATCH_YIELD_REFUSAL };
+  }
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "prep_yield_edit", prepId, {

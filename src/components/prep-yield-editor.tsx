@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { updatePrepYield } from "@/app/staff/prep/actions";
 import { buttonClass } from "@/components/ui/button";
+import { BATCH_YIELD_REFUSAL, parseBatchYield } from "@/components/sop-rules";
 
 export function PrepYieldEditor({
   prepId,
@@ -48,8 +49,11 @@ export function PrepYieldEditor({
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
+              // Queue item 44: a blank, "." or "1.2.3" used to save as 0.
+              const batch = parseBatchYield(qty);
+              if (batch === null) { setError(BATCH_YIELD_REFUSAL); return; }
               try {
-                const result = await updatePrepYield(prepId, Number(qty) || 0, unit, { prepName });
+                const result = await updatePrepYield(prepId, batch, unit, { prepName });
                 if (result.status === "error") { setError(result.message); setSaveStatus("idle"); return; }
                 setError(null);
                 setSaveStatus(result.status);
