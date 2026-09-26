@@ -3739,14 +3739,19 @@ and after Nik's import.
 40. **A booking a room conflict has frozen cannot be edited at all — so it
     cannot be re-issued, and so it cannot be cost-locked** (found by the
     review of the lock precondition, 2026-09-20). **FIX ON THE BRANCH
-    `task5-queue-bugs` (2026-09-25, unattended run; not shipped): a clash
+    `task5-queue-bugs` (2026-09-25; approved by Nik and shipped 2026-09-26): a clash
     refuses only a save that MOVES the booking into it** — a new booking, a
     changed date, time, room or location type, or a cancelled booking taken
     back (`conflictBlocksSave`, conflict.ts, used by the server and the
     screen); a save that leaves the booking where it is stored, or cancels
-    it, goes through with a warning. **Nik to confirm the shape**, and whether
-    a booking already in a clash may still move forward in status
-    (inquiry → deposit → confirmed), which this allows. Was: **NOT STARTED. Nik's
+    it, goes through with a warning. **Nik's rule, 2026-09-26: in a clash a
+    booking moves forward only as far as รอมัดจำ** (`clashStatusRefusal`): it
+    may not become มัดจำแล้ว or คอนเฟิร์มแล้ว, nor jump to เสร็จสิ้น, until the
+    clash is resolved, so two bookings can never both be confirmed for the
+    same room; a status it holds is kept, moving back is allowed, and a
+    confirmed booking may be marked เสร็จสิ้น. A booking with no times keeps
+    clashing with the whole day. Both rules are the app's (the database does
+    not enforce them). Was: **NOT STARTED. Nik's
     decision is to leave it for later. PRE-EXISTING — no part of it was
     caused by the per-event menu work or by the lock precondition**, which
     only made one of its consequences visible.
