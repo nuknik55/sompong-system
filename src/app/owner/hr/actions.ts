@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireHR, requireHROrAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingRelation } from "@/lib/schema-fallback";
+import { NO_PAY, PAY_UNREAD_REFUSAL, payFiguresProblem, type PayFigures } from "@/lib/pay-rules";
 import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,9 +26,10 @@ export type Employee = {
   department_name: string | null;
   position: string | null;
   employment_type: "full_time" | "part_time_fixed" | "part_time_oncall" | "probation";
-  base_salary: number;
-  position_allowance: number;
-  social_security_monthly: number;
+  /** Pay: null for a role that may not see it (admin), never 0 — see lib/pay-rules.ts. */
+  base_salary: number | null;
+  position_allowance: number | null;
+  social_security_monthly: number | null;
   hire_date: string | null;
   start_date: string | null;
   daily_wage: number | null;
@@ -196,8 +198,9 @@ export async function setDepartmentActive(id: string, is_active: boolean): Promi
 // base_salary, position_allowance, social_security_monthly and daily_wage
 // are read ONLY through readPay() below, and only for owner and hr. Admin
 // reaches getEmployees() (the attendance, leave and schedule pages) and gets
-// every employee WITHOUT pay (zeros, and null for the daily wage), which none
-// of those pages shows. The database says the same once
+// every employee WITHOUT pay: every pay figure null (NO_PAY,
+// lib/pay-rules.ts), never 0, which none of those pages shows and no save
+// accepts. The database says the same once
 // security_fixes_and_menu_save_lock_migration.sql has run: the four columns
 // are taken from every signed-in account and served by the view
 // employee_pay, which answers owner and hr only. Payroll itself
@@ -206,8 +209,7 @@ export async function setDepartmentActive(id: string, is_active: boolean): Promi
 //
 // Still true from 2026-09-06: hr SHOULD see salaries; payroll is their work.
 
-type Pay = Pick<Employee, "base_salary" | "position_allowance" | "social_security_monthly" | "daily_wage">;
-const NO_PAY: Pay = { base_salary: 0, position_allowance: 0, social_security_monthly: 0, daily_wage: null };
+type Pay = PayFigures;
 const PAY_COLUMNS = "base_salary, position_allowance, social_security_monthly, daily_wage";
 const seesPay = (role: string) => role === "owner" || role === "hr";
 
@@ -306,9 +308,9 @@ export async function upsertEmployee(e: {
   department_id: string | null;
   position: string;
   employment_type: string;
-  base_salary: number;
-  position_allowance: number;
-  social_security_monthly: number;
+  base_salary: number | null;
+  position_allowance: number | null;
+  social_security_monthly: number | null;
   hire_date: string;
   start_date?: string | null;
   daily_wage?: number | null;
@@ -320,6 +322,11 @@ export async function upsertEmployee(e: {
   probation_end_date?: string | null;
 }): Promise<HrActionResult> {
   await requireHR();
+  // Never a pay figure that was not read (null) or is not a number: the
+  // form sends back what it was given, and a missing figure must not be
+  // saved as 0 (lib/pay-rules.ts).
+  const payProblem = payFiguresProblem(e);
+  if (payProblem) return { status: "error", message: payProblem };
   const supabase = await createClient();
   const payload = {
     takes_bookings: e.takes_bookings,
@@ -742,6 +749,9 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
   ]);
   if (periodsError) throw periodsError;
   if (entriesError) throw entriesError;
+  // The defaults below are computed from pay; never from pay that was not
+  // read (it used to become 0).
+  if (!emp || emp.base_salary == null) throw new Error(PAY_UNREAD_REFUSAL);
 
   const entryMap = new Map((entries ?? []).map((e: Record<string, unknown>) => [e.payroll_period_id as string, e]));
   const monthlySalary = (emp?.base_salary as number) ?? 0;
@@ -1071,6 +1081,11 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
   ]);
 
   const payroll = await readPay(supabase);
+  // Every default below is computed from pay; never from pay that was not
+  // read (it used to become 0, and a saved row kept it).
+  if ((employees ?? []).some((e: Record<string, unknown>) => payroll.get(e.id as string)?.base_salary == null)) {
+    throw new Error(PAY_UNREAD_REFUSAL);
+  }
   const sortedEmployees = (employees ?? []).map((e: Record<string, unknown>) => ({ ...e, ...(payroll.get(e.id as string) ?? NO_PAY) }) as Record<string, unknown>).sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
     const da = (a.departments as { sort_order: number } | null)?.sort_order ?? 999;
     const db = (b.departments as { sort_order: number } | null)?.sort_order ?? 999;
