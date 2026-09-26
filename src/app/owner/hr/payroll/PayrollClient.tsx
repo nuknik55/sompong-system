@@ -2,7 +2,7 @@
 
 import { okOrThrow } from "../hr-result";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, Fragment } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { createPayrollPeriod, closePayrollPeriod, reopenPayrollPeriod, upsertPayrollEntry } from "../actions";
 import type { PayrollPeriod, PayrollEntry } from "../actions";
@@ -271,7 +271,7 @@ export function PayrollClient({
             </thead>
             <tbody>
               {[...groups.entries()].map(([dept, deptEntries]) => (
-                <>
+                <Fragment key={dept}>
                   <tr key={`dept-${dept}`} className="bg-neutral-100">
                     <td colSpan={COLS.length + 3} className="px-3 py-1 text-xs font-semibold text-neutral-600">{dept}</td>
                   </tr>
@@ -317,7 +317,7 @@ export function PayrollClient({
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               ))}
 
               {entries.length === 0 && (

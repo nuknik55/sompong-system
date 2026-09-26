@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -448,7 +448,7 @@ export function IngredientManager({
               // No price counts as missing only for someone who sees prices.
               const isIncomplete = (showCosts && row.purchase_cost == null) || !row.usage_unit?.trim();
               return (
-                <>
+                <Fragment key={row.id}>
                   <tr
                     key={row.id}
                     className={`border-b border-neutral-100 last:border-0 transition-colors ${isIncomplete ? "bg-pending-soft hover:bg-pending-soft" : "hover:bg-brand-green/5"}`}
@@ -571,7 +571,7 @@ export function IngredientManager({
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

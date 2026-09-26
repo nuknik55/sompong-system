@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import type { MonthlyCovers } from "../../actions";
 import { completenessNotices, profitJudgementAllowed } from "../completeness";
 import { buildPlFile, buildPlWorkbook, REVENUE_KEYS, REVENUE_LABELS, type PlSummary } from "./pl-workbook";
@@ -222,7 +223,7 @@ export function PLPrintClient({
             {summary.groups.map((g) => {
               if (g.total === 0) return null;
               return (
-                <>
+                <Fragment key={g.group_code}>
                   {/* Group header */}
                   <tr key={g.group_code} style={{ background: "#f9fafb" }}>
                     <td style={{ ...cellStyle, fontWeight: 600 }}>{g.group_name}</td>
@@ -239,7 +240,7 @@ export function PLPrintClient({
                       <td style={pctStyle} />
                     </tr>
                   ))}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

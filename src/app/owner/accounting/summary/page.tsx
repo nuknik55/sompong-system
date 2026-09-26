@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { Fragment } from "react";
 import { requireOwner } from "@/lib/auth";
 import { getMonthlySummary, getMonthlyRevenue, getPosImportedAt, getMonthlyCovers } from "../actions";
 import { nextMonth, previousMonth } from "../checklist";
@@ -173,7 +174,7 @@ export default async function AccountingSummaryPage({
           </thead>
           <tbody>
             {summary.groups.map((g) => (
-              <>
+              <Fragment key={g.group_code}>
                 {/* Group header row */}
                 <tr key={g.group_code} className="border-t border-neutral-200 bg-neutral-50">
                   <td className="px-4 py-2 font-medium text-neutral-800">{g.group_name}</td>
@@ -204,7 +205,7 @@ export default async function AccountingSummaryPage({
                     <td className="px-4 py-1.5" />
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
           <tfoot className="border-t-2 border-neutral-300 bg-neutral-50">

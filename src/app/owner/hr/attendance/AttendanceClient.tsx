@@ -2,7 +2,7 @@
 
 import { okOrThrow } from "../hr-result";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useRef, useEffect, Fragment } from "react";
 import { useRouter, unstable_rethrow } from "next/navigation";
 import { upsertAttendanceDaily, deleteAttendanceDailyRecord, upsertDaySwapRequest } from "../actions";
 import type { Employee, Department, LeaveType, Holiday, AttendanceDaily, LeaveDay } from "../actions";
@@ -516,7 +516,7 @@ export function AttendanceClient({
               <tr><td colSpan={daysInMonth + 6} className="py-8 text-center text-neutral-400">ไม่มีพนักงานในแผนกนี้</td></tr>
             )}
             {empGroups.map(({ deptName, emps }) => (
-              <>
+              <Fragment key={deptName}>
                 {!deptId && (
                   <tr key={`dept-${deptName}`} className="bg-neutral-800 border-t-2 border-neutral-600">
                     <td colSpan={daysInMonth + 6} className="sticky left-0 px-3 py-1.5 text-xs font-bold text-white tracking-widest uppercase bg-neutral-800">
@@ -619,7 +619,7 @@ export function AttendanceClient({
                     </tr>
                   );
                 })}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
