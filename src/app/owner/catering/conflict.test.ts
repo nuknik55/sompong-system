@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { conflictBlocksSave, findRoomConflict, ROOM_CONFLICTS, type RoomConflictCandidate, type RoomPlacement } from "./conflict.ts";
+import { CLASH_STATUS_REFUSAL, clashStatusRefusal, conflictBlocksSave, findRoomConflict, ROOM_CONFLICTS, type RoomConflictCandidate, type RoomPlacement } from "./conflict.ts";
 
 const cand = (venue: string, start: string | null, end: string | null): RoomConflictCandidate => ({
   id: "x", customer_name: "A", venue, start_time: start, end_time: end,
@@ -120,11 +120,34 @@ test("item 40: the server compares the STORED placement with what the save write
   const path = await import("node:path");
   const { fileURLToPath } = await import("node:url");
   const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "actions.ts"), "utf8");
-  const calls = src.split("conflictBlocksSave(").slice(1).map((rest) => rest.slice(0, rest.indexOf(")) {") + 1));
-  assert.equal(calls.length, 1, "one call, in upsertCateringEvent");
-  const [first, second] = [calls[0].slice(0, calls[0].lastIndexOf(",")), calls[0].slice(calls[0].lastIndexOf(",") + 1)];
-  assert.match(first, /storedPlacement\(supabase, data\.id\)/, "before is the row as stored");
-  assert.match(first, /data\.id \?/, "a new booking (no id) has no stored placement");
-  assert.equal(second.trim(), "after)", "after is what this save writes");
+  assert.equal(src.split("conflictBlocksSave(").length - 1, 1, "one call, in upsertCateringEvent");
+  assert.match(src, /const before = data\.id \? await storedPlacement\(supabase, data\.id\) : null;/, "before is the row as stored; a new booking has none");
+  assert.match(src, /conflictBlocksSave\(before, after\)/, "before, then what this save writes");
+  assert.match(src, /clashStatusRefusal\(before\?\.status \?\? null, payload\.status\)/, "the status rule reads the STORED status and the one this save writes");
   assert.match(src, /cancelled: payload\.status === "cancelled"/, "after says whether this save cancels");
+});
+
+// ── Nik, 2026-09-26: in a clash, forward only as far as รอมัดจำ ──
+
+test("in a clash a booking moves forward only as far as รอมัดจำ", () => {
+  assert.equal(clashStatusRefusal("inquiry", "awaiting_deposit"), null);
+  assert.equal(clashStatusRefusal(null, "inquiry"), null);
+  assert.equal(clashStatusRefusal("inquiry", "deposit_paid"), CLASH_STATUS_REFUSAL, "may not become มัดจำแล้ว");
+  assert.equal(clashStatusRefusal("awaiting_deposit", "confirmed"), CLASH_STATUS_REFUSAL, "may not become คอนเฟิร์มแล้ว");
+  assert.equal(clashStatusRefusal("deposit_paid", "confirmed"), CLASH_STATUS_REFUSAL, "not even from มัดจำแล้ว");
+  assert.equal(clashStatusRefusal("awaiting_deposit", "done"), CLASH_STATUS_REFUSAL, "and may not jump to เสร็จสิ้น");
+});
+
+test("in a clash a status already held is kept, moving back and cancelling are allowed, and a confirmed booking may finish", () => {
+  assert.equal(clashStatusRefusal("confirmed", "confirmed"), null, "a booking confirmed before the clash keeps its status");
+  assert.equal(clashStatusRefusal("deposit_paid", "deposit_paid"), null);
+  assert.equal(clashStatusRefusal("confirmed", "awaiting_deposit"), null, "moving back");
+  assert.equal(clashStatusRefusal("confirmed", "cancelled"), null);
+  assert.equal(clashStatusRefusal("confirmed", "done"), null, "finishing confirms nothing new");
+  assert.equal(clashStatusRefusal("deposit_paid", "done"), CLASH_STATUS_REFUSAL, "skipping คอนเฟิร์มแล้ว is not finishing");
+});
+
+test("a booking with no times still clashes with the whole day", () => {
+  assert.equal(hit("room_v1", null, null, cand("room_v1", "09:00", "10:00")), true);
+  assert.equal(hit("room_v1", "20:00", "22:00", cand("room_v1", null, null)), true);
 });

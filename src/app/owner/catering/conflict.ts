@@ -120,3 +120,32 @@ export function conflictBlocksSave(before: RoomPlacement | null, after: RoomPlac
   if (before.cancelled) return true;
   return !samePlacement(before, after);
 }
+
+/** A booking's statuses in the order it moves through them (cancelled aside). */
+const STATUS_ORDER = ["inquiry", "awaiting_deposit", "deposit_paid", "confirmed", "done"];
+
+/** The words a refused status change is refused with, the same on the screen and the server. */
+export const CLASH_STATUS_REFUSAL =
+  "ห้องชนกับการจองอื่น — เปลี่ยนสถานะได้ถึง “รอมัดจำ” เท่านั้น จนกว่าจะแก้ให้ห้องไม่ชน (ย้ายวัน เวลา หรือห้องของงานใดงานหนึ่ง)";
+
+/**
+ * Nik, 2026-09-26 (queue item 40): a booking in a room clash may move forward
+ * only as far as รอมัดจำ. It may not become มัดจำแล้ว or คอนเฟิร์มแล้ว — nor
+ * jump to เสร็จสิ้น — until the clash is resolved, so two bookings can never
+ * both be confirmed for the same room. A status it already has is kept, it may
+ * always move back, and a booking already คอนเฟิร์มแล้ว may still be marked
+ * เสร็จสิ้น (that confirms nothing new). A booking with no times still clashes
+ * with the whole day (findRoomConflict).
+ *
+ * Ask it only when there IS a clash that conflictBlocksSave lets through:
+ * `before` is the status as stored (null for a new booking), `after` what
+ * this save writes. Returns the refusal, or null.
+ */
+export function clashStatusRefusal(before: string | null, after: string): string | null {
+  const to = STATUS_ORDER.indexOf(after);
+  if (to <= STATUS_ORDER.indexOf("awaiting_deposit")) return null; // up to รอมัดจำ, and ยกเลิก
+  const from = before === null ? -1 : STATUS_ORDER.indexOf(before);
+  if (to <= from) return null;                                        // kept, or moved back
+  if (before === "confirmed" && after === "done") return null;
+  return CLASH_STATUS_REFUSAL;
+}

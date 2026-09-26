@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireSales, requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { swapSortOrder } from "@/lib/reorder";
-import { conflictBlocksSave, findRoomConflict } from "./conflict";
+import { clashStatusRefusal, conflictBlocksSave, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate, RoomPlacement } from "./conflict";
 import { calendarGridRange } from "./calendar-grid";
 import { canEditTypedDishes, eventMenuAccess } from "@/lib/event-menu-access";
@@ -1505,7 +1505,7 @@ export async function deleteCateringEventLabor(id: string, eventId: string): Pro
  * Where a saved booking sits, as STORED (the room rule's `before`); null
  * when the row cannot be read, which the rule treats as a new booking.
  */
-async function storedPlacement(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<RoomPlacement | null> {
+async function storedPlacement(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<(RoomPlacement & { status: string }) | null> {
   const { data, error } = await supabase
     .from("catering_events")
     .select("event_date, start_time, end_time, location_type, venue, status")
@@ -1520,6 +1520,7 @@ async function storedPlacement(supabase: Awaited<ReturnType<typeof createClient>
     location_type: (data.location_type as string | null) ?? null,
     venue: (data.venue as string | null) ?? null,
     cancelled: data.status === "cancelled",
+    status: data.status as string,
   };
 }
 
@@ -1656,10 +1657,17 @@ async function upsertCateringEvent(data: {
       event_date: payload.event_date, start_time: payload.start_time, end_time: payload.end_time,
       location_type: payload.location_type, venue: payload.venue, cancelled: payload.status === "cancelled",
     };
-    if (conflict && conflictBlocksSave(data.id ? await storedPlacement(supabase, data.id) : null, after)) {
-      throw new Error(
-        `ห้องชนกับการจองอื่น: ${conflict.customer_name ?? "-"} ในวันเดียวกัน — ไม่สามารถบันทึกได้`,
-      );
+    if (conflict) {
+      const before = data.id ? await storedPlacement(supabase, data.id) : null;
+      if (conflictBlocksSave(before, after)) {
+        throw new Error(
+          `ห้องชนกับการจองอื่น: ${conflict.customer_name ?? "-"} ในวันเดียวกัน — ไม่สามารถบันทึกได้`,
+        );
+      }
+      // Nik, 2026-09-26: in a clash, a booking moves forward only as far as
+      // รอมัดจำ (clashStatusRefusal), so two cannot both be confirmed.
+      const refusal = clashStatusRefusal(before?.status ?? null, payload.status);
+      if (refusal) throw new Error(refusal);
     }
   }
 

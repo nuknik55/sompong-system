@@ -29,7 +29,7 @@ import { markUnsaved } from "@/lib/unsaved-changes";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
-import { ROOM_CONFLICTS, conflictBlocksSave, findRoomConflict } from "./conflict";
+import { ROOM_CONFLICTS, clashStatusRefusal, conflictBlocksSave, findRoomConflict } from "./conflict";
 import type { RoomConflictCandidate } from "./conflict";
 import {
   LOCATION_TYPE_OPTIONS, VENUE_OPTIONS, BOOKING_TYPE_OPTIONS, FOOD_FORMAT_OPTIONS, STATUS_OPTIONS,
@@ -428,7 +428,10 @@ export function BookingScreen({
   }
 
   // ── Save ──
-  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflictBlocks;
+  // In a clash the screen lets through, the status may go no further than
+  // รอมัดจำ (clashStatusRefusal, the server's own rule).
+  const statusRefusal = conflict !== null && !conflictBlocks ? clashStatusRefusal(event?.status ?? null, form.status) : null;
+  const canSave = form.event_date !== "" && form.customerQuery.trim() !== "" && !busy && !conflictBlocks && !statusRefusal;
   // 7.7: a silently greyed-out save button is the same "is this broken?"
   // confusion the print links caused. Name what is missing, right where the
   // buttons are. The room conflict has its own louder message elsewhere.
@@ -686,7 +689,13 @@ export function BookingScreen({
             <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
           </div>
         )}
-        {conflict && !conflictBlocks && (
+        {conflict && !conflictBlocks && statusRefusal && (
+          <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger">
+            <p className="font-medium">⚠ {statusRefusal}</p>
+            <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
+          </div>
+        )}
+        {conflict && !conflictBlocks && !statusRefusal && (
           <div role="status" className="rounded-lg border border-pending/50 bg-pending-soft px-3 py-2 text-sm text-pending-ink">
             <p className="font-medium">⚠ ห้องชนกับการจองอื่น (ชนอยู่ก่อนแล้ว)</p>
             <p>{conflict.customer_name ?? "-"} ({VENUE_LABEL[conflict.venue] ?? conflict.venue}, {conflictTimeLabel(conflict.start_time, conflict.end_time)})</p>
