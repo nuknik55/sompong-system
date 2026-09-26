@@ -75,26 +75,30 @@ function PrintLayout({ sop }: { sop: SopFullData }) {
         const steps = sop[`${section}Steps`];
         if (steps.length === 0) return null;
         return (
-          <div key={section} className="mb-6 break-inside-avoid">
-            <h2 className="font-kanit mb-2 text-lg font-semibold text-brand-green">
+          // Nik, 2026-09-26: the photos printed far too small (2.5 x 3.4 cm, a
+          // whole section squeezed onto one sheet). Now two steps to a row,
+          // each photo the full width of its half of the page (about 8.5 cm,
+          // 4:3, the whole photo, never cropped), about six to an A4 page.
+          // Each step stays whole on one page; a long section flows on to
+          // the next sheet instead of being squeezed.
+          <div key={section} className="mb-6">
+            <h2 className="font-kanit mb-2 text-lg font-semibold text-brand-green [break-after:avoid]">
               {section === "prep" ? "ขั้นตอนการเตรียมวัตถุดิบ" : section === "cook" ? "ขั้นตอนการปรุง" : "การจัดจาน"}
             </h2>
-            <ol className="space-y-3">
+            <ol className="grid grid-cols-2 gap-x-5 gap-y-4">
               {steps.map((s, i) => (
-                <li key={s.id} className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-green text-xs font-bold text-white">
-                    {i + 1}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm">{s.text}</p>
-                    {s.photoUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={s.photoUrl}
-                        alt={`step ${i + 1}`}
-                        className="mt-1 h-24 w-32 rounded object-cover"
-                      />
-                    )}
+                <li key={s.id} className="break-inside-avoid">
+                  {s.photoUrl && (
+                    <div className="mb-2 aspect-[4/3] w-full overflow-hidden rounded border border-neutral-300 bg-neutral-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={s.photoUrl} alt={`step ${i + 1}`} className="h-full w-full object-contain" />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-green text-xs font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <p className="flex-1 text-sm leading-snug">{s.text}</p>
                   </div>
                 </li>
               ))}
