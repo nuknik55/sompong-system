@@ -94,3 +94,21 @@ export function confirmDiscardUnsaved(message: string, ask?: (m: string) => unkn
   if (!prompt) return true;
   return prompt(message) !== false;
 }
+
+const answered = new WeakMap<object, boolean>();
+
+/**
+ * ONE CLICK, ONE QUESTION (Nik, 2026-09-26). Every useLeaveGuard on a page
+ * listens for the same click, so a page with two unsaved editors (the prep
+ * page's recipe and yield editors) asked twice. The first guard to see a
+ * click asks and records the answer against that click; every other guard
+ * uses the recorded answer. True when the person may go on. Fails open, as
+ * everywhere: only an explicit false keeps them here.
+ */
+export function mayLeaveOnce(click: object, ask: ((m: string) => unknown) | null, message: string): boolean {
+  const known = answered.get(click);
+  if (known !== undefined) return known;
+  const ok = !ask || ask(message) !== false;
+  answered.set(click, ok);
+  return ok;
+}

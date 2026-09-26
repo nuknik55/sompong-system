@@ -9,7 +9,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
-  markUnsaved, hasUnsavedChanges, resetUnsavedForTest, confirmDiscardUnsaved, resolveAsk, SIGN_OUT_UNSAVED_MSG,
+  markUnsaved, hasUnsavedChanges, resetUnsavedForTest, confirmDiscardUnsaved, resolveAsk, SIGN_OUT_UNSAVED_MSG, mayLeaveOnce,
 } from "./unsaved-changes.ts";
 
 beforeEach(() => resetUnsavedForTest());
@@ -117,4 +117,19 @@ test("IT FAILS OPEN: no prompt available at all lets the sign-out through", () =
   // told "cancelled" by an environment that never asked.
   assert.equal(confirmDiscardUnsaved(SIGN_OUT_UNSAVED_MSG, resolveAsk({}) ?? undefined), true);
   release();
+});
+
+test("ONE CLICK, ONE QUESTION: two guards on one click ask once and both obey the answer", () => {
+  let asked = 0;
+  const no = () => { asked++; return false; };
+  const click = {};
+  assert.equal(mayLeaveOnce(click, no, "m"), false);
+  assert.equal(mayLeaveOnce(click, no, "m"), false, "the second guard uses the first answer");
+  assert.equal(asked, 1);
+  const yes = () => { asked++; return true; };
+  const next = {};
+  assert.equal(mayLeaveOnce(next, yes, "m"), true, "another click asks again");
+  assert.equal(mayLeaveOnce(next, no, "m"), true, "and its answer holds for every guard");
+  assert.equal(asked, 2);
+  assert.equal(mayLeaveOnce({}, null, "m"), true, "fails open with no prompt");
 });

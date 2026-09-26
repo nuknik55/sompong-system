@@ -28,7 +28,7 @@
  * one fails open like the sign-out guard.
  */
 import { useEffect } from "react";
-import { markUnsaved, resolveAsk } from "./unsaved-changes";
+import { markUnsaved, mayLeaveOnce, resolveAsk } from "./unsaved-changes";
 
 export const LEAVE_UNSAVED_MSG = "มีการแก้ไขที่ยังไม่ได้บันทึก — ออกจากหน้านี้โดยไม่บันทึกหรือไม่?";
 
@@ -45,9 +45,9 @@ export function useLeaveGuard(dirty: boolean, message: string = LEAVE_UNSAVED_MS
       if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
       const href = a.getAttribute("href") ?? "";
       if (href.startsWith("#") || (/^[a-z]+:/i.test(href) && !href.startsWith(location.origin))) return;
-      // Fails open: only an explicit false keeps the person here.
-      const ask = resolveAsk(window);
-      if (ask && ask(message) === false) { e.preventDefault(); e.stopPropagation(); }
+      // Fails open: only an explicit false keeps the person here. Asked once
+      // per click however many guards are mounted (mayLeaveOnce).
+      if (!mayLeaveOnce(e, resolveAsk(window), message)) { e.preventDefault(); e.stopPropagation(); }
     };
     window.addEventListener("beforeunload", unload);
     document.addEventListener("click", click, true);
