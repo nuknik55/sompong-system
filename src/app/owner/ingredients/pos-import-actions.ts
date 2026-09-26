@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { fetchAllRows } from "@/lib/data";
+import { fetchAllRows, readIngredientCosts } from "@/lib/data";
 import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 import { proposeYieldQty, summarizeLatestDelivery, isoToDateKey, isoToThaiDateLabel, type PosMaterialDeliveries } from "@/lib/pos-parse";
 import { validateChunk, MAX_ROWS_PER_BATCH } from "@/lib/pos-delivery-validation";
@@ -223,10 +223,15 @@ export async function buildPosImportPreview(): Promise<{ status: "ok"; preview: 
         .order("id")
         .range(from, to),
     ),
-    supabase
-      .from("ingredients")
-      .select("id, name, purchase_cost, purchase_unit_label, receive_qty, yield_qty, usage_unit")
-      .eq("is_prep", false),
+    // Purchase costs from the view the heads may read (readIngredientCosts);
+    // the rest from the table.
+    Promise.all([
+      supabase.from("ingredients").select("id, name, purchase_unit_label, usage_unit").eq("is_prep", false),
+      readIngredientCosts(),
+    ]).then(([res, costs]) => ({
+      ...res,
+      data: (res.data ?? []).map((i) => ({ ...i, ...(costs.get(i.id) ?? { purchase_cost: null, receive_qty: null, yield_qty: null }) })),
+    })),
     supabase.from("pos_price_aliases").select("pos_ingredient_name, ingredient_id"),
   ]);
   if (ingredientsRes.error) return { status: "error", message: ingredientsRes.error.message };

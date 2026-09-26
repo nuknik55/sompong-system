@@ -1,6 +1,7 @@
 import "server-only";
 import { resolveCapexThreshold } from "@/app/owner/accounting/capex-hint";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingRelation } from "@/lib/schema-fallback";
 import {
   resolveUnitCosts,
   type PrepUnitCostMap,
@@ -55,16 +56,53 @@ export async function fetchAllRows<T>(
   return all;
 }
 
+type IngredientCost = Pick<IngredientRow, "purchase_cost" | "receive_qty" | "yield_qty">;
+const NO_COST: IngredientCost = { purchase_cost: null, receive_qty: null, yield_qty: null };
+
+/**
+ * Every ingredient, with its purchase cost where the caller may see it.
+ *
+ * STAFF SEE NO PURCHASE PRICES (Nik, 2026-09-26). Names, units and the rest
+ * come from ingredients; the three cost columns come from the view
+ * ingredient_costs, which answers owner, admin and editor only
+ * (security_fixes_and_menu_save_lock_migration.sql takes the columns off
+ * the table for every signed-in account). For anyone else every cost is
+ * null, which every cost display already reads as "unknown" — and staff
+ * pages show no cost at all. Before the migration adds the view, the costs
+ * are read from the table as they always were.
+ */
 export async function getIngredients(): Promise<IngredientRow[]> {
   const supabase = await createClient();
-  return fetchAllRows<IngredientRow>(({ from, to }) =>
-    supabase
-      .from("ingredients")
-      .select("id, name, category, is_prep, purchase_unit_label, purchase_cost, receive_qty, yield_qty, usage_unit, prep_recipe_id, par_level")
-      .order("name")
-      .order("id")
-      .range(from, to)
-  );
+  const [rows, costs] = await Promise.all([
+    fetchAllRows<Omit<IngredientRow, keyof IngredientCost>>(({ from, to }) =>
+      supabase
+        .from("ingredients")
+        .select("id, name, category, is_prep, purchase_unit_label, usage_unit, prep_recipe_id, par_level")
+        .order("name")
+        .order("id")
+        .range(from, to)
+    ),
+    readIngredientCosts(),
+  ]);
+  return rows.map((r) => ({ ...r, ...(costs.get(r.id) ?? NO_COST) }));
+}
+
+/** ingredient id -> its purchase cost, for the roles the view admits (see getIngredients). */
+export async function readIngredientCosts(): Promise<Map<string, IngredientCost>> {
+  const supabase = await createClient();
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const probe = await supabase.from("ingredient_costs").select("ingredient_id").limit(1);
+  if (probe.error && !isMissingRelation(probe.error)) throw new Error(probe.error.message);
+  const rows = probe.error
+    ? (await fetchAllRows<Record<string, unknown>>(({ from, to }) =>
+        supabase.from("ingredients").select("id, purchase_cost, receive_qty, yield_qty").order("id").range(from, to)
+      )).map((r): Record<string, unknown> => ({ ...r, ingredient_id: r.id }))
+    : await fetchAllRows<Record<string, unknown>>(({ from, to }) =>
+        supabase.from("ingredient_costs").select("ingredient_id, purchase_cost, receive_qty, yield_qty").order("ingredient_id").range(from, to)
+      );
+  return new Map(rows.map((r) => [r.ingredient_id as string, {
+    purchase_cost: num(r.purchase_cost), receive_qty: num(r.receive_qty), yield_qty: num(r.yield_qty),
+  }]));
 }
 
 export async function getPrepRecipes(): Promise<PrepRecipeRow[]> {

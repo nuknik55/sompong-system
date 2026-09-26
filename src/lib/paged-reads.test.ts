@@ -35,6 +35,8 @@ import ts from "typescript";
 /** Tables whose unique key is not `id`. Add a table here only with its PK. */
 const UNIQUE_ORDER_KEYS: Record<string, string> = {
   pos_item_categories: "pos_product_name",
+  // A view: one row per ingredient, ingredient_id = ingredients.id (the PK).
+  ingredient_costs: "ingredient_id",
 };
 
 type Finding = { line: number; rule: "order" | "range"; detail: string };
