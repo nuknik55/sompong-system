@@ -13,6 +13,7 @@ import type { StepItem, ChecklistItem } from "@/components/sop-step-list";
 import type { MenuIngredientForSop, SopFullData } from "@/lib/sop-data";
 import { buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
+import { photoOnlyStepProblem } from "@/components/sop-rules";
 
 function tempId() {
   return `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -91,6 +92,11 @@ export function SopForm({
     setSavePending(false);
   }
 
+  // Photo uploads in flight (queue item 42): Save waits for them, so a save
+  // never goes out without a photo that is about to land.
+  const [uploads, setUploads] = useState(0);
+  const onUploadBusy = (busy: boolean) => setUploads((n) => Math.max(0, n + (busy ? 1 : -1)));
+
   // UNSAVED IS A COMPARISON, NOT A FLAG (Nik, 2026-09-21). Every onChange
   // used to set a flag that only a save cleared, so a note typed and
   // deleted, or a step added and removed, read as unsaved for the rest of
@@ -112,6 +118,10 @@ export function SopForm({
   useLeaveGuard(dirty);
 
   function handleSave() {
+    if (uploads > 0) return;
+    // Queue item 43: a step with a photo and no words is refused, and named.
+    const photoOnly = photoOnlyStepProblem({ prepSteps, cookSteps, platingSteps });
+    if (photoOnly) { setError(photoOnly); return; }
     if (!isValidVideoUrl(demoVideoUrl)) {
       setError("URL วิดีโอไม่ถูกต้อง — ต้องขึ้นต้นด้วย https://");
       return;
@@ -184,7 +194,8 @@ export function SopForm({
             </Link>
             <button
               type="button"
-              disabled={isPending}
+              disabled={isPending || uploads > 0}
+              title={uploads > 0 ? "กำลังอัปโหลดรูป — รอให้เสร็จก่อนบันทึก" : undefined}
               onClick={handleSave}
               className={buttonClass("primary")}
             >
@@ -245,6 +256,7 @@ export function SopForm({
           sectionLabel={SECTION_LABEL.prep}
           placeholder="เช่น ซอยหมูบาง 3mm แช่น้ำปลาและน้ำตาล 15 นาที..."
           onChange={(s) => { onEdit(); setPrepSteps(s); }}
+          onUploadBusy={onUploadBusy}
         />
       </section>
 
@@ -256,6 +268,7 @@ export function SopForm({
           sectionLabel={SECTION_LABEL.cook}
           placeholder="เช่น ตั้งกระทะไฟแรง ใส่น้ำมัน รอควัน..."
           onChange={(s) => { onEdit(); setCookSteps(s); }}
+          onUploadBusy={onUploadBusy}
         />
       </section>
 
@@ -267,6 +280,7 @@ export function SopForm({
           sectionLabel={SECTION_LABEL.plating}
           placeholder="เช่น วางเนื้อตรงกลางจาน โรยผักชีด้านบน..."
           onChange={(s) => { onEdit(); setPlatingSteps(s); }}
+          onUploadBusy={onUploadBusy}
         />
       </section>
 
@@ -333,13 +347,15 @@ export function SopForm({
             {error && <span className="text-danger">{error}</span>}
             {saveSuccess && <span className="text-success-ink">✓ บันทึกสำเร็จ</span>}
             {savePending && <span className="text-pending-ink">⏳ ส่งขออนุมัติแล้ว — รอ Admin ตรวจสอบ</span>}
-            {!error && !saveSuccess && !savePending && dirty && (
+            {uploads > 0 && <span className="text-xs text-pending-ink">กำลังอัปโหลดรูป — รอให้เสร็จก่อนบันทึก</span>}
+            {uploads === 0 && !error && !saveSuccess && !savePending && dirty && (
               <span className="text-xs text-neutral-500">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</span>
             )}
           </div>
           <button
             type="button"
-            disabled={isPending}
+            disabled={isPending || uploads > 0}
+            title={uploads > 0 ? "กำลังอัปโหลดรูป — รอให้เสร็จก่อนบันทึก" : undefined}
             onClick={handleSave}
             className={buttonClass("primary", { className: "shrink-0" })}
           >

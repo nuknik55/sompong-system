@@ -3,6 +3,7 @@
 import { ChevronUp, ChevronDown, Trash2, Plus } from "lucide-react";
 import { SopPhotoUpload } from "@/components/sop-photo-upload";
 import { buttonClass } from "@/components/ui/button";
+import { withStepPhoto } from "@/components/sop-rules";
 
 export type StepItem = {
   tempId: string;
@@ -26,11 +27,15 @@ export function SopStepList({
   onChange,
   sectionLabel,
   placeholder = "อธิบายขั้นตอน...",
+  onUploadBusy,
 }: {
   steps: StepItem[];
-  onChange: (steps: StepItem[]) => void;
+  /** A new list, or (for a photo that lands later) an update of the list as it is then. */
+  onChange: (steps: StepItem[] | ((prev: StepItem[]) => StepItem[])) => void;
   sectionLabel: string;
   placeholder?: string;
+  /** An upload started (true) or ended (false). */
+  onUploadBusy?: (busy: boolean) => void;
 }) {
   function insert(afterIndex: number) {
     const next = [...steps];
@@ -59,10 +64,11 @@ export function SopStepList({
     onChange(next);
   }
 
-  function patchPhoto(i: number, photoUrl: string | null) {
-    const next = [...steps];
-    next[i] = { ...next[i], photoUrl };
-    onChange(next);
+  // Queue item 42: by the step's id, against the list as it is when the
+  // upload lands — the list captured when the file was picked is stale by
+  // then, and replacing the section with it reverted every edit made meanwhile.
+  function patchPhoto(id: string, photoUrl: string | null) {
+    onChange((prev) => withStepPhoto(prev, id, photoUrl));
   }
 
   return (
@@ -122,7 +128,8 @@ export function SopStepList({
             <div className="mt-2">
               <SopPhotoUpload
                 photoUrl={step.photoUrl}
-                onChange={(url) => patchPhoto(i, url)}
+                onChange={(url) => patchPhoto(step.tempId, url)}
+                onBusyChange={onUploadBusy}
               />
             </div>
           </div>

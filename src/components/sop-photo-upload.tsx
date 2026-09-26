@@ -49,9 +49,12 @@ export function SopPhotoUpload({
   bucket = "sop-photos",
   filenamePrefix = "",
   capture = false,
+  onBusyChange,
 }: {
   photoUrl: string | null;
   onChange: (url: string | null) => void;
+  /** Told when an upload starts and ends, so a form can hold its Save meanwhile (queue item 42). */
+  onBusyChange?: (busy: boolean) => void;
   bucket?: string;
   filenamePrefix?: string;
   /** Open the camera directly instead of the camera-or-gallery sheet. Off by default: SOP step photos are often picked from the gallery. */
@@ -66,6 +69,7 @@ export function SopPhotoUpload({
     if (!file) return;
     setError(null);
     setUploading(true);
+    onBusyChange?.(true);
     try {
       const blob = await resizeAndCompress(file);
       const url = await uploadToSupabase(blob, bucket, filenamePrefix);
@@ -74,6 +78,7 @@ export function SopPhotoUpload({
       setError(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
     } finally {
       setUploading(false);
+      onBusyChange?.(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
+import { photoOnlyStepProblem } from "@/components/sop-rules";
 
 export type SopStepSave = {
   text: string;
@@ -29,6 +30,11 @@ export type SopSaveResult = { status: "saved"; sopId: string } | { status: "pend
 export async function upsertSop(data: SopSaveData, menuName?: string): Promise<SopSaveResult> {
   const profile = await requireAdminOrEditor();
   const supabase = await createClient();
+
+  // Queue item 43: refused BEFORE anything is saved or filed for approval —
+  // the save below keeps only steps with words, so the photo would vanish.
+  const photoOnly = photoOnlyStepProblem(data);
+  if (photoOnly) return { status: "error", message: photoOnly };
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "sop_upsert", data.menuId, {
