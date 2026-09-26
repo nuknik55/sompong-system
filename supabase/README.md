@@ -263,6 +263,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `sop_visibility_and_editor_cost_switch_migration.sql` | Nik. Queue items 55 and 56 (Nik, 2026-09-26). Expected: **109 rows**, ending "row count verified: 108 evidence rows emitted, as expected (this line makes 109)"; anything starting FAIL means nothing was applied. **What it does:** A. per-SOP "who can see": `menu_sops.visibility` ('all', the default, every SOP today; or 'chosen'), the chosen accounts in `menu_sop_viewers`, `can_see_sop()` behind RESTRICTIVE policies on the SOP, its steps and its notes (read and write), a trigger so only owner and admin set it, and `sop_set_visibility()` as its one save. B. the per-editor เห็นต้นทุน switch: `profile_cost_access` (the owner switches it, for editors only; an account that stops being an editor loses it, by trigger), `can_see_cost()` (owner, admin, an editor switched on), which now decides the view `ingredient_costs`, the price-history and POS-receipt reads and `prep_unit_costs()` (md5-guarded against the body the security migration applied). A request that carries prices is read only by those who see cost. First run only: the switch ON for ธีรวัฒน์ and เวช (by id, name and role); แหงน and Editor off. C. **the views `ingredient_costs`, `employee_pay` and `catering_staff_options` become read-only.** Found by the review: Supabase's default privileges give signed-in accounts ALL on every new view, and a view writes to its table as the view's owner, past the table's policies, so **an editor can set a purchase price through `ingredient_costs` today**, around the ingredients write policy and the approval queue (proved on the stand-in; Nik can confirm it live, read-only: `SELECT has_table_privilege('authenticated', 'public.ingredient_costs', 'UPDATE');`). **Run it at a quiet time** (it locks `menu_sops` briefly; an app write meanwhile stops it at K0, nothing applied, run it again). Reviewed by three independent reviewers; stand-in: two clean runs, 36 fault cases (live drifted, and the file broken at each rule it tests). | **THIS FILE FIRST, then the branch `sop-visibility-cost-switch`** (the team page's switch, the SOP setting and its lock, the cost screens for a switched-off editor, the approval check), pushed as soon as the result is in. **Until the branch is live, approve no ingredient edit from แหงน or Editor:** the live ingredients page sends a row's price boxes with every edit, and theirs will be empty. The code live now otherwise keeps working after the file runs. |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -4129,6 +4130,81 @@ and after Nik's import.
     means RESTRICT on these four and, on the team page, counting them in
     `hasOrderHistory`'s check. Decide per column: an expense entry's author
     and an approval's resolver are the ones an audit would miss.
+
+55. **Per-SOP "who can see" (Nik, 2026-09-26).** WRITTEN, the SQL NOT
+    APPLIED: `sop_visibility_and_editor_cost_switch_migration.sql` (see "Not
+    applied") and the branch `sop-visibility-cost-switch`. Each SOP is open
+    to everyone (ทุกคน, the default) or to chosen accounts (เฉพาะคนที่เลือก);
+    owner and admin see every SOP. The database decides for the SOP, its
+    steps and its notes; the app follows it on the list, the search (the
+    list's own filter), the view page, its print and every link (a hidden
+    SOP reads as "ยังไม่มี SOP"). A lock marks a restricted SOP for those who
+    see it. Owner and admin set it on the SOP's page ("ใครเห็น SOP นี้").
+    Editors edit only an SOP they can see; an editor's SOP request for one
+    they cannot see is refused at approval (the approver sees every SOP, so
+    the database cannot tell). **Decided here, not by Nik, and his to
+    change:** only owner and admin set who sees an SOP (an editor who can
+    see it edits its content, never its audience).
+    - **NOT BUILT: prep SOPs.** An SOP cannot belong to a prep recipe today:
+      `menu_sops.menu_id` is NOT NULL and UNIQUE and references `menus`;
+      nothing links `prep_recipes` to an SOP (the "เตรียม" section of a dish's
+      SOP is that dish's preparation stage, not a prep recipe). **Proposed,
+      for Nik:** (A) an SOP attached to a prep recipe (`menu_sops` gains a
+      `prep_recipe_id`, exactly one of the two set; read only by those who
+      can see the prep, the secret-prep rule, and then by its own "who can
+      see"; opened from the prep's page), or (B) a standalone SOP with its
+      own title, tied to no recipe (cleaning, opening and closing), decided
+      by "who can see" alone. Recommended: A for prep recipes, B only if
+      standalone procedures are wanted too. **Questions:** A, B or both? Does
+      seeing the prep suffice, or must a person also be chosen on the SOP?
+      Who writes prep SOPs (owner, admin, editors who can see the prep)?
+      Should staff read them?
+    - **OPEN RISK: the photos.** `sop-photos` is a PUBLIC bucket: a step
+      photo's address works for anyone who has it, signed in or not, and
+      "who can see" does not reach it (the rows are hidden; the files are
+      not). The names are random (a timestamp and 7 characters) and the
+      bucket can no longer be listed (2026-09-25), so a photo is reached
+      only through its address: a copied link, a request's payload, a
+      browser's history, a photo of the screen. **Options:** (1) a private
+      bucket for every SOP photo, shown through short-lived signed addresses
+      the server makes after checking the SOP (strongest; upload, display,
+      print and approval screens change; the ~400 files move); (2) a private
+      bucket for restricted SOPs only, their photos moved when an SOP is
+      restricted (less to move, more ways to get it wrong); (3) accept it and
+      tell staff not to share photo links. Recommended: (1), as its own
+      round. Nothing built.
+    - **Known and accepted (the review, 2026-09-26):** a new SOP is open to
+      everyone until owner or admin sets it (the setting is on the SOP's
+      page once it exists); someone not chosen can tell that an SOP exists
+      for a menu by trying to make one (a duplicate is refused), never read
+      it; a chosen person can copy what they read; the dish's recipe lines
+      stay readable (they are the recipe, not the SOP). An old SOP request
+      is hidden from its author once the SOP is out of their sight, and no
+      new one can be filed for it.
+
+56. **The per-editor เห็นต้นทุน switch (Nik, 2026-09-26).** WRITTEN, the SQL NOT
+    APPLIED (the same file and branch as item 55). On the team page, per
+    editor, off by default; only the owner turns it on (admin sees it; any
+    change of an account's role clears it, so an admin can turn it off that
+    way, never on). The
+    file turns it on for ธีรวัฒน์ and เวช; แหงน and the "Editor" login stay
+    off. With it off, an editor sees no purchase price, receive or yield
+    quantity, price history, POS receipt cost, prep cost, dish cost,
+    food-cost % or margin: the database answers them with nothing (the view
+    `ingredient_costs`, the price history, the POS receipts,
+    `prep_unit_costs()`), and the screens show none. Their recipe and
+    ingredient screens still work, as staff's do. **The editor screens that
+    change with the switch off:** `/owner/ingredients` (no price, receive,
+    yield or cost-per-unit column or box, no price history, no price boxes
+    in the new-ingredient form, a save sends no price field and the server
+    drops any); `/staff/menu/[id]` (no line cost, no cost summary, no
+    food-cost % or margin; the selling price in the subtitle, as staff see
+    it); `/staff/prep/[id]` (no line cost or cost summary, the yield still
+    editable); `/staff` (no Star-to-Dog sort). Unchanged for them: SOPs,
+    ordering, templates, maintenance. An old ingredient request of theirs
+    that carries prices is hidden from them, and approving one drops its
+    prices. Owner and admin always see cost;
+    profit and the P&L stay owner-only.
 
 54. ~~**Ordering follows the paper sheet's hand-off (Nik, 2026-09-23).**~~
     **DONE 2026-09-24**, the follow-ups applied (see "Applied since").
