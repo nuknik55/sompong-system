@@ -1,5 +1,6 @@
 import { getCostingContext } from "@/lib/data";
 import { requireAdminOrEditor } from "@/lib/auth";
+import { seesCost } from "@/lib/cost-access";
 import { getPrepVisibility } from "@/lib/prep-access";
 import { IngredientManager } from "@/components/ingredient-manager";
 import { CategoryFilterList } from "@/components/category-filter-list";
@@ -50,6 +51,10 @@ export default async function OwnerIngredientsPage() {
 
   const submitMode = profile.role === "admin" || profile.role === "owner" ? "save" : "pending";
   const isAdmin = profile.role === "admin" || profile.role === "owner";
+  // An editor whose เห็นต้นทุน switch is off (Nik, 2026-09-26) gets the names,
+  // units, categories and par levels, never a price: the database sends none,
+  // and nothing here stands in for one.
+  const showCosts = seesCost(profile);
 
   return (
     <PageShell>
@@ -57,7 +62,9 @@ export default async function OwnerIngredientsPage() {
         title="จัดการวัตถุดิบ"
         subtitle={
           <span>
-            แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบ — ของ prep คำนวณต้นทุนจากสูตรอัตโนมัติ
+            {showCosts
+              ? "แก้ราคาซื้อ, จำนวนรับ, จำนวนตัดแต่ง (yield) ของวัตถุดิบ — ของ prep คำนวณต้นทุนจากสูตรอัตโนมัติ"
+              : "แก้ชื่อ หมวด หน่วย และ par ของวัตถุดิบ"}
             {submitMode === "pending" && (
               <span className="ml-1 text-pending-ink">· การเปลี่ยนแปลงต้องรอ Admin อนุมัติ</span>
             )}
@@ -75,15 +82,16 @@ export default async function OwnerIngredientsPage() {
                   name: i.name,
                   category: i.category,
                   purchase_unit_label: i.purchase_unit_label ?? null,
-                  purchase_cost: i.purchase_cost,
-                  receive_qty: i.receive_qty ?? 1,
-                  yield_qty: i.yield_qty,
+                  purchase_cost: showCosts ? i.purchase_cost : null,
+                  receive_qty: showCosts ? (i.receive_qty ?? 1) : 1,
+                  yield_qty: showCosts ? i.yield_qty : null,
                   usage_unit: i.usage_unit,
                   par_level: i.par_level ?? null,
                 }))}
-                unitCosts={Object.fromEntries(unitCosts)}
+                unitCosts={showCosts ? Object.fromEntries(unitCosts) : {}}
                 usageMap={usageMap}
                 submitMode={submitMode}
+                showCosts={showCosts}
               />
             ),
           },

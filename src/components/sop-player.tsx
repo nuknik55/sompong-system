@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Video, X, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Video, X, Printer } from "lucide-react";
 import type { SopFullData } from "@/lib/sop-data";
 
 // ── Video helpers ────────────────────────────────────────────────
@@ -194,7 +194,10 @@ export function SopPlayer({ sop }: { sop: SopFullData }) {
         {/* ── Top bar ── */}
         <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-2 no-print">
           <div className="min-w-0 flex-1">
-            <p className="truncate font-heading font-semibold text-neutral-800">{sop.menuName}</p>
+            <p className="flex items-center gap-1.5 truncate font-heading font-semibold text-neutral-800">
+              {sop.restricted && <Lock className="h-4 w-4 shrink-0 text-pending-ink" aria-label="เฉพาะคนที่เลือก" />}
+              <span className="truncate">{sop.menuName}</span>
+            </p>
             {sop.menuCategory && (
               <p className="text-xs text-neutral-500">{sop.menuCategory}</p>
             )}

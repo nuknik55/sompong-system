@@ -1,7 +1,7 @@
 import { getCostingContext } from "@/lib/data";
 import { computeMenuCost, classifyWithinCategory } from "@/lib/costing";
 import { getCurrentProfile } from "@/lib/auth";
-import { editAccess } from "@/lib/edit-access";
+import { seesCost } from "@/lib/cost-access";
 import { CategoryFilterList } from "@/components/category-filter-list";
 import { CreateRecipeForm } from "@/components/create-recipe-form";
 import { createMenu } from "@/app/staff/menu/actions";
@@ -27,10 +27,12 @@ export default async function StaffHomePage() {
   // only then narrowed to what this person may see. Ranking the visible
   // subset would give a staff member different verdicts from the owner's.
   // The class is used only by the list's "sort by class" option here, and
-  // only for the roles that see a dish's margin (owner, admin, editor:
-  // editAccess, as on the recipe page): a Star-to-Dog order is that margin,
-  // ranked, so staff, hr and sales get no such option (Nik, 2026-09-17).
-  const seesMargin = editAccess(profile?.role) !== "view";
+  // only for those who see a dish's margin (seesCost: owner, admin, an
+  // editor whose เห็นต้นทุน switch is on): a Star-to-Dog order is that margin,
+  // ranked (Nik, 2026-09-17), so staff, hr, sales and a switched-off editor
+  // get no such option (Nik, 2026-09-26). A switched-off editor's costs come
+  // back empty from the database, and would rank every dish as free.
+  const seesMargin = seesCost(profile);
   const ranked = seesMargin
     ? classifyWithinCategory(
         menus.map((menu) => computeMenuCost(menu, menuItems.filter((it) => it.menu_id === menu.id), unitCosts, qFactorPct)),

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { getCurrentProfile } from "@/lib/auth";
 import { editAccess } from "@/lib/edit-access";
+import { seesCost } from "@/lib/cost-access";
 import { RecipeEditor } from "@/components/recipe-editor";
 import { DuplicateButton } from "@/components/duplicate-button";
 import { DeleteRecipeButton } from "@/components/delete-recipe-button";
@@ -32,6 +33,10 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
   // and hr or sales who reach this page by URL (item 34). An allowlist, so
   // a role added later is not handed the editor.
   const canEdit = access !== "view";
+  // Cost is a separate question (Nik, 2026-09-26): an editor with the
+  // เห็นต้นทุน switch off edits the recipe and sees no cost, food-cost % or
+  // margin — as staff see none.
+  const showCosts = canEdit && seesCost(profile);
 
   // A hidden menu opens for owner and admin alone — the same allowlist the
   // list page uses. Everyone else gets notFound, editor, staff, hr and sales
@@ -60,10 +65,10 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
                 ซ่อนจาก staff
               </span>
             )}
-            {!canEdit && (
+            {!showCosts && (
               <span>ราคาขาย {menu.selling_price.toLocaleString("th-TH")} บาท · หมวด {menu.category ?? "-"}</span>
             )}
-            {canEdit && <span>หมวด {menu.category ?? "-"}{isAdmin ? " (แก้ราคาขายได้ในกล่องสรุปด้านล่าง)" : ""}</span>}
+            {showCosts && <span>หมวด {menu.category ?? "-"}{isAdmin ? " (แก้ราคาขายได้ในกล่องสรุปด้านล่าง)" : ""}</span>}
           </>
         }
         actions={
@@ -110,14 +115,14 @@ export default async function StaffMenuEditPage({ params }: { params: Promise<{ 
         parentName={menu.name}
         initialItems={items.map((it) => ({ id: it.id, ingredient_id: it.ingredient_id, quantity: it.quantity, unit: null }))}
         ingredients={ingredients.map((i) => ({ id: i.id, name: i.name, category: i.category, usage_unit: i.usage_unit, is_prep: i.is_prep }))}
-        unitCosts={canEdit ? unitCostsObj : {}}
-        qFactorPct={canEdit ? qFactorPct : 0}
+        unitCosts={showCosts ? unitCostsObj : {}}
+        qFactorPct={showCosts ? qFactorPct : 0}
         sellingPrice={menu.selling_price}
         canEditPrice={isAdmin}
         onSavePrice={isAdmin ? updateMenuSellingPrice : undefined}
         readOnly={!canEdit}
         submitMode={isEditor ? "pending" : "save"}
-        showCosts={canEdit}
+        showCosts={showCosts}
       />
       <RecipeHistory target="menu" parentId={menu.id} />
     </PageShell>

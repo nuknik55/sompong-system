@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { approvalRowId } from "@/lib/approval-id";
-import { requireAdmin } from "@/lib/auth";
+import { readProfileById, requireAdmin } from "@/lib/auth";
+import { seesCost, withoutCostFields } from "@/lib/cost-access";
 import { prepIdOfChange, resolvePendingChange } from "@/lib/pending-data";
 import { canSeePrep, prepInsertErrorMessage, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { planPrepCreate } from "@/lib/prep-create";
 import { lookupPrepName, prepRefusalMessage } from "@/lib/prep-name";
 import { createClient } from "@/lib/supabase/server";
+import { sopRequestRefusal } from "@/lib/sop-data";
+import { sopRequestMenuId } from "@/lib/sop-visibility";
 
 export type ApproveResult = { error?: string };
 
@@ -93,13 +96,30 @@ async function runReturning<T>(
  * function invoked via rpc(), so the whole sequence runs in one server-side
  * transaction. That is a schema change and is deliberately not done here.
  */
+/**
+ * An ingredient request's fields, as they may be written (queue item 56):
+ * never a price from someone who cannot see prices NOW — an old request that
+ * sent the row's price boxes, one filed in the window before the switch
+ * shipped, or one filed straight through the API. A sender that cannot be
+ * read counts as one who cannot see prices.
+ */
+async function requestFields(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  editorId: string | null,
+  raw: unknown,
+): Promise<Record<string, unknown>> {
+  const fields = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const who = editorId ? await readProfileById(supabase, editorId) : null;
+  return seesCost(who) ? fields : withoutCostFields(fields);
+}
+
 export async function approveChange(id: string): Promise<ApproveResult> {
   const admin = await requireAdmin();
   const supabase = await createClient();
 
   const { data: row, error: fetchErr } = await supabase
     .from("pending_changes")
-    .select("change_type, target_id, payload, status")
+    .select("change_type, target_id, payload, status, editor_id")
     .eq("id", id)
     .single();
   if (fetchErr || !row) return { error: "ไม่พบรายการนี้" };
@@ -120,6 +140,19 @@ export async function approveChange(id: string): Promise<ApproveResult> {
   // `!== null`, not truthiness: an empty-string id is a prep id too, and
   // canSeePrep refuses it, as the queue does.
   if (guardedPrepId !== null && !(await canSeePrep(guardedPrepId))) return { error: PREP_FORBIDDEN };
+
+  // Per-SOP "who can see" (Nik, 2026-09-26). The approver sees every SOP,
+  // so the database cannot tell that the person who FILED an SOP request may
+  // not see that SOP; an approval would write it for them. The menu is taken
+  // from the request once, must be the request's own target, is checked
+  // against its sender, and is the one the write below uses.
+  const sopMenuId = sopRequestMenuId(row.change_type as string, p);
+  if (row.change_type === "sop_upsert" || row.change_type === "sop_delete") {
+    if (sopMenuId === null) return { error: "คำขอ SOP นี้ไม่มีเมนูที่ถูกต้อง" };
+    if (sopMenuId !== row.target_id) return { error: "คำขอ SOP นี้ระบุเมนูไม่ตรงกัน — อนุมัติไม่ได้" };
+    const refusal = await sopRequestRefusal(supabase, sopMenuId, row.editor_id as string);
+    if (refusal) return { error: refusal };
+  }
 
   // Written into the request's note when it is marked approved.
   let approvalNote: string | undefined;
@@ -426,18 +459,23 @@ export async function approveChange(id: string): Promise<ApproveResult> {
       }
 
       case "ingredient_create": {
+        const fields = await requestFields(supabase, row.editor_id as string | null, p.fields);
         await run(
           "สร้างวัตถุดิบ",
-          supabase.from("ingredients").insert({ ...(p.fields as Record<string, unknown>), is_prep: false }),
+          supabase.from("ingredients").insert({ ...fields, is_prep: false }),
         );
         revalidatePath("/owner/ingredients");
         break;
       }
 
       case "ingredient_edit": {
+        const fields = await requestFields(supabase, row.editor_id as string | null, p.fields);
+        if (Object.keys(fields).length === 0) {
+          return { error: "คำขอนี้มีแต่ราคา จากผู้ที่ไม่เห็นต้นทุน จึงอนุมัติไม่ได้ — ให้ปฏิเสธคำขอ แล้วแก้ราคาเองในหน้าจัดการวัตถุดิบ" };
+        }
         await run(
           "แก้ไขวัตถุดิบ",
-          supabase.from("ingredients").update(p.fields as Record<string, unknown>).eq("id", p.ingredientId),
+          supabase.from("ingredients").update(fields).eq("id", p.ingredientId),
         );
         revalidatePath("/owner/ingredients");
         break;
@@ -476,7 +514,7 @@ export async function approveChange(id: string): Promise<ApproveResult> {
           "บันทึก SOP",
           supabase
             .from("menu_sops")
-            .upsert({ menu_id: sopData.menuId, author_name: sopData.authorName || null, updated_at: sopData.updatedAt, demo_video_url: sopData.demoVideoUrl.trim() || null }, { onConflict: "menu_id" })
+            .upsert({ menu_id: sopMenuId!, author_name: sopData.authorName || null, updated_at: sopData.updatedAt, demo_video_url: sopData.demoVideoUrl.trim() || null }, { onConflict: "menu_id" })
             .select("id").single(),
         );
 
@@ -497,15 +535,15 @@ export async function approveChange(id: string): Promise<ApproveResult> {
           await run("บันทึกขั้นตอน SOP", supabase.from("menu_sop_steps").insert(stepRows));
         }
         revalidatePath("/sop");
-        revalidatePath(`/sop/${sopData.menuId}`);
-        revalidatePath(`/sop/${sopData.menuId}/edit`);
+        revalidatePath(`/sop/${sopMenuId}`);
+        revalidatePath(`/sop/${sopMenuId}/edit`);
         break;
       }
 
       case "sop_delete": {
-        await run("ลบ SOP", supabase.from("menu_sops").delete().eq("menu_id", p.menuId));
+        await run("ลบ SOP", supabase.from("menu_sops").delete().eq("menu_id", sopMenuId!));
         revalidatePath("/sop");
-        revalidatePath(`/sop/${p.menuId}`);
+        revalidatePath(`/sop/${sopMenuId}`);
         break;
       }
 

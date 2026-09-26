@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canOrder } from "@/lib/order-rules";
+import { isMissingRelation } from "@/lib/schema-fallback";
 
 export type Role ="owner" | "admin" | "editor" | "staff" | "hr" | "sales";
 
@@ -13,6 +14,10 @@ export type Profile = {
   /** Optional link to the HR employee record — null for logins with no
    *  payroll record (owner/admin accounts, system users). */
   employee_id: string | null;
+  /** The เห็นต้นทุน switch: true for owner and admin, for an editor whose
+   *  switch is on, false for everyone else. Read seesCost() (lib/cost-access),
+   *  never this field alone. */
+  sees_cost: boolean;
 };
 
 // ONE lookup per request (React cache): every guard calls this, and a page
@@ -39,9 +44,41 @@ export const getCurrentProfile = cache(async function getCurrentProfile(): Promi
     .eq("id", user.id)
     .maybeSingle();
   if (error) throw new Error(`อ่านข้อมูลผู้ใช้ไม่สำเร็จ: ${error.message}`);
+  if (!profile) return null;
 
-  return profile ?? null;
+  return { ...profile, sees_cost: await readCostSwitch(supabase, profile.role, profile.id) } as Profile;
 });
+
+/**
+ * The เห็นต้นทุน switch (Nik, 2026-09-26). Owner and admin always see cost;
+ * an editor when the owner has switched it on (a row in profile_cost_access,
+ * which an editor may read for itself only); nobody else. Before
+ * sop_visibility_and_editor_cost_switch_migration.sql makes the table, every
+ * editor sees cost, as they always had. Fails loudly on any other error, as
+ * the profile read above does.
+ */
+async function readCostSwitch(supabase: Awaited<ReturnType<typeof createClient>>, role: string, id: string): Promise<boolean> {
+  if (role === "owner" || role === "admin") return true;
+  if (role !== "editor") return false;
+  const { data, error } = await supabase.from("profile_cost_access").select("profile_id").eq("profile_id", id).maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return true;
+    throw new Error(`อ่านสิทธิ์ดูต้นทุนไม่สำเร็จ: ${error.message}`);
+  }
+  return data !== null;
+}
+
+/**
+ * Another account's profile as the app sees it, its เห็นต้นทุน switch
+ * included, read with the caller's own session (owner and admin read every
+ * profile and every switch). Null when it cannot be read: a caller deciding
+ * by it must treat that as "no".
+ */
+export async function readProfileById(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<Profile | null> {
+  const { data, error } = await supabase.from("profiles").select("id, full_name, role, employee_id").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  return { ...data, sees_cost: await readCostSwitch(supabase, data.role as string, data.id as string) } as Profile;
+}
 
 export async function requireProfile(): Promise<Profile> {
   const profile = await getCurrentProfile();

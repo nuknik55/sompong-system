@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canSeePrep, prepRecipeIdForItem, PREP_FORBIDDEN } from "@/lib/prep-access";
 import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
+import { seesCost, withoutCostFields } from "@/lib/cost-access";
 
 // Item 12: returned, not thrown. getIngredientHistory (a read) keeps its throw.
 export type QtyUpdateResult = { status: "ok" } | { status: "error"; message: string };
@@ -58,8 +59,11 @@ export type IngredientSaveResult =
   | { status: "pending" }
   | { status: "error"; message: string };
 
-export async function updateIngredient(id: string, ingredientName: string, fields: Partial<IngredientFields>): Promise<IngredientSaveResult> {
+export async function updateIngredient(id: string, ingredientName: string, input: Partial<IngredientFields>): Promise<IngredientSaveResult> {
   const profile = await requireAdminOrEditor();
+  // Never a price from someone who cannot see prices (lib/cost-access.ts):
+  // an approved request would write the empty boxes over the real ones.
+  const fields = seesCost(profile) ? input : withoutCostFields(input);
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "ingredient_edit", id, {
@@ -77,8 +81,11 @@ export async function updateIngredient(id: string, ingredientName: string, field
   return { status: "saved" };
 }
 
-export async function createIngredient(ingredientName: string, fields: IngredientFields): Promise<IngredientSaveResult> {
+export async function createIngredient(ingredientName: string, input: IngredientFields): Promise<IngredientSaveResult> {
   const profile = await requireAdminOrEditor();
+  // The same: a new ingredient from someone who cannot see prices has none;
+  // an admin sets them.
+  const fields = seesCost(profile) ? input : withoutCostFields(input);
 
   if (profile.role === "editor") {
     await savePendingChange(profile.id, "ingredient_create", `new:${ingredientName}`, {
@@ -159,7 +166,10 @@ export async function deleteCategory(category: string): Promise<IngredientSaveRe
 }
 
 export async function getIngredientHistory(ingredientId: string): Promise<PriceHistoryEntry[]> {
-  await requireAdminOrEditor();
+  const profile = await requireAdminOrEditor();
+  // The price history is cost (Nik, 2026-09-26); the database answers a
+  // switched-off editor with no rows as well.
+  if (!seesCost(profile)) return [];
   const supabase = await createClient();
 
   const { data: history, error } = await supabase

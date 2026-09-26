@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentProfile } from "@/lib/auth";
 import { editAccess } from "@/lib/edit-access";
-import { getSopByMenuId, getMenuOption } from "@/lib/sop-data";
+import { getSopByMenuId, getMenuOption, getSopTeam, getSopVisibility } from "@/lib/sop-data";
+import { SopVisibilityPanel } from "@/components/sop-visibility-panel";
 import { SopPlayer } from "@/components/sop-player";
 import { Pencil } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
@@ -39,8 +40,24 @@ export default async function SopViewPage({
     );
   }
 
+  // Who sees this SOP: owner and admin set it (Nik, 2026-09-26).
+  const [visibility, team] = access === "direct"
+    ? await Promise.all([getSopVisibility(sop.sopId), getSopTeam()])
+    : [null, []];
+
   return (
     <div className="relative">
+      {visibility && (
+        <SopVisibilityPanel
+          sopId={sop.sopId}
+          menuId={menuId}
+          initialVisibility={visibility.visibility}
+          // Only accounts the panel can list: one chosen and promoted to
+          // admin since is not a choice any more (the save drops it too).
+          initialViewerIds={visibility.viewerIds.filter((id) => team.some((m) => m.id === id))}
+          team={team}
+        />
+      )}
       {canEdit && (
         <div className="no-print absolute right-4 top-3 z-30">
           <Link

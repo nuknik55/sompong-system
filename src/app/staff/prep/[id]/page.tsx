@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCostingContext } from "@/lib/data";
 import { getCurrentProfile } from "@/lib/auth";
 import { editAccess } from "@/lib/edit-access";
+import { seesCost } from "@/lib/cost-access";
 import { canSeePrep } from "@/lib/prep-access";
 import { RecipeEditor } from "@/components/recipe-editor";
 import { PrepYieldEditor } from "@/components/prep-yield-editor";
@@ -47,6 +48,8 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
   // Every role that cannot edit gets the read-only view with no costs
   // (item 34): an allowlist, as on the menu page.
   const canEdit = access !== "view";
+  // A prep's cost is a cost (Nik, 2026-09-26): shown to those seesCost admits.
+  const showCosts = canEdit && seesCost(profile);
 
   return (
     <PageShell>
@@ -99,12 +102,12 @@ export default async function StaffPrepEditPage({ params }: { params: Promise<{ 
         ingredients={ingredients
           .filter((i) => i.prep_recipe_id !== prep.id)
           .map((i) => ({ id: i.id, name: i.name, category: i.category, usage_unit: i.usage_unit, is_prep: i.is_prep }))}
-        unitCosts={canEdit ? unitCostsObj : {}}
+        unitCosts={showCosts ? unitCostsObj : {}}
         readOnly={!canEdit}
         submitMode={isEditor ? "pending" : "save"}
-        showCosts={canEdit}
+        showCosts={showCosts}
       />
-      {canEdit && (
+      {showCosts && (
         <p className="text-xs text-neutral-500">
           ต้นทุนรวมข้างบน คือต้นทุนของเตรียม 1 รอบ ({prep.batch_yield_qty} {prep.batch_yield_unit}) — ต้นทุนต่อหน่วยที่เมนูอื่นใช้
           จะถูกหารด้วยจำนวนนี้โดยอัตโนมัติ

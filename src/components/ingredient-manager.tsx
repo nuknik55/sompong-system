@@ -97,11 +97,16 @@ export function IngredientManager({
   unitCosts,
   usageMap = {},
   submitMode = "save",
+  showCosts = true,
 }: {
   ingredients: IngredientRow[];
   unitCosts: Record<string, number | null>;
   usageMap?: UsageMap;
   submitMode?: "save" | "pending";
+  /** False for an editor whose เห็นต้นทุน switch is off (Nik, 2026-09-26):
+   *  no price, receive or yield box, no cost per unit, no price history, and
+   *  a save sends none of those fields (the server drops them too). */
+  showCosts?: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(ingredients);
@@ -158,9 +163,7 @@ export function IngredientManager({
           name: row.name,
           category: row.category,
           purchase_unit_label: row.purchase_unit_label,
-          purchase_cost: row.purchase_cost,
-          receive_qty: row.receive_qty,
-          yield_qty: row.yield_qty,
+          ...(showCosts ? { purchase_cost: row.purchase_cost, receive_qty: row.receive_qty, yield_qty: row.yield_qty } : {}),
           usage_unit: row.usage_unit,
           par_level: row.par_level,
         });
@@ -368,27 +371,31 @@ export function IngredientManager({
               className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
           </Field>
-          <Field label="ราคาซื้อ ต่อหน่วยซื้อ (บาท)">
-            <NumberInput
-              value={newForm.purchase_cost}
-              onChange={(v) => setNewForm((f) => ({ ...f, purchase_cost: v }))}
-              className="w-full"
-            />
-          </Field>
-          <Field label="จำนวนรับ (กี่หน่วยซื้อ)">
-            <NumberInput
-              value={newForm.receive_qty}
-              onChange={(v) => setNewForm((f) => ({ ...f, receive_qty: v ?? 1 }))}
-              className="w-full"
-            />
-          </Field>
-          <Field label="จำนวนตัดแต่ง / yield (รวมเป็นหน่วยใช้จริง)">
-            <NumberInput
-              value={newForm.yield_qty}
-              onChange={(v) => setNewForm((f) => ({ ...f, yield_qty: v }))}
-              className="w-full"
-            />
-          </Field>
+          {showCosts && (
+            <>
+              <Field label="ราคาซื้อ ต่อหน่วยซื้อ (บาท)">
+                <NumberInput
+                  value={newForm.purchase_cost}
+                  onChange={(v) => setNewForm((f) => ({ ...f, purchase_cost: v }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="จำนวนรับ (กี่หน่วยซื้อ)">
+                <NumberInput
+                  value={newForm.receive_qty}
+                  onChange={(v) => setNewForm((f) => ({ ...f, receive_qty: v ?? 1 }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="จำนวนตัดแต่ง / yield (รวมเป็นหน่วยใช้จริง)">
+                <NumberInput
+                  value={newForm.yield_qty}
+                  onChange={(v) => setNewForm((f) => ({ ...f, yield_qty: v }))}
+                  className="w-full"
+                />
+              </Field>
+            </>
+          )}
           <Field label="หน่วยใช้จริง (เช่น กรัม)">
             <input
               value={newForm.usage_unit ?? ""}
@@ -423,11 +430,11 @@ export function IngredientManager({
               <th className="px-2 py-2">ชื่อ</th>
               <th className="px-2 py-2">หมวด</th>
               <th className="px-2 py-2">หน่วยซื้อ</th>
-              <th className="px-2 py-2">ราคาซื้อ</th>
-              <th className="px-2 py-2">จำนวนรับ</th>
-              <th className="px-2 py-2">จำนวนตัดแต่ง</th>
+              {showCosts && <th className="px-2 py-2">ราคาซื้อ</th>}
+              {showCosts && <th className="px-2 py-2">จำนวนรับ</th>}
+              {showCosts && <th className="px-2 py-2">จำนวนตัดแต่ง</th>}
               <th className="px-2 py-2">หน่วยใช้จริง</th>
-              <th className="px-2 py-2 text-right">ต้นทุน/หน่วยใช้จริง</th>
+              {showCosts && <th className="px-2 py-2 text-right">ต้นทุน/หน่วยใช้จริง</th>}
               <th className="px-2 py-2 text-right">Par</th>
               <th className="px-2 py-2"></th>
               <th className="px-2 py-2"></th>
@@ -438,7 +445,8 @@ export function IngredientManager({
             {pageRows.map((row) => {
               const usage = usageMap[row.id];
               const usageCount = (usage?.menus.length ?? 0) + (usage?.preps.length ?? 0);
-              const isIncomplete = row.purchase_cost == null || !row.usage_unit?.trim();
+              // No price counts as missing only for someone who sees prices.
+              const isIncomplete = (showCosts && row.purchase_cost == null) || !row.usage_unit?.trim();
               return (
                 <>
                   <tr
@@ -477,27 +485,31 @@ export function IngredientManager({
                         className="w-28 rounded border border-neutral-200 px-1.5 py-1"
                       />
                     </td>
-                    <td className="px-2 py-1.5">
-                      <NumberInput
-                        value={row.purchase_cost}
-                        onChange={(v) => patchRow(row.id, { purchase_cost: v })}
-                        className="w-20"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumberInput
-                        value={row.receive_qty}
-                        onChange={(v) => patchRow(row.id, { receive_qty: v ?? 1 })}
-                        className="w-16"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumberInput
-                        value={row.yield_qty}
-                        onChange={(v) => patchRow(row.id, { yield_qty: v })}
-                        className="w-20"
-                      />
-                    </td>
+                    {showCosts && (
+                      <>
+                        <td className="px-2 py-1.5">
+                          <NumberInput
+                            value={row.purchase_cost}
+                            onChange={(v) => patchRow(row.id, { purchase_cost: v })}
+                            className="w-20"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <NumberInput
+                            value={row.receive_qty}
+                            onChange={(v) => patchRow(row.id, { receive_qty: v ?? 1 })}
+                            className="w-16"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <NumberInput
+                            value={row.yield_qty}
+                            onChange={(v) => patchRow(row.id, { yield_qty: v })}
+                            className="w-20"
+                          />
+                        </td>
+                      </>
+                    )}
                     <td className="px-2 py-1.5">
                       <input
                         value={row.usage_unit ?? ""}
@@ -505,9 +517,11 @@ export function IngredientManager({
                         className="w-20 rounded border border-neutral-200 px-1.5 py-1"
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">
-                      {formatBaht(unitCosts[row.id] ?? null)}
-                    </td>
+                    {showCosts && (
+                      <td className="px-2 py-1.5 text-right tabular-nums text-neutral-500">
+                        {formatBaht(unitCosts[row.id] ?? null)}
+                      </td>
+                    )}
                     <td className="px-2 py-1.5">
                       <NumberInput
                         value={row.par_level}
@@ -552,8 +566,8 @@ export function IngredientManager({
                   </tr>
                   {expandedId === row.id && (
                     <tr className="border-b border-neutral-100 bg-neutral-50">
-                      <td colSpan={11} className="px-4 py-3">
-                        <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} />
+                      <td colSpan={showCosts ? 12 : 8} className="px-4 py-3">
+                        <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} showHistory={showCosts} />
                       </td>
                     </tr>
                   )}
@@ -569,7 +583,8 @@ export function IngredientManager({
         {pageRows.map((row) => {
           const usage = usageMap[row.id];
           const usageCount = (usage?.menus.length ?? 0) + (usage?.preps.length ?? 0);
-          const isIncomplete = row.purchase_cost == null || !row.usage_unit?.trim();
+          // No price counts as missing only for someone who sees prices.
+              const isIncomplete = (showCosts && row.purchase_cost == null) || !row.usage_unit?.trim();
           return (
             <div
               key={row.id}
@@ -612,34 +627,40 @@ export function IngredientManager({
                     className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
                   />
                 </label>
-                <label className="block space-y-0.5">
-                  <span className="text-xs text-neutral-500">ราคาซื้อ (บาท)</span>
-                  <NumberInput
-                    value={row.purchase_cost}
-                    onChange={(v) => patchRow(row.id, { purchase_cost: v })}
-                    className="w-full"
-                  />
-                </label>
+                {showCosts && (
+                  <label className="block space-y-0.5">
+                    <span className="text-xs text-neutral-500">ราคาซื้อ (บาท)</span>
+                    <NumberInput
+                      value={row.purchase_cost}
+                      onChange={(v) => patchRow(row.id, { purchase_cost: v })}
+                      className="w-full"
+                    />
+                  </label>
+                )}
               </div>
 
               {/* Row 3: จำนวนรับ + ตัดแต่ง + หน่วยใช้จริง */}
               <div className="mb-2 grid grid-cols-3 gap-2">
-                <label className="block space-y-0.5">
-                  <span className="text-xs text-neutral-500">จำนวนรับ</span>
-                  <NumberInput
-                    value={row.receive_qty}
-                    onChange={(v) => patchRow(row.id, { receive_qty: v ?? 1 })}
-                    className="w-full"
-                  />
-                </label>
-                <label className="block space-y-0.5">
-                  <span className="text-xs text-neutral-500">ตัดแต่ง</span>
-                  <NumberInput
-                    value={row.yield_qty}
-                    onChange={(v) => patchRow(row.id, { yield_qty: v })}
-                    className="w-full"
-                  />
-                </label>
+                {showCosts && (
+                  <>
+                    <label className="block space-y-0.5">
+                      <span className="text-xs text-neutral-500">จำนวนรับ</span>
+                      <NumberInput
+                        value={row.receive_qty}
+                        onChange={(v) => patchRow(row.id, { receive_qty: v ?? 1 })}
+                        className="w-full"
+                      />
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-xs text-neutral-500">ตัดแต่ง</span>
+                      <NumberInput
+                        value={row.yield_qty}
+                        onChange={(v) => patchRow(row.id, { yield_qty: v })}
+                        className="w-full"
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="block space-y-0.5">
                   <span className="text-xs text-neutral-500">หน่วยใช้จริง</span>
                   <input
@@ -651,12 +672,14 @@ export function IngredientManager({
               </div>
 
               {/* Computed cost */}
-              <p className="mb-2 text-xs text-neutral-500">
-                ต้นทุน/หน่วยใช้จริง:{" "}
-                <span className="font-medium tabular-nums text-neutral-700">
-                  {formatBaht(unitCosts[row.id] ?? null)} บาท
-                </span>
-              </p>
+              {showCosts && (
+                <p className="mb-2 text-xs text-neutral-500">
+                  ต้นทุน/หน่วยใช้จริง:{" "}
+                  <span className="font-medium tabular-nums text-neutral-700">
+                    {formatBaht(unitCosts[row.id] ?? null)} บาท
+                  </span>
+                </p>
+              )}
 
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2">
@@ -691,7 +714,7 @@ export function IngredientManager({
               {/* Expandable detail */}
               {expandedId === row.id && (
                 <div className="mt-3 rounded-md bg-neutral-50 p-3">
-                  <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} />
+                  <IngredientDetail ingredientId={row.id} usage={usage} unit={row.usage_unit} showHistory={showCosts} />
                 </div>
               )}
             </div>
@@ -785,16 +808,19 @@ function IngredientDetail({
   ingredientId,
   usage,
   unit,
+  showHistory,
 }: {
   ingredientId: string;
   usage?: { menus: { id: string; name: string; itemId: string; quantity: number }[]; preps: { id: string; name: string; itemId: string; quantity: number }[] };
   unit: string | null;
+  /** The price history is cost: not asked for, and not shown, without it. */
+  showHistory: boolean;
 }) {
   const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
 
   useEffect(() => {
-    getIngredientHistory(ingredientId).then(setHistory);
-  }, [ingredientId]);
+    if (showHistory) getIngredientHistory(ingredientId).then(setHistory);
+  }, [ingredientId, showHistory]);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -830,7 +856,7 @@ function IngredientDetail({
           {!usage?.preps.length && <li className="text-sm text-neutral-500">ไม่มี</li>}
         </ul>
       </div>
-      <div>
+      {showHistory && <div>
         <p className="mb-1 text-xs font-medium text-neutral-500">ประวัติการแก้ราคา (ล่าสุด 20 ครั้ง)</p>
         {history == null ? (
           <p className="text-sm text-neutral-500">กำลังโหลด...</p>
@@ -855,7 +881,7 @@ function IngredientDetail({
             ))}
           </ul>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

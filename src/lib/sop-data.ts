@@ -1,5 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingColumn, isMissingRelation } from "@/lib/schema-fallback";
+import { SOP_REQUEST_REFUSAL, sopVisibleTo, type SopVisibility } from "@/lib/sop-visibility";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -16,6 +18,8 @@ export type SopListItem = {
   platingCount: number | null;
   checklistCount: number | null;
   hasVideo: boolean | null;
+  /** Open to chosen accounts only (a lock on the screen). Anyone reading it may see it: the database hides it from everyone else. */
+  restricted: boolean;
 };
 
 export type MenuIngredientForSop = {
@@ -42,6 +46,8 @@ export type SopFullData = {
   authorName: string | null;
   updatedAt: string;
   demoVideoUrl: string | null;
+  /** Open to chosen accounts only (a lock on the screen). */
+  restricted: boolean;
   ingredients: MenuIngredientForSop[];
   prepSteps: SopStepRecord[];
   cookSteps: SopStepRecord[];
@@ -57,13 +63,34 @@ export type MenuOption = {
 
 // ── Fetchers ─────────────────────────────────────────────────────
 
+type SopRow = { id: string; menu_id: string; updated_at: string; author_name: string | null; demo_video_url: string | null; visibility: string };
+
+/**
+ * The SOP rows this person may see (the database hides the rest), with their
+ * visibility. Before sop_visibility_and_editor_cost_switch_migration.sql adds
+ * the column, every SOP is open to everyone, as it was.
+ */
+async function readSops(supabase: Awaited<ReturnType<typeof createClient>>, menuId?: string): Promise<SopRow[]> {
+  const cols = "id, menu_id, updated_at, author_name, demo_video_url";
+  let q = supabase.from("menu_sops").select(`${cols}, visibility`);
+  if (menuId) q = q.eq("menu_id", menuId);
+  const r = await q;
+  if (!r.error) return (r.data ?? []) as unknown as SopRow[];
+  if (!isMissingColumn(r.error, "visibility")) throw new Error(`อ่าน SOP ไม่สำเร็จ: ${r.error.message}`);
+  let q2 = supabase.from("menu_sops").select(cols);
+  if (menuId) q2 = q2.eq("menu_id", menuId);
+  const r2 = await q2;
+  if (r2.error) throw new Error(`อ่าน SOP ไม่สำเร็จ: ${r2.error.message}`);
+  return ((r2.data ?? []) as unknown as Omit<SopRow, "visibility">[]).map((x) => ({ ...x, visibility: "all" }));
+}
+
 /** All menus + their SOP status — used for the index/list page. */
 export async function getSopList(): Promise<SopListItem[]> {
   const supabase = await createClient();
 
-  const [{ data: menus }, { data: sops }, { data: steps }] = await Promise.all([
+  const [{ data: menus }, sops, { data: steps }] = await Promise.all([
     supabase.from("menus").select("id, name, category").order("name"),
-    supabase.from("menu_sops").select("id, menu_id, updated_at, author_name, demo_video_url"),
+    readSops(supabase),
     supabase.from("menu_sop_steps").select("sop_id, section"),
   ]);
 
@@ -75,8 +102,8 @@ export async function getSopList(): Promise<SopListItem[]> {
     c[s.section] = (c[s.section] ?? 0) + 1;
   }
 
-  const sopByMenuId = new Map<string, { id: string; updated_at: string; author_name: string | null; demo_video_url: string | null }>();
-  for (const s of sops ?? []) sopByMenuId.set(s.menu_id, s);
+  const sopByMenuId = new Map<string, SopRow>();
+  for (const s of sops) sopByMenuId.set(s.menu_id, s);
 
   return (menus ?? []).map((m) => {
     const sop = sopByMenuId.get(m.id) ?? null;
@@ -93,6 +120,7 @@ export async function getSopList(): Promise<SopListItem[]> {
       platingCount: counts?.plating ?? null,
       checklistCount: counts?.checklist ?? null,
       hasVideo: sop ? !!(sop.demo_video_url?.trim()) : null,
+      restricted: sop?.visibility === "chosen",
     };
   });
 }
@@ -157,15 +185,9 @@ export async function getMenuIngredientsForSop(
 export async function getSopByMenuId(menuId: string): Promise<SopFullData | null> {
   const supabase = await createClient();
 
-  const { data: sop } = await supabase
-    .from("menu_sops")
-    .select("id, menu_id, author_name, updated_at, demo_video_url, menus(id, name, category)")
-    .eq("menu_id", menuId)
-    .single();
-
+  const [sop] = await readSops(supabase, menuId);
   if (!sop) return null;
-
-  const menu = sop.menus as unknown as { id: string; name: string; category: string | null } | null;
+  const menu = await getMenuOption(menuId);
 
   const [ingredients, { data: steps }] = await Promise.all([
     getMenuIngredientsForSop(menuId, sop.id),
@@ -196,10 +218,74 @@ export async function getSopByMenuId(menuId: string): Promise<SopFullData | null
     authorName: sop.author_name,
     updatedAt: sop.updated_at,
     demoVideoUrl: sop.demo_video_url,
+    restricted: sop.visibility === "chosen",
     ingredients,
     prepSteps: mapSteps("prep"),
     cookSteps: mapSteps("cook"),
     platingSteps: mapSteps("plating"),
     checklist: mapSteps("checklist"),
   };
+}
+
+// ── Per-SOP "who can see" (Nik, 2026-09-26) ─────────────────────────
+
+/**
+ * An SOP's setting, for the owner/admin panel: its visibility and the chosen
+ * accounts. Null before the migration adds them (the panel is not shown).
+ */
+export async function getSopVisibility(sopId: string): Promise<{ visibility: SopVisibility; viewerIds: string[] } | null> {
+  const supabase = await createClient();
+  const [sop, viewers] = await Promise.all([
+    supabase.from("menu_sops").select("visibility").eq("id", sopId).maybeSingle(),
+    supabase.from("menu_sop_viewers").select("profile_id").eq("sop_id", sopId),
+  ]);
+  if (sop.error && isMissingColumn(sop.error, "visibility")) return null;
+  if (viewers.error && isMissingRelation(viewers.error)) return null;
+  if (sop.error) throw new Error(`อ่านการตั้งค่า SOP ไม่สำเร็จ: ${sop.error.message}`);
+  if (viewers.error) throw new Error(`อ่านรายชื่อที่เห็น SOP ไม่สำเร็จ: ${viewers.error.message}`);
+  if (!sop.data) return null;
+  return {
+    visibility: sop.data.visibility === "chosen" ? "chosen" : "all",
+    viewerIds: (viewers.data ?? []).map((v) => v.profile_id as string),
+  };
+}
+
+/** The accounts that may be chosen: everyone but owner and admin (they see every SOP). */
+export async function getSopTeam(): Promise<{ id: string; full_name: string; role: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("profiles").select("id, full_name, role").not("role", "in", "(owner,admin)");
+  if (error) throw new Error(`อ่านรายชื่อพนักงานไม่สำเร็จ: ${error.message}`);
+  const order = ["editor", "staff", "hr", "sales"];
+  return (data ?? [])
+    .map((p) => ({ id: p.id as string, full_name: p.full_name as string, role: p.role as string }))
+    .sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role) || a.full_name.localeCompare(b.full_name, "th"));
+}
+
+/**
+ * For approving an SOP request: null when its sender may see the SOP of that
+ * menu (or there is none yet: a new SOP is open to all), else the refusal.
+ * Read with the approver's session, which sees every SOP. Fails CLOSED: a
+ * read that fails refuses.
+ */
+export async function sopRequestRefusal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  menuId: string,
+  requesterId: string,
+): Promise<string | null> {
+  const sop = await supabase.from("menu_sops").select("id, visibility").eq("menu_id", menuId).maybeSingle();
+  if (sop.error) {
+    if (isMissingColumn(sop.error, "visibility")) return null;
+    return `ตรวจสิทธิ์ SOP ไม่สำเร็จ จึงยังไม่อนุมัติ: ${sop.error.message}`;
+  }
+  if (!sop.data || sop.data.visibility === "all") return null;
+  const [who, viewers] = await Promise.all([
+    supabase.from("profiles").select("id, role").eq("id", requesterId).maybeSingle(),
+    supabase.from("menu_sop_viewers").select("profile_id").eq("sop_id", sop.data.id),
+  ]);
+  if (who.error || viewers.error) return "ตรวจสิทธิ์ SOP ไม่สำเร็จ จึงยังไม่อนุมัติ";
+  const ok = sopVisibleTo(
+    { visibility: sop.data.visibility as string, viewerIds: (viewers.data ?? []).map((v) => v.profile_id as string) },
+    { id: requesterId, role: (who.data?.role as string | undefined) ?? null },
+  );
+  return ok ? null : SOP_REQUEST_REFUSAL;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createUser, deleteUser, setUserDisabled, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
+import { createUser, deleteUser, setCostAccess, setUserDisabled, updateUserDetails, updateUserRole, changePassword } from "@/app/owner/team/actions";
 import type { Role } from "@/lib/auth";
 import { assignableRoles, teamRefusal } from "@/lib/team-rules";
 import { buttonClass } from "@/components/ui/button";
@@ -16,6 +16,8 @@ export type TeamUser = {
   holds_prep_grants: boolean;
   /** The login is banned: it keeps its profile and its order history, and cannot sign in. */
   disabled: boolean;
+  /** An editor's เห็นต้นทุน switch (owner and admin always see cost). */
+  sees_cost: boolean;
 };
 
 export type EmployeeOption = { id: string; label: string };
@@ -43,11 +45,14 @@ export function TeamManager({
   currentUserId,
   currentUserRole,
   employeeOptions,
+  costSwitch = "not-yet",
 }: {
   users: TeamUser[];
   currentUserId: string;
   currentUserRole: Role;
   employeeOptions: EmployeeOption[];
+  /** "ready" once the switch table exists; the owner alone may change it. */
+  costSwitch?: "ready" | "not-yet" | "unreadable";
 }) {
   // What this screen offers comes from the same rule the server actions
   // enforce (@/lib/team-rules), so the two cannot disagree (item 29).
@@ -158,8 +163,18 @@ export function TeamManager({
       (m) => setRowError((prev) => ({ ...prev, [id]: m })),
       {
         revert: () => setSelectedRole((prev) => ({ ...prev, [id]: list.find((u) => u.id === id)?.role ?? prev[id] })),
-        onOk: () => setList((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u))),
+        onOk: () => setList((prev) => prev.map((u) => (u.id === id ? { ...u, role, sees_cost: role === "editor" ? u.sees_cost : false } : u))),
       },
+    );
+  }
+
+  // The เห็นต้นทุน switch: the owner turns it on or off per editor; admin sees it.
+  function toggleCost(id: string, on: boolean) {
+    clearRowErr(id);
+    runWrite(
+      () => setCostAccess(id, on),
+      (m) => setRowError((prev) => ({ ...prev, [id]: m })),
+      { onOk: () => setList((prev) => prev.map((u) => (u.id === id ? { ...u, sees_cost: on } : u))) },
     );
   }
 
@@ -419,6 +434,21 @@ export function TeamManager({
                           </div>
                         ) : (
                           <span className="text-sm text-neutral-500">{ROLE_LABEL[u.role]}</span>
+                        )}
+                        {u.role === "editor" && costSwitch === "ready" && (
+                          <label className={`mt-1.5 flex items-center gap-1.5 text-xs ${currentUserRole === "owner" ? "cursor-pointer text-neutral-700" : "text-neutral-500"}`}>
+                            <input
+                              type="checkbox"
+                              checked={u.sees_cost}
+                              disabled={currentUserRole !== "owner" || isPending}
+                              onChange={(e) => toggleCost(u.id, e.target.checked)}
+                            />
+                            เห็นต้นทุน
+                            {currentUserRole !== "owner" && <span className="text-neutral-500">(เจ้าของร้านเป็นคนตั้ง)</span>}
+                          </label>
+                        )}
+                        {u.role === "editor" && costSwitch === "unreadable" && (
+                          <p className="mt-1.5 text-xs text-danger">อ่านสวิตช์ “เห็นต้นทุน” ไม่ได้ — รีเฟรชแล้วลองใหม่</p>
                         )}
                       </td>
 

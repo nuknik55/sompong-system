@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Lock, Search } from "lucide-react";
 import { deleteSop } from "@/app/sop/actions";
 import type { SopListItem } from "@/lib/sop-data";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -98,9 +98,10 @@ export function SopListClient({
             <li key={item.menuId} className="flex flex-wrap items-center gap-2 px-4 py-3">
               <Link
                 href={`/sop/${item.menuId}`}
-                className="min-w-0 flex-1 font-medium text-neutral-800 hover:text-primary"
+                className="flex min-w-0 flex-1 items-center gap-1.5 font-medium text-neutral-800 hover:text-primary"
               >
-                {item.menuName}
+                {item.restricted && <Lock className="h-3.5 w-3.5 shrink-0 text-pending-ink" aria-label="เฉพาะคนที่เลือก" />}
+                <span className="min-w-0">{item.menuName}</span>
               </Link>
 
               <span className="shrink-0"><AccentTag accent={accentFor(cat)}>{cat}</AccentTag></span>

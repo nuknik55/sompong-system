@@ -33,7 +33,7 @@ type Props = {
   onSavePrice?: (menuId: string, newPrice: number) => Promise<{ status: "ok" } | { status: "error"; message: string }>;
   readOnly?: boolean;          // no editing at all: every role editAccess() says only views
   submitMode?: "save" | "pending";  // editor: pending approval flow
-  showCosts?: boolean;         // false for those same roles: hides all cost/profit figures
+  showCosts?: boolean;         // false for those roles, and for an editor whose เห็นต้นทุน switch is off: hides every cost/profit figure, in edit mode too
 };
 
 function formatBaht(n: number) {
@@ -240,7 +240,7 @@ export function RecipeEditor({
               <th className="px-3 py-2">วัตถุดิบ / ของเตรียม</th>
               <th className="px-3 py-2">ปริมาณ</th>
               <th className="px-3 py-2">หน่วย</th>
-              <th className="px-3 py-2 text-right">ต้นทุนบรรทัดนี้ (บาท)</th>
+              {showCosts && <th className="px-3 py-2 text-right">ต้นทุนบรรทัดนี้ (บาท)</th>}
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -259,7 +259,7 @@ export function RecipeEditor({
                         patchLocal(item.id, { ingredient_id, unit });
                       }}
                     />
-                    {missing && <p className="mt-1 text-xs text-pending-ink">ยังไม่มีราคาสำหรับวัตถุดิบนี้ — แจ้ง Admin ให้ตั้งราคา</p>}
+                    {showCosts && missing && <p className="mt-1 text-xs text-pending-ink">ยังไม่มีราคาสำหรับวัตถุดิบนี้ — แจ้ง Admin ให้ตั้งราคา</p>}
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -277,7 +277,7 @@ export function RecipeEditor({
                     />
                   </td>
                   <td className="px-3 py-2 text-neutral-500">{ing?.usage_unit ?? item.unit ?? "-"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatBaht(lineCost(item))}</td>
+                  {showCosts && <td className="px-3 py-2 text-right tabular-nums">{formatBaht(lineCost(item))}</td>}
                   <td className="px-3 py-2 text-right">
                     <button type="button" className={buttonClass("link", { dangerHover: true })} onClick={() => removeRow(item.id)}>ลบ</button>
                   </td>
@@ -314,20 +314,22 @@ export function RecipeEditor({
       </div>
       {saveError && <p className="text-sm text-danger">{saveError}</p>}
 
-      <CostSummary
-        ingredientCost={ingredientCost}
-        qFactorAmount={qFactorAmount}
-        totalCost={totalCost}
-        target={target}
-        qFactorPct={qFactorPct}
-        sellingPrice={effectivePrice}
-        foodCostPct={foodCostPct}
-        hasMissingCost={hasMissingCost}
-        hasIncompleteRow={hasIncompleteRow}
-        canEditPrice={canEditPrice}
-        priceInput={priceInput}
-        onPriceChange={(v) => { setPriceInput(v); setSaveStatus("idle"); }}
-      />
+      {showCosts && (
+        <CostSummary
+          ingredientCost={ingredientCost}
+          qFactorAmount={qFactorAmount}
+          totalCost={totalCost}
+          target={target}
+          qFactorPct={qFactorPct}
+          sellingPrice={effectivePrice}
+          foodCostPct={foodCostPct}
+          hasMissingCost={hasMissingCost}
+          hasIncompleteRow={hasIncompleteRow}
+          canEditPrice={canEditPrice}
+          priceInput={priceInput}
+          onPriceChange={(v) => { setPriceInput(v); setSaveStatus("idle"); }}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import * as orderRules from "./order-rules.ts";
+import * as schemaFallback from "./schema-fallback.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = fs.readFileSync(path.join(HERE, "auth.ts"), "utf8");
@@ -40,6 +41,19 @@ function load(source: string, current: { who: Who }) {
   const client = {
     auth: { getUser: async () => ({ data: { user: current.who.user } }) },
     from(table: string) {
+      // The เห็นต้นทุน switch, read for an editor by its own id: off here. No
+      // guard depends on it (lib/cost-access.ts decides what cost is shown).
+      if (table === "profile_cost_access") {
+        const c = {
+          select: () => c,
+          eq: (col: string, v: string) => {
+            if (col !== "profile_id" || v !== current.who.user?.id) throw new Error("the switch was read by an unexpected key");
+            return c;
+          },
+          maybeSingle: async () => ({ data: null, error: null }),
+        };
+        return c;
+      }
       if (table !== "profiles") throw new Error("the guard read an unexpected table: " + table);
       const q = {
         select: () => q,
@@ -59,6 +73,7 @@ function load(source: string, current: { who: Who }) {
     "next/navigation": { redirect: (to: string) => { throw new Redirected(to); } },
     "@/lib/supabase/server": { createClient: async () => client },
     "@/lib/order-rules": orderRules,
+    "@/lib/schema-fallback": schemaFallback,
   };
   const mod = { exports: {} as Record<string, unknown> };
   const req = (id: string) => {

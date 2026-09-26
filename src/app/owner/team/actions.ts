@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireOwner } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toAuthEmail } from "@/lib/identity";
@@ -102,6 +102,36 @@ export async function createUser(
 }
 
 export type ActionResult = { error?: string };
+
+/**
+ * The เห็นต้นทุน switch (Nik, 2026-09-26): the OWNER turns it on or off, for
+ * an editor only. On, the editor sees purchase prices, the price history,
+ * POS receipt costs, prep and dish costs, food-cost % and margin; off (the
+ * default), none of them. Written with the owner's own session: the table's
+ * policies (owner only, editors only) are the rule, and a refused write is
+ * counted, so it is reported instead of shown as done.
+ */
+export async function setCostAccess(userId: string, on: boolean): Promise<ActionResult> {
+  await requireOwner();
+  const supabase = await createClient();
+  const { data: target, error: readError } = await supabase.from("profiles").select("id, role").eq("id", userId).maybeSingle();
+  if (readError) return { error: `ตรวจสอบบัญชีไม่สำเร็จ จึงยังไม่เปลี่ยน: ${readError.message}` };
+  if (!target) return { error: "ไม่พบบัญชีนี้" };
+  if (target.role !== "editor") return { error: "สวิตช์ “เห็นต้นทุน” ใช้กับบัญชี Editor เท่านั้น (เจ้าของและ Admin เห็นต้นทุนเสมอ)" };
+  if (on) {
+    const { error } = await supabase.from("profile_cost_access").upsert({ profile_id: userId }, { onConflict: "profile_id", ignoreDuplicates: true });
+    if (error) return { error: `เปิดสิทธิ์ดูต้นทุนไม่สำเร็จ: ${error.message}` };
+  } else {
+    const { error } = await supabase.from("profile_cost_access").delete().eq("profile_id", userId);
+    if (error) return { error: `ปิดสิทธิ์ดูต้นทุนไม่สำเร็จ: ${error.message}` };
+  }
+  // Read back: the answer is what the table now says, not what was sent.
+  const { data: now, error: checkError } = await supabase.from("profile_cost_access").select("profile_id").eq("profile_id", userId).maybeSingle();
+  if (checkError) return { error: `ตรวจผลไม่สำเร็จ: ${checkError.message}` };
+  if ((now !== null) !== on) return { error: "ไม่ได้บันทึก — ฐานข้อมูลไม่อนุญาต" };
+  revalidatePath("/owner/team");
+  return {};
+}
 
 export async function updateUserRole(userId: string, role: Role): Promise<ActionResult> {
   const me = await requireAdmin();

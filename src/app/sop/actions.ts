@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdminOrEditor } from "@/lib/auth";
+import { requireAdmin, requireAdminOrEditor } from "@/lib/auth";
 import { savePendingChange } from "@/lib/pending-data";
 import { photoOnlyStepProblem } from "@/components/sop-rules";
 
@@ -104,6 +104,31 @@ export async function deleteSop(menuId: string, menuName?: string): Promise<SopD
   const supabase = await createClient();
   const { error } = await supabase.from("menu_sops").delete().eq("menu_id", menuId);
   if (error) return { status: "error", message: error.message };
+  revalidatePath("/sop");
+  revalidatePath(`/sop/${menuId}`);
+  return { status: "saved" };
+}
+
+export type SopVisibilityResult = { status: "saved" } | { status: "error"; message: string };
+
+/**
+ * Who sees an SOP (Nik, 2026-09-26): owner and admin only. THE one save of
+ * the setting and its chosen accounts, in one transaction, by the database's
+ * sop_set_visibility, which checks the role, the SOP and every account again.
+ */
+export async function setSopVisibility(sopId: string, menuId: string, visibility: string, viewerIds: string[]): Promise<SopVisibilityResult> {
+  await requireAdmin();
+  if (visibility !== "all" && visibility !== "chosen") return { status: "error", message: "การตั้งค่าไม่ถูกต้อง" };
+  if (!Array.isArray(viewerIds) || viewerIds.length > 200 || viewerIds.some((v) => typeof v !== "string")) {
+    return { status: "error", message: "รายชื่อไม่ถูกต้อง" };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("sop_set_visibility", {
+    p_sop: sopId,
+    p_visibility: visibility,
+    p_viewers: visibility === "chosen" ? viewerIds : [],
+  });
+  if (error) return { status: "error", message: `บันทึกไม่สำเร็จ: ${error.message}` };
   revalidatePath("/sop");
   revalidatePath(`/sop/${menuId}`);
   return { status: "saved" };
