@@ -264,6 +264,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `prep_sops_manuals_and_private_photos_migration.sql` (`a83554b`) | Nik | Queue items 57, 58, 59. Expected: **111 rows, every line ok (or survey, skip), the last "row count verified: 110 evidence rows emitted, as expected (this line makes 111)"**. The live code does not wait for it: menu SOPs stay kind 'menu' with their menu, and nothing live reads the new columns. After it runs: set `NEXT_PUBLIC_SOP_PHOTOS_PRIVATE=1` in Vercel, then push the branch `private-sop-photos` (it holds `prep-sops-manuals`). Run it at a quiet time (it locks the SOP tables; an app write meanwhile stops it at K0, nothing applied: run it again). |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -4210,6 +4211,65 @@ and after Nik's import.
     that carries prices is hidden from them, and approving one drops its
     prices. Owner and admin always see cost;
     profit and the P&L stay owner-only.
+
+57. **Prep SOPs (Nik, 2026-09-26: option A, attached to a prep).** **WRITTEN,
+    NOT APPLIED:** `prep_sops_manuals_and_private_photos_migration.sql`
+    (`a83554b`); the app is on the local branch `prep-sops-manuals`
+    (`b09bfad`), inside `private-sop-photos`. An SOP row is now 'menu',
+    'prep' (one per prep recipe) or 'manual'. A prep SOP is read by owner,
+    admin and editors who can see THE PREP (admins only by grant: the
+    secret-prep rule wins), never by staff, hr or sales, then narrowed by
+    its own "who can see" (its chosen list takes editors only); written by
+    owner, admin and editors who can see the prep; saved directly, whole,
+    by `sop_doc_save` (no approval: prep SOPs have writers). Pages:
+    `/sop/prep/[id]` (+ `/edit`), a link on the prep page, an index on
+    `/sop` for owner, admin and editors.
+
+58. **คู่มือ manuals (Nik, 2026-09-26).** **WRITTEN, NOT APPLIED** (the same
+    file; the same branches). A title, a category and steps with photos
+    (the SOP editor and print); ทุกคน or เฉพาะคนที่เลือก (owner and admin set
+    it). Categories (`manual_categories`: ครัว, บริการ, จัดเลี้ยง, ทั่วไป to
+    begin with) are kept by owner and admin at `/manuals/categories`.
+    Writers: owner and admin everywhere; every editor where the category
+    says so (ครัว); and the accounts chosen per category
+    (`manual_category_writers`), whatever their role, so the service head
+    writes บริการ on a staff login. Staff read what is open to them, on a
+    shared login too; "คู่มือ" is in the sidebar of every role that can
+    read one.
+
+59. **SOP photos into a private bucket (Nik, 2026-09-26).** **PREPARED, NOT
+    APPLIED, NOTHING MOVED.** The same file makes `sop-photos-private`
+    (private, JPEG, 2 MB): a photo at `<document id>/<name>.jpg` is read by
+    whoever can read that document; one at `staging/<uploader>/<name>.jpg`
+    (before its document exists, or in an editor's request) by its
+    uploader, owner and admin; nobody updates or deletes a file there
+    through the API. The app (`private-sop-photos`, `1b62e8d`,
+    `0245a8c`) shows a photo from either bucket (a private one through a
+    one-hour signed link made with the VIEWER's session); new SOP photos go
+    private once `NEXT_PUBLIC_SOP_PHOTOS_PRIVATE=1`; prep SOPs and manuals
+    take photos ONLY privately, a prep SOP only once it exists. **The move**
+    (`scripts/move-sop-photos.mjs`, for Nik to run with Claude): dry run
+    first (read-only, 2026-09-26: 292 step photos to move, 12 of them PNGs
+    in a folder of one SOP, converted to JPEG as the app does, the largest
+    112 KB after; 423 files in sop-photos, 17 of them maintenance photos,
+    114 used by no step); `--apply` copies each file and changes that one
+    step, logging it; `--rollback` puts the old addresses back from the
+    log; NOTHING is deleted in either bucket. **Until the public originals
+    are deleted** (a separate decision), anyone who already holds one of
+    their addresses can still open it. **Maintenance photos** share
+    sop-photos (`maint-`, `maint-after-`) and stay there: every signed-in
+    account reads แจ้งซ่อม anyway; a private bucket of their own would
+    follow the same pattern.
+    **From the adversarial review (2026-09-26), in the file:** the chosen
+    lists follow the SOP (an admin without a secret prep's grant can neither
+    read nor change its SOP's list); an SOP's id is the database's (a
+    session's new SOP gets a fresh id; no session changes one), because a
+    photo is read by its SOP's id and files are never deleted; step photo
+    and video addresses have a shape (CHECKs; every live row fits);
+    `sop_row_visible` is dropped. **Accepted, recorded:** owner and admin
+    read every staging folder (they approve editors' menu-SOP requests); an
+    editor granted a prep but not chosen on its restricted SOP learns only
+    that one exists (the save's unique-key error).
 
 54. ~~**Ordering follows the paper sheet's hand-off (Nik, 2026-09-23).**~~
     **DONE 2026-09-24**, the follow-ups applied (see "Applied since").
