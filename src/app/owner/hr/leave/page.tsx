@@ -9,7 +9,9 @@ export default async function LeavePage({
 }: {
   searchParams: Promise<{ year?: string; month?: string; status?: string }>;
 }) {
-  await requireHROrAdmin();
+  const profile = await requireHROrAdmin();
+  // Every write on this screen is requireHR (owner, hr); admin reads it only.
+  const canEdit = profile.role === "owner" || profile.role === "hr";
   const sp = await searchParams;
   const year = sp.year ? parseInt(sp.year) : new Date().getFullYear();
   const month = sp.month ? parseInt(sp.month) : undefined;
@@ -24,6 +26,7 @@ export default async function LeavePage({
 
   return (
     <LeaveClient
+      canEdit={canEdit}
       initialRequests={requests}
       employees={employees.filter((e) => e.is_active)}
       leaveTypes={leaveTypes.filter((lt) => lt.is_active)}

@@ -17,7 +17,9 @@ export default async function SchedulePage({
 }: {
   searchParams: Promise<{ week?: string; dept?: string }>;
 }) {
-  await requireHROrAdmin();
+  const profile = await requireHROrAdmin();
+  // Every write on this screen is requireHR (owner, hr); admin reads it only.
+  const canEdit = profile.role === "owner" || profile.role === "hr";
   const sp = await searchParams;
 
   const today = bangkokToday();
@@ -38,6 +40,7 @@ export default async function SchedulePage({
 
   return (
     <ScheduleClient
+      canEdit={canEdit}
       employees={employees.filter((e) => e.is_active)}
       departments={departments.filter((d) => d.is_active)}
       notes={notes}

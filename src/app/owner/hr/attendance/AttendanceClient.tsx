@@ -55,7 +55,10 @@ export function AttendanceClient({
   year,
   month,
   deptId,
+  canEdit,
 }: {
+  /** Owner and hr; admin reads the month only (every write is requireHR). */
+  canEdit: boolean;
   employees: Employee[];
   departments: Department[];
   initialRecords: AttendanceDaily[];
@@ -151,6 +154,7 @@ export function AttendanceClient({
   }
 
   function openEdit(emp: Employee, day: number) {
+    if (!canEdit) return;
     const rec = getRecord(emp.id, day);
     const ds = dateStr(day);
     const isHol = holidayDates.has(ds);
@@ -318,6 +322,7 @@ export function AttendanceClient({
   }
 
   function handleCellMouseDown(emp: Employee, day: number) {
+    if (!canEdit) return;
     isDraggingRef.current = true;
     dragEmpIdRef.current = emp.id;
     const ds = dateStr(day);
@@ -453,6 +458,7 @@ export function AttendanceClient({
           {error}
         </div>
       )}
+      {!canEdit && <p className="text-xs text-neutral-500">ดูอย่างเดียว — แก้ไขได้เฉพาะเจ้าของร้านและฝ่ายบุคคล</p>}
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <select
@@ -542,7 +548,7 @@ export function AttendanceClient({
                         const dow = getDow(d);
                         const isEditing = edit?.empId === emp.id && edit?.date === ds;
 
-                        let cellCls = "cursor-pointer select-none transition-colors ";
+                        let cellCls = canEdit ? "cursor-pointer select-none transition-colors " : "select-none ";
                         let content: React.ReactNode = null;
 
                         if (isEditing) {

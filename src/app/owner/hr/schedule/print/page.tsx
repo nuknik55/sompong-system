@@ -85,6 +85,8 @@ export default async function SchedulePrintPage({
       <style>{`
         @page { size: A4 landscape; margin: 12mm 15mm; }
         @media print { .no-print { display: none !important; } body { margin: 0; } }
+        /* A phone: the month scrolls sideways inside its box, not the page. */
+        @media screen { .table-scroll { overflow-x: auto; } }
         * { box-sizing: border-box; }
         body { font-family: 'TH SarabunNew', 'Sarabun', 'Angsana New', Arial, sans-serif; font-size: 13px; color: #000; background: #fff; }
         table { width: 100%; border-collapse: collapse; }
@@ -122,6 +124,7 @@ export default async function SchedulePrintPage({
           {thaiDateFull(weekDates[0])} – {thaiDateFull(weekDates[6])}
         </p>
 
+        <div className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -201,6 +204,7 @@ export default async function SchedulePrintPage({
             </tr>
           </tbody>
         </table>
+        </div>
 
         <div className="footer-note">
           <p>- หากมีการลาเพิ่มเติมจากตารางข้างต้น ให้แจ้งหัวหน้าให้ทราบด้วย</p>

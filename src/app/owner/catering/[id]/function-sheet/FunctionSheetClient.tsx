@@ -76,6 +76,8 @@ export function FunctionSheetClient({
         }
         @media screen {
           .fs-wrap { max-width: 760px; margin: 0 auto; }
+          /* A phone: the signature lines wrap instead of widening the page. */
+          .sig-row { flex-wrap: wrap; }
         }
         .fs-wrap table { width: 100%; border-collapse: collapse; }
         .fs-wrap th, .fs-wrap td { border: 1px solid #333; padding: 5px 8px; overflow-wrap: anywhere; }
@@ -242,7 +244,7 @@ export function FunctionSheetClient({
         </div>
 
         {/* Signatures */}
-        <div className="fs-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "28px", gap: "24px" }}>
+        <div className="fs-avoid-break sig-row" style={{ display: "flex", justifyContent: "space-around", marginTop: "28px", gap: "24px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div>ลงชื่อ......................................ผู้ร่วมดำเนินการ</div>
             <div style={{ marginTop: "18px" }}>วันที่.........../.........../...........</div>

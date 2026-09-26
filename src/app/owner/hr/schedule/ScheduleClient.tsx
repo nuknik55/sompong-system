@@ -75,7 +75,10 @@ export function ScheduleClient({
   weekStart,
   deptId,
   swapDates,
+  canEdit,
 }: {
+  /** Owner and hr; admin reads the week only (every write is requireHR). */
+  canEdit: boolean;
   employees: Employee[];
   departments: Department[];
   notes: ScheduleNote[];
@@ -134,6 +137,7 @@ export function ScheduleClient({
   }
 
   function openEdit(emp: Employee, ds: string) {
+    if (!canEdit) return;
     const existing = getNote(emp.id, ds);
     setEdit({
       empId: emp.id,
@@ -320,6 +324,7 @@ export function ScheduleClient({
 
         {saving && <span className="text-xs text-neutral-400">กำลังบันทึก…</span>}
         {error && <span className="text-xs text-red-600">{error}</span>}
+        {!canEdit && <span className="text-xs text-neutral-500">ดูอย่างเดียว — แก้ไขได้เฉพาะเจ้าของร้านและฝ่ายบุคคล</span>}
       </div>
 
       {/* Legend */}
@@ -377,7 +382,7 @@ export function ScheduleClient({
                     const approvedLeave = !existingNote ? leaveMap.get(`${emp.id}_${ds}`) : undefined;
                     const isEditing = edit?.empId === emp.id && edit?.date === ds;
 
-                    let cellCls = "cursor-pointer select-none transition-colors h-10 px-1 py-1 text-center align-middle ";
+                    let cellCls = (canEdit ? "cursor-pointer select-none transition-colors " : "select-none ") + "h-10 px-1 py-1 text-center align-middle ";
                     if (isEditing) cellCls += "ring-2 ring-inset ring-neutral-900 ";
 
                     let content: React.ReactNode = null;

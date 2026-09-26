@@ -181,6 +181,8 @@ export function ReceiptClient({
         }
         @media screen {
           .receipt-wrap { max-width: 720px; margin: 0 auto; }
+          /* A phone: the signature lines wrap instead of widening the page. */
+          .sig-row { flex-wrap: wrap; }
         }
         input.editable:focus { outline: 2px solid #3b82f6; border-radius: 2px; }
       `}</style>
@@ -318,7 +320,7 @@ export function ReceiptClient({
         </div>
 
         {/* Signatures */}
-        <div style={{ display: "flex", justifyContent: "space-around", marginTop: "32px", gap: "24px" }}>
+        <div className="sig-row" style={{ display: "flex", justifyContent: "space-around", marginTop: "32px", gap: "24px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div>ลงชื่อ......................................ผู้เบิกจ่าย</div>
             <div style={{ marginTop: "4px" }}>

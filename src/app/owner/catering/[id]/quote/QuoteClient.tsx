@@ -63,6 +63,8 @@ export function QuoteClient({
         }
         @media screen {
           .quote-wrap { max-width: 760px; margin: 0 auto; }
+          /* A phone: the signature lines wrap instead of widening the page. */
+          .sig-row { flex-wrap: wrap; }
         }
         /* table-layout FIXED, as the kitchen sheet already had: without it
            the colgroup widths are only suggestions, and one unbroken run
@@ -206,7 +208,7 @@ export function QuoteClient({
             the left signs on behalf of the company (from settings), the
             right on behalf of the customer, a rule to write on when the
             booking has no company name for them. */}
-        <div className="q-avoid-break" style={{ display: "flex", justifyContent: "space-around", marginTop: "18px", gap: "24px", fontSize: "14px" }}>
+        <div className="q-avoid-break sig-row" style={{ display: "flex", justifyContent: "space-around", marginTop: "18px", gap: "24px", fontSize: "14px" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ marginBottom: "26px" }}>ในนาม {settings?.company_name ?? "................................"}</div>
             <div>ลงชื่อ......................................ผู้เสนอราคา</div>

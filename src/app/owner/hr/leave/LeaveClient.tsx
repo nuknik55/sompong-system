@@ -43,7 +43,10 @@ export function LeaveClient({
   defaultYear,
   defaultMonth,
   defaultStatus,
+  canEdit,
 }: {
+  /** Owner and hr; admin reads the leave only (every write is requireHR). */
+  canEdit: boolean;
   initialRequests: LeaveRequest[];
   employees: Employee[];
   leaveTypes: LeaveType[];
@@ -179,9 +182,13 @@ export function LeaveClient({
               {showQuota ? "ซ่อนสิทธิการลาประจำปี" : "แสดงสิทธิการลาประจำปี"}
             </button>
           )}
-          <button onClick={() => setShowForm(true)} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
-            + บันทึกใบลา
-          </button>
+          {canEdit ? (
+            <button onClick={() => setShowForm(true)} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+              + บันทึกใบลา
+            </button>
+          ) : (
+            <span className="text-xs text-neutral-500">ดูอย่างเดียว — แก้ไขได้เฉพาะเจ้าของร้านและฝ่ายบุคคล</span>
+          )}
         </div>
       </div>
 
@@ -225,7 +232,7 @@ export function LeaveClient({
                   </span>
                 </td>
                 <td className="px-3 py-2">
-                  <button onClick={() => setConfirmDelete(r.id)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>
+                  {canEdit && <button onClick={() => setConfirmDelete(r.id)} className="text-xs text-neutral-400 hover:text-red-600">ลบ</button>}
                 </td>
               </tr>
             ))}
