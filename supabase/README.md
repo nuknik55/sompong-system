@@ -3817,7 +3817,9 @@ and after Nik's import.
     module, which is why it is queued rather than done.
 
 42. **An SOP step-photo upload can undo other edits in the same section**
-    (found by the review of the SOP form's guard, 2026-09-21). **NOT
+    (found by the review of the SOP form's guard, 2026-09-21). **DONE
+    2026-09-26 (`46a8b2f`): the photo lands on its own step by id against
+    the current list, and Save waits for uploads.** Was: **NOT
     STARTED. Pre-existing — not caused by the guard.** The upload in
     `sop-photo-upload.tsx` calls back into `sop-step-list.tsx` with the
     list as it stood WHEN THE FILE WAS PICKED, and `sop-form.tsx` replaces
@@ -3830,7 +3832,9 @@ and after Nik's import.
     upload is in flight.
 
 43. **A step whose text is blank loses its photo on save** (found by the
-    same review, 2026-09-21). **NOT STARTED. Pre-existing.** `upsertSop`
+    same review, 2026-09-21). **DONE 2026-09-26 (`46a8b2f`): refused, and the
+    step named, in the form and in upsertSop** (Nik chose refuse over keep).
+    Was: **NOT STARTED. Pre-existing.** `upsertSop`
     keeps only lines whose text is not blank
     (`.filter((s) => s.text.trim())`), photo or not, so a step that is only
     a photo is dropped whole. The unsaved-changes comparison mirrors the save
@@ -3841,7 +3845,11 @@ and after Nik's import.
     and says why. Nik's call.
 
 44. **The prep yield editor has no unsaved-changes guard, and its own dirty
-    check compares text** (found by the same review, 2026-09-21). **NOT
+    check compares text** (found by the same review, 2026-09-21). **PART DONE
+    2026-09-26 (`800b0c2`): a blank, ".", "1.2.3" or 0 yield is refused
+    (it saved as 0 and hid every dish's cost). And one click now asks once
+    however many guards are mounted (`28d8c6f`). STILL OPEN: the text-based
+    dirty check and a guard on this editor.** Was: **NOT
     STARTED.** `prep-yield-editor.tsx` (on the prep recipe page, beside the
     recipe editor) loses an edited batch yield silently on any in-app link,
     on sign-out and on closing the tab. Its unsaved check compares the typed
