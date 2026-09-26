@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireHR, requireHROrAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingRelation } from "@/lib/schema-fallback";
 import { bangkokToday, shiftDay } from "@/lib/bangkok-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -190,49 +191,74 @@ export async function setDepartmentActive(id: string, is_active: boolean): Promi
 // ─── Employees ────────────────────────────────────────────────────────────────
 
 //
-// SALARY FIELDS ARE NOT ROLE-FILTERED HERE, AND THAT IS INTENTIONAL.
+// SALARY DATA: OWNER AND HR ONLY (Nik, 2026-09-26).
 //
-// getEmployees() and getEmployee() below select base_salary,
-// position_allowance and social_security_monthly with no role branch. If you
-// are auditing this and it looks like a missing gate: it is not. Do not add a
-// filter and do not restrict these to owner — payroll runs on these fields, and
-// hiding them from hr breaks it.
+// base_salary, position_allowance, social_security_monthly and daily_wage
+// are read ONLY through readPay() below, and only for owner and hr. Admin
+// reaches getEmployees() (the attendance, leave and schedule pages) and gets
+// every employee WITHOUT pay (zeros, and null for the daily wage), which none
+// of those pages shows. The database says the same once
+// security_fixes_and_menu_save_lock_migration.sql has run: the four columns
+// are taken from every signed-in account and served by the view
+// employee_pay, which answers owner and hr only. Payroll itself
+// (payroll_periods, payroll_entries) was already owner/hr in the database
+// (hr_role_patch.sql), and its getters are requireHR.
 //
-// What actually controls access is PAGE ACCESS. Every route reaching these
-// functions is behind requireHR(), which admits "owner" and "hr" and redirects
-// everyone else. The audience is exactly the two roles whose job this is.
-//
-// Decided explicitly by Nik on 2026-09-06: hr SHOULD see salaries, because
-// payroll is their work. An isOwner prop was previously passed to
-// EmployeesClient and never read — it was reaching for an owner-vs-hr
-// distinction that had never been implemented anywhere. That prop is now
-// deleted rather than wired, because the distinction was decided against.
-//
-// UNWIRED_FEATURES.md used to claim these fields were "gated server-side".
-// They are not, and never were. That claim being wrong is why this comment is
-// long: the next person to check should find the decision here rather than
-// infer an oversight from the code and "fix" it.
+// Still true from 2026-09-06: hr SHOULD see salaries; payroll is their work.
+
+type Pay = Pick<Employee, "base_salary" | "position_allowance" | "social_security_monthly" | "daily_wage">;
+const NO_PAY: Pay = { base_salary: 0, position_allowance: 0, social_security_monthly: 0, daily_wage: null };
+const PAY_COLUMNS = "base_salary, position_allowance, social_security_monthly, daily_wage";
+const seesPay = (role: string) => role === "owner" || role === "hr";
+
+function payOf(r: Record<string, unknown>): Pay {
+  return {
+    base_salary: Number(r.base_salary ?? 0),
+    position_allowance: Number(r.position_allowance ?? 0),
+    social_security_monthly: Number(r.social_security_monthly ?? 0),
+    daily_wage: r.daily_wage == null ? null : Number(r.daily_wage),
+  };
+}
+
+/**
+ * Pay by employee id — call it only for owner and hr (seesPay); the view
+ * checks the role again. From the view employee_pay; before the migration
+ * adds it, from the columns on employees, where owner and hr read them today.
+ */
+async function readPay(supabase: Awaited<ReturnType<typeof createClient>>, ids?: string[]): Promise<Map<string, Pay>> {
+  let q = supabase.from("employee_pay").select(`employee_id, ${PAY_COLUMNS}` as string);
+  if (ids) q = q.in("employee_id", ids);
+  const r = await q;
+  if (!r.error) return new Map(((r.data ?? []) as unknown as Record<string, unknown>[]).map((e) => [e.employee_id as string, payOf(e)]));
+  if (!isMissingRelation(r.error)) throw r.error;
+  let q2 = supabase.from("employees").select(`id, ${PAY_COLUMNS}` as string);
+  if (ids) q2 = q2.in("id", ids);
+  const r2 = await q2;
+  if (r2.error) throw r2.error;
+  return new Map(((r2.data ?? []) as unknown as Record<string, unknown>[]).map((e) => [e.id as string, payOf(e)]));
+}
 
 export async function getEmployees(): Promise<Employee[]> {
-  await requireHROrAdmin();
+  const profile = await requireHROrAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("employees")
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, position_allowance, social_security_monthly,
-      hire_date, start_date, daily_wage,
+      hire_date, start_date,
       weekly_day_off, citizenship_type, is_active, takes_bookings, sort_order,
       al_quota_override, probation_end_date,
       departments(name, sort_order)
     `)
     .order("sort_order");
   if (error) throw error;
+  const pay = seesPay(profile.role) ? await readPay(supabase) : null;
   return (data ?? []).map((e: Record<string, unknown>) => {
     const dept = e.departments as { name: string; sort_order: number } | null;
     return {
       ...(e as Omit<Employee, "department_name">),
+      ...(pay?.get(e.id as string) ?? NO_PAY),
       sort_order: (e.sort_order as number) ?? 999,
       department_name: dept?.name ?? null,
       _dept_sort: dept?.sort_order ?? 999,
@@ -253,8 +279,7 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     .select(`
       id, employee_code, full_name, nickname, phone,
       department_id, position, employment_type,
-      base_salary, position_allowance, social_security_monthly,
-      hire_date, start_date, daily_wage,
+      hire_date, start_date,
       weekly_day_off, citizenship_type, is_active, takes_bookings,
       al_quota_override, probation_end_date,
       departments(name)
@@ -262,8 +287,10 @@ export async function getEmployee(id: string): Promise<Employee | null> {
     .eq("id", id)
     .single();
   if (error) return null;
+  const pay = (await readPay(supabase, [id])).get(id) ?? NO_PAY;
   return {
     ...(data as unknown as Omit<Employee, "department_name">),
+    ...pay,
     sort_order: (data as unknown as { sort_order?: number }).sort_order ?? 999,
     department_name: (data.departments as unknown as { name: string } | null)?.name ?? null,
     al_quota_override: (data as unknown as { al_quota_override?: number | null }).al_quota_override ?? null,
@@ -709,7 +736,7 @@ export async function getEmployeePayrollHistory(employeeId: string): Promise<Emp
       .order("period_month", { ascending: false })
       .order("period_half", { ascending: false }),
     supabase.from("payroll_entries").select("*").eq("employee_id", employeeId),
-    supabase.from("employees").select("base_salary,position_allowance,social_security_monthly").eq("id", employeeId).single(),
+    readPay(supabase, [employeeId]).then((m) => ({ data: m.get(employeeId) ?? null })),
     supabase.from("attendance_daily").select("work_date,status,late_minutes,late_excused,leave_type_id,leave_fraction").eq("employee_id", employeeId),
     getDeductibleLeaveTypeIds(supabase),
   ]);
@@ -1037,13 +1064,14 @@ export async function getPayrollEntries(periodId: string): Promise<PayrollEntry[
     supabase.from("payroll_periods").select("period_year,period_month,period_half").eq("id", periodId).single(),
     supabase
       .from("employees")
-      .select("id,employee_code,full_name,department_id,base_salary,position_allowance,social_security_monthly,weekly_day_off,employment_type,daily_wage,sort_order,departments(name,sort_order)")
+      .select("id,employee_code,full_name,department_id,weekly_day_off,employment_type,sort_order,departments(name,sort_order)")
       .eq("is_active", true),
     supabase.from("payroll_entries").select("*").eq("payroll_period_id", periodId),
     getDeductibleLeaveTypeIds(supabase),
   ]);
 
-  const sortedEmployees = (employees ?? []).slice().sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+  const payroll = await readPay(supabase);
+  const sortedEmployees = (employees ?? []).map((e: Record<string, unknown>) => ({ ...e, ...(payroll.get(e.id as string) ?? NO_PAY) }) as Record<string, unknown>).sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
     const da = (a.departments as { sort_order: number } | null)?.sort_order ?? 999;
     const db = (b.departments as { sort_order: number } | null)?.sort_order ?? 999;
     if (da !== db) return da - db;
