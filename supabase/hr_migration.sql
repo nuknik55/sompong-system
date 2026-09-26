@@ -2,6 +2,12 @@
 -- HR Module Migration
 -- Run this in Supabase SQL Editor
 -- ===================================================
+--
+-- !! DO NOT RE-RUN THIS FILE (audit, 2026-09-25; Nik, 2026-09-26). !!
+-- A re-run drops only its own policy names and recreates emp_select,
+-- pe_select, lr_select ... USING (true) beside hr_role_patch.sql's
+-- policies, so EVERY signed-in account would read salaries and payroll.
+-- hr_role_patch.sql and later files are the HR tables' rules now.
 
 -- Helper macro to check owner/admin role
 -- (matches the pattern used in accounting_migration.sql)

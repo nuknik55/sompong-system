@@ -262,6 +262,7 @@ SELECT c.n, c.part, c.check_name, c.expected, c.actual,
 
 | file | waiting on | while it waits |
 |---|---|---|
+| `security_fixes_and_menu_save_lock_migration.sql` | Nik. **Second version** (the first, `03a3a17`, stopped at S2 on 2026-09-26 with "Nothing applied": live `pos_price_aliases` is empty and its tests needed live rows; this one's tests make their own rows). Expected: **124 rows**, ending "row count verified: 123 evidence rows emitted, as expected (this line makes 124)"; anything starting FAIL means nothing was applied. **What it does:** queue item 48 (the menu page's save locks the booking row first); handle_new_user makes a profile only for `<username>@staff.local` logins; every read policy that asked only "signed in" asks for a profile; **SOP writes owner, admin and editor** (Nik, 2026-09-26; they were open to every signed-in account); purchase-price history owner/admin/editor; suppliers and pos_price_aliases owner/admin (live policies printed, then replaced); templates written by owner/admin/editor; anon may not execute the seven functions that write; two SECURITY DEFINER guards get a search_path; sop-photos takes JPEG up to 2 MB; **salaries owner and hr only** (the four pay columns of `employees` closed to every signed-in account, served by the view `employee_pay`; payroll tables were already owner/hr); **staff see no purchase prices** (the three cost columns of `ingredients` closed, served by the view `ingredient_costs` to owner/admin/editor; `prep_unit_costs()` and `pos_receipt_deliveries` drop staff). Three replaced functions, md5-guarded. Stand-in: two clean runs, 23 fault cases. | **THE CODE FIRST:** `c88c44a` (salaries) and `d9829c4` (ingredient costs) read through the new views and fall back until they exist; they are pushed. Then this file. Then the branch's last commit (templates on the user's session). **After it runs:** as hr, the employees and payroll pages show salaries; as admin, attendance, leave and the schedule work and show none; as staff, an order form, a template and a recipe show names and no prices; as editor, an SOP saves; as admin, the ingredients page shows prices; the team page makes a login that gets its role. **From then on a new column on `employees` or `ingredients` needs its own `GRANT SELECT (col) ... TO authenticated`.** |
 | `q_factor_owner_only_migration.sql` | HELD for the HR batch (items 23, 28), marked so in its first lines | The q-factor write policy admits admins; the screen and `updateQFactor` are owner only. |
 | `catering_event_deposit_percent_zero_migration.sql` | Nik (he has it, 2026-09-12) | Widens the deposit CHECK to allow 0 = "agreed: no deposit". The deployed code does NOT wait for it: reads are unaffected, and the one exposure is someone deliberately typing 0 — the CHECK rejects, the event upsert fails FIRST in `saveBooking`, nothing partial is written, and the form shows the error. New bookings pre-fill 30, so 0 is never typed by accident. |
 
@@ -3974,7 +3975,10 @@ and after Nik's import.
       block; Nik accepted that for this file.
 
 48. **The menu page's save does not wait for the booking screen's**
-    (review of item 47, 2026-09-21). **NOT STARTED. Existed before item 47,
+    (review of item 47, 2026-09-21). **FIX WRITTEN 2026-09-25, NOT APPLIED:**
+    `security_fixes_and_menu_save_lock_migration.sql` makes
+    `catering_save_event_menus` take the booking row's `FOR UPDATE` first
+    (md5-guarded against the body `224848f` applied). Was: **NOT STARTED. Existed before item 47,
     which narrows it.** `catering_save_booking_prices` locks the booking
     row; `catering_save_event_menus` does not, and its price and course
     updates take no lock that waits for it. If a menu-page save lands while

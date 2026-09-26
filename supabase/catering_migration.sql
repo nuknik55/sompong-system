@@ -1,8 +1,15 @@
 -- ============================================================================
 -- Catering module — /owner/catering/   + new 'sales' role
 -- ============================================================================
--- Run once in the Supabase SQL editor. Safe to re-run (IF NOT EXISTS /
--- DROP ... IF EXISTS throughout).
+-- !! DO NOT RE-RUN THIS FILE (audit, 2026-09-25; Nik, 2026-09-26). !!
+-- It WAS safe to re-run when written; it is not any more. A re-run recreates
+-- catering_cost_snapshots_rw for owner, admin AND SALES, putting gross profit
+-- and food cost back in sales' hands (live is owner/admin only), and
+-- recreates its view without takes_bookings. Later files changed what this
+-- one made; run THEM, never this one again.
+--
+-- (Original note: run once in the Supabase SQL editor; IF NOT EXISTS /
+-- DROP ... IF EXISTS throughout.)
 --
 -- No legacy data is migrated: the 2569 booking spreadsheet stays an archive.
 -- These tables are built for correct data entry going forward.
